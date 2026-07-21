@@ -1,10 +1,10 @@
 # magic-market-data-rs / magic-tdx-rs 设计
 
-状态：七个设计部分已由用户逐项确认；本文待书面复核。Gate A 在本文被明确批准且阻塞意见归零前不关闭。
+状态：原七个设计部分及独立仓库修订已由用户确认；本文待书面复核。Gate A 在本文被明确批准且阻塞意见归零前不关闭。
 
 ## 1. 背景
 
-当前项目通过 rustdx-complete = 1.0.0 接入部分 TDX 历史行情能力，生产适配器位于 src/data_provider/rustdx_provider.rs。目标不是继续扩大这个项目专用适配器，而是在仓库中建立可独立复用的金融数据基础：
+现有下游应用 `stock_analysis` 通过 `rustdx-complete = 1.0.0` 接入部分 TDX 历史行情能力，生产适配器位于其 `src/data_provider/rustdx_provider.rs`。本项目不继续扩大该应用专用适配器，而是在独立仓库中建立可复用的金融数据基础：
 
 - umbrella 项目名：magic-market-data-rs；
 - provider-neutral 核心 crate：magic-market-core；
@@ -49,7 +49,7 @@ magic-tdx-rs 以 jiangtaovan/tdxrs 的固定提交为行为基线，采用“审
 4. 对格式错误、缺失、不完整、超限、复权失败和重试耗尽提供显式类型错误。
 5. 保持与固定上游同量级的速率和并发，满足第 12 节的相对 A/B 门槛。
 6. 提供完整、落地、可机械验证的文档和示例。
-7. 保持现有 stock_analysis 的业务质量、新鲜度和回退政策。
+7. 通过外部下游集成合同保持 `stock_analysis` 的业务质量、新鲜度和回退政策。
 8. 支持 Rust 1.83，以及 Linux、macOS、Windows 的 x86_64/aarch64 目标。
 
 ### 2.2 非目标
@@ -68,7 +68,9 @@ magic-tdx-rs 以 jiangtaovan/tdxrs 的固定提交为行为基线，采用“审
 
 ### 2.3 完成定义
 
-只有 Gate A、B、C、D 全部通过才可称为完成。缺少覆盖率、差分、性能或受控在线证据时，状态必须是“进行中/阻塞”，不得把本地单元测试通过等同于发布就绪。
+本独立仓库只有 Gate A、B、C、D 全部通过才可称为 crate 交付完成。缺少覆盖率、差分、性能或受控在线证据时，状态必须是“进行中/阻塞”，不得把本地单元测试通过等同于发布就绪。
+
+`stock_analysis` 采用新 crate 是独立的下游变更，必须在其仓库内通过自己的设计、实现、合规和发布 Gate。本仓库发布就绪不等同于下游采用完成；下游验证未通过也不得阻止本仓库记录真实的库级 Gate 结果，但必须阻止宣称应用迁移完成。
 
 ## 3. 方案比较
 
@@ -103,23 +105,33 @@ magic-tdx-rs 以 jiangtaovan/tdxrs 的固定提交为行为基线，采用“审
 
 ## 4. Workspace 与依赖边界
 
-现有根 Cargo package 改为非虚拟 Workspace：
+仓库根使用纯虚拟 Cargo Workspace，不定义根 package：
 
-    stock_analysis/
-    ├── Cargo.toml                    # [package] + [workspace]
+    magic-market-data-rs/
+    ├── Cargo.toml                    # 仅 [workspace]，resolver = "2"
+    ├── Cargo.lock                    # 提交，固定测试和基准依赖解析
+    ├── README.md
+    ├── README.en.md
     ├── crates/
     │   ├── magic-market-core/
     │   └── magic-tdx-rs/
-    └── src/                          # 现有应用
+    ├── docs/
+    └── tools/
+
+Workspace 成员只有两个可独立版本化和发布的 library crate。示例和 Criterion benchmark 放在所属 crate 的 `examples/`、`benches/` 下并参与 CI 或固定 benchmark job。根 manifest 显式列出成员和共享 lint/package 元数据，不通过 glob 意外吸收临时目录。
 
 依赖方向固定为：
 
-    stock_analysis application
+    magic-tdx-rs
+        └── magic-market-core
+
+    stock_analysis application (external downstream repository)
         ├── magic-market-core
         └── magic-tdx-rs
-                 └── magic-market-core
 
-magic-market-core 不得知道 TDX 协议、服务器地址或上层应用类型。magic-tdx-rs 不得依赖 stock_analysis。应用适配器不得反向暴露进协议层。
+`magic-market-core` 不得知道 TDX 协议、服务器地址或上层应用类型。`magic-tdx-rs` 不得依赖 `stock_analysis`。下游适配器不得反向暴露进协议层，本仓库也不得通过相对路径、submodule 或构建脚本读取 `stock_analysis` 源码。
+
+两个 crate 独立发布；本仓库不增加 umbrella facade crate。`magic-tdx-rs` 对 `magic-market-core` 使用正常 SemVer 依赖。外部生产消费者必须使用已发布的固定版本或完整 Git commit revision；本机 path dependency 只允许开发验证，不能作为发布或生产集成证据。
 
 ### 4.1 magic-market-core
 
@@ -164,7 +176,7 @@ magic-market-core 不得知道 TDX 协议、服务器地址或上层应用类型
       -> complete adjustment context when requested
       -> checked normalized conversion
       -> provenance-bearing DataBatch<T>
-      -> project quality/freshness gate
+      -> consumer-specific quality/freshness gate
 
 ### 5.1 两层数据模型
 
@@ -205,7 +217,7 @@ source_at 缺失必须保持 None。fetched_at 不能伪装成源时间。分页
 - 拆股分红与序列连续性检查；
 - 缺失与 not-applicable 分离。
 
-stock_analysis 的 src/data_provider/rustdx_provider.rs 继续执行现有 BR-092 和应用新鲜度政策。实时报价要求可证明源时间不超过 5 秒，仓位/现金 30 秒，净值同交易日，日线/历史不超过 1 个交易日。TDX 无可信源时间时返回 None，由应用判为不可证明；不得使用本地抓取时间冒充。
+外部下游 `stock_analysis` 的 `src/data_provider/rustdx_provider.rs` 继续执行现有 BR-092 和应用新鲜度政策。实时报价要求可证明源时间不超过 5 秒，仓位/现金 30 秒，净值同交易日，日线/历史不超过 1 个交易日。TDX 无可信源时间时返回 `None`，由应用判为不可证明；不得使用本地抓取时间冒充。
 
 ## 6. 公共 API 与稳定性
 
@@ -385,7 +397,8 @@ COMPATIBILITY.md 为每个上游 Rust-callable 操作记录 Adopt、Replaced、I
 - 服务器健康和限速状态有只读快照；
 - tracing 字段包含 operation、request id、server、attempt、elapsed、record count；
 - 不记录敏感账户信息；本项目首期没有账户和交易能力；
-- 审计所需 provenance 由驱动提供，stock_analysis 负责接入可证明防篡改且保留不少于 5 年的审计设施；如果现有设施无法提供该证据，Gate D 必须阻塞，不能假定其已满足。
+- 审计所需 provenance 由驱动提供；本仓库 Gate D 验证字段完整性、可追踪性和文档合同，不伪造持久化能力。
+- 每个生产消费者负责把 provenance 接入其审计设施。`stock_analysis` 的采用 Gate 必须证明审计防篡改且保留不少于 5 年；缺少证据时阻塞下游发布，但不把消费者基础设施伪装成本仓库能力。
 
 ## 11. 测试与兼容性验证
 
@@ -398,7 +411,7 @@ COMPATIBILITY.md 为每个上游 Rust-callable 操作记录 Adopt、Replaced、I
 - protocol replay：本地 loopback server 覆盖分页、截断、超时、断连、空响应和重试；
 - reader fixture：全部本地格式、边界长度和损坏文件；
 - integration：四客户端和所有能力的组合测试；
-- application：现有 RustdxProvider 的 BR-092、新鲜度、分页及回退不回归。
+- downstream contract：提供可由外部消费者复用的契约夹具；`stock_analysis` 自己验证 BR-092、新鲜度、分页及回退不回归，不把其源码纳入本 workspace 测试。
 
 测试数据使用 TEST_CODE 前缀或明确的二进制 fixture。生产路径不得引用测试 server、fixture 或 mock feature。
 
@@ -455,15 +468,15 @@ pytdx、mootdx 或抓包只用于解释协议歧义；它们不能取代固定�
 
 文档和代码同时交付，不允许发布前临时补写。
 
-文档统一放在 docs/magic-market-data-rs/，crate 自身 README、rustdoc 和 examples 与源码同目录。现有根 README.md 增加 Workspace 组件入口，但不删除 stock_analysis 应用文档。
+仓库级专题文档统一放在 `docs/`，crate 自身 README、rustdoc 和 examples 与源码同目录。根 README 是独立项目入口，不复制或删除外部 `stock_analysis` 的应用文档。
 
 根和 crate 文档：
 
-- docs/magic-market-data-rs/README.md：umbrella 定位、架构、快速开始、crate map、安全边界、兼容性和性能摘要；
-- docs/magic-market-data-rs/README.en.md：英文入口和 API synopsis；
+- README.md：umbrella 定位、架构、快速开始、crate map、安全边界、兼容性和性能摘要；
+- README.en.md：英文入口和 API synopsis；
 - crates/magic-market-core/README.md；
 - crates/magic-tdx-rs/README.md；
-- 根 README.md 中的 Workspace 导航和安全边界摘要。
+- 各 crate `examples/` 中可编译的能力示例。
 
 专题文档：
 
@@ -497,9 +510,9 @@ pytdx、mootdx 或抓包只用于解释协议歧义；它们不能取代固定�
 - CI 运行 cargo doc、doctest、examples 和链接检查；
 - 首版中文技术文档完整，另提供英文 README 和公开 API 摘要；不维护两套易漂移的全文副本。
 
-## 14. 现有应用集成
+## 14. 外部下游 `stock_analysis` 集成
 
-src/data_provider/rustdx_provider.rs 继续作为 stock_analysis 的项目政策边界：
+`stock_analysis` 的 `src/data_provider/rustdx_provider.rs` 继续作为其项目政策边界：
 
 - 保留 BR-092；
 - 保留整页/整批严格校验；
@@ -508,21 +521,23 @@ src/data_provider/rustdx_provider.rs 继续作为 stock_analysis 的项目政策
 - TDX 不提供可信 realtime source timestamp 时，不改变当前使用可信来源的决定；
 - 不把项目特有过滤、选择、回退或人工确认逻辑下沉到通用 crate。
 
-应用集成前，新旧驱动可以通过独立构建目标进行 A/B，但生产调用链不得在新驱动失败时静默调用旧驱动。切换后的错误必须进入现有显式 fallback 政策。
+下游集成使用独立 PR 和独立提交，不与本仓库协议/模型提交混合。依赖必须固定为已发布版本或完整 Git revision；本机 path dependency 只可用于预提交开发，不能进入生产 manifest 或作为 Gate 证据。
+
+应用集成前，新旧驱动可以通过独立构建目标进行 A/B，但生产调用链不得在新驱动失败时静默调用旧驱动。切换后的错误必须进入现有显式 fallback 政策。下游必须独立运行自己的 format、Clippy、测试、compliance、freshness、覆盖率、真实数据和审计验证。
 
 ### 14.1 旧模块关系
 
 | 模块 | 决策 | 原因 |
 | --- | --- | --- |
-| src/data_provider/rustdx_provider.rs | adopt and adapt | 保留应用质量、新鲜度、分页和回退政策 |
-| rustdx-complete 1.0.0 | remove after evidence | PyO3 耦合和静默失败语义不满足目标 |
+| `stock_analysis/src/data_provider/rustdx_provider.rs` | adopt and adapt downstream | 保留应用质量、新鲜度、分页和回退政策 |
+| `stock_analysis` 的 `rustdx-complete 1.0.0` | remove downstream after evidence | PyO3 耦合和静默失败语义不满足目标 |
 | 固定上游纯 Rust 协议/解析逻辑 | audited extraction | 保留兼容和性能基础 |
 | 上游 Python/CLI/DataFrame/downloader | reject | 不属于首期纯 Rust 驱动 |
-| stock_analysis 特殊场景 | retain in application | 防止通用驱动被业务政策污染 |
+| `stock_analysis` 特殊场景 | retain in downstream application | 防止通用驱动被业务政策污染 |
 
 ## 15. 业务规则与数据红线
 
-实现前先检查 docs/business_rules.md 的当前最大编号，再登记：
+实现第一阶段必须在本仓库落地独立的 `AGENTS.md`、工程 Gate 文档和 `tools/compliance/check.sh`。规则编号保留 2.1–2.10 以便追溯原始安全约束，但只定义本 library workspace 适用的检查；不得通过读取外部仓库文件来获得政策。随后创建并检查本仓库 `docs/business_rules.md` 的当前最大编号，再登记：
 
 - 单次行情 60 个证券限制和 quotes_chunked；
 - 分块后的顺序、重复代码和结果映射；
@@ -537,10 +552,10 @@ src/data_provider/rustdx_provider.rs 继续作为 stock_analysis 的项目政策
 - 2.1：生产路径无 mock/fixture；源失败显式返回。
 - 2.2：缺失保持 None 或错误，禁止填零。
 - 2.3：强类型数值、±20% 质量事件、时间连续性和 XDXR 一致性。
-- 2.4：来源时间和抓取时间分离；应用保持 5 秒/1 交易日门。
+- 2.4：本仓库保证来源时间和抓取时间分离；`stock_analysis` 在自己的 Gate 中保持 5 秒/1 交易日门。
 - 2.5：测试数据 TEST_CODE；本 crate 不含下单能力。
 - 2.6：不适用；没有订单 API。
-- 2.7：DataBatch 提供 provenance/trace，应用持久化审计。
+- 2.7：`DataBatch` 提供 provenance/trace；生产消费者负责持久化审计并在自己的 Gate 中举证。
 - 2.8：verify/save/notify/push/sync/update_result/reconcile 等命名若出现，必须真实操作目标；禁止日志占位。
 - 2.9：本设计不修改 config/*.toml 阈值；未来修改必须提供 spec/config 双向证据。
 - 2.10：上述限速、分块、排序、筛选、去重和池策略必须先登记 BR。
@@ -549,14 +564,15 @@ src/data_provider/rustdx_provider.rs 继续作为 stock_analysis 的项目政策
 
 ### 16.1 阶段
 
-1. 将根 package 改为非虚拟 Workspace，仅加入空白 crate 骨架，不改变生产路径。
+1. 落地本仓库 `AGENTS.md`、工程 Gate、业务规则入口和 compliance 骨架；初始化纯虚拟 Workspace，提交根 lockfile，仅加入两个 library crate 骨架，不定义根 package。
 2. 完成 magic-market-core 值对象、模型、provenance、quality 和 capability traits。
 3. 按来源清单提取 codec、源类型、reader 和 adjustment，先建 golden/differential 证据。
 4. 完成 transport 及四客户端，覆盖取消、超时、断连、背压和重试。
 5. 完成全部数据能力、严格错误和标准化 adapter。
 6. 完成文档、示例、兼容矩阵和 benchmark harness。
-7. 对现有 RustdxProvider 进行独立集成提交。
-8. Gate B/C/D 通过后移除 rustdx-complete。
+7. 完成本仓库 Gate B/C/D，发布固定版本或记录可审计的完整 Git revision。
+8. 在 `stock_analysis` 仓库另开设计和集成 PR，使用固定依赖完成 A/B 与应用 Gate。
+9. 只有下游 Gate 全部通过后，才在 `stock_analysis` 移除 `rustdx-complete`。
 
 ### 16.2 Gate A
 
@@ -585,12 +601,12 @@ src/data_provider/rustdx_provider.rs 继续作为 stock_analysis 的项目政策
 
 若 workspace all-features 与平台 feature 互斥，必须在实施计划中显式拆矩阵，不能跳过检查。
 
-若 freshness 子检查失败，必须运行 bash tools/one_shot/backfill_daily.sh，重新验证真实数据后再执行完整 compliance；freshness 失败始终阻塞合并。
+本仓库的 `tools/compliance/check.sh` 只检查适用于独立 library workspace 的规则，包括生产 fixture/mock 隔离、假实现、设计矛盾、业务规则、许可证和来源映射。它不得读取外部数据库或依赖 `stock_analysis` 的 freshness/backfill 脚本。下游 freshness 失败仍在 `stock_analysis` 中严格阻塞其合并。
 
 ### 16.5 Gate D
 
 - overall coverage >= 80%；
-- 核心协议、解析、数据和现有应用关键链路 >= 95%；
+- 核心协议、解析和数据链路 >= 95%；
 - cargo-semver-checks、依赖许可证和安全审计通过；
 - 跨平台/MSRV CI 通过；
 - 差分和性能门槛通过；
@@ -606,20 +622,37 @@ src/data_provider/rustdx_provider.rs 继续作为 stock_analysis 的项目政策
 
 差分、基准、文档链接、SemVer、许可证和依赖安全命令必须由实施计划绑定到仓库内脚本或固定 CI job；只写“人工检查”不能作为 Gate D 证据。
 
+### 16.6 下游采用 Gate
+
+`stock_analysis` 集成不属于本 workspace 的 Gate B/C/D。它必须在外部仓库独立满足：
+
+- 固定 crate 版本或完整 Git revision，禁止生产 path dependency；
+- BR-092、整页/整批、新鲜度和 fallback 回归测试；
+- format、strict Clippy、全部测试和该仓库 compliance；
+- freshness/backfill、真实数据、生产调用链和审计保留证据；
+- 单独可回滚的适配器/依赖提交。
+
+任一项缺失时，只能报告“库已就绪、下游采用进行中/阻塞”，不能报告应用迁移完成。
+
 ## 17. 回滚
 
-每个阶段使用独立小提交。应用切换必须是单独提交，不夹带协议或模型重构。
+每个阶段使用独立小提交。本仓库的协议、模型和发布提交与外部应用切换严格分离；下游切换必须在 `stock_analysis` 使用单独提交。
 
 回滚顺序：
 
-1. 应用验证失败：git revert 应用集成提交，恢复 rustdx-complete 调用路径。
-2. crate 行为问题：保留应用旧路径，修复失败的 Gate B 模块并重新差分。
+1. 下游验证失败：在 `stock_analysis` 执行 `git revert <integration-commit>`，恢复已固定的旧依赖调用路径。
+2. crate 行为问题：下游保持旧路径；本仓库 `git revert <library-commit>` 或发布修复版本，再重新差分。
 3. 架构或数据流问题：返回 Gate A，修订本文和实施计划。
 4. 数据红线问题：停止发布，Gate B 修复后重新检查 Gate A 失败模式。
 
 本设计不修改数据库 schema、不迁移账户/交易数据、不改变订单路径。禁止通过关闭质量门、填充假数据或静默回退完成“回滚”。
 
-标准回滚命令：
+本仓库标准回滚命令：
+
+    git revert <library-commit>
+    cargo test --workspace --all-targets --all-features
+
+下游标准回滚命令（在 `stock_analysis` checkout 内执行）：
 
     git revert <integration-commit>
     cargo build --release
@@ -628,15 +661,17 @@ src/data_provider/rustdx_provider.rs 继续作为 stock_analysis 的项目政策
 
 ## 18. PR 证据
 
-PR 描述必须包含：
+本仓库 PR 描述必须包含：
 
 - Refs：本文具体章节及实施计划；
 - Data-Redlines：2.1、2.2、2.3、2.4、2.5、2.7、2.8、2.10；
-- OldModules：第 14.1 节表格的最终执行结果；
+- OldModules：固定上游的 Adopt/Reject/Replace 结果；外部应用项标记为 downstream，不伪装成本 PR 已执行；
 - Threshold-Proof：第 9.5 和第 12 节的配置、基准和证据；
 - Business-Rules：实际分配的 BR 编号；
 - Validation：Gate B/C/D 命令和结果；
 - Rollback：精确提交和构建步骤。
+
+`stock_analysis` 的集成 PR 另行引用第 14 节，并按其仓库模板提供 Data-Redlines、OldModules、freshness、生产证据和回滚字段。
 
 ## 19. 风险与缓解
 
@@ -648,7 +683,7 @@ PR 描述必须包含：
 | PyO3 阻碍上游差分 | 固定最小去耦补丁及 SHA，证明不改核心逻辑 |
 | 公共 API 过早冻结 | 0.x 阶段、窄 facade、internal pub(crate)、SemVer 检查 |
 | 文档漂移 | 编译示例、生成兼容矩阵、链接/rustdoc CI |
-| 应用特殊规则污染通用 crate | 保持适配器边界和单向依赖 |
+| 下游应用特殊规则污染通用 crate | 保持独立仓库、固定依赖和单向适配器边界 |
 | 无界并发或重试放大 | bounded queue、overall timeout、共享 retry budget |
 | 缺失字段被误认为零 | Option/typed error 和差分失败测试 |
 
@@ -660,16 +695,25 @@ PR 描述必须包含：
 - [ ] 任意或截断协议输入不 panic、不越界、不无界分配。
 - [ ] 缺失、不完整、超限、复权失败和空重试均显式。
 - [ ] source_at 不被 fetched_at 替代。
-- [ ] 生产路径没有 mock、fixture、日志占位或静默旧驱动回退。
-- [ ] 现有 BR-092、新鲜度和 fallback 顺序未回归。
+- [ ] 本仓库生产路径没有 mock、fixture 或日志占位。
 - [ ] 确定性性能回归 <= 5%。
 - [ ] live median/p95 回归 <= 10%，成功率不降低。
 - [ ] Rust 1.83 和目标 OS/架构矩阵通过。
 - [ ] overall coverage >= 80%，核心链路 >= 95%。
 - [ ] 文档、rustdoc、doctest、examples、链接和 SemVer 检查通过。
-- [ ] compliance、freshness、许可证和安全审计通过。
-- [ ] provenance 已接入可证明防篡改且保留不少于 5 年的审计设施。
+- [ ] 本仓库适用的 compliance、许可证、来源映射和依赖安全审计通过。
+- [ ] provenance 合同及字段完整性已验证；未把下游持久化能力记为本仓库能力。
 - [ ] 受控在线验证和审计人签字完成。
 - [ ] PR 所有证据字段完整，回滚命令可执行。
 
-任一项缺失时，本项目不得报告为完成或发布就绪。
+以上库级清单任一项缺失时，本仓库不得报告 crate 交付完成或发布就绪。
+
+`stock_analysis` 采用完成还必须满足：
+
+- [ ] 使用固定版本或完整 Git revision，无生产 path dependency。
+- [ ] BR-092、新鲜度、分页和 fallback 顺序未回归。
+- [ ] 没有静默旧驱动回退，freshness/compliance/真实数据验证通过。
+- [ ] provenance 已接入可证明防篡改且保留不少于 5 年的审计设施。
+- [ ] 下游集成提交可独立回滚。
+
+下游清单任一项缺失时，不得报告 `stock_analysis` 采用完成；这不追溯否定已经取得的本仓库库级证据。
