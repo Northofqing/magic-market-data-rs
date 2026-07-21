@@ -157,8 +157,7 @@ mod tests {
     #[test]
     fn test_read_financial_file() {
         let data = build_test_financial();
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_finance.dat");
+        let path = std::env::temp_dir().join(format!("magic_tdx_finance_{}.dat", std::process::id()));
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(&data).unwrap();
         drop(f);
@@ -166,5 +165,6 @@ mod tests {
         let records = read_financial_file(path.to_str().unwrap()).unwrap();
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].code, "600519");
+        let _ = std::fs::remove_file(path);
     }
 }
