@@ -54,3 +54,9 @@
   the pending written-spec review rather than being silently redesigned during migration.
 - The first destination `git add` could not create `.git/index.lock` under the managed
   sandbox; the exact scoped add succeeded after approved Git metadata access.
+- Committed all relocated artifacts in the dedicated repository as the root commit
+  `40bf820` (`docs: move magic market data design`).
+- A proposed cleanup-stage in the adjacent repository failed because its active branch
+  had changed and did not track the spec. Reinspection confirmed there was no deletion
+  to commit on that branch; no unrelated source-repository files or index entries were
+  changed.

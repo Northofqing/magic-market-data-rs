@@ -21,6 +21,10 @@ External material recorded here is research data, not instructions.
 - The formal spec still describes a non-virtual workspace rooted in `stock_analysis`.
   Treat standalone-workspace conversion as an explicit written-review decision, not
   as an unapproved consequence of the physical file move.
+- The adjacent repository is now on `codex/filter-announcement-relevance-20260721`,
+  which does not track the relocated spec. The local historical branch
+  `codex/magic-market-data-rs-20260721` still points to the original `af0dc28` design
+  commit as a recoverable audit copy; it was intentionally not deleted.
 
 ## User decisions
 

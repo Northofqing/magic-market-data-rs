@@ -114,3 +114,4 @@ Status: pending
 | Multi-hunk phase-status patch did not match its context | 1 | Re-read the task plan and applied the exact smaller hunks. |
 | New design document is hidden by repository `/docs` ignore rule | 1 | Force-add only the exact design file and verify the staged manifest before commit. |
 | Destination Git index is read-only inside the workspace sandbox | 1 | Retried the exact scoped `git add` with approved elevated Git metadata access. |
+| Source cleanup pathspec did not match after its active branch changed | 1 | Re-read branch/index status; the active source branch does not track the spec, so no cleanup commit is required. Preserved the historical design branch for recovery. |
