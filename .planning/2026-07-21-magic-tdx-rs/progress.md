@@ -60,3 +60,7 @@
   had changed and did not track the spec. Reinspection confirmed there was no deletion
   to commit on that branch; no unrelated source-repository files or index entries were
   changed.
+- Replaced an invalid `HEAD~2` final range check for this two-commit repository with
+  per-commit root-aware checks.
+- The managed sandbox again denied a later Git index write; subsequent metadata writes
+  use the already approved explicit elevation instead of relying on implicit prefix reuse.
