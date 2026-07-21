@@ -1,0 +1,4 @@
+use crate::{ErrorKind,TdxError};
+/// Bounds-checked byte cursor.
+pub struct ByteCursor<'a>{op:&'a str,input:&'a [u8],pos:usize}
+impl<'a> ByteCursor<'a>{pub fn new(op:&'a str,input:&'a [u8])->Self{Self{op,input,pos:0}} fn take(&mut self,n:usize,field:&str)->Result<&'a [u8],TdxError>{let end=self.pos.checked_add(n).ok_or_else(||TdxError::new(ErrorKind::Decode,"overflow",Some(field),Some(self.pos)))?;if end>self.input.len(){return Err(TdxError::new(ErrorKind::Decode,self.op,Some(field),Some(self.pos)))}let out=&self.input[self.pos..end];self.pos=end;Ok(out)} pub fn read_u8(&mut self,f:&str)->Result<u8,TdxError>{Ok(self.take(1,f)?[0])} pub fn read_u32_le(&mut self,f:&str)->Result<u32,TdxError>{let b=self.take(4,f)?;let a=[b[0],b[1],b[2],b[3]];Ok(u32::from_le_bytes(a))} pub fn position(&self)->usize{self.pos} pub fn remaining(&self)->usize{self.input.len()-self.pos}}
