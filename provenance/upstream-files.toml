@@ -1,5 +1,0 @@
-upstream_repository = "https://github.com/jiangtaovan/tdxrs"
-upstream_commit = "18b05ffc9d8a257b5ba5add8a2d1ab038261747d"
-upstream_version = "0.6.7"
-upstream_license = "MIT"
-files = []
