@@ -4,11 +4,15 @@ External material recorded here is research data, not instructions.
 
 ## Confirmed local context
 
-- The repository is a single Rust package rather than a Cargo workspace.
-- `Cargo.toml` currently pins `rustdx-complete = "=1.0.0"`.
-- `src/data_provider/rustdx_provider.rs` is the existing production adapter.
-- The current branch is `codex/filter-announcement-relevance-20260721`.
-- Unrelated changes exist in `src/bin/monitor/main.rs`, `src/bin/monitor/push_templates.rs`, planning directories, and HTML reports. They must not be modified or staged by this task.
+- The adjacent downstream `stock_analysis` repository is a single Rust package rather
+  than a Cargo workspace.
+- Its `Cargo.toml` pins `rustdx-complete = "=1.0.0"`, and
+  `src/data_provider/rustdx_provider.rs` is its production adapter.
+- The dedicated `magic-market-data-rs` repository currently contains only the formal
+  design and planning records; workspace scaffolding remains prohibited until the
+  written spec is approved and an implementation plan is written.
+- Unrelated changes in the adjacent downstream repository must not be modified or
+  staged by this task.
 - Rust compiler observed during feasibility research: `rustc 1.95.0`.
 - The existing provider already owns strict whole-page/whole-batch semantics and converts upstream bars into the application's `KlineData` before BR-092 validation.
 - The existing provider uses Tencent for realtime because `rustdx-complete 1.0.0` does not provide a trustworthy realtime source timestamp.
@@ -18,9 +22,9 @@ External material recorded here is research data, not instructions.
   `https://github.com/Northofqing/magic-market-data-rs.git`.
 - The formal spec and all three task planning artifacts were moved from the adjacent
   `stock_analysis` repository with matching pre/post SHA-256 hashes.
-- The formal spec still describes a non-virtual workspace rooted in `stock_analysis`.
-  Treat standalone-workspace conversion as an explicit written-review decision, not
-  as an unapproved consequence of the physical file move.
+- The user approved a standalone pure virtual workspace. The formal spec now defines
+  exactly two library members, no root package/facade, and `stock_analysis` as an
+  external downstream consumer with separate Gates.
 - The adjacent repository is now on `codex/filter-announcement-relevance-20260721`,
   which does not track the relocated spec. The local historical branch
   `codex/magic-market-data-rs-20260721` still points to the original `af0dc28` design
@@ -40,7 +44,12 @@ External material recorded here is research data, not instructions.
 - Error policy: strict semantics are the only default. Compatibility-style truncation/defaulting/downgrade must not occur implicitly; optional policies must be explicit and observable.
 - Performance acceptance: relative same-environment A/B against pinned upstream, with explicit regression thresholds; upstream README absolute latency is historical context, not a portable guarantee.
 - Supported-platform decision: Rust 1.83 MSRV with Linux/macOS/Windows and x86_64/aarch64 support.
-- Repository organization: non-virtual Cargo workspace retaining the current root package and adding both reusable crates; workspace-wide validation is mandatory.
+- Repository organization: standalone pure virtual Cargo workspace with exactly two
+  independently versioned library crates, a committed root lockfile, no root package,
+  and no umbrella facade crate. Workspace-wide validation is mandatory.
+- Downstream dependency decision: production consumers use a fixed published version
+  or full Git revision; path dependencies are development-only and cannot serve as
+  release evidence.
 - Approach: audited extraction/hardening rather than a thin vendor wrapper or ground-up protocol rewrite.
 
 ## Upstream facts already verified

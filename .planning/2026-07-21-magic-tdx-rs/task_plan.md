@@ -6,7 +6,8 @@ Design the umbrella project `magic-market-data-rs` and build its first complete,
 
 ## Constraints
 
-- Follow Gate A -> B -> C -> D in `AGENTS.md`.
+- Preserve the applicable Gate A -> B -> C -> D safety model and codify it in this
+  independent repository's own `AGENTS.md` during implementation phase 1.
 - Do not modify implementation code before the brainstorming design and written spec are approved.
 - Preserve unrelated dirty-worktree changes.
 - Keep production failures explicit; never substitute fake, zero, empty, stale, or silently downgraded data.
@@ -52,9 +53,10 @@ Status: in_progress
 - The design and its planning artifacts were moved byte-for-byte from the adjacent
   `stock_analysis` repository into the dedicated `magic-market-data-rs` repository
   on 2026-07-21.
-- Written review must explicitly resolve whether the physical repository move also
-  replaces the approved in-repository, non-virtual workspace layout with a standalone
-  workspace and downstream `stock_analysis` integration.
+- The user approved a standalone pure virtual workspace with `stock_analysis` treated
+  as an external downstream consumer.
+- Revised and self-reviewed the formal spec, then committed the design-only change as
+  `faaff5e` (`docs: make magic market data standalone`).
 
 ### Phase 6: Write implementation plan
 
@@ -92,7 +94,13 @@ Status: pending
 - Reliability policy: strict by default. Malformed/truncated packets, missing fields, over-limit batches, incomplete pagination/context, adjustment-source failure, and exhausted empty responses are typed errors. Chunking or best-effort behavior requires explicit opt-in and visible outcome metadata.
 - Performance policy: compare against pinned upstream in same-machine, same-profile, same-fixture/server alternating A/B runs. Reader/protocol and 1/5/60-concurrency client throughput regressions are capped at 5%; controlled live-network median/p95 regression is capped at 10%, with no lower success rate.
 - Platform policy: MSRV Rust 1.83; Linux, macOS, and Windows; x86_64 and aarch64. Cross-platform CI proves build/test portability while fixed benchmark hosts provide comparable performance evidence.
-- Repository organization: convert the existing root package into a non-virtual Cargo workspace containing the root application, `magic-market-core`, and `magic-tdx-rs`, with full-gate commands covering all members.
+- Repository organization: a standalone pure virtual Cargo workspace with exactly two
+  independently versioned library members, `magic-market-core` and `magic-tdx-rs`.
+  The root has no package or umbrella facade crate and commits `Cargo.lock` for
+  reproducible tests and benchmarks.
+- Downstream organization: `stock_analysis` consumes a fixed published version or full
+  Git revision and runs its own integration, freshness, compliance, production, and
+  audit Gates; production path dependencies are prohibited.
 - Implementation approach: audited extraction and hardening from pinned upstream. Preserve verified protocol/performance-critical logic, remove Python coupling, repair reliability gaps, add a Rust-first facade, and prove compatibility through differential tests and benchmarks.
 - Design section 1 approved: layered workspace boundary with `magic-market-core`, isolated `magic-tdx-rs` protocol/transport/service/adapter layers, and a thin existing-project adapter retaining project-specific policy.
 - Design section 2 approved: four explicit client types, typed builders/requests, TDX source records plus normalized provider results, capability traits, provenance-bearing batches, and a documented SemVer-stable facade.
@@ -101,9 +109,9 @@ Status: pending
 - Design section 5 approved: unit/golden/property/fuzz/protocol-replay/integration/live-diagnostic test layers, pinned-upstream differential evidence, cross-platform MSRV CI, coverage and SemVer gates.
 - Design section 6 approved: complete landed documentation set, enforced public rustdoc/examples/link checks, evidence-backed protocol/performance/compatibility claims, complete Chinese technical docs with English README/API synopsis, and pre-1.0 stabilization.
 - Design section 7 approved: additive staged migration, preservation of application policy, no silent production fallback, explicit old-module disposition, registered business rules, independently revertible integration, and all Gate A-D evidence before release.
-- Repository relocation: all four design/planning artifacts now live in the dedicated
-  `magic-market-data-rs` repository; the formal design remains byte-identical pending
-  written review of the workspace-boundary consequence.
+- Repository relocation: all design/planning artifacts live in the dedicated
+  `magic-market-data-rs` repository, and the formal design now explicitly defines its
+  standalone virtual-workspace and downstream-consumer boundaries.
 
 ## Errors encountered
 

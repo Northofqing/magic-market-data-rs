@@ -27,7 +27,9 @@
 - User selected strict typed errors over upstream-compatible silent/default behavior.
 - User selected reproducible relative A/B performance gates with 5% deterministic/client throughput and 10% live-network latency envelopes.
 - User selected Rust 1.83 and cross-platform/cross-architecture support.
-- User selected a non-virtual Cargo workspace containing the current application and both new crates.
+- User initially selected a non-virtual Cargo workspace containing the current
+  application and both new crates; the later standalone-repository decision below
+  supersedes this layout.
 - Clarification phase complete; approach comparison started.
 - User approved approach 1 (audited extraction and hardening); design review started.
 - User approved design section 1 (architecture and boundaries).
@@ -64,3 +66,14 @@
   per-commit root-aware checks.
 - The managed sandbox again denied a later Git index write; subsequent metadata writes
   use the already approved explicit elevation instead of relying on implicit prefix reuse.
+- User selected and approved standalone approach 1: a pure virtual Cargo workspace with
+  `magic-market-core` and `magic-tdx-rs` as the only library members.
+- Revised the formal design to remove the embedded `stock_analysis` root package,
+  external database freshness/backfill coupling, and implied downstream audit ownership.
+- Split library release Gates from the external `stock_analysis` adoption Gate, while
+  preserving BR-092, freshness, fallback, production evidence, and audit requirements
+  in that downstream repository.
+- Self-review removed stale workspace/path assumptions and corrected completion wording
+  so unfinished downstream adoption does not invalidate truthful library-level evidence.
+- Committed the design document alone as `faaff5e`
+  (`docs: make magic market data standalone`).
