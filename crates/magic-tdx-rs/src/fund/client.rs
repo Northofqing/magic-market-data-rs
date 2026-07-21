@@ -107,11 +107,13 @@ impl TdxHqFundClient {
             if let Some(last) = sec_list.last() {
                 let last_is_beyond = match market {
                     MARKET_SH => {
-                        !last.code.starts_with("50") && !last.code.starts_with("51")
+                        !last.code.starts_with("50")
+                            && !last.code.starts_with("51")
                             && last.code.as_str() > "519999"
                     }
                     MARKET_SZ => {
-                        !last.code.starts_with("15") && !last.code.starts_with("16")
+                        !last.code.starts_with("15")
+                            && !last.code.starts_with("16")
                             && last.code.as_str() > "169999"
                     }
                     _ => false,
@@ -149,7 +151,9 @@ impl TdxHqFundClient {
             crate::error_codes::ErrorCode::FUND_CODE_NOT_SUPPORTED.err(e.to_string())
         })?;
 
-        let bars = self.inner.get_security_bars(category, market, code, start, count, 0)?;
+        let bars = self
+            .inner
+            .get_security_bars(category, market, code, start, count, 0)?;
         Ok(bars.iter().map(FundBar::from_security_bar).collect())
     }
 
@@ -167,7 +171,9 @@ impl TdxHqFundClient {
             crate::error_codes::ErrorCode::FUND_CODE_NOT_SUPPORTED.err(e.to_string())
         })?;
 
-        let bars = self.inner.get_security_bars_all(category, market, code, count, 0)?;
+        let bars = self
+            .inner
+            .get_security_bars_all(category, market, code, count, 0)?;
         Ok(bars.iter().map(FundBar::from_security_bar).collect())
     }
 
@@ -181,9 +187,8 @@ impl TdxHqFundClient {
     ///
     /// * `stocks` - 基金列表 [(market, code), ...]
     pub fn get_fund_quotes(&self, stocks: &[(u8, &str)]) -> Result<Vec<FundQuote>> {
-        validate_fund_stocks(stocks).map_err(|e| {
-            crate::error_codes::ErrorCode::INVALID_FORMAT.err(e.to_string())
-        })?;
+        validate_fund_stocks(stocks)
+            .map_err(|e| crate::error_codes::ErrorCode::INVALID_FORMAT.err(e.to_string()))?;
 
         let quotes = self.inner.get_security_quotes(stocks)?;
         Ok(quotes.iter().map(FundQuote::from_security_quote).collect())
@@ -192,7 +197,11 @@ impl TdxHqFundClient {
     /// 获取基金分时数据
     ///
     /// 获取当日分时数据 (仅交易时段有数据)。
-    pub fn get_fund_minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>> {
+    pub fn get_fund_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>> {
         validate_fund_code(market, code).map_err(|e| {
             crate::error_codes::ErrorCode::FUND_CODE_NOT_SUPPORTED.err(e.to_string())
         })?;
@@ -265,7 +274,6 @@ impl TdxHqFundClient {
         let info = self.inner.get_finance_info(market, code)?;
         Ok(FundFinanceInfo::from_finance_info(&info))
     }
-
 }
 
 impl Default for TdxHqFundClient {

@@ -2,9 +2,9 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 
 use crate::error::Result;
+use crate::loge;
 use crate::net::connection::TcpConnection;
 use crate::protocol::constants::{CONNECT_TIMEOUT, DEFAULT_POOL_SIZE};
-use crate::loge;
 
 /// 连接池中的单个连接
 struct PooledConnection {
@@ -122,10 +122,16 @@ impl ConnectionPool {
             });
         }
 
-        loge!("pool", "exhausted (active={}, max={})", inner.active, self.config.max_size);
-        Err(crate::error_codes::ErrorCode::POOL_EXHAUSTED.err(
-            format!("active={}, max={}", inner.active, self.config.max_size)
-        ))
+        loge!(
+            "pool",
+            "exhausted (active={}, max={})",
+            inner.active,
+            self.config.max_size
+        );
+        Err(crate::error_codes::ErrorCode::POOL_EXHAUSTED.err(format!(
+            "active={}, max={}",
+            inner.active, self.config.max_size
+        )))
     }
 
     /// 尝试借出连接 (非阻塞)

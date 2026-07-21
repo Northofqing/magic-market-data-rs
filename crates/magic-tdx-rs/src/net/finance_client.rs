@@ -100,7 +100,9 @@ impl TdxFinanceClient {
 
         let meta = fs::metadata(&path).ok()?;
         let mtime = meta.modified().ok()?;
-        let age = SystemTime::now().duration_since(mtime).unwrap_or(Duration::MAX);
+        let age = SystemTime::now()
+            .duration_since(mtime)
+            .unwrap_or(Duration::MAX);
 
         if age > CACHE_TTL {
             return None; // 过期
@@ -122,11 +124,16 @@ impl TdxFinanceClient {
     // ============================================================
 
     fn send_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
-        let mut conn = TcpConnection::connect(&self.ip, self.port, self.timeout)
-            .map_err(|e| {
-                loge!("finance", "connect to {}:{} failed: {}", self.ip, self.port, e);
+        let mut conn = TcpConnection::connect(&self.ip, self.port, self.timeout).map_err(|e| {
+            loge!(
+                "finance",
+                "connect to {}:{} failed: {}",
+                self.ip,
+                self.port,
                 e
-            })?;
+            );
+            e
+        })?;
         utils::perform_handshake(&mut conn)?;
 
         conn.send(packet)?;
@@ -223,11 +230,7 @@ impl TdxFinanceClient {
     }
 
     /// 下载完整的报告文件 (自动分片 + 重组, 优先磁盘缓存)
-    pub fn get_report_file_by_size(
-        &self,
-        filename: &str,
-        filesize: u32,
-    ) -> Result<Vec<u8>> {
+    pub fn get_report_file_by_size(&self, filename: &str, filesize: u32) -> Result<Vec<u8>> {
         // 1. 检查磁盘缓存
         if let Some(cached) = self.cache_get(filename) {
             logi!("finance", "cache hit: {}", filename);
@@ -254,9 +257,13 @@ impl TdxFinanceClient {
             let mut data = first;
             for page in 1u32..4 {
                 let chunk = self.get_report_file(filename, page * CHUNK_SIZE)?;
-                if chunk.is_empty() { break; }
+                if chunk.is_empty() {
+                    break;
+                }
                 data.extend_from_slice(&chunk);
-                if chunk.len() < CHUNK_SIZE as usize { break; }
+                if chunk.len() < CHUNK_SIZE as usize {
+                    break;
+                }
             }
             return Ok(data);
         }
@@ -304,7 +311,11 @@ impl TdxFinanceClient {
     }
 
     /// 下载并解析指定的 gpcw*.dat 报告期数据 (优先磁盘缓存)
-    pub fn get_financial_data(&self, filename: &str, filesize: u32) -> Result<Vec<FinancialRecord>> {
+    pub fn get_financial_data(
+        &self,
+        filename: &str,
+        filesize: u32,
+    ) -> Result<Vec<FinancialRecord>> {
         let full = format!("tdxfin/{}", filename);
         let data = self.get_report_file_by_size(&full, filesize)?;
         parse_financial(&data)
@@ -324,13 +335,14 @@ impl TdxFinanceClient {
         let records = self.get_financial_data(filename, filesize)?;
         for r in &records {
             if r.code == code {
-                return Ok(crate::protocol::finance_fields::extract_indicators(&r.fields));
+                return Ok(crate::protocol::finance_fields::extract_indicators(
+                    &r.fields,
+                ));
             }
         }
         logw!("finance", "stock {} not found in {}", code, filename);
-        Err(crate::error_codes::ErrorCode::INVALID_STOCK_CODE.err(
-            format!("stock {} not found in {}", code, filename)
-        ))
+        Err(crate::error_codes::ErrorCode::INVALID_STOCK_CODE
+            .err(format!("stock {} not found in {}", code, filename)))
     }
 
     /// 获取单只股票的命名财务指标 (带中文标签, 适合展示/校验)
@@ -343,13 +355,14 @@ impl TdxFinanceClient {
         let records = self.get_financial_data(filename, filesize)?;
         for r in &records {
             if r.code == code {
-                return Ok(crate::protocol::finance_fields::extract_with_labels(&r.fields));
+                return Ok(crate::protocol::finance_fields::extract_with_labels(
+                    &r.fields,
+                ));
             }
         }
         logw!("finance", "stock {} not found in {}", code, filename);
-        Err(crate::error_codes::ErrorCode::INVALID_STOCK_CODE.err(
-            format!("stock {} not found in {}", code, filename)
-        ))
+        Err(crate::error_codes::ErrorCode::INVALID_STOCK_CODE
+            .err(format!("stock {} not found in {}", code, filename)))
     }
 }
 

@@ -1,6 +1,6 @@
 use encoding_rs::GBK;
 
-use crate::constants::{read_u16, read_u32, max_valid_year};
+use crate::constants::{max_valid_year, read_u16, read_u32};
 use crate::error::Result;
 use crate::error_codes::ErrorCode;
 use crate::helpers::{get_price, get_volume};
@@ -121,7 +121,8 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
         let (year, month, day, hour, minute, new_pos) = get_datetime(category, body, pos);
         // 校验日期合法性 — 服务器可能返回损坏数据或无效代码的垃圾数据
         // 无效日期时截断返回已有结果，而非报错
-        if year < 1980 || year > max_valid_year() || month < 1 || month > 12 || day < 1 || day > 31 {
+        if year < 1980 || year > max_valid_year() || month < 1 || month > 12 || day < 1 || day > 31
+        {
             break;
         }
         bar.year = year;
@@ -216,7 +217,8 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
         let (year, month, day, hour, minute, new_pos) = get_datetime(category, body, pos);
         // 校验日期合法性 — 服务器可能返回损坏数据或无效代码的垃圾数据
         // 无效日期时截断返回已有结果，而非报错
-        if year < 1980 || year > max_valid_year() || month < 1 || month > 12 || day < 1 || day > 31 {
+        if year < 1980 || year > max_valid_year() || month < 1 || month > 12 || day < 1 || day > 31
+        {
             break;
         }
         bar.year = year;
@@ -287,9 +289,9 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
 /// - 下午 120 个: 13:01 ~ 15:00 (index 120-239)，不含 13:00
 pub fn minute_time_from_index(index: usize) -> String {
     let total = if index < 120 {
-        9 * 60 + 31 + index           // 09:31 + index → 09:31 ~ 11:30
+        9 * 60 + 31 + index // 09:31 + index → 09:31 ~ 11:30
     } else {
-        13 * 60 + 1 + (index - 120)   // 13:01 + (index-120) → 13:01 ~ 15:00
+        13 * 60 + 1 + (index - 120) // 13:01 + (index-120) → 13:01 ~ 15:00
     };
     format!("{:02}:{:02}", total / 60, total % 60)
 }
@@ -337,10 +339,19 @@ pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec
         // 均价 = 累计金额 / 累计成交量
         cum_amount += price * vol;
         cum_vol += vol;
-        let avg_price = if cum_vol > 0.0 { cum_amount / cum_vol } else { price };
+        let avg_price = if cum_vol > 0.0 {
+            cum_amount / cum_vol
+        } else {
+            price
+        };
 
         let time = minute_time_from_index(i);
-        result.push(MinuteTimePrice { time, price, avg_price, vol });
+        result.push(MinuteTimePrice {
+            time,
+            price,
+            avg_price,
+            vol,
+        });
     }
 
     // 倒序排列：最新记录在前
@@ -392,10 +403,19 @@ pub fn parse_history_minute_time_data(
         // 均价 = 累计金额 / 累计成交量
         cum_amount += price * vol;
         cum_vol += vol;
-        let avg_price = if cum_vol > 0.0 { cum_amount / cum_vol } else { price };
+        let avg_price = if cum_vol > 0.0 {
+            cum_amount / cum_vol
+        } else {
+            price
+        };
 
         let time = minute_time_from_index(index);
-        result.push(MinuteTimePrice { time, price, avg_price, vol });
+        result.push(MinuteTimePrice {
+            time,
+            price,
+            avg_price,
+            vol,
+        });
         index += 1;
     }
 
@@ -412,7 +432,10 @@ pub fn parse_transaction_data(body: &[u8]) -> Result<Vec<TickData>> {
     parse_transaction_data_with_coefficient(body, 0.01)
 }
 
-pub fn parse_transaction_data_with_coefficient(body: &[u8], coefficient: f64) -> Result<Vec<TickData>> {
+pub fn parse_transaction_data_with_coefficient(
+    body: &[u8],
+    coefficient: f64,
+) -> Result<Vec<TickData>> {
     if body.len() < 2 {
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
     }
@@ -478,7 +501,10 @@ pub fn parse_history_transaction_data(body: &[u8]) -> Result<Vec<TickData>> {
     parse_history_transaction_data_with_coefficient(body, 0.01)
 }
 
-pub fn parse_history_transaction_data_with_coefficient(body: &[u8], coefficient: f64) -> Result<Vec<TickData>> {
+pub fn parse_history_transaction_data_with_coefficient(
+    body: &[u8],
+    coefficient: f64,
+) -> Result<Vec<TickData>> {
     if body.len() < 6 {
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
     }
@@ -754,7 +780,8 @@ pub fn parse_finance_info(body: &[u8], market: u8, code: &str) -> Result<Finance
     let mut pos = 9; // skip count(2) + market(1) + code(6)
 
     // f32 liutongguben — TDX 原始值 (单位不固定，由用户自行判断)
-    let liutongguben = f32::from_le_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]]) as f64;
+    let liutongguben =
+        f32::from_le_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]]) as f64;
     pos += 4;
 
     // u16 province
@@ -776,7 +803,8 @@ pub fn parse_finance_info(body: &[u8], market: u8, code: &str) -> Result<Finance
     // 30 个 f32 字段 — 全部返回 TDX 原始值，不做单位转换
     let mut fields = Vec::with_capacity(30);
     for _ in 0..30 {
-        let val = f32::from_le_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]]) as f64;
+        let val =
+            f32::from_le_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]]) as f64;
         fields.push(val);
         pos += 4;
     }
@@ -886,10 +914,26 @@ pub fn parse_xdxr_info(body: &[u8]) -> Result<Vec<XdXrInfo>> {
                 let qzgb_raw = read_u32(d, 4);
                 let phlt_raw = read_u32(d, 8);
                 let hzgb_raw = read_u32(d, 12);
-                panqianliutong = Some(if pqlt_raw == 0 { 0.0 } else { get_volume(pqlt_raw as i64) });
-                panhouliutong = Some(if phlt_raw == 0 { 0.0 } else { get_volume(phlt_raw as i64) });
-                qianzongguben = Some(if qzgb_raw == 0 { 0.0 } else { get_volume(qzgb_raw as i64) });
-                houzongguben = Some(if hzgb_raw == 0 { 0.0 } else { get_volume(hzgb_raw as i64) });
+                panqianliutong = Some(if pqlt_raw == 0 {
+                    0.0
+                } else {
+                    get_volume(pqlt_raw as i64)
+                });
+                panhouliutong = Some(if phlt_raw == 0 {
+                    0.0
+                } else {
+                    get_volume(phlt_raw as i64)
+                });
+                qianzongguben = Some(if qzgb_raw == 0 {
+                    0.0
+                } else {
+                    get_volume(qzgb_raw as i64)
+                });
+                houzongguben = Some(if hzgb_raw == 0 {
+                    0.0
+                } else {
+                    get_volume(hzgb_raw as i64)
+                });
             }
         }
         pos += 16;
@@ -952,10 +996,7 @@ pub fn parse_block_info_meta(body: &[u8]) -> Result<BlockInfoMeta> {
     let hash_bytes = &body[5..37];
     let hash_value: String = hash_bytes.iter().map(|b| format!("{:02x}", b)).collect();
 
-    Ok(BlockInfoMeta {
-        size,
-        hash_value,
-    })
+    Ok(BlockInfoMeta { size, hash_value })
 }
 
 // ============================================================
@@ -1144,7 +1185,9 @@ mod tests {
     fn test_minute_time_zero_count() {
         // 头部: 2(count) + 2(padding) + 1(indicator) + 6(stock_code) + 2(unknown) = 13 bytes
         // 需要至少 14 字节 (13 头部 + 1 数据)
-        let body = [0x00, 0x00, 0x00, 0x00, 0x01, 0x36, 0x30, 0x30, 0x35, 0x31, 0x39, 0x00, 0x00, 0x00];
+        let body = [
+            0x00, 0x00, 0x00, 0x00, 0x01, 0x36, 0x30, 0x30, 0x35, 0x31, 0x39, 0x00, 0x00, 0x00,
+        ];
         let result = parse_minute_time_data(&body, 1, "600519").unwrap();
         assert!(result.is_empty());
     }

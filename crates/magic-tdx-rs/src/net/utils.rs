@@ -65,9 +65,9 @@ pub enum TradingPhase {
 
 /// 限流分档乘数: (日K乘数, 分时乘数)
 const PHASE_MULTIPLIER: [(f64, f64); 3] = [
-    (1.0, 1.0),   // Trading: 保持基础限流
-    (2.0, 1.5),   // PrePost: 放宽
-    (4.0, 3.0),   // Closed:  大幅放宽
+    (1.0, 1.0), // Trading: 保持基础限流
+    (2.0, 1.5), // PrePost: 放宽
+    (4.0, 3.0), // Closed:  大幅放宽
 ];
 
 /// 检测当前交易阶段
@@ -277,16 +277,14 @@ pub fn code_bytes(code: &str) -> [u8; 6] {
 /// 代码长度不为 6 位或首字符无法识别时返回错误。
 pub fn auto_market(code: &str) -> Result<u8> {
     if code.len() != 6 {
-        return Err(crate::error_codes::ErrorCode::INVALID_STOCK_CODE.err(
-            format!("{} (必须为 6 位数字)", code)
-        ));
+        return Err(crate::error_codes::ErrorCode::INVALID_STOCK_CODE
+            .err(format!("{} (必须为 6 位数字)", code)));
     }
     match code.chars().next() {
         Some('6') => Ok(MARKET_SH),
         Some('0') | Some('3') => Ok(MARKET_SZ),
-        _ => Err(crate::error_codes::ErrorCode::UNKNOWN_CODE_FORMAT.err(
-            format!("无法自动识别市场代码: {}", code)
-        )),
+        _ => Err(crate::error_codes::ErrorCode::UNKNOWN_CODE_FORMAT
+            .err(format!("无法自动识别市场代码: {}", code))),
     }
 }
 
@@ -317,8 +315,12 @@ pub fn encode_gbk_padded(s: &str, target_len: usize) -> Result<Vec<u8>> {
 
 /// 构建 security bars 请求包
 pub fn build_security_bars_packet(
-    category: u8, market: u8, code: &str,
-    start: u32, count: u16, fq: u8,
+    category: u8,
+    market: u8,
+    code: &str,
+    start: u32,
+    count: u16,
+    fq: u8,
 ) -> Vec<u8> {
     let code_buf = code_bytes(code);
     let mut pkt = Vec::with_capacity(38);
@@ -341,8 +343,12 @@ pub fn build_security_bars_packet(
 
 /// 构建 index bars 请求包 (与 security bars 格式相同, 语义区分)
 pub fn build_index_bars_packet(
-    category: u8, market: u8, code: &str,
-    start: u32, count: u16, fq: u8,
+    category: u8,
+    market: u8,
+    code: &str,
+    start: u32,
+    count: u16,
+    fq: u8,
 ) -> Vec<u8> {
     build_security_bars_packet(category, market, code, start, count, fq)
 }
@@ -380,7 +386,8 @@ fn read_response_raw(conn: &mut TcpConnection) -> Result<(ResponseHeader, Vec<u8
 pub fn decompress_zlib(data: &[u8]) -> Result<Vec<u8>> {
     let mut decoder = ZlibDecoder::new(data);
     let mut decompressed = Vec::new();
-    decoder.read_to_end(&mut decompressed)
+    decoder
+        .read_to_end(&mut decompressed)
         .map_err(|e| crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err(format!("{}", e)))?;
     Ok(decompressed)
 }
@@ -401,7 +408,15 @@ pub fn fetch_context_bars_for_adjust<F: Fn(&[u8]) -> Result<Vec<u8>>>(
     bars: &[SecurityBar],
     xdxr: &[XdXrInfo],
 ) -> Vec<SecurityBar> {
-    fetch_context_bars_for_adjust_with_tier(send_fn, category, market, code, bars, xdxr, FqContextTier::default())
+    fetch_context_bars_for_adjust_with_tier(
+        send_fn,
+        category,
+        market,
+        code,
+        bars,
+        xdxr,
+        FqContextTier::default(),
+    )
 }
 
 /// 为复权计算获取额外的历史 K 线上下文 (可指定档位)
@@ -426,7 +441,9 @@ pub fn fetch_context_bars_for_adjust_with_tier<F: Fn(&[u8]) -> Result<Vec<u8>>>(
         .map(|x| x.year as u32 * 10000 + x.month as u32 * 100 + x.day as u32)
         .min();
 
-    let Some(ee_date) = earliest_event else { return Vec::new() };
+    let Some(ee_date) = earliest_event else {
+        return Vec::new();
+    };
 
     let first_bar_date =
         bars[0].year as u32 * 10000 + bars[0].month as u32 * 100 + bars[0].day as u32;
@@ -545,10 +562,7 @@ mod tests {
     fn test_fetch_context_empty_bars() {
         let bars: Vec<SecurityBar> = vec![];
         let xdxr: Vec<XdXrInfo> = vec![];
-        let ctx = fetch_context_bars_for_adjust(
-            |_| Ok(Vec::new()),
-            4, 0, "000001", &bars, &xdxr,
-        );
+        let ctx = fetch_context_bars_for_adjust(|_| Ok(Vec::new()), 4, 0, "000001", &bars, &xdxr);
         assert!(ctx.is_empty());
     }
 
@@ -653,6 +667,9 @@ mod tests {
     #[test]
     fn test_detect_trading_phase_returns_valid() {
         let phase = detect_trading_phase();
-        assert!(matches!(phase, TradingPhase::Trading | TradingPhase::PrePost | TradingPhase::Closed));
+        assert!(matches!(
+            phase,
+            TradingPhase::Trading | TradingPhase::PrePost | TradingPhase::Closed
+        ));
     }
 }

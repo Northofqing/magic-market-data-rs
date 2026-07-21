@@ -62,12 +62,8 @@ impl BlockQuery {
         code: &str,
         raw_data: &[BlockRecord],
     ) -> Result<BlockConstituents> {
-        let block_name = index_code_to_name(code).ok_or_else(|| {
-            TdxError::InvalidData(format!(
-                "unknown index code '{}'",
-                code
-            ))
-        })?;
+        let block_name = index_code_to_name(code)
+            .ok_or_else(|| TdxError::InvalidData(format!("unknown index code '{}'", code)))?;
 
         let codes: Vec<String> = raw_data
             .iter()
@@ -99,7 +95,9 @@ impl BlockQuery {
         raw_data: &[BlockRecord],
     ) -> Result<Vec<BlockInfo>> {
         if keyword.is_empty() {
-            return Err(TdxError::InvalidData("search keyword cannot be empty".into()));
+            return Err(TdxError::InvalidData(
+                "search keyword cannot be empty".into(),
+            ));
         }
         if keyword.len() > MAX_SEARCH_LEN {
             return Err(TdxError::InvalidData(format!(
@@ -133,11 +131,7 @@ impl BlockQuery {
     }
 
     /// 列出指定类型的所有板块
-    pub fn list_blocks(
-        &self,
-        block_type: BlockType,
-        raw_data: &[BlockRecord],
-    ) -> Vec<BlockInfo> {
+    pub fn list_blocks(&self, block_type: BlockType, raw_data: &[BlockRecord]) -> Vec<BlockInfo> {
         let mut seen = HashSet::new();
         let mut results = Vec::new();
 
@@ -201,12 +195,42 @@ mod tests {
 
     fn make_test_records() -> Vec<BlockRecord> {
         vec![
-            BlockRecord { blockname: "沪深300".into(), block_type: 2, code_index: 0, code: "600519".into() },
-            BlockRecord { blockname: "沪深300".into(), block_type: 2, code_index: 1, code: "000858".into() },
-            BlockRecord { blockname: "上证50".into(), block_type: 2, code_index: 0, code: "600028".into() },
-            BlockRecord { blockname: "新能源".into(), block_type: 2, code_index: 0, code: "300750".into() },
-            BlockRecord { blockname: "新能源".into(), block_type: 2, code_index: 1, code: "002594".into() },
-            BlockRecord { blockname: "华为概念".into(), block_type: 2, code_index: 0, code: "002230".into() },
+            BlockRecord {
+                blockname: "沪深300".into(),
+                block_type: 2,
+                code_index: 0,
+                code: "600519".into(),
+            },
+            BlockRecord {
+                blockname: "沪深300".into(),
+                block_type: 2,
+                code_index: 1,
+                code: "000858".into(),
+            },
+            BlockRecord {
+                blockname: "上证50".into(),
+                block_type: 2,
+                code_index: 0,
+                code: "600028".into(),
+            },
+            BlockRecord {
+                blockname: "新能源".into(),
+                block_type: 2,
+                code_index: 0,
+                code: "300750".into(),
+            },
+            BlockRecord {
+                blockname: "新能源".into(),
+                block_type: 2,
+                code_index: 1,
+                code: "002594".into(),
+            },
+            BlockRecord {
+                blockname: "华为概念".into(),
+                block_type: 2,
+                code_index: 0,
+                code: "002230".into(),
+            },
         ]
     }
 
@@ -237,7 +261,9 @@ mod tests {
     fn test_search_blocks() {
         let records = make_test_records();
         let q = BlockQuery::new();
-        let results = q.search_blocks("新", BlockType::Industry, &records).unwrap();
+        let results = q
+            .search_blocks("新", BlockType::Industry, &records)
+            .unwrap();
         assert_eq!(results.len(), 1);
     }
 
@@ -253,7 +279,9 @@ mod tests {
         let records = make_test_records();
         let q = BlockQuery::new();
         let long_keyword = "a".repeat(MAX_SEARCH_LEN + 1);
-        assert!(q.search_blocks(&long_keyword, BlockType::Industry, &records).is_err());
+        assert!(q
+            .search_blocks(&long_keyword, BlockType::Industry, &records)
+            .is_err());
     }
 
     #[test]
@@ -268,7 +296,9 @@ mod tests {
     fn test_get_block_constituents() {
         let records = make_test_records();
         let q = BlockQuery::new();
-        let result = q.get_block_constituents("新能源", BlockType::Industry, &records).unwrap();
+        let result = q
+            .get_block_constituents("新能源", BlockType::Industry, &records)
+            .unwrap();
         assert_eq!(result.codes.len(), 2);
     }
 
@@ -276,7 +306,9 @@ mod tests {
     fn test_get_block_constituents_not_found() {
         let records = make_test_records();
         let q = BlockQuery::new();
-        assert!(q.get_block_constituents("不存在", BlockType::Industry, &records).is_err());
+        assert!(q
+            .get_block_constituents("不存在", BlockType::Industry, &records)
+            .is_err());
     }
 
     #[test]

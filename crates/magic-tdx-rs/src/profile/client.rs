@@ -1,13 +1,12 @@
-/// F10 公司资料客户端
-
-use crate::error::Result;
-use crate::net::client::TdxHqClient;
-use crate::net::utils::{auto_market, encode_gbk, encode_gbk_padded};
-use crate::protocol::constants::{MARKET_SH, MARKET_SZ};
-use crate::loge;
 use super::constants::*;
 use super::parser::*;
 use super::types::*;
+/// F10 公司资料客户端
+use crate::error::Result;
+use crate::loge;
+use crate::net::client::TdxHqClient;
+use crate::net::utils::{auto_market, encode_gbk, encode_gbk_padded};
+use crate::protocol::constants::{MARKET_SH, MARKET_SZ};
 
 /// F10 公司资料客户端
 ///
@@ -179,10 +178,7 @@ impl<'a> ProfileClient<'a> {
         // 解析响应
         let content = parse_company_info_content(&response)?;
 
-        Ok(F10Content::new(
-            category.name.clone(),
-            content,
-        ))
+        Ok(F10Content::new(category.name.clone(), content))
     }
 
     /// 获取指定分类的内容
@@ -204,20 +200,17 @@ impl<'a> ProfileClient<'a> {
         let categories = self.get_category(market, code)?;
 
         // 查找指定分类
-        let category = categories
-            .iter()
-            .find(|c| c.name == name)
-            .ok_or_else(|| {
-                crate::error::TdxError::InvalidData(format!(
-                    "未找到分类 '{}'，可用分类: {}",
-                    name,
-                    categories
-                        .iter()
-                        .map(|c| c.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
-            })?;
+        let category = categories.iter().find(|c| c.name == name).ok_or_else(|| {
+            crate::error::TdxError::InvalidData(format!(
+                "未找到分类 '{}'，可用分类: {}",
+                name,
+                categories
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        })?;
 
         self.get_content(market, code, category)
     }
@@ -230,11 +223,7 @@ impl<'a> ProfileClient<'a> {
     ///
     /// # 返回
     /// 所有分类的内容列表
-    pub fn get_all_contents(
-        &mut self,
-        market: u8,
-        code: &str,
-    ) -> Result<Vec<F10Content>> {
+    pub fn get_all_contents(&mut self, market: u8, code: &str) -> Result<Vec<F10Content>> {
         let categories = self.get_category(market, code)?;
         let mut contents = Vec::with_capacity(categories.len());
 
@@ -258,11 +247,7 @@ impl<'a> ProfileClient<'a> {
     ///
     /// # 返回
     /// F10Data 包含所有分类的内容
-    pub fn get_all_data(
-        &mut self,
-        market: u8,
-        code: &str,
-    ) -> Result<F10Data> {
+    pub fn get_all_data(&mut self, market: u8, code: &str) -> Result<F10Data> {
         let contents = self.get_all_contents(market, code)?;
         let mut data = F10Data::new(code.to_string(), market);
         for content in contents {

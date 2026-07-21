@@ -150,15 +150,14 @@ impl TdxBlockClient {
             count.min(limit.max_count)
         };
 
-        self.client.lock().unwrap().get_index_bars_inner(category, 1, code, start, actual_count, 0)
+        self.client
+            .lock()
+            .unwrap()
+            .get_index_bars_inner(category, 1, code, start, actual_count, 0)
     }
 
     /// 获取板块 K 线 (使用默认条数)
-    pub fn get_block_bars_default(
-        &self,
-        category: u8,
-        code: &str,
-    ) -> Result<Vec<IndexBar>> {
+    pub fn get_block_bars_default(&self, category: u8, code: &str) -> Result<Vec<IndexBar>> {
         self.get_block_bars(category, code, 0, 0)
     }
 
@@ -171,7 +170,10 @@ impl TdxBlockClient {
     /// `codes`: 板块代码列表 (88xxxx)
     pub fn get_block_quotes(&self, codes: &[&str]) -> Result<Vec<SecurityQuote>> {
         let pairs: Vec<(u8, &str)> = codes.iter().map(|&c| (1u8, c)).collect();
-        self.client.lock().unwrap().get_security_quotes_inner(&pairs)
+        self.client
+            .lock()
+            .unwrap()
+            .get_security_quotes_inner(&pairs)
     }
 
     // ================================================================
@@ -185,7 +187,10 @@ impl TdxBlockClient {
     /// 返回板块成分股级别的记录。同一板块名称会出现多次（每个成分股一条）。
     /// 使用 `BlockQuery::list_blocks()` 可按板块名称去重聚合。
     pub fn get_block_list(&self, block_file: &str) -> Result<Vec<BlockRecord>> {
-        self.client.lock().unwrap().get_and_parse_block_info(block_file)
+        self.client
+            .lock()
+            .unwrap()
+            .get_and_parse_block_info(block_file)
     }
 
     /// 获取行业板块列表 (block_fg.dat)

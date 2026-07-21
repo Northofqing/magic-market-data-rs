@@ -41,7 +41,7 @@ use crate::net::client::TdxHqClient;
 use crate::net::utils;
 use crate::protocol::constants::*;
 use crate::protocol::types::*;
-use crate::{logi, logw, loge};
+use crate::{loge, logi, logw};
 
 // ================================================================
 // 服务器缓存
@@ -107,15 +107,13 @@ impl ServerCache {
     fn load() -> Self {
         let path = Self::cache_path();
         match fs::read_to_string(&path) {
-            Ok(content) => {
-                match serde_json::from_str(&content) {
-                    Ok(cache) => cache,
-                    Err(e) => {
-                        logw!("cache", "failed to parse cache: {}", e);
-                        Self::new()
-                    }
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(cache) => cache,
+                Err(e) => {
+                    logw!("cache", "failed to parse cache: {}", e);
+                    Self::new()
                 }
-            }
+            },
             Err(_) => Self::new(),
         }
     }
@@ -146,9 +144,8 @@ impl ServerCache {
             .as_secs();
 
         self.blacklist.iter().any(|entry| {
-            entry.ip == ip
-                && entry.port == port
-                && now - entry.timestamp < 86400 // 24h 过期
+            entry.ip == ip && entry.port == port && now - entry.timestamp < 86400
+            // 24h 过期
         })
     }
 
@@ -260,15 +257,26 @@ impl TdxSmartClient {
 
         // 1. 尝试缓存的成功服务器
         if let Some(ref last) = cache.last_success {
-            logi!("smart", "trying cached server: {} ({}:{})", last.name, last.ip, last.port);
+            logi!(
+                "smart",
+                "trying cached server: {} ({}:{})",
+                last.name,
+                last.ip,
+                last.port
+            );
             match self.inner.connect(&last.ip, last.port, timeout) {
                 Ok(true) => {
-                    *self.current_server.lock().unwrap() = Some((last.ip.clone(), last.port, last.name.clone()));
+                    *self.current_server.lock().unwrap() =
+                        Some((last.ip.clone(), last.port, last.name.clone()));
                     self.health_checked.store(false, Ordering::SeqCst);
                     return Ok(true);
                 }
                 _ => {
-                    logw!("smart", "cached server {} unavailable, trying next", last.ip);
+                    logw!(
+                        "smart",
+                        "cached server {} unavailable, trying next",
+                        last.ip
+                    );
                 }
             }
         }
@@ -284,7 +292,8 @@ impl TdxSmartClient {
 
             match self.inner.connect(ip, port, timeout) {
                 Ok(true) => {
-                    *self.current_server.lock().unwrap() = Some((ip.to_string(), port, name.to_string()));
+                    *self.current_server.lock().unwrap() =
+                        Some((ip.to_string(), port, name.to_string()));
                     self.health_checked.store(false, Ordering::SeqCst);
                     return Ok(true);
                 }
@@ -300,7 +309,8 @@ impl TdxSmartClient {
 
             match self.inner.connect(ip, port, timeout) {
                 Ok(true) => {
-                    *self.current_server.lock().unwrap() = Some((ip.to_string(), port, name.to_string()));
+                    *self.current_server.lock().unwrap() =
+                        Some((ip.to_string(), port, name.to_string()));
                     self.health_checked.store(false, Ordering::SeqCst);
                     return Ok(true);
                 }
@@ -323,7 +333,12 @@ impl TdxSmartClient {
 
         let server = self.current_server.lock().unwrap().clone();
         if let Some((ip, port, name)) = server {
-            logi!("smart", "performing lazy health check on {}:{}...", ip, port);
+            logi!(
+                "smart",
+                "performing lazy health check on {}:{}...",
+                ip,
+                port
+            );
 
             // 使用 K 线请求验证
             let packet = utils::build_security_bars_packet(4, 1, "600519", 0, 1, 0);
@@ -334,19 +349,28 @@ impl TdxSmartClient {
                         Ok(bars) if !bars.is_empty() => {
                             logi!("smart", "health check passed: got {} bars", bars.len());
                             self.health_checked.store(true, Ordering::SeqCst);
-                            self.cache.lock().unwrap().record_success(&ip, port, &name, 0);
+                            self.cache
+                                .lock()
+                                .unwrap()
+                                .record_success(&ip, port, &name, 0);
                             return true;
                         }
                         Ok(_) => {
                             logw!("smart", "health check failed: K-line empty, server may have protocol anomaly");
-                            self.cache.lock().unwrap().add_to_blacklist(&ip, port, "kline_empty");
+                            self.cache
+                                .lock()
+                                .unwrap()
+                                .add_to_blacklist(&ip, port, "kline_empty");
                             self.cache.lock().unwrap().record_failure(&ip, port);
                             self.inner.disconnect();
                             return false;
                         }
                         Err(e) => {
                             logw!("smart", "health check failed: parse error: {}", e);
-                            self.cache.lock().unwrap().add_to_blacklist(&ip, port, "parse_error");
+                            self.cache
+                                .lock()
+                                .unwrap()
+                                .add_to_blacklist(&ip, port, "parse_error");
                             self.cache.lock().unwrap().record_failure(&ip, port);
                             self.inner.disconnect();
                             return false;
@@ -383,7 +407,8 @@ impl TdxSmartClient {
 
             match self.inner.connect(ip, port, Some(5.0)) {
                 Ok(true) => {
-                    *self.current_server.lock().unwrap() = Some((ip.to_string(), port, name.to_string()));
+                    *self.current_server.lock().unwrap() =
+                        Some((ip.to_string(), port, name.to_string()));
                     self.health_checked.store(false, Ordering::SeqCst);
                     logi!("smart", "switched to server: {}:{}", ip, port);
                     return Ok(true);
@@ -411,7 +436,10 @@ impl TdxSmartClient {
         let mut last_err = None;
 
         for attempt in 0..self.max_retry {
-            match self.inner.get_security_bars(category, market, code, start, count, fq) {
+            match self
+                .inner
+                .get_security_bars(category, market, code, start, count, fq)
+            {
                 Ok(bars) if !bars.is_empty() => {
                     // 成功获取数据
                     if attempt > 0 {
@@ -421,7 +449,12 @@ impl TdxSmartClient {
                 }
                 Ok(_) => {
                     // 返回空数据，触发健康检查
-                    logw!("smart", "attempt {}/{}: empty response, triggering health check", attempt + 1, self.max_retry);
+                    logw!(
+                        "smart",
+                        "attempt {}/{}: empty response, triggering health check",
+                        attempt + 1,
+                        self.max_retry
+                    );
 
                     if !self.lazy_health_check() {
                         // 健康检查失败，尝试切换服务器
@@ -429,7 +462,8 @@ impl TdxSmartClient {
                         match self.try_next_server() {
                             Ok(true) => continue,
                             Ok(false) => {
-                                last_err = Some(ErrorCode::CONNECTION_FAILED.err("no more servers"));
+                                last_err =
+                                    Some(ErrorCode::CONNECTION_FAILED.err("no more servers"));
                                 break;
                             }
                             Err(e) => {
@@ -440,7 +474,13 @@ impl TdxSmartClient {
                     }
                 }
                 Err(e) => {
-                    logw!("smart", "attempt {}/{}: error: {}, trying next server", attempt + 1, self.max_retry, e);
+                    logw!(
+                        "smart",
+                        "attempt {}/{}: error: {}, trying next server",
+                        attempt + 1,
+                        self.max_retry,
+                        e
+                    );
                     last_err = Some(e);
                     // 连接错误，尝试切换服务器
                     match self.try_next_server() {
@@ -455,23 +495,30 @@ impl TdxSmartClient {
     }
 
     /// 获取实时行情 (带自动重试)
-    pub fn get_security_quotes(
-        &self,
-        all_stock: &[(u8, &str)],
-    ) -> Result<Vec<SecurityQuote>> {
+    pub fn get_security_quotes(&self, all_stock: &[(u8, &str)]) -> Result<Vec<SecurityQuote>> {
         let mut last_err = None;
 
         for attempt in 0..self.max_retry {
             match self.inner.get_security_quotes(all_stock) {
                 Ok(quotes) if !quotes.is_empty() => {
                     if attempt > 0 {
-                        logi!("smart", "got {} quotes after {} retries", quotes.len(), attempt);
+                        logi!(
+                            "smart",
+                            "got {} quotes after {} retries",
+                            quotes.len(),
+                            attempt
+                        );
                     }
                     return Ok(quotes);
                 }
                 Ok(_) => {
                     // 返回空数据，触发健康检查
-                    logw!("smart", "attempt {}/{}: empty quotes, triggering health check", attempt + 1, self.max_retry);
+                    logw!(
+                        "smart",
+                        "attempt {}/{}: empty quotes, triggering health check",
+                        attempt + 1,
+                        self.max_retry
+                    );
 
                     if !self.lazy_health_check() {
                         logw!("smart", "health check failed, trying next server...");
@@ -483,7 +530,12 @@ impl TdxSmartClient {
                 }
                 Err(e) => {
                     last_err = Some(e);
-                    logw!("smart", "attempt {}/{}: error, trying next server", attempt + 1, self.max_retry);
+                    logw!(
+                        "smart",
+                        "attempt {}/{}: error, trying next server",
+                        attempt + 1,
+                        self.max_retry
+                    );
                     match self.try_next_server() {
                         Ok(true) => continue,
                         _ => break,
@@ -505,7 +557,10 @@ impl TdxSmartClient {
         let cache = self.cache.lock().unwrap();
         format!(
             "last_success: {:?}, blacklist: {}, stats: {}",
-            cache.last_success.as_ref().map(|s| format!("{}:{}", s.ip, s.port)),
+            cache
+                .last_success
+                .as_ref()
+                .map(|s| format!("{}:{}", s.ip, s.port)),
             cache.blacklist.len(),
             cache.server_stats.len()
         )
@@ -530,7 +585,10 @@ impl TdxSmartClient {
             match self.inner.connect(ip, port, Some(timeout_secs)) {
                 Ok(true) => {
                     let latency = start.elapsed().as_millis() as u32;
-                    self.cache.lock().unwrap().record_success(ip, port, name, latency);
+                    self.cache
+                        .lock()
+                        .unwrap()
+                        .record_success(ip, port, name, latency);
                     results.push((ip.to_string(), port, name.to_string(), latency));
                     logi!("probe", "{}:{} ({}) - {}ms", ip, port, name, latency);
                     self.inner.disconnect();

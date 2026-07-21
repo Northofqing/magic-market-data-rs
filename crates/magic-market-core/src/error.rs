@@ -3,6 +3,11 @@ use thiserror::Error;
 #[derive(Debug, Error, PartialEq)]
 pub enum CoreError {
     #[error("invalid {field}: {value} ({reason})")]
-    InvalidValue { field: &'static str, value: String, reason: &'static str },
-    #[error("invalid instrument: {0}")] InvalidInstrument(String),
+    InvalidValue {
+        field: &'static str,
+        value: String,
+        reason: &'static str,
+    },
+    #[error("invalid instrument: {0}")]
+    InvalidInstrument(String),
 }
