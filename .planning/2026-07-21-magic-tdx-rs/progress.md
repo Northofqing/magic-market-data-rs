@@ -77,3 +77,24 @@
   so unfinished downstream adoption does not invalidate truthful library-level evidence.
 - Committed the design document alone as `faaff5e`
   (`docs: make magic market data standalone`).
+- Resumed the task after the user requested continuation and restored the active
+  planning context with the `planning-with-files` workflow.
+- Treated the continuation request as approval to advance from the committed Gate A
+  design into Phase 6 planning; implementation code remains untouched.
+- Read the `writing-plans` instructions and inspected the existing untracked
+  implementation-plan index. It defines five ordered, independently gated plan files;
+  the referenced phase plans still need to be written and self-reviewed.
+- Wrote all five referenced phase-plan drafts (2,292 total lines including the index),
+  covering foundation, protocol/readers, clients, services/adapter, and release evidence.
+- Began the required self-review and found concrete cleanup items: literal command
+  placeholders, one duplicate `Adjustment` type, missing page/local-file error context,
+  one provider quality-error mismatch, and one file-map omission. No implementation code
+  has been created.
+- Corrected those self-review findings and replaced literal command placeholders with
+  concrete variables/paths or verified values (including the pinned upstream parser
+  digest and checkout action commit).
+- Placeholder/red-flag scan is now clean; every linked phase file exists; all five phase
+  files have the required header and exit gate; `git diff --check` passes.
+- Completed Phase 6 implementation planning: the index and five ordered phase plans
+  are self-reviewed and ready for execution after plan-set review. Implementation code
+  remains untouched.

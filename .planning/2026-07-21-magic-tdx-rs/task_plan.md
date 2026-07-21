@@ -60,13 +60,14 @@ Status: in_progress
 
 ### Phase 6: Write implementation plan
 
-Status: pending
+Status: complete
 
-- After written-spec approval, use the `writing-plans` skill.
+- After written-spec approval, use the `writing-plans` skill. Completed with the
+  ordered five-file plan set.
 
 ### Phase 7: Implement Gate B
 
-Status: pending
+Status: pending (awaiting review of the implementation plan)
 
 - Execute only the approved implementation plan.
 - Add failure-path tests and upstream compatibility evidence.
@@ -124,3 +125,5 @@ Status: pending
 | Destination Git index is read-only inside the workspace sandbox | 2 | Retried exact scoped `git add` operations with explicit approved elevated Git metadata access. |
 | Source cleanup pathspec did not match after its active branch changed | 1 | Re-read branch/index status; the active source branch does not track the spec, so no cleanup commit is required. Preserved the historical design branch for recovery. |
 | Final range check used nonexistent `HEAD~2` in a two-commit repository | 1 | Validate the root and follow-up commits individually with `git diff-tree --check --root`. |
+| Sandboxed crates.io API lookup failed DNS resolution; escalated retry returned HTTP 403 | 2 | Do not repeat the API call. Keep release tools reproducible through a committed tool-version manifest resolved and verified during implementation, without claiming an unverified current version in this plan. |
+| Multi-file implementation-plan cleanup patch missed the exact Phase 2 enum sentence | 1 | No file changed; inspect exact contexts and apply smaller scoped patches. |
