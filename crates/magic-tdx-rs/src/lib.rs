@@ -12,3 +12,6 @@ pub mod net;
 pub mod profile;
 pub mod protocol;
 pub mod reader;
+/// Stable request-domain enums used by higher-level adapters.
+pub mod source;
+pub use source::{Adjustment, BarCategory, Market};
