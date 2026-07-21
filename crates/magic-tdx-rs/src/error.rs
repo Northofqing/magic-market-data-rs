@@ -1,11 +1,72 @@
-use std::fmt;
-/// Broad failure family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)] pub enum ErrorKind { Decode, Decompression, InvalidRequest, Unsupported }
-/// Structured decode context.
-#[derive(Debug, Clone, PartialEq, Eq)] pub struct ErrorContext { field: Option<String>, offset: Option<usize> }
-impl ErrorContext { pub fn field(&self)->Option<&str>{self.field.as_deref()} pub fn offset(&self)->Option<usize>{self.offset} }
-/// Driver error.
-#[derive(Debug, Clone, PartialEq, Eq)] pub struct TdxError { kind: ErrorKind, message:String, context:ErrorContext }
-impl TdxError { pub fn new(kind:ErrorKind,message:impl Into<String>,field:Option<&str>,offset:Option<usize>)->Self{Self{kind,message:message.into(),context:ErrorContext{field:field.map(str::to_owned),offset}}} pub fn kind(&self)->ErrorKind{self.kind} pub fn context(&self)->&ErrorContext{&self.context} }
-impl fmt::Display for TdxError { fn fmt(&self,f:&mut fmt::Formatter<'_>)->fmt::Result{write!(f,"{:?}: {}",self.kind,self.message)} }
-impl std::error::Error for TdxError {}
+use thiserror::Error;
+
+use crate::error_codes::{CodedError, ErrorCode};
+
+#[derive(Error, Debug)]
+pub enum TdxError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Parse error: {0}")]
+    Parse(String),
+
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+
+    #[error("File not found: {0}")]
+    FileNotFound(String),
+
+    #[error("Connection error: {0}")]
+    Connection(String),
+
+    #[error("Connection timeout")]
+    ConnectionTimeout,
+
+    #[error("Setup handshake failed: {0}")]
+    SetupFailed(String),
+
+    #[error("Response parse error: {0}")]
+    ResponseParse(String),
+
+    #[error("Server disconnected")]
+    Disconnected,
+
+    #[error("Retry exhausted after {0} attempts")]
+    RetryExhausted(usize),
+
+    #[error("{0}")]
+    Coded(CodedError),
+}
+
+impl TdxError {
+    /// 创建带错误码的错误
+    pub fn coded(code: ErrorCode, message: impl Into<String>) -> Self {
+        TdxError::Coded(CodedError::new(code, message))
+    }
+
+    /// 获取错误码 (如果有)
+    pub fn error_code(&self) -> Option<ErrorCode> {
+        match self {
+            TdxError::Coded(e) => Some(e.code),
+            _ => None,
+        }
+    }
+
+    /// 格式化为用户友好的错误信息 (包含错误码)
+    pub fn format_coded(&self) -> String {
+        match self {
+            TdxError::Coded(e) => e.format(),
+            _ => self.to_string(),
+        }
+    }
+
+    /// 格式化为中文错误信息 (包含错误码)
+    pub fn format_coded_zh(&self) -> String {
+        match self {
+            TdxError::Coded(e) => e.format_zh(),
+            _ => self.to_string(),
+        }
+    }
+}
+
+pub type Result<T> = std::result::Result<T, TdxError>;
