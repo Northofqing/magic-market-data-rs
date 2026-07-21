@@ -2,7 +2,7 @@ use crate::constants::{decode_date, format_date, read_f32, read_u32};
 use crate::error::{Result, TdxError};
 
 /// A股日线记录 (标准格式)
-/// 格式: <IIIIIfII> = 32 bytes/record
+/// 格式: `IIIIIfII` = 32 bytes/record
 /// date(u32), open(u32), high(u32), low(u32), close(u32), amount(f32), volume(u32), reserved(u32)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DailyBarRecord {

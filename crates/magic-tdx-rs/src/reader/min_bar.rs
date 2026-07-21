@@ -4,7 +4,7 @@ use crate::constants::{
 use crate::error::{Result, TdxError};
 
 /// 分钟线记录 (整数格式 - TdxMinBarReader)
-/// 格式: <HHIIIIfII> = 32 bytes/record
+/// 格式: `HHIIIIfII` = 32 bytes/record
 /// date(u16), time(u16), open(u32), high(u32), low(u32), close(u32), amount(f32), volume(u32), reserved(u32)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MinBarRecord {
@@ -23,7 +23,7 @@ pub struct MinBarRecord {
 }
 
 /// 分钟线记录 (浮点格式 - TdxLCMinBarReader)
-/// 格式: <HHfffffII> = 32 bytes/record
+/// 格式: `HHfffffII` = 32 bytes/record
 /// date(u16), time(u16), open(f32), high(f32), low(f32), close(f32), amount(f32), volume(u32), reserved(u32)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LcMinBarRecord {

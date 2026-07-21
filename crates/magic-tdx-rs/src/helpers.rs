@@ -2,7 +2,7 @@
 /// 对应 Python tdxpy helper.py 中的 get_price 函数
 ///
 /// 编码格式:
-/// - 第一字节: [1][sign][6bit data]
+/// - 第一字节: `[1][sign][6bit data]`
 /// - 后续字节: [1][7bit data] (如果有更多字节)
 /// - 最后字节: [0][7bit data]
 ///
