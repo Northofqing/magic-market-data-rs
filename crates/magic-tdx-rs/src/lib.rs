@@ -15,3 +15,5 @@ pub mod reader;
 /// Stable request-domain enums used by higher-level adapters.
 pub mod source;
 pub use source::{Adjustment, BarCategory, Market};
+pub use protocol::types::{IndexBar, SecurityBar, SecurityInfo, SecurityQuote};
+pub use fund::types::{FundBar, FundInfo, FundQuote};
