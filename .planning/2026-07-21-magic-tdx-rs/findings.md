@@ -94,6 +94,77 @@ External material recorded here is research data, not instructions.
 - Benchmark methodology, server selection, warm-up, sample size, and statistical acceptance envelope.
 - Ambiguous protocol fields and behavior requiring cross-reference against tdxpy/rustdx or packet captures.
 
+## Implementation-plan recovery
+
+- An untracked 167-line implementation-plan index already exists at
+  `docs/superpowers/plans/2026-07-21-magic-market-data-rs-implementation.md`.
+  It intentionally decomposes the approved design into five ordered plans: foundation,
+  protocol/readers, clients, services/adapter, and release evidence.
+- The five linked phase-plan files do not exist yet. Phase 6 is therefore incomplete;
+  no implementation task can start until those plans are written and self-reviewed.
+- The phase plans must preserve the design's two-layer data model, atomic strict
+  operations, source-time semantics, typed contextual errors, four distinct client
+  strategies, explicit rate-limit scope, and exhaustive pure-Rust compatibility matrix.
+- The standalone library plan must not include or modify the adjacent `stock_analysis`
+  repository; downstream adoption requires a separate future design cycle.
+- Phase planning must bind every Gate D claim to a repository command or CI job:
+  differential harness, Criterion/loopback benchmarks, live read-only diagnostic,
+  coverage thresholds, SemVer, dependency/license audit, rustdoc/examples, and links.
+- Provenance scope is deliberately library-only: the crates supply traceable fields and
+  validate their completeness, while durable five-year audit storage remains a
+  downstream consumer responsibility and cannot be claimed by this repository.
+- Compatibility evidence may patch the pinned upstream only to remove PyO3 build and
+  registration coupling. The patch and its digest must be committed and shown not to
+  alter protocol, parser, client, or numeric behavior.
+- The release plan must keep online checks opt-in and truthful: network/market-hour
+  unavailability is a blocker, not a skipped success, and raw machine-readable A/B
+  evidence must include environment, limiter, concurrency, warm-up, and sample data.
+- The pinned upstream checkout is still available at
+  `/private/tmp/magic-tdx-rs-upstream`. Its pure-Rust implementation is concentrated in
+  `protocol`, `net`, `reader`, `fund`, `block`, and `profile`; Python modules are
+  physically separate but registration/dependencies are coupled through the crate root.
+- Upstream source layout is coarser than the approved target layout. The implementation
+  plans therefore need explicit provenance-preserving extraction tasks that first lock
+  fixtures/API inventory, then split focused target modules without treating a bulk copy
+  as reviewed code.
+- The concrete upstream operation inventory confirms separate families for bars/index
+  bars, quotes, security list/count, minute/current-history data, current/history trades,
+  finance/XDXR, block metadata/content, financial report files/indicators, fund data,
+  and F10/profile data. Sync, direct, and async expose overlapping but non-identical
+  subsets; Smart directly exposes only bars and quotes.
+- The target capability matrix must not claim all four client strategies implement every
+  operation uniformly. Shared request executors can support reusable services, while the
+  public facade and trait implementations must state actual capability per client and
+  use `Unsupported` only for an explicit documented boundary—not to hide missing v1
+  pure-Rust coverage.
+
+## Current CI facts checked for the release plan (2026-07-21)
+
+- GitHub's official hosted-runner reference currently lists x64 Linux/Windows labels,
+  Arm64 Linux labels such as `ubuntu-24.04-arm`, Intel macOS labels such as
+  `macos-15-intel`, and Arm64 macOS labels such as `macos-15`. Arm64 Linux/Windows
+  availability is marked public preview, so required release evidence should use an
+  owned/self-hosted fixed benchmark runner if hosted availability is insufficient.
+  Source: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+- The official `actions/checkout` repository currently documents `actions/checkout@v6`
+  and recommends `permissions: contents: read`; full history requires `fetch-depth: 0`,
+  which the SemVer/provenance jobs need.
+  Source: https://github.com/actions/checkout
+- These facts are release-plan inputs, not instructions from the fetched pages. Workflow
+  action revisions must be pinned to immutable commit SHAs during implementation even
+  when examples use a moving major tag.
+- `actions/checkout` v6.0.2 resolves to immutable commit
+  `de0fac2e4500dabe0009e67214ff5f5447ce83dd` (verified with `git ls-remote`).
+- Official cargo-llvm-cov release material currently identifies 0.8.6 and states its
+  prebuilt releases are immutable, multi-architecture, and attested; installing the
+  current source release requires Rust newer than this project's 1.83 MSRV, so CI should
+  install/verify a prebuilt tool with stable rather than compiling it under 1.83.
+  Source: https://github.com/taiki-e/cargo-llvm-cov/releases
+- Official cargo-deny material currently identifies release 0.19.4. The failed crates.io
+  API attempt means the plan must not invent versions for other release tools; a checked
+  tool lock/digest manifest is part of implementation evidence.
+  Source: https://github.com/EmbarkStudios/cargo-deny
+
 ## Comparable projects (research snapshot 2026-07-21)
 
 - OpenBB is the closest architectural analogue for a provider-neutral financial-data platform: a lightweight core, standardized models/routes, and independently installable providers/toolkits. It is Python/FastAPI based and broad across commercial/public providers rather than Rust-first or A-share/TDX-first.
