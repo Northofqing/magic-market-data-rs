@@ -37,6 +37,37 @@ impl TdxService {
     pub fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
         self.client.inner().get_security_list(market, start)
     }
+    /// Fetches the complete market list using the server-declared count.
+    ///
+    /// Pages are assembled atomically: a transport or cardinality mismatch
+    /// returns an error rather than a silently truncated list.
+    pub fn security_list_all(&self, market: u8) -> Result<Vec<SecurityInfo>, TdxError> {
+        const PAGE_SIZE: u16 = 1000;
+        let expected = usize::from(self.security_count(market)?);
+        let mut all = Vec::with_capacity(expected);
+        let mut start: u16 = 0;
+        while all.len() < expected {
+            let page = self.security_list(market, start)?;
+            if page.is_empty() {
+                return Err(TdxError::InvalidData(
+                    "TDX security list ended before declared count".into(),
+                ));
+            }
+            all.extend(page);
+            if all.len() > expected {
+                return Err(TdxError::InvalidData(
+                    "TDX security list exceeded declared count".into(),
+                ));
+            }
+            if all.len() == expected {
+                break;
+            }
+            start = start
+                .checked_add(PAGE_SIZE)
+                .ok_or_else(|| TdxError::InvalidData("TDX security list offset overflow".into()))?;
+        }
+        Ok(all)
+    }
     /// Fetches current intraday data.
     pub fn minute_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
         self.client.inner().get_minute_time_data(market, code)
