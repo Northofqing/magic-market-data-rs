@@ -7,3 +7,12 @@ fn service_facade_constructs_without_network() {
     assert_eq!(request.limit, 1);
     let _ = service.client();
 }
+
+#[test]
+fn unsupported_p0_capabilities_are_explicit() {
+    let service = magic_tdx_rs::TdxService::new();
+    let result = service.money_flows(&[]);
+    assert!(matches!(result, Err(magic_tdx_rs::TdxError::Unsupported(_))));
+    let result = service.auction_snapshots(&[]);
+    assert!(matches!(result, Err(magic_tdx_rs::TdxError::Unsupported(_))));
+}
