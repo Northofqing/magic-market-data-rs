@@ -2,6 +2,16 @@
 use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
 use crate::{SecurityBar, SecurityQuote, TdxError, TdxSmartClient};
 use magic_market_core::{BarsRequest, DataBatch, HistoricalBars, InstrumentId, RealtimeQuotes};
+use std::collections::HashMap;
+
+fn fetched_epoch() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or_else(
+            |_| "unknown".to_owned(),
+            |value| value.as_secs().to_string(),
+        )
+}
 
 /// High-level TDX service using SmartClient failover semantics.
 pub struct TdxService {
@@ -28,6 +38,91 @@ impl TdxService {
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<SecurityQuote>, TdxError> {
         self.client.realtime_quotes(instruments)
+    }
+    /// Fetches quotes in protocol-sized chunks and restores the requested order.
+    /// Any failed or incomplete chunk aborts the whole operation.
+    pub fn quotes_chunked(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<SecurityQuote>, TdxError> {
+        if instruments.is_empty() {
+            return Err(TdxError::InvalidData("quote request is empty".into()));
+        }
+        let mut records = Vec::with_capacity(instruments.len());
+        for chunk in instruments.chunks(60) {
+            let pairs: Vec<(u8, &str)> = chunk
+                .iter()
+                .map(|id| {
+                    let market = match id.exchange() {
+                        magic_market_core::Exchange::Shanghai => 1,
+                        magic_market_core::Exchange::Shenzhen => 0,
+                    };
+                    (market, id.code())
+                })
+                .collect();
+            let page = self.client.inner().get_security_quotes(&pairs)?;
+            if page.len() != chunk.len() {
+                return Err(TdxError::InvalidData(
+                    "TDX quote chunk cardinality mismatch".into(),
+                ));
+            }
+            records.extend(page);
+        }
+        // TDX normally preserves order; this validation also prevents silently
+        // returning a quote for a different instrument.
+        let mut expected = HashMap::<(u8, String), usize>::new();
+        for id in instruments {
+            let market = match id.exchange() {
+                magic_market_core::Exchange::Shanghai => 1,
+                magic_market_core::Exchange::Shenzhen => 0,
+            };
+            *expected.entry((market, id.code().to_owned())).or_default() += 1;
+        }
+        for quote in &records {
+            let key = (quote.market, quote.code.clone());
+            let Some(remaining) = expected.get_mut(&key) else {
+                return Err(TdxError::InvalidData(
+                    "TDX returned an unexpected quote".into(),
+                ));
+            };
+            if *remaining == 0 {
+                return Err(TdxError::InvalidData(
+                    "TDX returned a duplicate quote".into(),
+                ));
+            }
+            *remaining -= 1;
+        }
+        if expected.values().any(|count| *count != 0) {
+            return Err(TdxError::InvalidData(
+                "TDX omitted a requested quote".into(),
+            ));
+        }
+        let mut by_key: HashMap<(u8, String), Vec<SecurityQuote>> = HashMap::new();
+        for quote in records {
+            by_key
+                .entry((quote.market, quote.code.clone()))
+                .or_default()
+                .push(quote);
+        }
+        let mut ordered = Vec::with_capacity(instruments.len());
+        for id in instruments {
+            let market = match id.exchange() {
+                magic_market_core::Exchange::Shanghai => 1,
+                magic_market_core::Exchange::Shenzhen => 0,
+            };
+            ordered.push(
+                by_key
+                    .get_mut(&(market, id.code().to_owned()))
+                    .and_then(|values| values.pop())
+                    .ok_or_else(|| TdxError::InvalidData("TDX quote ordering mismatch".into()))?,
+            );
+        }
+        let records = ordered;
+        let mut provenance = magic_market_core::Provenance::new("tdx-smart", fetched_epoch());
+        if let Some(source_at) = records.first().map(|quote| quote.servertime.clone()) {
+            provenance = provenance.with_source_at(source_at);
+        }
+        Ok(DataBatch::strict(records, provenance))
     }
     /// Fetches a market security count.
     pub fn security_count(&self, market: u8) -> Result<u16, TdxError> {
