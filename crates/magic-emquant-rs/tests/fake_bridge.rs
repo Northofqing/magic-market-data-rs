@@ -24,6 +24,15 @@ fn fake_bridge() -> PathBuf {
         r##"#!/bin/sh
 set -eu
 if test "$1" = "--history"; then
+  if test "$2" = "chmc"; then
+    test "$3" = "600519.SH"
+    test "$4" = "DATE,TIME,OPEN,HIGH,LOW,CLOSE,VOLUME,AMOUNT"
+    test "$5" = "2026-07-22"
+    test "$6" = "2026-07-22"
+    test "$7" = ""
+    printf '%s\n' '{"records":[{"date":"2026-07-22","code":"600519.SH","values":{"DATE":"20260722","TIME":"09:30:00","OPEN":1300,"HIGH":1302,"LOW":1299,"CLOSE":1301,"VOLUME":10,"AMOUNT":13010}},{"date":"2026-07-22","code":"600519.SH","values":{"DATE":"20260722","TIME":"09:31:00","OPEN":1301,"HIGH":1303,"LOW":1300,"CLOSE":1302,"VOLUME":11,"AMOUNT":14322}},{"date":"2026-07-22","code":"600519.SH","values":{"DATE":"20260722","TIME":"09:32:00","OPEN":1302,"HIGH":1304,"LOW":1301,"CLOSE":1303,"VOLUME":12,"AMOUNT":15636}},{"date":"2026-07-22","code":"600519.SH","values":{"DATE":"20260722","TIME":"09:33:00","OPEN":1303,"HIGH":1305,"LOW":1302,"CLOSE":1304,"VOLUME":13,"AMOUNT":16952}},{"date":"2026-07-22","code":"600519.SH","values":{"DATE":"20260722","TIME":"09:34:00","OPEN":1304,"HIGH":1306,"LOW":1303,"CLOSE":1305,"VOLUME":14,"AMOUNT":18270}}]}'
+    exit 0
+  fi
   test "$2" = "csd"
   test "$3" = "600519.SH"
   test "$4" = "OPEN,HIGH,LOW,CLOSE,VOLUME,AMOUNT"
@@ -120,7 +129,7 @@ fn executes_csd_and_returns_bounded_normalized_bars() {
     let batch = client.historical_bars(&request).unwrap();
 
     assert!(client.capabilities().bars);
-    assert!(!client.capabilities().minute);
+    assert!(client.capabilities().minute);
     assert_eq!(batch.records().len(), 2);
     assert_eq!(batch.records()[0].bar_start, "2026-07-21");
     assert_eq!(batch.records()[0].open, Price::new(1300.0).unwrap());
@@ -128,6 +137,32 @@ fn executes_csd_and_returns_bounded_normalized_bars() {
     assert_eq!(batch.records()[1].adjustment, Adjustment::Unadjusted);
     assert_eq!(batch.provenance().source_at.as_deref(), Some("2026-07-22"));
     assert!(batch.quality().complete);
+}
+
+#[test]
+fn executes_chmc_and_aggregates_five_minute_bars() {
+    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let request = BarsRequest::new(instruments()[0].clone(), BarInterval::Minute5, 1)
+        .unwrap()
+        .with_range("2026-07-22", "2026-07-22")
+        .unwrap();
+    let batch = client.historical_bars(&request).unwrap();
+
+    assert_eq!(batch.records().len(), 1);
+    let bar = &batch.records()[0];
+    assert_eq!(bar.interval, BarInterval::Minute5);
+    assert_eq!(bar.bar_start, "2026-07-22 09:30:00");
+    assert_eq!(bar.bar_end, "2026-07-22 09:34:00");
+    assert_eq!(bar.open, Price::new(1300.0).unwrap());
+    assert_eq!(bar.high, Price::new(1306.0).unwrap());
+    assert_eq!(bar.low, Price::new(1299.0).unwrap());
+    assert_eq!(bar.close, Price::new(1305.0).unwrap());
+    assert_eq!(bar.volume, Quantity::new(60.0).unwrap());
+    assert_eq!(bar.amount, Some(Money::new(78_190.0).unwrap()));
+    assert_eq!(
+        batch.provenance().source_at.as_deref(),
+        Some("2026-07-22 09:34:00")
+    );
 }
 
 #[test]

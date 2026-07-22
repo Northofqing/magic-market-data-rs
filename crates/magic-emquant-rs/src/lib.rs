@@ -86,6 +86,7 @@ impl EmQuantClient {
         Capabilities {
             quotes: true,
             bars: true,
+            minute: true,
             order_book: true,
             ..Capabilities::new()
         }
@@ -162,13 +163,14 @@ impl EmQuantClient {
 
     fn history(
         &self,
+        method: &str,
         code: &str,
         indicators: &str,
         start: &str,
         end: &str,
         options: &str,
     ) -> Result<BridgeResponse, EmQuantError> {
-        self.execute(&["--history", "csd", code, indicators, start, end, options])
+        self.execute(&["--history", method, code, indicators, start, end, options])
     }
 }
 
@@ -223,19 +225,28 @@ fn observed_epoch() -> String {
         )
 }
 
-fn interval_period(interval: BarInterval) -> Result<u8, EmQuantError> {
+fn daily_period(interval: BarInterval) -> Option<u8> {
     match interval {
-        BarInterval::Day => Ok(1),
-        BarInterval::Week => Ok(2),
-        BarInterval::Month => Ok(3),
-        BarInterval::Year => Ok(4),
+        BarInterval::Day => Some(1),
+        BarInterval::Week => Some(2),
+        BarInterval::Month => Some(3),
+        BarInterval::Year => Some(4),
         BarInterval::Minute1
         | BarInterval::Minute5
         | BarInterval::Minute15
         | BarInterval::Minute30
-        | BarInterval::Hour1 => Err(EmQuantError::Unsupported(
-            "csd supports day, week, month and year bars; minute bars use a separate API".into(),
-        )),
+        | BarInterval::Hour1 => None,
+    }
+}
+
+fn minute_width(interval: BarInterval) -> Option<u16> {
+    match interval {
+        BarInterval::Minute1 => Some(1),
+        BarInterval::Minute5 => Some(5),
+        BarInterval::Minute15 => Some(15),
+        BarInterval::Minute30 => Some(30),
+        BarInterval::Hour1 => Some(60),
+        BarInterval::Day | BarInterval::Week | BarInterval::Month | BarInterval::Year => None,
     }
 }
 
@@ -275,7 +286,12 @@ fn default_date_range(request: &BarsRequest) -> Result<(String, String), EmQuant
         BarInterval::Week => count * 8 + 30,
         BarInterval::Month => count * 32 + 31,
         BarInterval::Year => count * 367 + 366,
-        _ => return Err(interval_period(request.interval).unwrap_err()),
+        interval => {
+            let minutes = i64::from(minute_width(interval).ok_or_else(|| {
+                EmQuantError::Unsupported("unsupported EMQuant bar interval".into())
+            })?);
+            (count * minutes + 239) / 240 + 7
+        }
     };
     let end = date_from_epoch_days(today_days as i64);
     let calculated_start = date_from_epoch_days(today_days as i64 - lookback_days);
@@ -285,6 +301,186 @@ fn default_date_range(request: &BarsRequest) -> Result<(String, String), EmQuant
         calculated_start
     };
     Ok((start, end))
+}
+
+fn value_text(values: &HashMap<String, Value>, field: &str) -> Option<String> {
+    values.get(field).and_then(|value| match value {
+        Value::String(value) => Some(value.trim().to_owned()),
+        Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    })
+}
+
+fn normalize_date(value: &str) -> String {
+    let value = value.trim();
+    if value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit()) {
+        format!("{}-{}-{}", &value[0..4], &value[4..6], &value[6..8])
+    } else {
+        value.replace('/', "-")
+    }
+}
+
+fn normalize_time(value: &str) -> String {
+    let value = value.trim();
+    if value.contains(':') {
+        return value.to_owned();
+    }
+    let digits = value.split('.').next().unwrap_or(value);
+    let digits = if digits.len() > 6 {
+        &digits[..6]
+    } else {
+        digits
+    };
+    if digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        let padded = format!("{digits:0>6}");
+        format!("{}:{}:{}", &padded[0..2], &padded[2..4], &padded[4..6])
+    } else {
+        value.to_owned()
+    }
+}
+
+fn record_bar_at(record: &BridgeRecord, minute: bool) -> Result<String, EmQuantError> {
+    if !minute {
+        if record.date.is_empty() {
+            return Err(EmQuantError::InvalidResponse(
+                "history response contained an empty date".into(),
+            ));
+        }
+        return Ok(normalize_date(&record.date));
+    }
+    let date = value_text(&record.values, "DATE")
+        .map(|value| normalize_date(&value))
+        .or_else(|| {
+            record
+                .date
+                .split_whitespace()
+                .next()
+                .filter(|value| !value.is_empty())
+                .map(normalize_date)
+        })
+        .ok_or_else(|| EmQuantError::InvalidResponse("minute bar is missing DATE".into()))?;
+    if record.date.contains(' ') && !record.values.contains_key("TIME") {
+        return Ok(record.date.clone());
+    }
+    let time = value_text(&record.values, "TIME")
+        .map(|value| normalize_time(&value))
+        .ok_or_else(|| EmQuantError::InvalidResponse("minute bar is missing TIME".into()))?;
+    Ok(format!("{date} {time}"))
+}
+
+fn minute_bucket(timestamp: &str, width: u16) -> Result<(String, u16), EmQuantError> {
+    let (date, time) = timestamp.split_once(' ').ok_or_else(|| {
+        EmQuantError::InvalidResponse(format!("invalid minute timestamp {timestamp}"))
+    })?;
+    let mut fields = time.split(':');
+    let hour: u16 = fields
+        .next()
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| EmQuantError::InvalidResponse(format!("invalid time {time}")))?;
+    let minute: u16 = fields
+        .next()
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| EmQuantError::InvalidResponse(format!("invalid time {time}")))?;
+    if hour > 23 || minute > 59 {
+        return Err(EmQuantError::InvalidResponse(format!(
+            "invalid time {time}"
+        )));
+    }
+    let minute_of_day = hour * 60 + minute;
+    Ok((format!("{date}:{}", minute_of_day / width), minute_of_day))
+}
+
+fn aggregate_group(
+    group: &[Bar],
+    interval: BarInterval,
+    batch_id: &str,
+) -> Result<Bar, EmQuantError> {
+    let first = group
+        .first()
+        .ok_or_else(|| EmQuantError::InvalidResponse("empty minute aggregation".into()))?;
+    let last = group.last().expect("non-empty group");
+    let high = group
+        .iter()
+        .map(|bar| bar.high.get())
+        .fold(f64::NEG_INFINITY, f64::max);
+    let low = group
+        .iter()
+        .map(|bar| bar.low.get())
+        .fold(f64::INFINITY, f64::min);
+    let volume = group.iter().map(|bar| bar.volume.get()).sum();
+    let amount = if group.iter().all(|bar| bar.amount.is_some()) {
+        Some(
+            Money::new(
+                group
+                    .iter()
+                    .filter_map(|bar| bar.amount)
+                    .map(Money::get)
+                    .sum(),
+            )
+            .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
+        )
+    } else {
+        None
+    };
+    Bar::new(
+        first.instrument.clone(),
+        interval,
+        first.bar_start.clone(),
+        last.bar_end.clone(),
+        first.open,
+        Price::new(high).map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
+        Price::new(low).map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
+        last.close,
+        Quantity::new(volume).map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
+        amount,
+        Adjustment::Unadjusted,
+        ProviderId::Eastmoney,
+        batch_id,
+    )
+    .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))
+    .map(|bar| {
+        if let Some(source_at) = &last.source_at {
+            bar.with_source_at(source_at.clone())
+        } else {
+            bar
+        }
+    })
+}
+
+fn aggregate_minute_bars(
+    bars: Vec<Bar>,
+    interval: BarInterval,
+    width: u16,
+    batch_id: &str,
+) -> Result<Vec<Bar>, EmQuantError> {
+    if width == 1 {
+        return Ok(bars);
+    }
+    let mut result = Vec::new();
+    let mut group = Vec::new();
+    let mut group_key = None;
+    let mut previous_minute = None;
+    for bar in bars {
+        let (key, minute) = minute_bucket(&bar.bar_start, width)?;
+        if group_key.as_ref().is_some_and(|current| current != &key) {
+            result.push(aggregate_group(&group, interval, batch_id)?);
+            group.clear();
+            previous_minute = None;
+        }
+        if previous_minute.is_some_and(|previous| minute != previous + 1) {
+            return Err(EmQuantError::InvalidResponse(format!(
+                "minute gap inside aggregation bucket at {}",
+                bar.bar_start
+            )));
+        }
+        group_key = Some(key);
+        previous_minute = Some(minute);
+        group.push(bar);
+    }
+    if !group.is_empty() {
+        result.push(aggregate_group(&group, interval, batch_id)?);
+    }
+    Ok(result)
 }
 
 fn book_level(
@@ -392,17 +588,27 @@ impl HistoricalBars for EmQuantClient {
     type Error = EmQuantError;
 
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Bar>, Self::Error> {
-        let period = interval_period(request.interval)?;
         let (start, end) = default_date_range(request)?;
         let code = source_code(&request.instrument);
-        let options = format!("Period={period},AdjustFlag=1,Order=1");
-        let response = self.history(
-            &code,
-            "OPEN,HIGH,LOW,CLOSE,VOLUME,AMOUNT",
-            &start,
-            &end,
-            &options,
-        )?;
+        let minute = minute_width(request.interval);
+        let (method, indicators, options) = if let Some(period) = daily_period(request.interval) {
+            (
+                "csd",
+                "OPEN,HIGH,LOW,CLOSE,VOLUME,AMOUNT",
+                format!("Period={period},AdjustFlag=1,Order=1"),
+            )
+        } else if minute.is_some() {
+            (
+                "chmc",
+                "DATE,TIME,OPEN,HIGH,LOW,CLOSE,VOLUME,AMOUNT",
+                String::new(),
+            )
+        } else {
+            return Err(EmQuantError::Unsupported(
+                "unsupported EMQuant bar interval".into(),
+            ));
+        };
+        let response = self.history(method, &code, indicators, &start, &end, &options)?;
         if response.records.is_empty() {
             return Err(EmQuantError::InvalidResponse(
                 "history response contained no bars".into(),
@@ -411,7 +617,7 @@ impl HistoricalBars for EmQuantClient {
         let observed_at = observed_epoch();
         let batch_id = format!("eastmoney:{observed_at}:bars");
         let mut bars = Vec::with_capacity(response.records.len());
-        let mut previous_date: Option<String> = None;
+        let mut previous_at: Option<String> = None;
         for record in response.records {
             if record.code != code {
                 return Err(EmQuantError::InvalidResponse(format!(
@@ -419,21 +625,16 @@ impl HistoricalBars for EmQuantClient {
                     record.code
                 )));
             }
-            if record.date.is_empty() {
-                return Err(EmQuantError::InvalidResponse(
-                    "history response contained an empty date".into(),
-                ));
-            }
-            if previous_date
+            let bar_at = record_bar_at(&record, minute.is_some())?;
+            if previous_at
                 .as_ref()
-                .is_some_and(|previous| record.date <= *previous)
+                .is_some_and(|previous| bar_at <= *previous)
             {
                 return Err(EmQuantError::InvalidResponse(format!(
-                    "history dates are duplicated or out of order at {}",
-                    record.date
+                    "history timestamps are duplicated or out of order at {bar_at}"
                 )));
             }
-            previous_date = Some(record.date.clone());
+            previous_at = Some(bar_at.clone());
             let price = |field| {
                 Price::new(required_number(&record.values, field)?)
                     .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))
@@ -446,9 +647,13 @@ impl HistoricalBars for EmQuantClient {
                 .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
             let bar = Bar::new(
                 request.instrument.clone(),
-                request.interval,
-                record.date.clone(),
-                record.date.clone(),
+                if minute.is_some() {
+                    BarInterval::Minute1
+                } else {
+                    request.interval
+                },
+                bar_at.clone(),
+                bar_at.clone(),
                 price("OPEN")?,
                 price("HIGH")?,
                 price("LOW")?,
@@ -460,8 +665,11 @@ impl HistoricalBars for EmQuantClient {
                 batch_id.clone(),
             )
             .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?
-            .with_source_at(record.date);
+            .with_source_at(bar_at);
             bars.push(bar);
+        }
+        if let Some(width) = minute {
+            bars = aggregate_minute_bars(bars, request.interval, width, &batch_id)?;
         }
         let keep = usize::from(request.limit);
         if bars.len() > keep {
@@ -469,7 +677,7 @@ impl HistoricalBars for EmQuantClient {
         }
         let source_at = bars.last().and_then(|bar| bar.source_at.clone());
         let mut provenance =
-            magic_market_core::Provenance::new("eastmoney-emquant-csd", observed_at)
+            magic_market_core::Provenance::new(format!("eastmoney-emquant-{method}"), observed_at)
                 .with_batch_id(batch_id);
         if let Some(source_at) = source_at {
             provenance = provenance.with_source_at(source_at);

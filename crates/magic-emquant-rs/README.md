@@ -29,6 +29,13 @@ and year bars. Responses must be non-empty, strictly ascending, code-complete,
 and OHLC-consistent. The adapter requests unadjusted prices explicitly and
 returns at most the requested limit.
 
+The bundled Mac SDK's declared `chmc` API supplies raw minute OHLCV records.
+The adapter exposes 1/5/15/30/60-minute intervals and builds intervals above
+one minute locally from consecutive raw records. It rejects reversed records
+and gaps inside an aggregation bucket. `chmc` entitlement still needs a live
+authorized account check because the current public online manual omits this
+bundled API.
+
 The bridge call times out after 30 seconds by default. Set
 `MAGIC_EMQUANT_TIMEOUT_SECS` to a positive integer to override it.
 
