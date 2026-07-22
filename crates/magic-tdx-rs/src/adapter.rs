@@ -149,6 +149,7 @@ impl OrderBooks for TdxHqClient {
                 "TDX order-book cardinality mismatch".into(),
             ));
         }
+        let source_at = quotes.first().map(|quote| quote.servertime.clone());
         let mut books = Vec::with_capacity(quotes.len());
         for (id, quote) in instruments.iter().zip(quotes) {
             let bids = [
@@ -172,10 +173,11 @@ impl OrderBooks for TdxHqClient {
                 status: magic_market_core::DataStatus::Available,
             });
         }
-        Ok(DataBatch::strict(
-            books,
-            magic_market_core::Provenance::new("tdx", fetched_at()),
-        ))
+        let mut provenance = magic_market_core::Provenance::new("tdx", fetched_at());
+        if let Some(source_at) = source_at {
+            provenance = provenance.with_source_at(source_at);
+        }
+        Ok(DataBatch::strict(books, provenance))
     }
 }
 
@@ -195,6 +197,7 @@ impl OrderBooks for crate::TdxSmartClient {
                 "TDX smart order-book cardinality mismatch".into(),
             ));
         }
+        let source_at = quotes.first().map(|quote| quote.servertime.clone());
         let mut books = Vec::with_capacity(quotes.len());
         for (id, quote) in instruments.iter().zip(quotes) {
             books.push(OrderBook {
@@ -216,10 +219,11 @@ impl OrderBooks for crate::TdxSmartClient {
                 status: magic_market_core::DataStatus::Available,
             });
         }
-        Ok(DataBatch::strict(
-            books,
-            magic_market_core::Provenance::new("tdx-smart", fetched_at()),
-        ))
+        let mut provenance = magic_market_core::Provenance::new("tdx-smart", fetched_at());
+        if let Some(source_at) = source_at {
+            provenance = provenance.with_source_at(source_at);
+        }
+        Ok(DataBatch::strict(books, provenance))
     }
 }
 
