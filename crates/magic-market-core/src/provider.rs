@@ -44,6 +44,11 @@ impl Capabilities {
         }
     }
 }
+impl Default for Capabilities {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Standard bar interval shared by market-data providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
