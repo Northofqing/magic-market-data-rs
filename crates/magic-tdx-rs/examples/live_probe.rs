@@ -84,6 +84,31 @@ fn main() {
                 Ok(items) => println!("blocks_index={}", items.len()),
                 Err(error) => println!("blocks_index=error error={error}"),
             }
+            let funds = magic_tdx_rs::TdxHqFundClient::new();
+            match funds.connect_to_any(Some(3.0)) {
+                Ok(true) => {
+                    match funds.get_fund_quotes(&[(1, "510300")]) {
+                        Ok(items) => println!("fund_quotes={} ", items.len()),
+                        Err(error) => println!("fund_quotes=error error={error}"),
+                    }
+                    match funds.get_fund_bars(4, 1, "510300", 0, 5) {
+                        Ok(items) => println!("fund_bars={} ", items.len()),
+                        Err(error) => println!("fund_bars=error error={error}"),
+                    }
+                    match funds.get_fund_xdxr_info(1, "510300") {
+                        Ok(items) => println!("fund_xdxr={} ", items.len()),
+                        Err(error) => println!("fund_xdxr=error error={error}"),
+                    }
+                }
+                Ok(false) => println!("fund_connect=false"),
+                Err(error) => println!("fund_connect=error error={error}"),
+            }
+            let f10 =
+                magic_tdx_rs::net::f10_client::TdxF10Client::new("180.153.18.170", 7709, Some(3.0));
+            match f10.get_category_auto("600519") {
+                Ok(items) => println!("f10_categories={} ", items.len()),
+                Err(error) => println!("f10_categories=error error={error}"),
+            }
         }
         Ok(false) => println!("connected=false"),
         Err(error) => println!("connected=error error={error}"),
