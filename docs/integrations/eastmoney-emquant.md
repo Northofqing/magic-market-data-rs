@@ -49,3 +49,16 @@ MAGIC_EMQUANT_PROXY=host:port        # 可选，仅用户明确配置时启用
 ```text
 bash tools/emquant/check_sdk.sh /path/to/EMQuantAPI_CPP_Mac
 ```
+
+只读快照桥接程序可独立构建，账号和密码只从进程环境读取：
+
+```text
+tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac
+MAGIC_EMQUANT_LIB=/path/to/libEMQuantAPIx64.dylib \
+MAGIC_EMQUANT_SERVER_LIST=/path/to/sdk/x64/bin \
+MAGIC_EMQUANT_USERNAME=... \
+MAGIC_EMQUANT_PASSWORD=... \
+target/emquant/emquant-snapshot 600519.SH PRECLOSE,OPEN,HIGH,LOW,NOW,AMOUNT
+```
+
+程序只解析 `csqsnapshot`，向标准输出写 JSON；错误信息不包含凭据。
