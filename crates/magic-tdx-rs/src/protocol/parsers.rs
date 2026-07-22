@@ -688,6 +688,9 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
         pos = new_pos;
 
         // reversed_bytes9 (i16) + active2 (u16)
+        if pos.checked_add(4).is_none_or(|end| end > body.len()) {
+            return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("quote tail truncated"));
+        }
         let reversed_bytes9 = i16::from_le_bytes([body[pos], body[pos + 1]]);
         pos += 2;
         let active2 = read_u16(body, pos);
