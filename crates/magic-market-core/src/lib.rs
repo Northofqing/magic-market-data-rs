@@ -4,11 +4,14 @@ mod batch;
 mod error;
 mod instrument;
 mod provenance;
-mod value;
 mod provider;
+mod value;
 pub use batch::{DataBatch, QualityReport};
 pub use error::CoreError;
 pub use instrument::{AssetClass, Exchange, InstrumentId};
 pub use provenance::Provenance;
+pub use provider::{
+    AsyncHistoricalBars, AsyncRealtimeQuotes, BarInterval, BarsRequest, Capabilities,
+    HistoricalBars, ProviderId, Quote, RealtimeQuotes,
+};
 pub use value::{Money, Price, Quantity, Ratio, RatioUnit};
-pub use provider::{AsyncHistoricalBars, AsyncRealtimeQuotes, BarInterval, BarsRequest, Capabilities, HistoricalBars, ProviderId, Quote, RealtimeQuotes};

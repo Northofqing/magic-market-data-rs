@@ -157,7 +157,8 @@ mod tests {
     #[test]
     fn test_read_financial_file() {
         let data = build_test_financial();
-        let path = std::env::temp_dir().join(format!("magic_tdx_finance_{}.dat", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("magic_tdx_finance_{}.dat", std::process::id()));
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(&data).unwrap();
         drop(f);

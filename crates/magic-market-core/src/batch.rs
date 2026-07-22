@@ -42,7 +42,10 @@ impl<T> DataBatch<T> {
         Self {
             records,
             provenance,
-            quality: QualityReport { complete: issues.is_empty(), issues },
+            quality: QualityReport {
+                complete: issues.is_empty(),
+                issues,
+            },
         }
     }
 }

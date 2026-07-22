@@ -1,1 +1,2 @@
-mod enums; pub use enums::{Adjustment, BarCategory, Market};
+mod enums;
+pub use enums::{Adjustment, BarCategory, Market};
