@@ -1,6 +1,8 @@
 //! Stable service facade over TDX clients.
+pub mod blocks;
 use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
 use crate::{AsyncTdxHqClient, SecurityBar, SecurityQuote, TdxError, TdxSmartClient};
+pub use blocks::BlockService;
 use magic_market_core::{BarsRequest, DataBatch, HistoricalBars, InstrumentId, RealtimeQuotes};
 use std::collections::HashMap;
 
