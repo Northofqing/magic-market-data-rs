@@ -36,4 +36,13 @@ impl<T> DataBatch<T> {
     pub fn into_records(self) -> Vec<T> {
         self.records
     }
+
+    /// Constructs a batch whose completeness is explicitly reported.
+    pub fn best_effort(records: Vec<T>, provenance: Provenance, issues: Vec<String>) -> Self {
+        Self {
+            records,
+            provenance,
+            quality: QualityReport { complete: issues.is_empty(), issues },
+        }
+    }
 }
