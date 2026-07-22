@@ -15,6 +15,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo doc --workspace --no-deps
       - run: bash tools/docs/check_links.sh
+      - run: PYTHONPATH=tools/bench python3 -m unittest tools/bench/test_compare.py
+      - run: python3 -m unittest discover -s tools/coverage -p 'test_*.py'
   msrv:
     runs-on: ubuntu-latest
     steps:
