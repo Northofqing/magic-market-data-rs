@@ -152,6 +152,89 @@ pub enum BarInterval {
     Year,
 }
 
+/// Price adjustment applied by the source to a historical bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Adjustment {
+    Unadjusted,
+    Forward,
+    Backward,
+}
+
+/// Provider-neutral OHLCV bar with record-level source evidence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bar {
+    pub instrument: InstrumentId,
+    pub interval: BarInterval,
+    pub bar_start: String,
+    pub bar_end: String,
+    pub open: crate::Price,
+    pub high: crate::Price,
+    pub low: crate::Price,
+    pub close: crate::Price,
+    pub volume: crate::Quantity,
+    pub amount: Option<crate::Money>,
+    pub adjustment: Adjustment,
+    pub source_at: Option<String>,
+    pub provider: ProviderId,
+    pub batch_id: String,
+}
+impl Bar {
+    /// Builds a bar and rejects inconsistent OHLC ranges.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentId,
+        interval: BarInterval,
+        bar_start: impl Into<String>,
+        bar_end: impl Into<String>,
+        open: crate::Price,
+        high: crate::Price,
+        low: crate::Price,
+        close: crate::Price,
+        volume: crate::Quantity,
+        amount: Option<crate::Money>,
+        adjustment: Adjustment,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        let bar_start = bar_start.into();
+        let bar_end = bar_end.into();
+        if bar_start.is_empty() || bar_end.is_empty() || bar_start > bar_end {
+            return Err(crate::CoreError::InvalidRequest(
+                "invalid bar time range".into(),
+            ));
+        }
+        if low.get() > open.get().min(close.get())
+            || high.get() < open.get().max(close.get())
+            || low.get() > high.get()
+        {
+            return Err(crate::CoreError::InvalidRequest(
+                "inconsistent OHLC range".into(),
+            ));
+        }
+        Ok(Self {
+            instrument,
+            interval,
+            bar_start,
+            bar_end,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            amount,
+            adjustment,
+            source_at: None,
+            provider,
+            batch_id: batch_id.into(),
+        })
+    }
+
+    pub fn with_source_at(mut self, source_at: impl Into<String>) -> Self {
+        self.source_at = Some(source_at.into());
+        self
+    }
+}
+
 /// Validated historical-bar request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BarsRequest {

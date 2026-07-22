@@ -12,6 +12,7 @@ using SetServerListDir = void (*)(const char *);
 using Start = EQErr (*)(EQLOGININFO *, const char *, logcallback);
 using Stop = EQErr (*)();
 using Snapshot = EQErr (*)(const char *, const char *, const char *, EQDATA *&);
+using History = EQErr (*)(const char *, const char *, const char *, const char *, const char *, EQDATA *&);
 using ReleaseData = EQErr (*)(void *);
 
 static int discard_log(const char *) { return 0; }
@@ -69,8 +70,14 @@ template <typename T> static T symbol(void *handle, const char *name) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3 || argc > 4) {
-        std::cerr << "usage: emquant-snapshot CODE[,CODE] INDICATOR[,INDICATOR] [OPTIONS]\n";
+    const bool history_mode = argc > 1 && std::strcmp(argv[1], "--history") == 0;
+    if ((!history_mode && (argc < 3 || argc > 4)) || (history_mode && argc != 8)) {
+        std::cerr << "usage: emquant-snapshot CODE[,CODE] INDICATOR[,INDICATOR] [OPTIONS]\n"
+                  << "   or: emquant-snapshot --history csd CODE INDICATOR[,INDICATOR] START END OPTIONS\n";
+        return 2;
+    }
+    if (history_mode && std::strcmp(argv[2], "csd") != 0) {
+        std::cerr << "unsupported EMQuant history method; expected csd\n";
         return 2;
     }
     const char *library = std::getenv("MAGIC_EMQUANT_LIB");
@@ -95,7 +102,6 @@ int main(int argc, char **argv) {
     const auto set_server_dir = symbol<SetServerListDir>(handle, "setserverlistdir");
     const auto start = symbol<Start>(handle, "start");
     const auto stop = symbol<Stop>(handle, "stop");
-    const auto snapshot = symbol<Snapshot>(handle, "csqsnapshot");
     const auto release_data = symbol<ReleaseData>(handle, "releasedata");
     set_server_dir(server_dir);
     EQLOGININFO login{};
@@ -112,9 +118,17 @@ int main(int argc, char **argv) {
         return 4;
     }
     EQDATA *data = nullptr;
-    const EQErr query_error = snapshot(argv[1], argv[2], argc == 4 ? argv[3] : "", data);
+    EQErr query_error = EQERR_SUCCESS;
+    if (history_mode) {
+        const auto history = symbol<History>(handle, "csd");
+        query_error = history(argv[3], argv[4], argv[5], argv[6], argv[7], data);
+    } else {
+        const auto snapshot = symbol<Snapshot>(handle, "csqsnapshot");
+        query_error = snapshot(argv[1], argv[2], argc == 4 ? argv[3] : "", data);
+    }
     if (query_error != EQERR_SUCCESS || !data) {
-        std::cerr << "EMQuant snapshot failed with code " << query_error << '\n';
+        std::cerr << "EMQuant query failed with code " << query_error << '\n';
+        if (data) release_data(data);
         stop();
         dlclose(handle);
         return 5;

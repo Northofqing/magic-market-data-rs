@@ -1,5 +1,6 @@
 use magic_market_core::{
-    BookLevel, DataStatus, MoneyFlow, OrderBook, Price, ProviderId, Quantity, Quote,
+    Adjustment, Bar, BarInterval, BookLevel, DataStatus, MoneyFlow, OrderBook, Price, ProviderId,
+    Quantity, Quote,
 };
 
 #[test]
@@ -24,6 +25,32 @@ fn unavailable_fields_are_explicit() {
         small_net: None,
         status: DataStatus::Unavailable,
     };
+}
+
+#[test]
+fn normalized_bar_rejects_inconsistent_ohlc() {
+    let instrument = magic_market_core::InstrumentId::new(
+        magic_market_core::Exchange::Shanghai,
+        "600519",
+        magic_market_core::AssetClass::Equity,
+    )
+    .unwrap();
+    let result = Bar::new(
+        instrument,
+        BarInterval::Day,
+        "2026-07-22",
+        "2026-07-22",
+        Price::new(100.0).unwrap(),
+        Price::new(99.0).unwrap(),
+        Price::new(98.0).unwrap(),
+        Price::new(100.0).unwrap(),
+        Quantity::new(1.0).unwrap(),
+        None,
+        Adjustment::Unadjusted,
+        ProviderId::Eastmoney,
+        "batch-1",
+    );
+    assert!(result.is_err());
 }
 
 #[test]

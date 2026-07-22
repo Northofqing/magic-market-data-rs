@@ -20,8 +20,14 @@ cargo run -p magic-emquant-rs --example live_probe --release
 `MAGIC_EMQUANT_CODES` optionally selects comma-separated `CODE.SH`/`CODE.SZ`
 instruments. It defaults to `600519.SH,000001.SZ`. The probe prints every
 normalized quote and all five bid/ask levels together with source and fetch
-provenance. Authentication or entitlement failures are returned as errors;
-the adapter never substitutes fixture data.
+provenance. It also prints the latest five unadjusted daily OHLCV bars for the
+first instrument. Authentication or entitlement failures are returned as
+errors; the adapter never substitutes fixture data.
+
+`HistoricalBars` currently uses the official `csd` API for day, week, month,
+and year bars. Responses must be non-empty, strictly ascending, code-complete,
+and OHLC-consistent. The adapter requests unadjusted prices explicitly and
+returns at most the requested limit.
 
 The bridge call times out after 30 seconds by default. Set
 `MAGIC_EMQUANT_TIMEOUT_SECS` to a positive integer to override it.

@@ -2,8 +2,9 @@
 //! Read-only Eastmoney/Choice EMQuant adapter using the audited C++ bridge.
 
 use magic_market_core::{
-    BookLevel, Capabilities, DataBatch, DataStatus, InstrumentId, Money, OrderBook, OrderBooks,
-    Price, ProviderId, Quantity, Quote, RealtimeQuotes,
+    Adjustment, Bar, BarInterval, BarsRequest, BookLevel, Capabilities, DataBatch, DataStatus,
+    HistoricalBars, InstrumentId, Money, OrderBook, OrderBooks, Price, ProviderId, Quantity, Quote,
+    RealtimeQuotes,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -25,6 +26,8 @@ pub enum EmQuantError {
     Bridge(String),
     #[error("invalid EMQuant response: {0}")]
     InvalidResponse(String),
+    #[error("unsupported EMQuant capability: {0}")]
+    Unsupported(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,15 +85,15 @@ impl EmQuantClient {
     pub fn capabilities(&self) -> Capabilities {
         Capabilities {
             quotes: true,
+            bars: true,
             order_book: true,
             ..Capabilities::new()
         }
     }
 
-    fn snapshot(&self, codes: &str, indicators: &str) -> Result<BridgeResponse, EmQuantError> {
+    fn execute(&self, arguments: &[&str]) -> Result<BridgeResponse, EmQuantError> {
         let mut child = Command::new(&self.bridge)
-            .arg(codes)
-            .arg(indicators)
+            .args(arguments)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -152,6 +155,21 @@ impl EmQuantClient {
         serde_json::from_slice(&stdout)
             .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))
     }
+
+    fn snapshot(&self, codes: &str, indicators: &str) -> Result<BridgeResponse, EmQuantError> {
+        self.execute(&[codes, indicators])
+    }
+
+    fn history(
+        &self,
+        code: &str,
+        indicators: &str,
+        start: &str,
+        end: &str,
+        options: &str,
+    ) -> Result<BridgeResponse, EmQuantError> {
+        self.execute(&["--history", "csd", code, indicators, start, end, options])
+    }
 }
 
 fn source_code(instrument: &InstrumentId) -> String {
@@ -203,6 +221,70 @@ fn observed_epoch() -> String {
             |_| "unknown".to_owned(),
             |value| value.as_secs().to_string(),
         )
+}
+
+fn interval_period(interval: BarInterval) -> Result<u8, EmQuantError> {
+    match interval {
+        BarInterval::Day => Ok(1),
+        BarInterval::Week => Ok(2),
+        BarInterval::Month => Ok(3),
+        BarInterval::Year => Ok(4),
+        BarInterval::Minute1
+        | BarInterval::Minute5
+        | BarInterval::Minute15
+        | BarInterval::Minute30
+        | BarInterval::Hour1 => Err(EmQuantError::Unsupported(
+            "csd supports day, week, month and year bars; minute bars use a separate API".into(),
+        )),
+    }
+}
+
+fn date_from_epoch_days(days: i64) -> String {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn default_date_range(request: &BarsRequest) -> Result<(String, String), EmQuantError> {
+    match (&request.start, &request.end) {
+        (Some(start), Some(end)) => return Ok((start.clone(), end.clone())),
+        (Some(_), None) | (None, Some(_)) => {
+            return Err(EmQuantError::InvalidRequest(
+                "bar start and end must be supplied together".into(),
+            ));
+        }
+        (None, None) => {}
+    }
+    let today_days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| EmQuantError::InvalidRequest(error.to_string()))?
+        .as_secs()
+        / 86_400;
+    let count = i64::from(request.limit);
+    let lookback_days = match request.interval {
+        BarInterval::Day => count * 2 + 30,
+        BarInterval::Week => count * 8 + 30,
+        BarInterval::Month => count * 32 + 31,
+        BarInterval::Year => count * 367 + 366,
+        _ => return Err(interval_period(request.interval).unwrap_err()),
+    };
+    let end = date_from_epoch_days(today_days as i64);
+    let calculated_start = date_from_epoch_days(today_days as i64 - lookback_days);
+    let start = if calculated_start.as_str() < "1990-01-01" {
+        "1990-01-01".to_owned()
+    } else {
+        calculated_start
+    };
+    Ok((start, end))
 }
 
 fn book_level(
@@ -302,6 +384,97 @@ impl RealtimeQuotes for EmQuantClient {
             provenance = provenance.with_source_at(value);
         }
         Ok(DataBatch::strict(quotes, provenance))
+    }
+}
+
+impl HistoricalBars for EmQuantClient {
+    type Bar = Bar;
+    type Error = EmQuantError;
+
+    fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Bar>, Self::Error> {
+        let period = interval_period(request.interval)?;
+        let (start, end) = default_date_range(request)?;
+        let code = source_code(&request.instrument);
+        let options = format!("Period={period},AdjustFlag=1,Order=1");
+        let response = self.history(
+            &code,
+            "OPEN,HIGH,LOW,CLOSE,VOLUME,AMOUNT",
+            &start,
+            &end,
+            &options,
+        )?;
+        if response.records.is_empty() {
+            return Err(EmQuantError::InvalidResponse(
+                "history response contained no bars".into(),
+            ));
+        }
+        let observed_at = observed_epoch();
+        let batch_id = format!("eastmoney:{observed_at}:bars");
+        let mut bars = Vec::with_capacity(response.records.len());
+        let mut previous_date: Option<String> = None;
+        for record in response.records {
+            if record.code != code {
+                return Err(EmQuantError::InvalidResponse(format!(
+                    "history response contained unexpected code {}",
+                    record.code
+                )));
+            }
+            if record.date.is_empty() {
+                return Err(EmQuantError::InvalidResponse(
+                    "history response contained an empty date".into(),
+                ));
+            }
+            if previous_date
+                .as_ref()
+                .is_some_and(|previous| record.date <= *previous)
+            {
+                return Err(EmQuantError::InvalidResponse(format!(
+                    "history dates are duplicated or out of order at {}",
+                    record.date
+                )));
+            }
+            previous_date = Some(record.date.clone());
+            let price = |field| {
+                Price::new(required_number(&record.values, field)?)
+                    .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))
+            };
+            let volume = Quantity::new(required_number(&record.values, "VOLUME")?)
+                .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
+            let amount = optional_number(&record.values, "AMOUNT")?
+                .map(Money::new)
+                .transpose()
+                .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
+            let bar = Bar::new(
+                request.instrument.clone(),
+                request.interval,
+                record.date.clone(),
+                record.date.clone(),
+                price("OPEN")?,
+                price("HIGH")?,
+                price("LOW")?,
+                price("CLOSE")?,
+                volume,
+                amount,
+                Adjustment::Unadjusted,
+                ProviderId::Eastmoney,
+                batch_id.clone(),
+            )
+            .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?
+            .with_source_at(record.date);
+            bars.push(bar);
+        }
+        let keep = usize::from(request.limit);
+        if bars.len() > keep {
+            bars = bars.split_off(bars.len() - keep);
+        }
+        let source_at = bars.last().and_then(|bar| bar.source_at.clone());
+        let mut provenance =
+            magic_market_core::Provenance::new("eastmoney-emquant-csd", observed_at)
+                .with_batch_id(batch_id);
+        if let Some(source_at) = source_at {
+            provenance = provenance.with_source_at(source_at);
+        }
+        Ok(DataBatch::strict(bars, provenance))
     }
 }
 
@@ -422,5 +595,10 @@ mod tests {
         assert_eq!(bid.quantity.map(Quantity::get), Some(12.0));
         assert!(ask.price.is_none());
         assert!(ask.quantity.is_none());
+    }
+
+    #[test]
+    fn converts_epoch_day_zero_to_unix_epoch_date() {
+        assert_eq!(date_from_epoch_days(0), "1970-01-01");
     }
 }

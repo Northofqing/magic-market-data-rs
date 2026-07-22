@@ -2,8 +2,8 @@
 
 use magic_emquant_rs::EmQuantClient;
 use magic_market_core::{
-    AssetClass, DataStatus, Exchange, InstrumentId, Money, OrderBooks, Price, Quantity,
-    RealtimeQuotes,
+    Adjustment, AssetClass, BarInterval, BarsRequest, DataStatus, Exchange, HistoricalBars,
+    InstrumentId, Money, OrderBooks, Price, Quantity, RealtimeQuotes,
 };
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -23,6 +23,16 @@ fn fake_bridge() -> PathBuf {
         &bridge,
         r##"#!/bin/sh
 set -eu
+if test "$1" = "--history"; then
+  test "$2" = "csd"
+  test "$3" = "600519.SH"
+  test "$4" = "OPEN,HIGH,LOW,CLOSE,VOLUME,AMOUNT"
+  test "$5" = "2026-07-20"
+  test "$6" = "2026-07-22"
+  test "$7" = "Period=1,AdjustFlag=1,Order=1"
+  printf '%s\n' '{"records":[{"date":"2026-07-20","code":"600519.SH","values":{"OPEN":1290,"HIGH":1310,"LOW":1288,"CLOSE":1300,"VOLUME":100,"AMOUNT":130000}},{"date":"2026-07-21","code":"600519.SH","values":{"OPEN":1300,"HIGH":1320,"LOW":1298,"CLOSE":1310,"VOLUME":110,"AMOUNT":144100}},{"date":"2026-07-22","code":"600519.SH","values":{"OPEN":1310,"HIGH":1330,"LOW":1308,"CLOSE":1320,"VOLUME":120,"AMOUNT":158400}}]}'
+  exit 0
+fi
 test "$1" = "600519.SH,000001.SZ"
 if test "$2" = "TIME,NOW,VOLUME,AMOUNT"; then
   printf '%s\n' '{"records":[{"date":"2026-07-22","code":"000001.SZ","values":{"TIME":"10:00:01","NOW":12.5,"VOLUME":200,"AMOUNT":2500}},{"date":"2026-07-22","code":"600519.SH","values":{"TIME":"10:00:00","NOW":1300,"VOLUME":100,"AMOUNT":130000}}]}'
@@ -98,4 +108,45 @@ fn executes_bridge_and_preserves_missing_order_book_levels() {
     assert!(first.bids[2].price.is_none());
     assert!(first.bids[2].quantity.is_none());
     assert!(batch.quality().complete);
+}
+
+#[test]
+fn executes_csd_and_returns_bounded_normalized_bars() {
+    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let request = BarsRequest::new(instruments()[0].clone(), BarInterval::Day, 2)
+        .unwrap()
+        .with_range("2026-07-20", "2026-07-22")
+        .unwrap();
+    let batch = client.historical_bars(&request).unwrap();
+
+    assert!(client.capabilities().bars);
+    assert!(!client.capabilities().minute);
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.records()[0].bar_start, "2026-07-21");
+    assert_eq!(batch.records()[0].open, Price::new(1300.0).unwrap());
+    assert_eq!(batch.records()[1].close, Price::new(1320.0).unwrap());
+    assert_eq!(batch.records()[1].adjustment, Adjustment::Unadjusted);
+    assert_eq!(batch.provenance().source_at.as_deref(), Some("2026-07-22"));
+    assert!(batch.quality().complete);
+}
+
+#[test]
+fn rejects_reversed_csd_dates_instead_of_sorting_them() {
+    let bridge = fake_bridge();
+    fs::write(
+        &bridge,
+        r##"#!/bin/sh
+set -eu
+printf '%s\n' '{"records":[{"date":"2026-07-22","code":"600519.SH","values":{"OPEN":1310,"HIGH":1330,"LOW":1308,"CLOSE":1320,"VOLUME":120,"AMOUNT":158400}},{"date":"2026-07-21","code":"600519.SH","values":{"OPEN":1300,"HIGH":1320,"LOW":1298,"CLOSE":1310,"VOLUME":110,"AMOUNT":144100}}]}'
+"##,
+    )
+    .unwrap();
+    let client = EmQuantClient::new(bridge).unwrap();
+    let request = BarsRequest::new(instruments()[0].clone(), BarInterval::Day, 2)
+        .unwrap()
+        .with_range("2026-07-20", "2026-07-22")
+        .unwrap();
+
+    let error = client.historical_bars(&request).unwrap_err();
+    assert!(error.to_string().contains("duplicated or out of order"));
 }

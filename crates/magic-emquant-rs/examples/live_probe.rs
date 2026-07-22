@@ -1,5 +1,8 @@
 use magic_emquant_rs::EmQuantClient;
-use magic_market_core::{AssetClass, Exchange, InstrumentId, Money, OrderBooks, RealtimeQuotes};
+use magic_market_core::{
+    AssetClass, BarInterval, BarsRequest, Exchange, HistoricalBars, InstrumentId, Money,
+    OrderBooks, RealtimeQuotes,
+};
 use std::error::Error;
 use std::time::Duration;
 
@@ -82,6 +85,37 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ask.quantity.map(|value| value.get())
             );
         }
+    }
+
+    let bars = client.historical_bars(&BarsRequest::new(
+        instruments[0].clone(),
+        BarInterval::Day,
+        5,
+    )?)?;
+    println!(
+        "bars count={} provenance={:?} quality={:?}",
+        bars.records().len(),
+        bars.provenance(),
+        bars.quality()
+    );
+    for bar in bars.records() {
+        println!(
+            "bar code={} interval={:?} start={} end={} open={} high={} low={} close={} volume={} amount={:?} adjustment={:?} source_at={:?} provider={:?} batch_id={}",
+            bar.instrument.code(),
+            bar.interval,
+            bar.bar_start,
+            bar.bar_end,
+            bar.open.get(),
+            bar.high.get(),
+            bar.low.get(),
+            bar.close.get(),
+            bar.volume.get(),
+            bar.amount.map(Money::get),
+            bar.adjustment,
+            bar.source_at,
+            bar.provider,
+            bar.batch_id
+        );
     }
     Ok(())
 }

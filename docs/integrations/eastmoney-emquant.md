@@ -19,7 +19,7 @@ SDK 版权声明要求授权使用；项目不复制动态库、不提交账号�
 | 项目契约 | EMQuant API | 状态 |
 | --- | --- | --- |
 | 实时 Quote | `csqsnapshot` | Rust 适配完成，待授权登录验证 |
-| 日线 | `csc` | 待授权登录验证 |
+| 日/周/月/年 K 线 | `csd` | Rust 适配完成，待授权登录验证 |
 | 分钟线 | `cmc` / `chmc` | 待授权登录验证 |
 | 逐笔 | `chq` | 取决于权限 |
 | 盘口/Level-2 | `csqsnapshot` 五档指标 | Rust 适配完成，待 Level-2 权限验证 |
@@ -75,9 +75,12 @@ cargo run -p magic-emquant-rs --example live_probe --release
 ```
 
 默认查询 `600519.SH,000001.SZ`，也可通过 `MAGIC_EMQUANT_CODES` 修改。输出包含
-实时价、成交量、成交额、五档买卖价量、源时间、采集时间和批次 ID。若登录或权限
-不足，命令明确失败，不会回退到测试数据。Rust 适配层默认在 30 秒后终止无响应的
-SDK 子进程，可通过正整数 `MAGIC_EMQUANT_TIMEOUT_SECS` 调整。
+实时价、成交量、成交额、五档买卖价量，以及第一只证券最近五根不复权日线的
+OHLCV、成交额、源时间、采集时间和批次 ID。日/周/月/年 K 线使用官方 `csd`，
+明确传入 `Period=1..4,AdjustFlag=1,Order=1`；空结果、代码错配、重复/逆序日期和
+OHLC 不一致均报错。若登录或权限不足，命令明确失败，不会回退到测试数据。Rust
+适配层默认在 30 秒后终止无响应的 SDK 子进程，可通过正整数
+`MAGIC_EMQUANT_TIMEOUT_SECS` 调整。
 
 ## 本地客户端探测结论
 
