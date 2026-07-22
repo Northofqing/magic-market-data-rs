@@ -27,5 +27,7 @@ pub use net::finance_client::TdxFinanceClient;
 pub use net::smart_client::TdxSmartClient;
 pub use profile::ProfileClient;
 pub use protocol::types::{IndexBar, SecurityBar, SecurityInfo, SecurityQuote};
-pub use service::{AsyncTdxService, BlockService, FundService, ProfileService, TdxService};
+pub use service::{
+    AsyncTdxService, BlockService, FinanceService, FundService, ProfileService, TdxService,
+};
 pub use source::{Adjustment, BarCategory, Market};
