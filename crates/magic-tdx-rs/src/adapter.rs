@@ -42,3 +42,22 @@ impl RealtimeQuotes for crate::TdxSmartClient {
         Ok(DataBatch::strict(records, magic_market_core::Provenance::new("tdx-smart", "runtime")))
     }
 }
+
+impl HistoricalBars for crate::TdxDirectClient {
+    type Bar = SecurityBar;
+    type Error = TdxError;
+    fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
+        let records = self.get_security_bars(category(request.interval), market(&request.instrument), request.instrument.code(), 0, request.limit, 0)?;
+        Ok(DataBatch::strict(records, magic_market_core::Provenance::new("tdx-direct", "runtime")))
+    }
+}
+
+impl RealtimeQuotes for crate::TdxDirectClient {
+    type Quote = SecurityQuote;
+    type Error = TdxError;
+    fn realtime_quotes(&self, instruments: &[InstrumentId]) -> Result<DataBatch<Self::Quote>, Self::Error> {
+        let pairs: Vec<(u8, &str)> = instruments.iter().map(|id| (market(id), id.code())).collect();
+        let records = self.get_security_quotes(&pairs)?;
+        Ok(DataBatch::strict(records, magic_market_core::Provenance::new("tdx-direct", "runtime")))
+    }
+}
