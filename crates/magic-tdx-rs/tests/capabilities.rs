@@ -10,4 +10,12 @@ fn tdx_advertises_all_core_data_families() {
             && c.corporate_actions
             && c.blocks
     );
+    assert!(!c.money_flow && !c.order_book && !c.auction);
+}
+
+#[test]
+fn blocking_and_smart_clients_expose_order_book_contract() {
+    fn assert_impl<T: magic_market_core::OrderBooks>() {}
+    assert_impl::<magic_tdx_rs::TdxHqClient>();
+    assert_impl::<magic_tdx_rs::TdxSmartClient>();
 }
