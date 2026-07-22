@@ -114,9 +114,18 @@ impl BarsRequest {
             {
                 return false;
             }
+            let year: u32 = s[0..4].parse().unwrap_or(0);
             let month: u32 = s[5..7].parse().unwrap_or(0);
             let day: u32 = s[8..10].parse().unwrap_or(0);
-            (1..=12).contains(&month) && (1..=31).contains(&day)
+            let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+            let max_day = match month {
+                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+                4 | 6 | 9 | 11 => 30,
+                2 if leap => 29,
+                2 => 28,
+                _ => 0,
+            };
+            max_day != 0 && day >= 1 && day <= max_day
         };
         if !valid(&start) || !valid(&end) || start > end {
             return Err(crate::CoreError::InvalidRequest(

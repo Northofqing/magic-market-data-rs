@@ -11,5 +11,7 @@ fn request_validates_date_range() {
     let req = BarsRequest::new(id, BarInterval::Day, 1).unwrap();
     assert!(req.clone().with_range("2026-07-22", "2026-07-21").is_err());
     assert!(req.clone().with_range("2026-07-21", "2026-07-22").is_ok());
-    assert!(req.with_range("2026-99-01", "2026-99-02").is_err());
+    assert!(req.clone().with_range("2026-99-01", "2026-99-02").is_err());
+    assert!(req.clone().with_range("2026-02-31", "2026-03-01").is_err());
+    assert!(req.with_range("2024-02-29", "2024-03-01").is_ok());
 }
