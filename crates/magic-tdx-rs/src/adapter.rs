@@ -1,8 +1,9 @@
 use crate::error::TdxError;
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use magic_market_core::{
-    AsyncHistoricalBars, AsyncRealtimeQuotes, BarInterval, BarsRequest, BookLevel, DataBatch,
-    HistoricalBars, InstrumentId, OrderBook, OrderBooks, Price, Quantity, RealtimeQuotes,
+    AsyncHistoricalBars, AsyncRealtimeQuotes, AuctionSnapshot, Auctions, BarInterval, BarsRequest,
+    BookLevel, DataBatch, HistoricalBars, InstrumentId, MoneyFlow, MoneyFlows, OrderBook,
+    OrderBooks, Price, Quantity, RealtimeQuotes,
 };
 
 impl TdxHqClient {
@@ -327,3 +328,28 @@ impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
         strict_quotes("tdx-async", records)
     }
 }
+
+macro_rules! unsupported_p0 {
+    ($client:ty) => {
+        impl MoneyFlows for $client {
+            type Error = TdxError;
+            fn money_flows(
+                &self,
+                _instruments: &[InstrumentId],
+            ) -> Result<DataBatch<MoneyFlow>, Self::Error> {
+                Err(TdxError::Unsupported("money_flow".into()))
+            }
+        }
+        impl Auctions for $client {
+            type Error = TdxError;
+            fn auction_snapshots(
+                &self,
+                _instruments: &[InstrumentId],
+            ) -> Result<DataBatch<AuctionSnapshot>, Self::Error> {
+                Err(TdxError::Unsupported("auction".into()))
+            }
+        }
+    };
+}
+unsupported_p0!(TdxHqClient);
+unsupported_p0!(crate::TdxSmartClient);

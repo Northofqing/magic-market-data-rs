@@ -19,3 +19,10 @@ fn blocking_and_smart_clients_expose_order_book_contract() {
     assert_impl::<magic_tdx_rs::TdxHqClient>();
     assert_impl::<magic_tdx_rs::TdxSmartClient>();
 }
+
+#[test]
+fn unsupported_p0_traits_are_still_callable() {
+    fn assert_impl<T: magic_market_core::MoneyFlows + magic_market_core::Auctions>() {}
+    assert_impl::<magic_tdx_rs::TdxHqClient>();
+    assert_impl::<magic_tdx_rs::TdxSmartClient>();
+}
