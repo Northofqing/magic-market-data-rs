@@ -1,5 +1,6 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use magic_tdx_rs::protocol::parsers::{parse_finance_info, parse_history_minute_time_data, parse_security_bars, parse_security_quotes, parse_transaction_data, parse_xdxr_info};
+use magic_tdx_rs::reader::{block::{parse_block, parse_block_group}, daily_bar::parse_daily_bar, financial::parse_financial, min_bar::{parse_lc_min_bar, parse_min_bar}};
 
 #[test]
 fn truncated_inputs_never_panic() {
@@ -11,11 +12,23 @@ fn truncated_inputs_never_panic() {
         let trades = catch_unwind(AssertUnwindSafe(|| parse_transaction_data(&bytes)));
         let finance = catch_unwind(AssertUnwindSafe(|| parse_finance_info(&bytes, 1, "600519")));
         let xdxr = catch_unwind(AssertUnwindSafe(|| parse_xdxr_info(&bytes)));
+        let daily = catch_unwind(AssertUnwindSafe(|| parse_daily_bar(&bytes, 1.0)));
+        let min = catch_unwind(AssertUnwindSafe(|| parse_min_bar(&bytes)));
+        let lcmin = catch_unwind(AssertUnwindSafe(|| parse_lc_min_bar(&bytes)));
+        let financial = catch_unwind(AssertUnwindSafe(|| parse_financial(&bytes)));
+        let block = catch_unwind(AssertUnwindSafe(|| parse_block(&bytes)));
+        let block_group = catch_unwind(AssertUnwindSafe(|| parse_block_group(&bytes)));
         assert!(bars.is_ok(), "bars panic at length {len}");
         assert!(quotes.is_ok(), "quotes panic at length {len}");
         assert!(minute.is_ok(), "minute panic at length {len}");
         assert!(trades.is_ok(), "trades panic at length {len}");
         assert!(finance.is_ok(), "finance panic at length {len}");
         assert!(xdxr.is_ok(), "xdxr panic at length {len}");
+        assert!(daily.is_ok(), "daily reader panic at length {len}");
+        assert!(min.is_ok(), "minute reader panic at length {len}");
+        assert!(lcmin.is_ok(), "lc minute reader panic at length {len}");
+        assert!(financial.is_ok(), "financial reader panic at length {len}");
+        assert!(block.is_ok(), "block reader panic at length {len}");
+        assert!(block_group.is_ok(), "block group reader panic at length {len}");
     }
 }
