@@ -27,6 +27,27 @@ impl ProfileService {
             .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
         ProfileClient::new(&mut client).get_category(market, code)
     }
+    /// Returns F10 categories with market inferred from the code prefix.
+    pub fn categories_auto(&self, code: &str) -> Result<Vec<F10Category>, TdxError> {
+        let mut client = self
+            .client
+            .lock()
+            .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
+        ProfileClient::new(&mut client).get_category_auto(code)
+    }
+    /// Fetches content for a previously returned category descriptor.
+    pub fn content(
+        &self,
+        market: u8,
+        code: &str,
+        category: &F10Category,
+    ) -> Result<F10Content, TdxError> {
+        let mut client = self
+            .client
+            .lock()
+            .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
+        ProfileClient::new(&mut client).get_content(market, code, category)
+    }
     /// Returns a named F10 section.
     pub fn content_by_name(
         &self,
