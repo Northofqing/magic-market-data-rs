@@ -1,4 +1,6 @@
-use magic_market_core::{BookLevel, DataStatus, MoneyFlow, OrderBook};
+use magic_market_core::{
+    BookLevel, DataStatus, MoneyFlow, OrderBook, Price, ProviderId, Quantity, Quote,
+};
 
 #[test]
 fn unavailable_fields_are_explicit() {
@@ -43,4 +45,27 @@ fn order_book_has_fixed_five_level_shape() {
     };
     assert_eq!(book.bids.len(), 5);
     assert_eq!(book.asks.len(), 5);
+}
+
+#[test]
+fn quote_keeps_source_and_observation_times_separate() {
+    let instrument = magic_market_core::InstrumentId::new(
+        magic_market_core::Exchange::Shanghai,
+        "600519",
+        magic_market_core::AssetClass::Equity,
+    )
+    .unwrap();
+    let quote = Quote::new(
+        instrument,
+        Price::new(1300.0).unwrap(),
+        Quantity::new(10.0).unwrap(),
+        None,
+        "observed",
+        ProviderId::Tdx,
+        "batch-1",
+    )
+    .with_source_at("source");
+    assert_eq!(quote.source_at.as_deref(), Some("source"));
+    assert_eq!(quote.observed_at, "observed");
+    assert_eq!(quote.batch_id, "batch-1");
 }
