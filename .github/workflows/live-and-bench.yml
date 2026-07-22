@@ -1,0 +1,25 @@
+name: Live diagnostic and benchmark
+on:
+  workflow_dispatch:
+jobs:
+  parser-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo run -p magic-tdx-rs --example parse_bench --release | tee parser-benchmark.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parser-benchmark
+          path: parser-benchmark.txt
+  live-tdx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo run -p magic-tdx-rs --example live_probe --release | tee live-probe.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-tdx-probe
+          path: live-probe.txt
