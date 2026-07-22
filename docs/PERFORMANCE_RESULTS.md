@@ -28,3 +28,8 @@ The read-only `live_probe` example has successfully returned one quote and five
 K-line records after SmartClient discarded an unavailable cached endpoint and
 failed over to a working TDX server. Live latency and sustained throughput are
 environment-dependent and are not claimed by the microbenchmark above.
+
+## MSRV verification
+
+After a clean build, `RUSTUP_TOOLCHAIN=1.83.0 cargo check --workspace
+--all-targets --offline` passes with the committed lockfile.
