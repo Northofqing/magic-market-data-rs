@@ -18,6 +18,39 @@ pub struct Quote {
     pub price: crate::Price,
     pub volume: crate::Quantity,
     pub amount: Option<crate::Money>,
+    /// Timestamp supplied by the source, when the packet proves one.
+    pub source_at: Option<String>,
+    /// Local observation timestamp, kept separate from `source_at`.
+    pub observed_at: String,
+    pub provider: ProviderId,
+    pub batch_id: String,
+}
+impl Quote {
+    /// Creates a quote with explicit observation evidence.
+    pub fn new(
+        instrument: InstrumentId,
+        price: crate::Price,
+        volume: crate::Quantity,
+        amount: Option<crate::Money>,
+        observed_at: impl Into<String>,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            instrument,
+            price,
+            volume,
+            amount,
+            source_at: None,
+            observed_at: observed_at.into(),
+            provider,
+            batch_id: batch_id.into(),
+        }
+    }
+    pub fn with_source_at(mut self, source_at: impl Into<String>) -> Self {
+        self.source_at = Some(source_at.into());
+        self
+    }
 }
 
 /// Availability state for optional source fields; absence is never encoded as zero.
