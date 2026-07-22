@@ -40,7 +40,18 @@ fn category(interval: BarInterval) -> u8 {
     }
 }
 fn nonempty<T>(records: Vec<T>) -> Result<Vec<T>, TdxError> {
-    if records.is_empty() { Err(TdxError::InvalidData("TDX returned an empty successful response".into())) } else { Ok(records) }
+    if records.is_empty() {
+        Err(TdxError::InvalidData(
+            "TDX returned an empty successful response".into(),
+        ))
+    } else {
+        Ok(records)
+    }
+}
+fn fetched_at() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or_else(|_| "unknown".into(), |d| d.as_secs().to_string())
 }
 
 impl HistoricalBars for TdxHqClient {
@@ -57,7 +68,7 @@ impl HistoricalBars for TdxHqClient {
         )?;
         Ok(DataBatch::strict(
             nonempty(records)?,
-            magic_market_core::Provenance::new("tdx", "runtime"),
+            magic_market_core::Provenance::new("tdx", fetched_at()),
         ))
     }
 }
@@ -76,7 +87,7 @@ impl RealtimeQuotes for TdxHqClient {
         let records = self.get_security_quotes(&pairs)?;
         Ok(DataBatch::strict(
             nonempty(records)?,
-            magic_market_core::Provenance::new("tdx", "runtime"),
+            magic_market_core::Provenance::new("tdx", fetched_at()),
         ))
     }
 }
@@ -95,7 +106,7 @@ impl HistoricalBars for crate::TdxSmartClient {
         )?;
         Ok(DataBatch::strict(
             nonempty(records)?,
-            magic_market_core::Provenance::new("tdx-smart", "runtime"),
+            magic_market_core::Provenance::new("tdx-smart", fetched_at()),
         ))
     }
 }
@@ -114,7 +125,7 @@ impl RealtimeQuotes for crate::TdxSmartClient {
         let records = self.get_security_quotes(&pairs)?;
         Ok(DataBatch::strict(
             nonempty(records)?,
-            magic_market_core::Provenance::new("tdx-smart", "runtime"),
+            magic_market_core::Provenance::new("tdx-smart", fetched_at()),
         ))
     }
 }
@@ -133,7 +144,7 @@ impl HistoricalBars for crate::TdxDirectClient {
         )?;
         Ok(DataBatch::strict(
             nonempty(records)?,
-            magic_market_core::Provenance::new("tdx-direct", "runtime"),
+            magic_market_core::Provenance::new("tdx-direct", fetched_at()),
         ))
     }
 }
@@ -152,7 +163,7 @@ impl RealtimeQuotes for crate::TdxDirectClient {
         let records = self.get_security_quotes(&pairs)?;
         Ok(DataBatch::strict(
             nonempty(records)?,
-            magic_market_core::Provenance::new("tdx-direct", "runtime"),
+            magic_market_core::Provenance::new("tdx-direct", fetched_at()),
         ))
     }
 }
@@ -176,7 +187,7 @@ impl AsyncHistoricalBars for crate::AsyncTdxHqClient {
             .await?;
         Ok(DataBatch::strict(
             nonempty(records)?,
-            magic_market_core::Provenance::new("tdx-async", "runtime"),
+            magic_market_core::Provenance::new("tdx-async", fetched_at()),
         ))
     }
 }
@@ -195,7 +206,7 @@ impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
         let records = self.get_security_quotes(&pairs).await?;
         Ok(DataBatch::strict(
             nonempty(records)?,
-            magic_market_core::Provenance::new("tdx-async", "runtime"),
+            magic_market_core::Provenance::new("tdx-async", fetched_at()),
         ))
     }
 }
