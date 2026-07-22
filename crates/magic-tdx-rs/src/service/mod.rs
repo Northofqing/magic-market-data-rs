@@ -1,6 +1,6 @@
 //! Stable service facade over TDX clients.
 use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
-use crate::{SecurityBar, SecurityQuote, TdxError, TdxSmartClient};
+use crate::{AsyncTdxHqClient, SecurityBar, SecurityQuote, TdxError, TdxSmartClient};
 use magic_market_core::{BarsRequest, DataBatch, HistoricalBars, InstrumentId, RealtimeQuotes};
 use std::collections::HashMap;
 
@@ -16,6 +16,47 @@ fn fetched_epoch() -> String {
 /// High-level TDX service using SmartClient failover semantics.
 pub struct TdxService {
     client: TdxSmartClient,
+}
+
+/// Async counterpart of [`TdxService`] for connection-pool concurrency.
+pub struct AsyncTdxService {
+    client: AsyncTdxHqClient,
+}
+impl AsyncTdxService {
+    /// Creates an asynchronous service with the client's default pool.
+    pub fn new() -> Self {
+        Self {
+            client: AsyncTdxHqClient::new(),
+        }
+    }
+    /// Accesses the underlying asynchronous client.
+    pub fn client(&self) -> &AsyncTdxHqClient {
+        &self.client
+    }
+    /// Fetches strict historical bars concurrently through the async client.
+    pub async fn bars(&self, request: &BarsRequest) -> Result<DataBatch<SecurityBar>, TdxError> {
+        <AsyncTdxHqClient as magic_market_core::AsyncHistoricalBars>::historical_bars_async(
+            &self.client,
+            request,
+        )
+        .await
+    }
+    /// Fetches strict realtime quotes concurrently through the async client.
+    pub async fn quotes(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<SecurityQuote>, TdxError> {
+        <AsyncTdxHqClient as magic_market_core::AsyncRealtimeQuotes>::realtime_quotes_async(
+            &self.client,
+            instruments,
+        )
+        .await
+    }
+}
+impl Default for AsyncTdxService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 impl TdxService {
     /// Creates a disconnected service.
