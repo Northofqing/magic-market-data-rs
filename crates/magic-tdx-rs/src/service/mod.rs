@@ -52,6 +52,66 @@ impl AsyncTdxService {
         )
         .await
     }
+    /// Fetches the server-declared number of securities.
+    pub async fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        self.client
+            .get_security_count(market)
+            .await
+            .map_err(Into::into)
+    }
+    /// Fetches one security-list page.
+    pub async fn security_list(
+        &self,
+        market: u8,
+        start: u16,
+    ) -> Result<Vec<SecurityInfo>, TdxError> {
+        self.client
+            .get_security_list(market, start)
+            .await
+            .map_err(Into::into)
+    }
+    /// Fetches current minute data.
+    pub async fn minute_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        self.client
+            .get_minute_time_data(market, code)
+            .await
+            .map_err(Into::into)
+    }
+    /// Fetches current transaction data.
+    pub async fn transactions(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        self.client
+            .get_transaction_data(market, code, start, count)
+            .await
+            .map_err(Into::into)
+    }
+    /// Fetches decoded finance fields.
+    pub async fn finance(&self, market: u8, code: &str) -> Result<FinanceInfo, TdxError> {
+        self.client
+            .get_finance_info(market, code)
+            .await
+            .map_err(Into::into)
+    }
+    /// Fetches corporate-action history.
+    pub async fn corporate_actions(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<XdXrInfo>, TdxError> {
+        self.client
+            .get_xdxr_info(market, code)
+            .await
+            .map_err(Into::into)
+    }
 }
 impl Default for AsyncTdxService {
     fn default() -> Self {
