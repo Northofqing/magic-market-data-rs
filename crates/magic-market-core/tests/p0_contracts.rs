@@ -24,6 +24,10 @@ fn unavailable_fields_are_explicit() {
         medium_net: None,
         small_net: None,
         status: DataStatus::Unavailable,
+        source_at: None,
+        observed_at: "observed".into(),
+        provider: ProviderId::Eastmoney,
+        batch_id: "batch-1".into(),
     };
 }
 

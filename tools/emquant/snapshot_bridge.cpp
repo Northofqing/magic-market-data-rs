@@ -71,13 +71,20 @@ template <typename T> static T symbol(void *handle, const char *name) {
 
 int main(int argc, char **argv) {
     const bool history_mode = argc > 1 && std::strcmp(argv[1], "--history") == 0;
-    if ((!history_mode && (argc < 3 || argc > 4)) || (history_mode && argc != 8)) {
+    const bool section_mode = argc > 1 && std::strcmp(argv[1], "--section") == 0;
+    if ((!history_mode && !section_mode && (argc < 3 || argc > 4))
+        || (history_mode && argc != 8) || (section_mode && argc != 6)) {
         std::cerr << "usage: emquant-snapshot CODE[,CODE] INDICATOR[,INDICATOR] [OPTIONS]\n"
-                  << "   or: emquant-snapshot --history csd|chmc CODE INDICATOR[,INDICATOR] START END OPTIONS\n";
+                  << "   or: emquant-snapshot --history csd|chmc CODE INDICATOR[,INDICATOR] START END OPTIONS\n"
+                  << "   or: emquant-snapshot --section css CODE[,CODE] INDICATOR[,INDICATOR] OPTIONS\n";
         return 2;
     }
     if (history_mode && std::strcmp(argv[2], "csd") != 0 && std::strcmp(argv[2], "chmc") != 0) {
         std::cerr << "unsupported EMQuant history method; expected csd or chmc\n";
+        return 2;
+    }
+    if (section_mode && std::strcmp(argv[2], "css") != 0) {
+        std::cerr << "unsupported EMQuant section method; expected css\n";
         return 2;
     }
     const char *library = std::getenv("MAGIC_EMQUANT_LIB");
@@ -122,6 +129,9 @@ int main(int argc, char **argv) {
     if (history_mode) {
         const auto history = symbol<History>(handle, argv[2]);
         query_error = history(argv[3], argv[4], argv[5], argv[6], argv[7], data);
+    } else if (section_mode) {
+        const auto section = symbol<Snapshot>(handle, "css");
+        query_error = section(argv[3], argv[4], argv[5], data);
     } else {
         const auto snapshot = symbol<Snapshot>(handle, "csqsnapshot");
         query_error = snapshot(argv[1], argv[2], argc == 4 ? argv[3] : "", data);

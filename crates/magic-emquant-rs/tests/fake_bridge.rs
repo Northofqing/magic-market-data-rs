@@ -2,8 +2,8 @@
 
 use magic_emquant_rs::EmQuantClient;
 use magic_market_core::{
-    Adjustment, AssetClass, BarInterval, BarsRequest, DataStatus, Exchange, HistoricalBars,
-    InstrumentId, Money, OrderBooks, Price, Quantity, RealtimeQuotes,
+    Adjustment, AssetClass, Auctions, BarInterval, BarsRequest, DataStatus, Exchange,
+    HistoricalBars, InstrumentId, Money, MoneyFlows, OrderBooks, Price, Quantity, RealtimeQuotes,
 };
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -23,6 +23,14 @@ fn fake_bridge() -> PathBuf {
         &bridge,
         r##"#!/bin/sh
 set -eu
+if test "$1" = "--section"; then
+  test "$2" = "css"
+  test "$3" = "600519.SH,000001.SZ"
+  test "$4" = "SUPERINFLOW,SUPEROUTFLOW,BIGINFLOW,BIGOUTFLOW,MIDINFLOW,MIDOUTFLOW,SMALLINFLOW,SMALLOUTFLOW"
+  test "$5" = ""
+  printf '%s\n' '{"records":[{"date":"2026-07-22","code":"000001.SZ","values":{"SUPERINFLOW":50,"SUPEROUTFLOW":40,"BIGINFLOW":30,"BIGOUTFLOW":20,"MIDINFLOW":20,"MIDOUTFLOW":10,"SMALLINFLOW":10,"SMALLOUTFLOW":20}},{"date":"2026-07-22","code":"600519.SH","values":{"SUPERINFLOW":100,"SUPEROUTFLOW":40,"BIGINFLOW":80,"BIGOUTFLOW":30,"MIDINFLOW":20,"MIDOUTFLOW":25,"SMALLINFLOW":10,"SMALLOUTFLOW":20}}]}'
+  exit 0
+fi
 if test "$1" = "--history"; then
   if test "$2" = "chmc"; then
     test "$3" = "600519.SH"
@@ -163,6 +171,33 @@ fn executes_chmc_and_aggregates_five_minute_bars() {
         batch.provenance().source_at.as_deref(),
         Some("2026-07-22 09:34:00")
     );
+}
+
+#[test]
+fn executes_css_and_normalizes_daily_money_flow() {
+    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let batch = client.money_flows(&instruments()).unwrap();
+
+    assert!(client.capabilities().money_flow);
+    assert_eq!(batch.records().len(), 2);
+    let first = &batch.records()[0];
+    assert_eq!(first.instrument.code(), "600519");
+    assert_eq!(first.main_net, Some(Money::new(110.0).unwrap()));
+    assert_eq!(first.super_large_net, Some(Money::new(60.0).unwrap()));
+    assert_eq!(first.large_net, Some(Money::new(50.0).unwrap()));
+    assert_eq!(first.medium_net, Some(Money::new(-5.0).unwrap()));
+    assert_eq!(first.small_net, Some(Money::new(-10.0).unwrap()));
+    assert_eq!(first.status, DataStatus::Available);
+    assert_eq!(first.source_at.as_deref(), Some("2026-07-22"));
+    assert!(batch.quality().complete);
+}
+
+#[test]
+fn opening_auction_is_explicitly_unsupported() {
+    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let error = client.auction_snapshots(&instruments()).unwrap_err();
+    assert!(error.to_string().contains("opening-auction"));
+    assert!(!client.capabilities().auction);
 }
 
 #[test]

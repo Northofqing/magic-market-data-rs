@@ -36,6 +36,16 @@ and gaps inside an aggregation bucket. `chmc` entitlement still needs a live
 authorized account check because the current public online manual omits this
 bundled API.
 
+`MoneyFlows` queries the documented daily super-large/large/medium/small order
+inflow and outflow fields through `css`, computes each net amount, and defines
+main net flow as super-large net plus large net. Missing components remain
+`Unavailable` and make the batch incomplete. This is a daily Choice indicator
+contract, not a claim of five-second intraday money flow.
+
+Opening-auction snapshots remain explicitly `Unsupported`: the verified
+indicator set does not contain the matched price plus matched and unmatched
+buy/sell quantities required by the core contract.
+
 The bridge call times out after 30 seconds by default. Set
 `MAGIC_EMQUANT_TIMEOUT_SECS` to a positive integer to override it.
 

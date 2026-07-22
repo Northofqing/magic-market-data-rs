@@ -1,7 +1,7 @@
 use magic_emquant_rs::EmQuantClient;
 use magic_market_core::{
-    AssetClass, Bar, BarInterval, BarsRequest, DataBatch, Exchange, HistoricalBars, InstrumentId,
-    Money, OrderBooks, RealtimeQuotes,
+    AssetClass, Auctions, Bar, BarInterval, BarsRequest, DataBatch, Exchange, HistoricalBars,
+    InstrumentId, Money, MoneyFlows, OrderBooks, RealtimeQuotes,
 };
 use std::error::Error;
 use std::time::Duration;
@@ -113,6 +113,38 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ask.quantity.map(|value| value.get())
             );
         }
+    }
+
+    let flows = client.money_flows(&instruments)?;
+    println!(
+        "money_flows count={} provenance={:?} quality={:?}",
+        flows.records().len(),
+        flows.provenance(),
+        flows.quality()
+    );
+    for flow in flows.records() {
+        println!(
+            "money_flow code={} main_net={:?} super_large_net={:?} large_net={:?} medium_net={:?} small_net={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+            flow.instrument.code(),
+            flow.main_net.map(Money::get),
+            flow.super_large_net.map(Money::get),
+            flow.large_net.map(Money::get),
+            flow.medium_net.map(Money::get),
+            flow.small_net.map(Money::get),
+            flow.status,
+            flow.source_at,
+            flow.observed_at,
+            flow.provider,
+            flow.batch_id
+        );
+    }
+    match client.auction_snapshots(&instruments) {
+        Ok(batch) => println!(
+            "auctions count={} provenance={:?}",
+            batch.records().len(),
+            batch.provenance()
+        ),
+        Err(error) => println!("auctions unsupported_or_error={error}"),
     }
 
     let bars = client.historical_bars(&BarsRequest::new(

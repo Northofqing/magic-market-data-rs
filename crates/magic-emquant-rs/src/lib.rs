@@ -2,9 +2,9 @@
 //! Read-only Eastmoney/Choice EMQuant adapter using the audited C++ bridge.
 
 use magic_market_core::{
-    Adjustment, Bar, BarInterval, BarsRequest, BookLevel, Capabilities, DataBatch, DataStatus,
-    HistoricalBars, InstrumentId, Money, OrderBook, OrderBooks, Price, ProviderId, Quantity, Quote,
-    RealtimeQuotes,
+    Adjustment, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, BookLevel, Capabilities,
+    DataBatch, DataStatus, HistoricalBars, InstrumentId, Money, MoneyFlow, MoneyFlows, OrderBook,
+    OrderBooks, Price, ProviderId, Quantity, Quote, RealtimeQuotes,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -87,6 +87,7 @@ impl EmQuantClient {
             quotes: true,
             bars: true,
             minute: true,
+            money_flow: true,
             order_book: true,
             ..Capabilities::new()
         }
@@ -172,6 +173,15 @@ impl EmQuantClient {
     ) -> Result<BridgeResponse, EmQuantError> {
         self.execute(&["--history", method, code, indicators, start, end, options])
     }
+
+    fn section(
+        &self,
+        codes: &str,
+        indicators: &str,
+        options: &str,
+    ) -> Result<BridgeResponse, EmQuantError> {
+        self.execute(&["--section", "css", codes, indicators, options])
+    }
 }
 
 fn source_code(instrument: &InstrumentId) -> String {
@@ -199,6 +209,22 @@ fn optional_number(
             .as_f64()
             .map(Some)
             .ok_or_else(|| EmQuantError::InvalidResponse(format!("invalid numeric field {field}"))),
+    }
+}
+
+fn net_money(
+    values: &HashMap<String, Value>,
+    inflow: &str,
+    outflow: &str,
+) -> Result<Option<Money>, EmQuantError> {
+    match (
+        optional_number(values, inflow)?,
+        optional_number(values, outflow)?,
+    ) {
+        (Some(inflow), Some(outflow)) => Money::new(inflow - outflow)
+            .map(Some)
+            .map_err(|error| EmQuantError::InvalidResponse(error.to_string())),
+        _ => Ok(None),
     }
 }
 
@@ -683,6 +709,119 @@ impl HistoricalBars for EmQuantClient {
             provenance = provenance.with_source_at(source_at);
         }
         Ok(DataBatch::strict(bars, provenance))
+    }
+}
+
+impl MoneyFlows for EmQuantClient {
+    type Error = EmQuantError;
+
+    fn money_flows(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<MoneyFlow>, Self::Error> {
+        if instruments.is_empty() {
+            return Err(EmQuantError::InvalidRequest(
+                "money-flow request is empty".into(),
+            ));
+        }
+        let mut seen = HashSet::new();
+        let codes: Vec<String> = instruments.iter().map(source_code).collect();
+        if codes.iter().any(|code| !seen.insert(code.clone())) {
+            return Err(EmQuantError::InvalidRequest(
+                "EMQuant rejects duplicate security codes".into(),
+            ));
+        }
+        let indicators = "SUPERINFLOW,SUPEROUTFLOW,BIGINFLOW,BIGOUTFLOW,MIDINFLOW,MIDOUTFLOW,SMALLINFLOW,SMALLOUTFLOW";
+        let response = self.section(&codes.join(","), indicators, "")?;
+        if response.records.len() != instruments.len() {
+            return Err(EmQuantError::InvalidResponse(format!(
+                "money-flow cardinality mismatch: requested {}, received {}",
+                instruments.len(),
+                response.records.len()
+            )));
+        }
+        let mut by_code = HashMap::new();
+        for record in response.records {
+            let code = record.code.clone();
+            if by_code.insert(code.clone(), record).is_some() {
+                return Err(EmQuantError::InvalidResponse(format!(
+                    "duplicate money-flow code {code}"
+                )));
+            }
+        }
+        let observed_at = observed_epoch();
+        let batch_id = format!("eastmoney:{observed_at}:money-flow");
+        let mut flows = Vec::with_capacity(instruments.len());
+        let mut issues = Vec::new();
+        let mut batch_source_at = None;
+        for (instrument, code) in instruments.iter().zip(codes) {
+            let record = by_code.remove(&code).ok_or_else(|| {
+                EmQuantError::InvalidResponse(format!("missing requested code {code}"))
+            })?;
+            let source_at = source_timestamp(&record);
+            if batch_source_at.is_none() {
+                batch_source_at.clone_from(&source_at);
+            }
+            let super_large_net = net_money(&record.values, "SUPERINFLOW", "SUPEROUTFLOW")?;
+            let large_net = net_money(&record.values, "BIGINFLOW", "BIGOUTFLOW")?;
+            let medium_net = net_money(&record.values, "MIDINFLOW", "MIDOUTFLOW")?;
+            let small_net = net_money(&record.values, "SMALLINFLOW", "SMALLOUTFLOW")?;
+            let main_net = match (super_large_net, large_net) {
+                (Some(super_large), Some(large)) => Some(
+                    Money::new(super_large.get() + large.get())
+                        .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
+                ),
+                _ => None,
+            };
+            let available = [main_net, super_large_net, large_net, medium_net, small_net]
+                .iter()
+                .all(Option::is_some);
+            if !available {
+                issues.push(format!("{code}: one or more money-flow fields unavailable"));
+            }
+            flows.push(MoneyFlow {
+                instrument: instrument.clone(),
+                main_net,
+                super_large_net,
+                large_net,
+                medium_net,
+                small_net,
+                status: if available {
+                    DataStatus::Available
+                } else {
+                    DataStatus::Unavailable
+                },
+                source_at,
+                observed_at: observed_at.clone(),
+                provider: ProviderId::Eastmoney,
+                batch_id: batch_id.clone(),
+            });
+        }
+        if !by_code.is_empty() {
+            return Err(EmQuantError::InvalidResponse(
+                "money-flow response contained unexpected security codes".into(),
+            ));
+        }
+        let mut provenance =
+            magic_market_core::Provenance::new("eastmoney-emquant-css-money-flow", observed_at)
+                .with_batch_id(batch_id);
+        if let Some(source_at) = batch_source_at {
+            provenance = provenance.with_source_at(source_at);
+        }
+        Ok(DataBatch::best_effort(flows, provenance, issues))
+    }
+}
+
+impl Auctions for EmQuantClient {
+    type Error = EmQuantError;
+
+    fn auction_snapshots(
+        &self,
+        _instruments: &[InstrumentId],
+    ) -> Result<DataBatch<AuctionSnapshot>, Self::Error> {
+        Err(EmQuantError::Unsupported(
+            "opening-auction matched and unmatched fields are not verified in EMQuant".into(),
+        ))
     }
 }
 

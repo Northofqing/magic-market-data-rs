@@ -75,6 +75,10 @@ pub struct MoneyFlow {
     pub medium_net: Option<crate::Money>,
     pub small_net: Option<crate::Money>,
     pub status: DataStatus,
+    pub source_at: Option<String>,
+    pub observed_at: String,
+    pub provider: ProviderId,
+    pub batch_id: String,
 }
 
 /// One level of a normalized five-level order book.
