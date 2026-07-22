@@ -109,6 +109,23 @@ fn main() {
                 Ok(items) => println!("f10_categories={} ", items.len()),
                 Err(error) => println!("f10_categories=error error={error}"),
             }
+            let finance = magic_tdx_rs::TdxFinanceClient::new("180.153.18.170", 7709, Some(3.0));
+            match finance.get_financial_list() {
+                Ok(files) => {
+                    println!("financial_files={}", files.len());
+                    if let Some(file) = files.first() {
+                        match finance.get_finance_indicators(
+                            &file.filename,
+                            file.filesize,
+                            "600519",
+                        ) {
+                            Ok(values) => println!("finance_indicators={}", values.len()),
+                            Err(error) => println!("finance_indicators=error error={error}"),
+                        }
+                    }
+                }
+                Err(error) => println!("financial_files=error error={error}"),
+            }
         }
         Ok(false) => println!("connected=false"),
         Err(error) => println!("connected=error error={error}"),
