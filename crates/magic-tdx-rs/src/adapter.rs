@@ -39,6 +39,9 @@ fn category(interval: BarInterval) -> u8 {
         BarInterval::Year => 6,
     }
 }
+fn nonempty<T>(records: Vec<T>) -> Result<Vec<T>, TdxError> {
+    if records.is_empty() { Err(TdxError::InvalidData("TDX returned an empty successful response".into())) } else { Ok(records) }
+}
 
 impl HistoricalBars for TdxHqClient {
     type Bar = SecurityBar;
@@ -53,7 +56,7 @@ impl HistoricalBars for TdxHqClient {
             0,
         )?;
         Ok(DataBatch::strict(
-            records,
+            nonempty(records)?,
             magic_market_core::Provenance::new("tdx", "runtime"),
         ))
     }
@@ -72,7 +75,7 @@ impl RealtimeQuotes for TdxHqClient {
             .collect();
         let records = self.get_security_quotes(&pairs)?;
         Ok(DataBatch::strict(
-            records,
+            nonempty(records)?,
             magic_market_core::Provenance::new("tdx", "runtime"),
         ))
     }
@@ -91,7 +94,7 @@ impl HistoricalBars for crate::TdxSmartClient {
             0,
         )?;
         Ok(DataBatch::strict(
-            records,
+            nonempty(records)?,
             magic_market_core::Provenance::new("tdx-smart", "runtime"),
         ))
     }
@@ -110,7 +113,7 @@ impl RealtimeQuotes for crate::TdxSmartClient {
             .collect();
         let records = self.get_security_quotes(&pairs)?;
         Ok(DataBatch::strict(
-            records,
+            nonempty(records)?,
             magic_market_core::Provenance::new("tdx-smart", "runtime"),
         ))
     }
@@ -129,7 +132,7 @@ impl HistoricalBars for crate::TdxDirectClient {
             0,
         )?;
         Ok(DataBatch::strict(
-            records,
+            nonempty(records)?,
             magic_market_core::Provenance::new("tdx-direct", "runtime"),
         ))
     }
@@ -148,7 +151,7 @@ impl RealtimeQuotes for crate::TdxDirectClient {
             .collect();
         let records = self.get_security_quotes(&pairs)?;
         Ok(DataBatch::strict(
-            records,
+            nonempty(records)?,
             magic_market_core::Provenance::new("tdx-direct", "runtime"),
         ))
     }
@@ -172,7 +175,7 @@ impl AsyncHistoricalBars for crate::AsyncTdxHqClient {
             )
             .await?;
         Ok(DataBatch::strict(
-            records,
+            nonempty(records)?,
             magic_market_core::Provenance::new("tdx-async", "runtime"),
         ))
     }
@@ -191,7 +194,7 @@ impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
             .collect();
         let records = self.get_security_quotes(&pairs).await?;
         Ok(DataBatch::strict(
-            records,
+            nonempty(records)?,
             magic_market_core::Provenance::new("tdx-async", "runtime"),
         ))
     }
