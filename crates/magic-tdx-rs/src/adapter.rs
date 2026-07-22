@@ -2,6 +2,13 @@ use magic_market_core::{BarInterval, BarsRequest, DataBatch, HistoricalBars, Ins
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use crate::error::TdxError;
 
+impl TdxHqClient {
+    /// Returns the data families exposed through the core provider boundary.
+    pub const fn capabilities() -> magic_market_core::Capabilities {
+        magic_market_core::Capabilities { quotes: true, bars: true, minute: true, trades: true, fundamentals: true, corporate_actions: true, blocks: true }
+    }
+}
+
 fn market(id: &InstrumentId) -> u8 { match id.exchange() { magic_market_core::Exchange::Shanghai => 1, magic_market_core::Exchange::Shenzhen => 0 } }
 fn category(interval: BarInterval) -> u8 { match interval { BarInterval::Minute1 => 7, BarInterval::Minute5 => 0, BarInterval::Minute15 => 1, BarInterval::Minute30 => 2, BarInterval::Hour1 => 3, BarInterval::Day => 4, BarInterval::Week => 5, BarInterval::Month => 6, BarInterval::Year => 6 } }
 
