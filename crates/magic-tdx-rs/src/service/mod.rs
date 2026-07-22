@@ -9,8 +9,8 @@ pub use blocks::BlockService;
 pub use finance::FinanceService;
 pub use funds::FundService;
 use magic_market_core::{
-    BarsRequest, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId, OrderBook, Price,
-    Quantity, RealtimeQuotes,
+    AuctionSnapshot, BarsRequest, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId,
+    MoneyFlow, OrderBook, Price, Quantity, RealtimeQuotes,
 };
 pub use profile::ProfileService;
 use std::collections::HashMap;
@@ -346,6 +346,20 @@ impl TdxService {
             provenance = provenance.with_source_at(source_at);
         }
         Ok(DataBatch::strict(records, provenance))
+    }
+    /// TDX has no standardized auditable money-flow packet.
+    pub fn money_flows(
+        &self,
+        _instruments: &[InstrumentId],
+    ) -> Result<DataBatch<MoneyFlow>, TdxError> {
+        Err(TdxError::Unsupported("money_flow".into()))
+    }
+    /// TDX has no standardized call-auction snapshot packet.
+    pub fn auction_snapshots(
+        &self,
+        _instruments: &[InstrumentId],
+    ) -> Result<DataBatch<AuctionSnapshot>, TdxError> {
+        Err(TdxError::Unsupported("auction".into()))
     }
     /// Fetches a market security count.
     pub fn security_count(&self, market: u8) -> Result<u16, TdxError> {

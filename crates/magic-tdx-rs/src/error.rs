@@ -34,6 +34,9 @@ pub enum TdxError {
     #[error("Retry exhausted after {0} attempts")]
     RetryExhausted(usize),
 
+    #[error("Unsupported capability: {0}")]
+    Unsupported(String),
+
     #[error("{0}")]
     Coded(CodedError),
 }
