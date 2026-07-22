@@ -108,6 +108,11 @@ fn executes_bridge_and_normalizes_quotes_in_request_order() {
     );
     assert_eq!(batch.records()[1].instrument.code(), "000001");
     assert_eq!(batch.provenance().source, "eastmoney-emquant");
+    assert!(batch.records()[0].batch_id.ends_with(":quote"));
+    assert_eq!(
+        batch.records()[0].batch_id,
+        batch.provenance().batch_id.as_deref().unwrap()
+    );
     assert!(batch.quality().complete);
 }
 
@@ -124,6 +129,15 @@ fn executes_bridge_and_preserves_missing_order_book_levels() {
     assert_eq!(first.asks[1].quantity.map(Quantity::get), Some(13.0));
     assert!(first.bids[2].price.is_none());
     assert!(first.bids[2].quantity.is_none());
+    assert_eq!(first.total_bid_quantity.map(Quantity::get), Some(22.0));
+    assert_eq!(first.total_ask_quantity.map(Quantity::get), Some(24.0));
+    assert_eq!(first.source_at.as_deref(), Some("2026-07-22 10:00:00"));
+    assert_eq!(first.provider, magic_market_core::ProviderId::Eastmoney);
+    assert!(first.batch_id.ends_with(":order-book"));
+    assert_eq!(
+        first.batch_id,
+        batch.provenance().batch_id.as_deref().unwrap()
+    );
     assert!(batch.quality().complete);
 }
 

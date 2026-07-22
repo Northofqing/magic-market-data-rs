@@ -11,7 +11,7 @@ pinned `tdxrs` implementation. The following modules are present in the
 | Tokio async client | `AsyncTdxHqClient` |
 | Smart failover client | `TdxSmartClient` |
 | Quotes and bars | `protocol::parsers`, `net::*` |
-| Five-level order book | `OrderBooks` on `TdxHqClient` and `TdxSmartClient`; derived from quote bid/ask levels with source timestamps |
+| Five-level order book | `OrderBooks` on blocking, smart and async clients; includes visible bid/ask depth plus record-level source/observation/provider/batch evidence |
 | Minute and transaction data | `protocol::parsers` |
 | Finance and corporate actions | `protocol::finance_fields`, `protocol::adjuster` |
 | Fund data | `fund` |

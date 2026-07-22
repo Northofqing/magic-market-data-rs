@@ -1,6 +1,6 @@
 use magic_market_core::{
-    Adjustment, Bar, BarInterval, BookLevel, DataStatus, MoneyFlow, OrderBook, Price, ProviderId,
-    Quantity, Quote,
+    Adjustment, AuctionSnapshot, Bar, BarInterval, BookLevel, DataStatus, MoneyFlow, OrderBook,
+    Price, ProviderId, Quantity, Quote,
 };
 
 #[test]
@@ -72,10 +72,18 @@ fn order_book_has_fixed_five_level_shape() {
         .unwrap(),
         bids: [level; 5],
         asks: [level; 5],
+        total_bid_quantity: None,
+        total_ask_quantity: None,
         status: DataStatus::Unsupported,
+        source_at: None,
+        observed_at: "observed".into(),
+        provider: ProviderId::Tdx,
+        batch_id: "batch-1".into(),
     };
     assert_eq!(book.bids.len(), 5);
     assert_eq!(book.asks.len(), 5);
+    assert_eq!(book.observed_at, "observed");
+    assert_eq!(book.batch_id, "batch-1");
 }
 
 #[test]
@@ -99,4 +107,33 @@ fn quote_keeps_source_and_observation_times_separate() {
     assert_eq!(quote.source_at.as_deref(), Some("source"));
     assert_eq!(quote.observed_at, "observed");
     assert_eq!(quote.batch_id, "batch-1");
+}
+
+#[test]
+fn auction_contract_preserves_missing_fields_and_evidence() {
+    let snapshot = AuctionSnapshot {
+        instrument: magic_market_core::InstrumentId::new(
+            magic_market_core::Exchange::Shanghai,
+            "600519",
+            magic_market_core::AssetClass::Equity,
+        )
+        .unwrap(),
+        name: None,
+        matched_price: None,
+        previous_close: None,
+        change_percent: None,
+        matched_quantity: None,
+        matched_amount: None,
+        unmatched_bid_quantity: None,
+        unmatched_ask_quantity: None,
+        volume_ratio: None,
+        status: DataStatus::Unavailable,
+        source_at: None,
+        observed_at: "observed".into(),
+        provider: ProviderId::Eastmoney,
+        batch_id: "batch-1".into(),
+    };
+    assert_eq!(snapshot.status, DataStatus::Unavailable);
+    assert!(snapshot.unmatched_bid_quantity.is_none());
+    assert_eq!(snapshot.batch_id, "batch-1");
 }

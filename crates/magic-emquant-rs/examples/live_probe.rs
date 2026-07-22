@@ -98,10 +98,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     for book in books.records() {
         println!(
-            "order_book code={} exchange={:?} status={:?}",
+            "order_book code={} exchange={:?} total_bid_quantity={:?} total_ask_quantity={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
             book.instrument.code(),
             book.instrument.exchange(),
-            book.status
+            book.total_bid_quantity.map(|value| value.get()),
+            book.total_ask_quantity.map(|value| value.get()),
+            book.status,
+            book.source_at,
+            book.observed_at,
+            book.provider,
+            book.batch_id
         );
         for (index, (bid, ask)) in book.bids.iter().zip(book.asks.iter()).enumerate() {
             println!(

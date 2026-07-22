@@ -134,6 +134,25 @@ fn book_level(price: f64, quantity: f64) -> Result<BookLevel, TdxError> {
     Ok(BookLevel { price, quantity })
 }
 
+fn book_depth(levels: &[BookLevel; 5]) -> Result<Option<Quantity>, TdxError> {
+    let mut found = false;
+    let total =
+        levels
+            .iter()
+            .filter_map(|level| level.quantity)
+            .fold(0.0, |accumulator, quantity| {
+                found = true;
+                accumulator + quantity.get()
+            });
+    if found {
+        Quantity::new(total)
+            .map(Some)
+            .map_err(|error| TdxError::InvalidData(error.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
 impl OrderBooks for TdxHqClient {
     type Error = TdxError;
     fn order_books(
@@ -150,7 +169,12 @@ impl OrderBooks for TdxHqClient {
                 "TDX order-book cardinality mismatch".into(),
             ));
         }
-        let source_at = quotes.first().map(|quote| quote.servertime.clone());
+        let batch_source_at = quotes
+            .iter()
+            .find(|quote| !quote.servertime.is_empty())
+            .map(|quote| quote.servertime.clone());
+        let observed_at = fetched_at();
+        let batch_id = format!("tdx:{observed_at}:order-book");
         let mut books = Vec::with_capacity(quotes.len());
         for (id, quote) in instruments.iter().zip(quotes) {
             let bids = [
@@ -167,15 +191,24 @@ impl OrderBooks for TdxHqClient {
                 book_level(quote.ask4, quote.ask_vol4)?,
                 book_level(quote.ask5, quote.ask_vol5)?,
             ];
+            let total_bid_quantity = book_depth(&bids)?;
+            let total_ask_quantity = book_depth(&asks)?;
             books.push(OrderBook {
                 instrument: id.clone(),
                 bids,
                 asks,
+                total_bid_quantity,
+                total_ask_quantity,
                 status: magic_market_core::DataStatus::Available,
+                source_at: (!quote.servertime.is_empty()).then_some(quote.servertime),
+                observed_at: observed_at.clone(),
+                provider: magic_market_core::ProviderId::Tdx,
+                batch_id: batch_id.clone(),
             });
         }
-        let mut provenance = magic_market_core::Provenance::new("tdx", fetched_at());
-        if let Some(source_at) = source_at {
+        let mut provenance =
+            magic_market_core::Provenance::new("tdx", observed_at).with_batch_id(batch_id);
+        if let Some(source_at) = batch_source_at {
             provenance = provenance.with_source_at(source_at);
         }
         Ok(DataBatch::strict(books, provenance))
@@ -198,30 +231,46 @@ impl OrderBooks for crate::TdxSmartClient {
                 "TDX smart order-book cardinality mismatch".into(),
             ));
         }
-        let source_at = quotes.first().map(|quote| quote.servertime.clone());
+        let batch_source_at = quotes
+            .iter()
+            .find(|quote| !quote.servertime.is_empty())
+            .map(|quote| quote.servertime.clone());
+        let observed_at = fetched_at();
+        let batch_id = format!("tdx-smart:{observed_at}:order-book");
         let mut books = Vec::with_capacity(quotes.len());
         for (id, quote) in instruments.iter().zip(quotes) {
+            let bids = [
+                book_level(quote.bid1, quote.bid_vol1)?,
+                book_level(quote.bid2, quote.bid_vol2)?,
+                book_level(quote.bid3, quote.bid_vol3)?,
+                book_level(quote.bid4, quote.bid_vol4)?,
+                book_level(quote.bid5, quote.bid_vol5)?,
+            ];
+            let asks = [
+                book_level(quote.ask1, quote.ask_vol1)?,
+                book_level(quote.ask2, quote.ask_vol2)?,
+                book_level(quote.ask3, quote.ask_vol3)?,
+                book_level(quote.ask4, quote.ask_vol4)?,
+                book_level(quote.ask5, quote.ask_vol5)?,
+            ];
+            let total_bid_quantity = book_depth(&bids)?;
+            let total_ask_quantity = book_depth(&asks)?;
             books.push(OrderBook {
                 instrument: id.clone(),
-                bids: [
-                    book_level(quote.bid1, quote.bid_vol1)?,
-                    book_level(quote.bid2, quote.bid_vol2)?,
-                    book_level(quote.bid3, quote.bid_vol3)?,
-                    book_level(quote.bid4, quote.bid_vol4)?,
-                    book_level(quote.bid5, quote.bid_vol5)?,
-                ],
-                asks: [
-                    book_level(quote.ask1, quote.ask_vol1)?,
-                    book_level(quote.ask2, quote.ask_vol2)?,
-                    book_level(quote.ask3, quote.ask_vol3)?,
-                    book_level(quote.ask4, quote.ask_vol4)?,
-                    book_level(quote.ask5, quote.ask_vol5)?,
-                ],
+                bids,
+                asks,
+                total_bid_quantity,
+                total_ask_quantity,
                 status: magic_market_core::DataStatus::Available,
+                source_at: (!quote.servertime.is_empty()).then_some(quote.servertime),
+                observed_at: observed_at.clone(),
+                provider: magic_market_core::ProviderId::Tdx,
+                batch_id: batch_id.clone(),
             });
         }
-        let mut provenance = magic_market_core::Provenance::new("tdx-smart", fetched_at());
-        if let Some(source_at) = source_at {
+        let mut provenance =
+            magic_market_core::Provenance::new("tdx-smart", observed_at).with_batch_id(batch_id);
+        if let Some(source_at) = batch_source_at {
             provenance = provenance.with_source_at(source_at);
         }
         Ok(DataBatch::strict(books, provenance))

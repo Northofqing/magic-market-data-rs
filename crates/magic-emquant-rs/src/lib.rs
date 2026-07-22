@@ -528,6 +528,25 @@ fn book_level(
     Ok(BookLevel { price, quantity })
 }
 
+fn book_depth(levels: &[BookLevel; 5]) -> Result<Option<Quantity>, EmQuantError> {
+    let mut found = false;
+    let total =
+        levels
+            .iter()
+            .filter_map(|level| level.quantity)
+            .fold(0.0, |accumulator, quantity| {
+                found = true;
+                accumulator + quantity.get()
+            });
+    if found {
+        Quantity::new(total)
+            .map(Some)
+            .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
 impl RealtimeQuotes for EmQuantClient {
     type Quote = Quote;
     type Error = EmQuantError;
@@ -562,7 +581,7 @@ impl RealtimeQuotes for EmQuantClient {
             .map(|record| (record.code.clone(), record))
             .collect();
         let observed_at = observed_epoch();
-        let batch_id = format!("eastmoney:{observed_at}");
+        let batch_id = format!("eastmoney:{observed_at}:quote");
         let mut quotes = Vec::with_capacity(instruments.len());
         let mut source_at = None;
         for (instrument, code) in instruments.iter().zip(codes) {
@@ -859,7 +878,7 @@ impl OrderBooks for EmQuantClient {
             .map(|record| (record.code.clone(), record))
             .collect();
         let observed_at = observed_epoch();
-        let batch_id = format!("eastmoney:{observed_at}");
+        let batch_id = format!("eastmoney:{observed_at}:order-book");
         let mut books = Vec::with_capacity(instruments.len());
         let mut batch_source_at = None;
         for (instrument, code) in instruments.iter().zip(codes) {
@@ -881,18 +900,27 @@ impl OrderBooks for EmQuantClient {
                 book_level(&record.values, "SELL", 5)?,
             ];
             let available = bids.iter().chain(&asks).any(|level| level.price.is_some());
+            let total_bid_quantity = book_depth(&bids)?;
+            let total_ask_quantity = book_depth(&asks)?;
+            let source_at = source_timestamp(&record);
             if batch_source_at.is_none() {
-                batch_source_at = source_timestamp(&record);
+                batch_source_at.clone_from(&source_at);
             }
             books.push(OrderBook {
                 instrument: instrument.clone(),
                 bids,
                 asks,
+                total_bid_quantity,
+                total_ask_quantity,
                 status: if available {
                     DataStatus::Available
                 } else {
                     DataStatus::Unavailable
                 },
+                source_at,
+                observed_at: observed_at.clone(),
+                provider: ProviderId::Eastmoney,
+                batch_id: batch_id.clone(),
             });
         }
         if !by_code.is_empty() {

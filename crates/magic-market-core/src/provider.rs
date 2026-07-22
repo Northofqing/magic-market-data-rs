@@ -94,16 +94,35 @@ pub struct OrderBook {
     pub instrument: InstrumentId,
     pub bids: [BookLevel; 5],
     pub asks: [BookLevel; 5],
+    /// Sum of the quantities exposed by the returned bid levels.
+    pub total_bid_quantity: Option<crate::Quantity>,
+    /// Sum of the quantities exposed by the returned ask levels.
+    pub total_ask_quantity: Option<crate::Quantity>,
     pub status: DataStatus,
+    pub source_at: Option<String>,
+    pub observed_at: String,
+    pub provider: ProviderId,
+    pub batch_id: String,
 }
 
 /// Normalized call-auction snapshot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuctionSnapshot {
     pub instrument: InstrumentId,
+    pub name: Option<String>,
     pub matched_price: Option<crate::Price>,
+    pub previous_close: Option<crate::Price>,
+    pub change_percent: Option<crate::Ratio>,
     pub matched_quantity: Option<crate::Quantity>,
+    pub matched_amount: Option<crate::Money>,
+    pub unmatched_bid_quantity: Option<crate::Quantity>,
+    pub unmatched_ask_quantity: Option<crate::Quantity>,
+    pub volume_ratio: Option<crate::Ratio>,
     pub status: DataStatus,
+    pub source_at: Option<String>,
+    pub observed_at: String,
+    pub provider: ProviderId,
+    pub batch_id: String,
 }
 
 /// Declares which data families a provider implements.

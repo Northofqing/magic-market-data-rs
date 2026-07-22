@@ -97,30 +97,63 @@ impl AsyncTdxService {
             };
             Ok(BookLevel { price, quantity })
         };
-        let source_at = quotes.first().map(|quote| quote.servertime.clone());
+        let depth = |levels: &[BookLevel; 5]| -> Result<Option<Quantity>, TdxError> {
+            let mut found = false;
+            let total = levels.iter().filter_map(|level| level.quantity).fold(
+                0.0,
+                |accumulator, quantity| {
+                    found = true;
+                    accumulator + quantity.get()
+                },
+            );
+            if found {
+                Quantity::new(total)
+                    .map(Some)
+                    .map_err(|error| TdxError::InvalidData(error.to_string()))
+            } else {
+                Ok(None)
+            }
+        };
+        let batch_source_at = quotes
+            .iter()
+            .find(|quote| !quote.servertime.is_empty())
+            .map(|quote| quote.servertime.clone());
+        let observed_at = fetched_epoch();
+        let batch_id = format!("tdx-async:{observed_at}:order-book");
         let mut books = Vec::with_capacity(quotes.len());
         for (id, quote) in instruments.iter().zip(quotes) {
+            let bids = [
+                level(quote.bid1, quote.bid_vol1)?,
+                level(quote.bid2, quote.bid_vol2)?,
+                level(quote.bid3, quote.bid_vol3)?,
+                level(quote.bid4, quote.bid_vol4)?,
+                level(quote.bid5, quote.bid_vol5)?,
+            ];
+            let asks = [
+                level(quote.ask1, quote.ask_vol1)?,
+                level(quote.ask2, quote.ask_vol2)?,
+                level(quote.ask3, quote.ask_vol3)?,
+                level(quote.ask4, quote.ask_vol4)?,
+                level(quote.ask5, quote.ask_vol5)?,
+            ];
+            let total_bid_quantity = depth(&bids)?;
+            let total_ask_quantity = depth(&asks)?;
             books.push(OrderBook {
                 instrument: id.clone(),
-                bids: [
-                    level(quote.bid1, quote.bid_vol1)?,
-                    level(quote.bid2, quote.bid_vol2)?,
-                    level(quote.bid3, quote.bid_vol3)?,
-                    level(quote.bid4, quote.bid_vol4)?,
-                    level(quote.bid5, quote.bid_vol5)?,
-                ],
-                asks: [
-                    level(quote.ask1, quote.ask_vol1)?,
-                    level(quote.ask2, quote.ask_vol2)?,
-                    level(quote.ask3, quote.ask_vol3)?,
-                    level(quote.ask4, quote.ask_vol4)?,
-                    level(quote.ask5, quote.ask_vol5)?,
-                ],
+                bids,
+                asks,
+                total_bid_quantity,
+                total_ask_quantity,
                 status: DataStatus::Available,
+                source_at: (!quote.servertime.is_empty()).then_some(quote.servertime),
+                observed_at: observed_at.clone(),
+                provider: magic_market_core::ProviderId::Tdx,
+                batch_id: batch_id.clone(),
             });
         }
-        let mut provenance = magic_market_core::Provenance::new("tdx-async", fetched_epoch());
-        if let Some(source_at) = source_at {
+        let mut provenance =
+            magic_market_core::Provenance::new("tdx-async", observed_at).with_batch_id(batch_id);
+        if let Some(source_at) = batch_source_at {
             provenance = provenance.with_source_at(source_at);
         }
         Ok(DataBatch::strict(books, provenance))
