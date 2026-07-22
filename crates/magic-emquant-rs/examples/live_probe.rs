@@ -48,8 +48,6 @@ fn print_bars(label: &str, bars: &DataBatch<Bar>) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let bridge = std::env::var_os("MAGIC_EMQUANT_BRIDGE")
-        .ok_or("set MAGIC_EMQUANT_BRIDGE to the compiled snapshot bridge")?;
     let codes =
         std::env::var("MAGIC_EMQUANT_CODES").unwrap_or_else(|_| "600519.SH,000001.SZ".to_owned());
     let instruments = codes
@@ -61,10 +59,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse::<u64>())
         .transpose()?
         .unwrap_or(30);
-    let client = EmQuantClient::new(bridge)?.with_timeout(Duration::from_secs(timeout))?;
+    let client = EmQuantClient::discover()?.with_timeout(Duration::from_secs(timeout))?;
 
     println!(
-        "provider=eastmoney-emquant capabilities={:?}",
+        "provider=eastmoney-emquant bridge={} capabilities={:?}",
+        client.bridge_path().display(),
         client.capabilities()
     );
     let quotes = client.realtime_quotes(&instruments)?;

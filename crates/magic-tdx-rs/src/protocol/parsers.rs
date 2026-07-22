@@ -509,13 +509,20 @@ pub fn parse_history_transaction_data_with_coefficient(
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
     }
 
+    let count = read_u16(body, 0) as usize;
     // 跳过 2 bytes count + 4 bytes header
     let mut pos = 6;
 
-    let mut result = Vec::new();
+    let mut result = Vec::with_capacity(count);
     let mut last_price: i64 = 0;
 
-    while pos + 6 < body.len() {
+    for _ in 0..count {
+        // time(2) plus four minimally one-byte variable integers.
+        if body.len().saturating_sub(pos) < 6 {
+            return Err(
+                ErrorCode::RESPONSE_LENGTH_MISMATCH.err("truncated historical transaction record")
+            );
+        }
         // time (u16 minutes)
         let minutes = read_u16(body, pos) as u32;
         pos += 2;
@@ -1239,6 +1246,23 @@ mod tests {
     fn test_history_transaction_empty_body() {
         let result = parse_history_transaction_data(&[0u8; 6]).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_history_transaction_keeps_minimum_size_last_record() {
+        let body = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 1, 0, 0];
+        let result = parse_history_transaction_data(&body).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].time, "10:02");
+        assert_eq!(result[0].price, 0.1);
+        assert_eq!(result[0].vol, 1.0);
+        assert_eq!(result[0].buyorsell, 0);
+    }
+
+    #[test]
+    fn test_history_transaction_rejects_truncated_record() {
+        let body = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 1, 0];
+        assert!(parse_history_transaction_data(&body).is_err());
     }
 
     // --- parse_security_quotes ---

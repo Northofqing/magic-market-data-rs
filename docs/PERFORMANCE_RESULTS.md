@@ -20,7 +20,7 @@ This is a parser microbenchmark, not a network throughput claim.
 
 `cargo test --workspace --all-targets --offline` passes the imported TDX suite,
 including async pool round-robin, concurrent channel operation, pool lifecycle,
-rate limiting, heartbeat, disconnect, and retry tests (215 TDX unit tests plus
+rate limiting, heartbeat, disconnect, and retry tests (219 TDX unit tests plus
 adapter, capability, fuzz-smoke, golden and service integration tests).
 
 ## Live connectivity
@@ -32,6 +32,8 @@ counts/list data, current and historical minute and transaction records,
 real-time finance, corporate actions, three block families, fund data and F10.
 The financial archive stage downloaded 5,116,020 bytes from TDX's official data
 host, parsed 5,526 records and extracted 45 named indicators for `600519`.
+The normalized transaction probe crossed real paging boundaries with
+1,820/1,820 current and 2,001/2,001 historical records.
 
 This is a connectivity and non-empty-result probe, not a latency or sustained
 throughput benchmark. Live latency and throughput remain environment-dependent

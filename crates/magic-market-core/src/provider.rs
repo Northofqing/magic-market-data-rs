@@ -140,6 +140,34 @@ pub struct AuctionSnapshot {
     pub batch_id: String,
 }
 
+/// Aggressor side reported for an executed trade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TradeSide {
+    Buy,
+    Sell,
+    Neutral,
+    /// A provider-specific value that is preserved rather than guessed.
+    Unknown(u32),
+}
+
+/// Provider-neutral executed-trade record with source evidence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Trade {
+    pub instrument: InstrumentId,
+    /// Source trade time. Historical requests include the requested ISO date.
+    pub trade_at: String,
+    pub price: crate::Price,
+    pub quantity: crate::Quantity,
+    /// Number of source executions aggregated into this row, when supplied.
+    pub trade_count: Option<u32>,
+    pub side: TradeSide,
+    pub status: DataStatus,
+    pub source_at: Option<String>,
+    pub observed_at: String,
+    pub provider: ProviderId,
+    pub batch_id: String,
+}
+
 /// Declares which data families a provider implements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
@@ -196,6 +224,31 @@ pub enum Adjustment {
     Unadjusted,
     Forward,
     Backward,
+}
+
+fn valid_iso_date(value: &str) -> bool {
+    if value.len() != 10
+        || value.as_bytes()[4] != b'-'
+        || value.as_bytes()[7] != b'-'
+        || !value
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let year: u32 = value[0..4].parse().unwrap_or(0);
+    let month: u32 = value[5..7].parse().unwrap_or(0);
+    let day: u32 = value[8..10].parse().unwrap_or(0);
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => 0,
+    };
+    max_day != 0 && day >= 1 && day <= max_day
 }
 
 /// Provider-neutral OHLCV bar with record-level source evidence.
@@ -312,37 +365,51 @@ impl BarsRequest {
     ) -> Result<Self, crate::CoreError> {
         let start = start.into();
         let end = end.into();
-        let valid = |s: &str| {
-            if s.len() != 10
-                || s.as_bytes()[4] != b'-'
-                || s.as_bytes()[7] != b'-'
-                || !s
-                    .bytes()
-                    .enumerate()
-                    .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
-            {
-                return false;
-            }
-            let year: u32 = s[0..4].parse().unwrap_or(0);
-            let month: u32 = s[5..7].parse().unwrap_or(0);
-            let day: u32 = s[8..10].parse().unwrap_or(0);
-            let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-            let max_day = match month {
-                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-                4 | 6 | 9 | 11 => 30,
-                2 if leap => 29,
-                2 => 28,
-                _ => 0,
-            };
-            max_day != 0 && day >= 1 && day <= max_day
-        };
-        if !valid(&start) || !valid(&end) || start > end {
+        if !valid_iso_date(&start) || !valid_iso_date(&end) || start > end {
             return Err(crate::CoreError::InvalidRequest(
                 "invalid date range".into(),
             ));
         }
         self.start = Some(start);
         self.end = Some(end);
+        Ok(self)
+    }
+}
+
+/// Validated current or single-day historical trade request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TradesRequest {
+    pub instrument: InstrumentId,
+    /// `None` requests the current session; `Some` requests one historical day.
+    pub date: Option<String>,
+    /// Maximum number of records. Providers automatically paginate up to it.
+    pub limit: u16,
+}
+impl TradesRequest {
+    pub fn new(instrument: InstrumentId, limit: u16) -> Result<Self, crate::CoreError> {
+        if limit == 0 {
+            return Err(crate::CoreError::InvalidValue {
+                field: "limit",
+                value: limit.to_string(),
+                reason: "must be positive",
+            });
+        }
+        Ok(Self {
+            instrument,
+            date: None,
+            limit,
+        })
+    }
+
+    /// Selects one historical trading date in `YYYY-MM-DD` form.
+    pub fn with_date(mut self, date: impl Into<String>) -> Result<Self, crate::CoreError> {
+        let date = date.into();
+        if !valid_iso_date(&date) {
+            return Err(crate::CoreError::InvalidRequest(
+                "invalid trade date".into(),
+            ));
+        }
+        self.date = Some(date);
         Ok(self)
     }
 }
@@ -391,6 +458,12 @@ pub trait Auctions {
     ) -> Result<DataBatch<AuctionSnapshot>, Self::Error>;
 }
 
+/// Provider capability for current and historical executed trades.
+pub trait Trades {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error>;
+}
+
 /// Async provider capability for historical bars.
 #[allow(async_fn_in_trait)]
 pub trait AsyncHistoricalBars {
@@ -411,4 +484,11 @@ pub trait AsyncRealtimeQuotes {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error>;
+}
+
+/// Async provider capability for current and historical executed trades.
+#[allow(async_fn_in_trait)]
+pub trait AsyncTrades {
+    type Error: std::error::Error + Send + Sync + 'static;
+    async fn trades_async(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error>;
 }

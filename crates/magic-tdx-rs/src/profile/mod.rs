@@ -9,19 +9,22 @@
 ///
 /// # 示例
 ///
-/// ```rust
-/// use tdxrs::net::TdxHqClient;
-/// use tdxrs::profile::ProfileClient;
+/// ```no_run
+/// use magic_tdx_rs::TdxHqClient;
+/// use magic_tdx_rs::profile::ProfileClient;
 ///
-/// let mut client = TdxHqClient::new();
-/// client.connect()?;
+/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let client = TdxHqClient::new();
+/// client.connect_to_any(None)?;
 ///
+/// let mut client = client;
 /// let mut profile = ProfileClient::new(&mut client);
 /// let categories = profile.get_category(1, "600519")?;
 /// for cat in &categories {
 ///     println!("{}: {} bytes", cat.name, cat.length);
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>
+/// # Ok(())
+/// # }
 /// ```
 pub mod client;
 pub mod constants;

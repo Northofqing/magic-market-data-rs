@@ -1,3 +1,4 @@
+use magic_market_core::{AssetClass, Exchange, InstrumentId, Trades, TradesRequest};
 use magic_tdx_rs::TdxSmartClient;
 fn main() {
     let client = TdxSmartClient::new();
@@ -62,6 +63,92 @@ fn main() {
             match inner.get_history_transaction_data(1, "600519", 0, 20, 20260721) {
                 Ok(items) => println!("transactions_history date=20260721 count={}", items.len()),
                 Err(error) => println!("transactions_history=error error={error}"),
+            }
+            let instrument = InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity)
+                .expect("valid probe instrument");
+            let current_request =
+                TradesRequest::new(instrument.clone(), 20).expect("valid current trade request");
+            match client.trades(&current_request) {
+                Ok(batch) => {
+                    println!(
+                        "normalized_trades_current={} provenance={:?} quality={:?}",
+                        batch.records().len(),
+                        batch.provenance(),
+                        batch.quality()
+                    );
+                    for trade in batch.records() {
+                        println!(
+                            "trade current time={} price={} quantity={} count={:?} side={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                            trade.trade_at,
+                            trade.price.get(),
+                            trade.quantity.get(),
+                            trade.trade_count,
+                            trade.side,
+                            trade.status,
+                            trade.source_at,
+                            trade.observed_at,
+                            trade.provider,
+                            trade.batch_id
+                        );
+                    }
+                }
+                Err(error) => println!("normalized_trades_current=error error={error}"),
+            }
+            let historical_request = TradesRequest::new(instrument.clone(), 20)
+                .and_then(|request| request.with_date("2026-07-21"))
+                .expect("valid historical trade request");
+            match client.trades(&historical_request) {
+                Ok(batch) => {
+                    println!(
+                        "normalized_trades_history={} provenance={:?} quality={:?}",
+                        batch.records().len(),
+                        batch.provenance(),
+                        batch.quality()
+                    );
+                    for trade in batch.records() {
+                        println!(
+                            "trade history time={} price={} quantity={} count={:?} side={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                            trade.trade_at,
+                            trade.price.get(),
+                            trade.quantity.get(),
+                            trade.trade_count,
+                            trade.side,
+                            trade.status,
+                            trade.source_at,
+                            trade.observed_at,
+                            trade.provider,
+                            trade.batch_id
+                        );
+                    }
+                }
+                Err(error) => println!("normalized_trades_history=error error={error}"),
+            }
+            let current_paged =
+                TradesRequest::new(instrument.clone(), 1_820).expect("valid paging probe");
+            match client.trades(&current_paged) {
+                Ok(batch) => println!(
+                    "trade_pagination_current requested=1820 received={} crossed_page={} first_time={} last_time={} quality_complete={}",
+                    batch.records().len(),
+                    batch.records().len() > 1_800,
+                    batch.records().first().map_or("none", |trade| trade.trade_at.as_str()),
+                    batch.records().last().map_or("none", |trade| trade.trade_at.as_str()),
+                    batch.quality().complete
+                ),
+                Err(error) => println!("trade_pagination_current=error error={error}"),
+            }
+            let historical_paged = TradesRequest::new(instrument, 2_001)
+                .and_then(|request| request.with_date("2026-07-21"))
+                .expect("valid historical paging probe");
+            match client.trades(&historical_paged) {
+                Ok(batch) => println!(
+                    "trade_pagination_history requested=2001 received={} crossed_page={} first_time={} last_time={} quality_complete={}",
+                    batch.records().len(),
+                    batch.records().len() > 2_000,
+                    batch.records().first().map_or("none", |trade| trade.trade_at.as_str()),
+                    batch.records().last().map_or("none", |trade| trade.trade_at.as_str()),
+                    batch.quality().complete
+                ),
+                Err(error) => println!("trade_pagination_history=error error={error}"),
             }
             match inner.get_finance_info(1, "600519") {
                 Ok(_) => println!("finance_info=ok"),

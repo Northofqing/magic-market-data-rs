@@ -626,12 +626,18 @@ impl TdxHqClient {
     ///
     /// # 示例
     ///
-    /// ```rust
-    /// let mut client = TdxHqClient::new();
-    /// client.connect()?;
+    /// ```no_run
+    /// use magic_tdx_rs::TdxHqClient;
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = TdxHqClient::new();
+    /// client.connect_to_any(None)?;
     ///
     /// // 发送自定义请求
+    /// let custom_packet = Vec::<u8>::new();
     /// let response = client.send_raw_and_recv(&custom_packet)?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn send_raw_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
         self.send_and_recv(packet)
@@ -1292,7 +1298,7 @@ impl TdxHqClient {
 
         let body = self.send_and_recv_limited(&packet, &self.rate_limiter_minute)?;
         let coefficient = get_security_coefficient(market, code);
-        parse_transaction_data_with_coefficient(&body, coefficient)
+        parse_history_transaction_data_with_coefficient(&body, coefficient)
     }
 
     /// 获取财务信息

@@ -10,7 +10,7 @@ pub use finance::FinanceService;
 pub use funds::FundService;
 use magic_market_core::{
     AuctionSnapshot, BarsRequest, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId,
-    MoneyFlow, OrderBook, Price, Quantity, Quote, RealtimeQuotes,
+    MoneyFlow, OrderBook, Price, Quantity, Quote, RealtimeQuotes, Trade, Trades, TradesRequest,
 };
 pub use profile::ProfileService;
 use std::collections::HashMap;
@@ -59,6 +59,11 @@ impl AsyncTdxService {
             instruments,
         )
         .await
+    }
+    /// Fetches normalized current or historical trades with automatic paging.
+    pub async fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, TdxError> {
+        <AsyncTdxHqClient as magic_market_core::AsyncTrades>::trades_async(&self.client, request)
+            .await
     }
     /// Fetches and normalizes five-level books through the async connection pool.
     pub async fn order_books(
@@ -288,6 +293,10 @@ impl TdxService {
     /// Fetches strict realtime quotes.
     pub fn quotes(&self, instruments: &[InstrumentId]) -> Result<DataBatch<Quote>, TdxError> {
         self.client.realtime_quotes(instruments)
+    }
+    /// Fetches normalized current or historical trades with automatic paging.
+    pub fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, TdxError> {
+        self.client.trades(request)
     }
     /// Fetches quotes in protocol-sized chunks and restores the requested order.
     /// Any failed or incomplete chunk aborts the whole operation.

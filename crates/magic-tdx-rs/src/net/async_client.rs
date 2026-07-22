@@ -218,8 +218,8 @@ const DEFAULT_POOL_SIZE: usize = 4;
 /// # 示例
 ///
 /// ```no_run
-/// # async fn example() -> tdxrs::error::Result<()> {
-/// use tdxrs::net::async_client::AsyncTdxHqClient;
+/// # async fn example() -> magic_tdx_rs::error::Result<()> {
+/// use magic_tdx_rs::net::async_client::AsyncTdxHqClient;
 ///
 /// let client = AsyncTdxHqClient::new();
 /// client.connect("180.153.18.170", 7709, None).await?;

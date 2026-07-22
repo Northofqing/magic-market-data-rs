@@ -33,8 +33,8 @@ impl std::error::Error for FundError {}
 ///
 /// # Example
 /// ```
-/// use tdxrs::fund::utils::validate_fund_code;
-/// use tdxrs::fund::constants::{MARKET_SH, MARKET_SZ};
+/// use magic_tdx_rs::fund::utils::validate_fund_code;
+/// use magic_tdx_rs::fund::constants::{MARKET_SH, MARKET_SZ};
 ///
 /// assert!(validate_fund_code(MARKET_SH, "510300").is_ok());
 /// assert!(validate_fund_code(MARKET_SZ, "159915").is_ok());

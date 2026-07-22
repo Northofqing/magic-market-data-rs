@@ -105,7 +105,7 @@ impl FundType {
 ///
 /// # Example
 /// ```
-/// use tdxrs::fund::constants::{classify_fund, FundType, MARKET_SH, MARKET_SZ};
+/// use magic_tdx_rs::fund::constants::{classify_fund, FundType, MARKET_SH, MARKET_SZ};
 ///
 /// assert_eq!(classify_fund(MARKET_SH, "510300"), FundType::Etf);
 /// assert_eq!(classify_fund(MARKET_SH, "508000"), FundType::Reits);
@@ -171,7 +171,7 @@ fn is_sz_fund(code: &str) -> bool {
 ///
 /// # Example
 /// ```
-/// use tdxrs::fund::constants::{is_fund, MARKET_SH, MARKET_SZ};
+/// use magic_tdx_rs::fund::constants::{is_fund, MARKET_SH, MARKET_SZ};
 ///
 /// assert!(is_fund(MARKET_SH, "510300"));
 /// assert!(is_fund(MARKET_SZ, "159915"));

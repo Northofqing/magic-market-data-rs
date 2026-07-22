@@ -14,19 +14,22 @@ use crate::protocol::constants::{MARKET_SH, MARKET_SZ};
 ///
 /// # 示例
 ///
-/// ```rust
-/// use tdxrs::net::TdxHqClient;
-/// use tdxrs::profile::ProfileClient;
+/// ```no_run
+/// use magic_tdx_rs::TdxHqClient;
+/// use magic_tdx_rs::profile::ProfileClient;
 ///
-/// let mut client = TdxHqClient::new();
-/// client.connect()?;
+/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let client = TdxHqClient::new();
+/// client.connect_to_any(None)?;
 ///
+/// let mut client = client;
 /// let mut profile = ProfileClient::new(&mut client);
 /// let categories = profile.get_category(1, "600519")?;
 /// for cat in &categories {
 ///     println!("{}: {} bytes", cat.name, cat.length);
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>
+/// # Ok(())
+/// # }
 /// ```
 pub struct ProfileClient<'a> {
     client: &'a mut TdxHqClient,
@@ -52,11 +55,21 @@ impl<'a> ProfileClient<'a> {
     ///
     /// # 示例
     ///
-    /// ```rust
+    /// ```no_run
+    /// use magic_tdx_rs::TdxHqClient;
+    /// use magic_tdx_rs::profile::ProfileClient;
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = TdxHqClient::new();
+    /// client.connect_to_any(None)?;
+    /// let mut client = client;
+    /// let mut profile = ProfileClient::new(&mut client);
     /// let categories = profile.get_category(1, "600519")?;
     /// for cat in &categories {
     ///     println!("{}", cat.name);
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn get_category(&mut self, market: u8, code: &str) -> Result<Vec<F10Category>> {
         // 验证市场代码

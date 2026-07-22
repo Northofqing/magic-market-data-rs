@@ -28,12 +28,15 @@ const DEFAULT_F10_TIMEOUT: f64 = 10.0;
 ///
 /// # 示例
 ///
-/// ```rust
-/// use tdxrs::net::f10_client::TdxF10Client;
+/// ```no_run
+/// use magic_tdx_rs::net::f10_client::TdxF10Client;
 ///
+/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let client = TdxF10Client::new("180.153.18.170", 7709, None);
 /// let categories = client.get_category(1, "600519")?;
 /// let content = client.get_content(1, "600519", &categories[0])?;
+/// # Ok(())
+/// # }
 /// ```
 pub struct TdxF10Client {
     ip: String,

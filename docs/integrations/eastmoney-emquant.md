@@ -11,8 +11,8 @@
 └── x64/EmQuantAPITestExe/main.cpp
 ```
 
-SDK 版权声明要求授权使用；项目不复制动态库、不提交账号或令牌，运行时通过
-用户配置的绝对路径加载。
+SDK 版权声明要求授权使用；构建脚本只把本机动态库复制到 Git 忽略的运行目录，
+不会提交厂商文件、账号或令牌。
 
 ## 映射范围
 
@@ -21,7 +21,7 @@ SDK 版权声明要求授权使用；项目不复制动态库、不提交账号�
 | 实时 Quote | `csqsnapshot` | Rust 适配完成，待授权登录验证 |
 | 日/周/月/年 K 线 | `csd` | Rust 适配完成，待授权登录验证 |
 | 1/5/15/30/60 分钟线 | `chmc` + Rust 聚合 | Rust 适配完成，待授权登录验证 |
-| 逐笔 | `chq` | 取决于权限 |
+| 逐笔 | `chq` | 字段与分页尚未验证，显式 `Unsupported` |
 | 盘口/Level-2 | `csqsnapshot` 五档指标 | Rust 适配完成，待 Level-2 权限验证 |
 | 日级资金流 | `css` 大/中/小单流入流出指标 | Rust 适配完成，待授权登录验证 |
 | 开盘集合竞价 | 未找到完整可验证字段集 | 显式 `Unsupported` |
@@ -33,7 +33,7 @@ SDK 版权声明要求授权使用；项目不复制动态库、不提交账号�
 - 每次返回都必须填充 `provider=Eastmoney`、`observed_at`、批次 ID；只有源明确提供时才填 `source_at`。
 - 未授权、权限不足、字段缺失或源时间不可证明时返回结构化错误/`Unsupported`，不能填 0。
 
-## 配置约定
+## 可选部署覆盖
 
 ```text
 MAGIC_EMQUANT_LIB=/absolute/path/to/libEMQuantAPIx64.dylib
@@ -54,12 +54,10 @@ bash tools/emquant/check_sdk.sh /path/to/EMQuantAPI_CPP_Mac
 ```
 
 只读快照桥接程序可独立构建；新版 SDK 使用官方激活令牌，旧版 SDK 的可选账号和
-密码只从进程环境读取：
+密码只从进程环境读取。完成构建后，下列三个路径变量都不是必需项：
 
 ```text
 tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac
-MAGIC_EMQUANT_LIB=/path/to/libEMQuantAPIx64.dylib \
-MAGIC_EMQUANT_SERVER_LIST=/path/to/sdk/x64/bin \
 target/emquant/emquant-snapshot 600519.SH PRECLOSE,OPEN,HIGH,LOW,NOW,AMOUNT
 ```
 
@@ -68,11 +66,23 @@ target/emquant/emquant-snapshot 600519.SH PRECLOSE,OPEN,HIGH,LOW,NOW,AMOUNT
 Rust 适配层和实盘探针：
 
 ```text
-MAGIC_EMQUANT_BRIDGE=target/emquant/emquant-snapshot \
-MAGIC_EMQUANT_LIB=/path/to/libEMQuantAPIx64.dylib \
-MAGIC_EMQUANT_SERVER_LIST=/path/to/sdk/x64/bin \
 cargo run -p magic-emquant-rs --example live_probe --release
 ```
+
+构建脚本无论从哪个目录调用，都会把桥接程序放到仓库固定路径
+`target/emquant/emquant-snapshot`，把加密服务器列表和 SDK 动态库复制到 Git 忽略的
+`target/emquant/runtime/`，并在那里建立指向存在时的 `userInfo` 激活文件的固定链接。
+在 macOS 上，脚本会清除动态库复制件的下载隔离属性，并只对复制件执行本机临时
+签名，以免被系统的动态库验证策略拒绝；Downloads 中的厂商原文件不会修改。
+Rust 适配层和桥接器
+会自动发现这些项目内文件，不再要求每次设置 `MAGIC_EMQUANT_BRIDGE`、
+`MAGIC_EMQUANT_LIB` 或 `MAGIC_EMQUANT_SERVER_LIST`。只有部署时需要覆盖项目内默认
+路径，才设置对应变量；SDK 与激活文件不会提交到仓库。
+
+若探针返回 `10001014 (EQERR_NEED_ACTIVATE)`，执行脚本已经准备并本机临时签名的
+`target/emquant/runtime/loginactivator_mac`，在官方界面完成 API 激活。该程序与
+`ServerList.json.e` 位于同一目录，成功后会在这个 Git 忽略目录生成 `userInfo`。
+东方财富桌面客户端登录与 EMQuant API 激活是两套独立会话，前者不会替代后者。
 
 默认查询 `600519.SH,000001.SZ`，也可通过 `MAGIC_EMQUANT_CODES` 修改。输出包含
 实时价、成交量、成交额、五档买卖价量、可见买卖总深度及逐记录证据，以及第一只证券最近五根不复权日线和

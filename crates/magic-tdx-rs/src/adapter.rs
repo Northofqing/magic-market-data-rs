@@ -1,11 +1,16 @@
 use crate::error::TdxError;
+use crate::protocol::types::TickData;
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use magic_market_core::{
-    AsyncHistoricalBars, AsyncRealtimeQuotes, AuctionSnapshot, Auctions, BarInterval, BarsRequest,
-    BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId, Money, MoneyFlow, MoneyFlows,
-    OrderBook, OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
+    AsyncHistoricalBars, AsyncRealtimeQuotes, AsyncTrades, AuctionSnapshot, Auctions, BarInterval,
+    BarsRequest, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId, Money, MoneyFlow,
+    MoneyFlows, OrderBook, OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit,
+    RealtimeQuotes, Trade, TradeSide, Trades, TradesRequest,
 };
 use std::collections::{HashMap, HashSet};
+
+const CURRENT_TRADE_PAGE_SIZE: u16 = 1_800;
+const HISTORICAL_TRADE_PAGE_SIZE: u16 = 2_000;
 
 impl TdxHqClient {
     /// Returns the data families exposed through the core provider boundary.
@@ -208,6 +213,132 @@ pub(crate) fn normalize_quotes(
     Ok(DataBatch::best_effort(quotes, provenance, issues))
 }
 
+fn tdx_trade_date(date: &str) -> Result<u32, TdxError> {
+    if date.len() != 10 || date.as_bytes()[4] != b'-' || date.as_bytes()[7] != b'-' {
+        return Err(TdxError::InvalidData(
+            "invalid normalized trade date".into(),
+        ));
+    }
+    date.bytes()
+        .filter(|byte| *byte != b'-')
+        .try_fold(0u32, |value, byte| {
+            let digit = byte
+                .is_ascii_digit()
+                .then_some(u32::from(byte - b'0'))
+                .ok_or_else(|| TdxError::InvalidData("invalid normalized trade date".into()))?;
+            value
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
+                .ok_or_else(|| TdxError::InvalidData("normalized trade date overflow".into()))
+        })
+}
+
+fn trade_side(value: u32) -> TradeSide {
+    match value {
+        0 => TradeSide::Buy,
+        1 => TradeSide::Sell,
+        2 => TradeSide::Neutral,
+        value => TradeSide::Unknown(value),
+    }
+}
+
+fn normalize_trade_records(
+    source: &str,
+    request: &TradesRequest,
+    records: Vec<TickData>,
+) -> Result<DataBatch<Trade>, TdxError> {
+    ensure_nonempty(&records)?;
+    let observed_at = fetched_at();
+    let batch_id = format!("{source}:{observed_at}:trades");
+    let mut issues = Vec::new();
+    let mut trades = Vec::with_capacity(records.len());
+    for record in records {
+        if record.time.is_empty() {
+            return Err(TdxError::InvalidData("TDX trade time is empty".into()));
+        }
+        let price =
+            Price::new(record.price).map_err(|error| TdxError::InvalidData(error.to_string()))?;
+        let quantity =
+            Quantity::new(record.vol).map_err(|error| TdxError::InvalidData(error.to_string()))?;
+        let side = trade_side(record.buyorsell);
+        let complete = !matches!(side, TradeSide::Unknown(_));
+        if !complete {
+            issues.push(format!(
+                "{} {}: unknown TDX trade side {}",
+                request.instrument.code(),
+                record.time,
+                record.buyorsell
+            ));
+        }
+        let trade_at = request.date.as_ref().map_or_else(
+            || record.time.clone(),
+            |date| format!("{date} {}", record.time),
+        );
+        trades.push(Trade {
+            instrument: request.instrument.clone(),
+            trade_at: trade_at.clone(),
+            price,
+            quantity,
+            trade_count: (record.num != 0).then_some(record.num),
+            side,
+            status: if complete {
+                DataStatus::Available
+            } else {
+                DataStatus::Unavailable
+            },
+            // Current-session packets carry a time only; historical packets
+            // are qualified with the requested source date.
+            source_at: Some(trade_at),
+            observed_at: observed_at.clone(),
+            provider: ProviderId::Tdx,
+            batch_id: batch_id.clone(),
+        });
+    }
+    let mut provenance =
+        magic_market_core::Provenance::new(source, observed_at).with_batch_id(batch_id);
+    if let Some(source_at) = trades.last().and_then(|trade| trade.source_at.clone()) {
+        provenance = provenance.with_source_at(source_at);
+    }
+    Ok(DataBatch::best_effort(trades, provenance, issues))
+}
+
+fn paginate_trades<F>(
+    source: &str,
+    request: &TradesRequest,
+    page_size: u16,
+    mut fetch: F,
+) -> Result<DataBatch<Trade>, TdxError>
+where
+    F: FnMut(u16, u16) -> Result<Vec<TickData>, TdxError>,
+{
+    let mut records = Vec::with_capacity(usize::from(request.limit));
+    let mut start = 0u16;
+    let mut remaining = request.limit;
+    while remaining != 0 {
+        let requested = remaining.min(page_size);
+        let page = fetch(start, requested)?;
+        if page.len() > usize::from(requested) {
+            return Err(TdxError::InvalidData(
+                "TDX trade page exceeds requested cardinality".into(),
+            ));
+        }
+        let fetched = u16::try_from(page.len())
+            .map_err(|_| TdxError::InvalidData("TDX trade page is too large".into()))?;
+        records.extend(page);
+        if fetched < requested {
+            break;
+        }
+        remaining -= fetched;
+        if remaining == 0 {
+            break;
+        }
+        start = start
+            .checked_add(fetched)
+            .ok_or_else(|| TdxError::InvalidData("TDX trade offset overflow".into()))?;
+    }
+    normalize_trade_records(source, request, records)
+}
+
 impl HistoricalBars for TdxHqClient {
     type Bar = SecurityBar;
     type Error = TdxError;
@@ -237,6 +368,45 @@ impl RealtimeQuotes for TdxHqClient {
             .collect();
         let records = self.get_security_quotes(&pairs)?;
         normalize_quotes("tdx", instruments, records)
+    }
+}
+
+impl Trades for TdxHqClient {
+    type Error = TdxError;
+
+    fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
+        match request.date.as_deref() {
+            Some(date) => {
+                let date = tdx_trade_date(date)?;
+                paginate_trades(
+                    "tdx-history",
+                    request,
+                    HISTORICAL_TRADE_PAGE_SIZE,
+                    |start, count| {
+                        self.get_history_transaction_data(
+                            market(&request.instrument),
+                            request.instrument.code(),
+                            start,
+                            count,
+                            date,
+                        )
+                    },
+                )
+            }
+            None => paginate_trades(
+                "tdx-current",
+                request,
+                CURRENT_TRADE_PAGE_SIZE,
+                |start, count| {
+                    self.get_transaction_data(
+                        market(&request.instrument),
+                        request.instrument.code(),
+                        start,
+                        count,
+                    )
+                },
+            ),
+        }
     }
 }
 
@@ -429,6 +599,14 @@ impl RealtimeQuotes for crate::TdxSmartClient {
     }
 }
 
+impl Trades for crate::TdxSmartClient {
+    type Error = TdxError;
+
+    fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
+        <TdxHqClient as Trades>::trades(self.inner(), request)
+    }
+}
+
 impl HistoricalBars for crate::TdxDirectClient {
     type Bar = SecurityBar;
     type Error = TdxError;
@@ -458,6 +636,45 @@ impl RealtimeQuotes for crate::TdxDirectClient {
             .collect();
         let records = self.get_security_quotes(&pairs)?;
         normalize_quotes("tdx-direct", instruments, records)
+    }
+}
+
+impl Trades for crate::TdxDirectClient {
+    type Error = TdxError;
+
+    fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
+        match request.date.as_deref() {
+            Some(date) => {
+                let date = tdx_trade_date(date)?;
+                paginate_trades(
+                    "tdx-direct-history",
+                    request,
+                    HISTORICAL_TRADE_PAGE_SIZE,
+                    |start, count| {
+                        self.get_history_transaction_data(
+                            market(&request.instrument),
+                            request.instrument.code(),
+                            start,
+                            count,
+                            date,
+                        )
+                    },
+                )
+            }
+            None => paginate_trades(
+                "tdx-direct-current",
+                request,
+                CURRENT_TRADE_PAGE_SIZE,
+                |start, count| {
+                    self.get_transaction_data(
+                        market(&request.instrument),
+                        request.instrument.code(),
+                        start,
+                        count,
+                    )
+                },
+            ),
+        }
     }
 }
 
@@ -495,6 +712,73 @@ impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
             .collect();
         let records = self.get_security_quotes(&pairs).await?;
         normalize_quotes("tdx-async", instruments, records)
+    }
+}
+
+impl AsyncTrades for crate::AsyncTdxHqClient {
+    type Error = TdxError;
+
+    async fn trades_async(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
+        let historical_date = request.date.as_deref().map(tdx_trade_date).transpose()?;
+        let page_size = if historical_date.is_some() {
+            HISTORICAL_TRADE_PAGE_SIZE
+        } else {
+            CURRENT_TRADE_PAGE_SIZE
+        };
+        let mut records = Vec::with_capacity(usize::from(request.limit));
+        let mut start = 0u16;
+        let mut remaining = request.limit;
+        while remaining != 0 {
+            let requested = remaining.min(page_size);
+            let page = match historical_date {
+                Some(date) => {
+                    self.get_history_transaction_data(
+                        market(&request.instrument),
+                        request.instrument.code(),
+                        start,
+                        requested,
+                        date,
+                    )
+                    .await?
+                }
+                None => {
+                    self.get_transaction_data(
+                        market(&request.instrument),
+                        request.instrument.code(),
+                        start,
+                        requested,
+                    )
+                    .await?
+                }
+            };
+            if page.len() > usize::from(requested) {
+                return Err(TdxError::InvalidData(
+                    "TDX async trade page exceeds requested cardinality".into(),
+                ));
+            }
+            let fetched = u16::try_from(page.len())
+                .map_err(|_| TdxError::InvalidData("TDX trade page is too large".into()))?;
+            records.extend(page);
+            if fetched < requested {
+                break;
+            }
+            remaining -= fetched;
+            if remaining == 0 {
+                break;
+            }
+            start = start
+                .checked_add(fetched)
+                .ok_or_else(|| TdxError::InvalidData("TDX trade offset overflow".into()))?;
+        }
+        normalize_trade_records(
+            if historical_date.is_some() {
+                "tdx-async-history"
+            } else {
+                "tdx-async-current"
+            },
+            request,
+            records,
+        )
     }
 }
 
@@ -557,6 +841,17 @@ mod tests {
         }
     }
 
+    fn source_trade(index: u32, side: u32) -> TickData {
+        TickData {
+            time: format!("10:00:{index:02}"),
+            price: 1_300.0 + f64::from(index),
+            vol: 100.0 + f64::from(index),
+            num: index + 1,
+            buyorsell: side,
+            reserved: 0,
+        }
+    }
+
     #[test]
     fn normalized_quotes_restore_request_order_and_mark_missing_name() {
         let instruments = [instrument("600001"), instrument("600002")];
@@ -584,6 +879,41 @@ mod tests {
 
         let requested = [instrument("600001"), instrument("600002")];
         assert!(normalize_quotes("test", &requested, vec![source_quote("600001", 102.0)]).is_err());
+    }
+
+    #[test]
+    fn paginates_and_normalizes_historical_trades() {
+        let request = TradesRequest::new(instrument("600519"), 5)
+            .unwrap()
+            .with_date("2026-07-21")
+            .unwrap();
+        let mut calls = Vec::new();
+        let batch = paginate_trades("test", &request, 2, |start, count| {
+            calls.push((start, count));
+            Ok((start..start + count)
+                .map(|index| source_trade(u32::from(index), u32::from(index % 3)))
+                .collect())
+        })
+        .unwrap();
+        assert_eq!(calls, vec![(0, 2), (2, 2), (4, 1)]);
+        assert_eq!(batch.records().len(), 5);
+        assert_eq!(batch.records()[0].trade_at, "2026-07-21 10:00:00");
+        assert_eq!(
+            batch.records()[0].source_at.as_deref(),
+            Some("2026-07-21 10:00:00")
+        );
+        assert_eq!(batch.records()[0].side, TradeSide::Buy);
+        assert_eq!(batch.records()[1].side, TradeSide::Sell);
+        assert_eq!(batch.records()[2].side, TradeSide::Neutral);
+    }
+
+    #[test]
+    fn marks_unknown_trade_side_without_dropping_the_record() {
+        let request = TradesRequest::new(instrument("600519"), 1).unwrap();
+        let batch = normalize_trade_records("test", &request, vec![source_trade(0, 9)]).unwrap();
+        assert_eq!(batch.records()[0].side, TradeSide::Unknown(9));
+        assert_eq!(batch.records()[0].status, DataStatus::Unavailable);
+        assert_eq!(batch.quality().issues.len(), 1);
     }
 }
 

@@ -3,8 +3,10 @@
 #include <dlfcn.h>
 #include <iomanip>
 #include <iostream>
+#include <limits.h>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 
 #include "EmQuantAPI.h"
 
@@ -16,6 +18,17 @@ using History = EQErr (*)(const char *, const char *, const char *, const char *
 using ReleaseData = EQErr (*)(void *);
 
 static int discard_log(const char *) { return 0; }
+
+static std::string executable_dir(const char *argv0) {
+    char resolved[PATH_MAX];
+    const char *path = argv0;
+    if (argv0 && realpath(argv0, resolved)) path = resolved;
+    std::string value = path ? path : "";
+    const std::string::size_type slash = value.find_last_of('/');
+    if (slash != std::string::npos) return value.substr(0, slash);
+    char current[PATH_MAX];
+    return getcwd(current, sizeof(current)) ? current : ".";
+}
 
 static std::string json_string(const char *value) {
     std::ostringstream out;
@@ -87,14 +100,16 @@ int main(int argc, char **argv) {
         std::cerr << "unsupported EMQuant section method; expected css\n";
         return 2;
     }
-    const char *library = std::getenv("MAGIC_EMQUANT_LIB");
-    const char *server_dir = std::getenv("MAGIC_EMQUANT_SERVER_LIST");
+    const std::string runtime_dir = executable_dir(argv[0]) + "/runtime";
+    const std::string default_library = runtime_dir + "/libEMQuantAPIx64.dylib";
+    const char *library_env = std::getenv("MAGIC_EMQUANT_LIB");
+    const char *server_dir_env = std::getenv("MAGIC_EMQUANT_SERVER_LIST");
+    const char *library = library_env && library_env[0] != '\0'
+        ? library_env : default_library.c_str();
+    const char *server_dir = server_dir_env && server_dir_env[0] != '\0'
+        ? server_dir_env : runtime_dir.c_str();
     const char *username = std::getenv("MAGIC_EMQUANT_USERNAME");
     const char *password = std::getenv("MAGIC_EMQUANT_PASSWORD");
-    if (!library || !server_dir) {
-        std::cerr << "missing MAGIC_EMQUANT_LIB or MAGIC_EMQUANT_SERVER_LIST\n";
-        return 2;
-    }
     const bool has_username = username && username[0] != '\0';
     const bool has_password = password && password[0] != '\0';
     if (has_username != has_password) {
@@ -103,7 +118,7 @@ int main(int argc, char **argv) {
     }
     void *handle = dlopen(library, RTLD_NOW | RTLD_LOCAL);
     if (!handle) {
-        std::cerr << "unable to load EMQuant library: " << dlerror() << '\n';
+        std::cerr << "unable to load EMQuant library " << library << ": " << dlerror() << '\n';
         return 3;
     }
     const auto set_server_dir = symbol<SetServerListDir>(handle, "setserverlistdir");
@@ -120,7 +135,12 @@ int main(int argc, char **argv) {
     }
     const EQErr login_error = start(login_pointer, "TestLatency=0,ForceLogin=0,LogLevel=0", discard_log);
     if (login_error != EQERR_SUCCESS) {
-        std::cerr << "EMQuant login failed with code " << login_error << '\n';
+        std::cerr << "EMQuant login failed with code " << login_error;
+        if (login_error == EQERR_NEED_ACTIVATE) {
+            std::cerr << " (EQERR_NEED_ACTIVATE: run " << runtime_dir
+                      << "/loginactivator_mac and complete API activation)";
+        }
+        std::cerr << '\n';
         dlclose(handle);
         return 4;
     }

@@ -4,7 +4,8 @@
 use magic_market_core::{
     Adjustment, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, BookLevel, Capabilities,
     DataBatch, DataStatus, HistoricalBars, InstrumentId, Money, MoneyFlow, MoneyFlows, OrderBook,
-    OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
+    OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes, Trade,
+    Trades, TradesRequest,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -16,6 +17,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const DEFAULT_BRIDGE_TIMEOUT: Duration = Duration::from_secs(30);
+const BRIDGE_ENV: &str = "MAGIC_EMQUANT_BRIDGE";
+
+#[cfg(windows)]
+const BRIDGE_FILENAME: &str = "emquant-snapshot.exe";
+#[cfg(not(windows))]
+const BRIDGE_FILENAME: &str = "emquant-snapshot";
 
 /// Failures emitted by the local bridge or strict result normalization.
 #[derive(Debug, thiserror::Error)]
@@ -49,6 +56,13 @@ pub struct EmQuantClient {
 }
 
 impl EmQuantClient {
+    /// Discovers the bridge built in this workspace. `MAGIC_EMQUANT_BRIDGE`
+    /// remains an optional override for deployments that keep executables in
+    /// a separate, managed directory.
+    pub fn discover() -> Result<Self, EmQuantError> {
+        Self::new(discover_bridge_path()?)
+    }
+
     /// Uses an already-built bridge executable. Credentials remain in the
     /// caller's environment and are never accepted as Rust API arguments.
     pub fn new(bridge: impl Into<PathBuf>) -> Result<Self, EmQuantError> {
@@ -182,6 +196,48 @@ impl EmQuantClient {
     ) -> Result<BridgeResponse, EmQuantError> {
         self.execute(&["--section", "css", codes, indicators, options])
     }
+}
+
+/// Returns the fixed workspace build location used by
+/// `tools/emquant/build_snapshot_bridge.sh`.
+pub fn workspace_bridge_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("target/emquant")
+        .join(BRIDGE_FILENAME)
+}
+
+/// Finds an explicitly configured bridge or the bridge built under this
+/// project's `target/emquant` directory.
+pub fn discover_bridge_path() -> Result<PathBuf, EmQuantError> {
+    if let Some(configured) = std::env::var_os(BRIDGE_ENV).filter(|value| !value.is_empty()) {
+        let path = PathBuf::from(configured);
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(EmQuantError::InvalidRequest(format!(
+            "{BRIDGE_ENV} does not point to a bridge executable: {}",
+            path.display()
+        )));
+    }
+
+    let mut candidates = Vec::new();
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join("target/emquant").join(BRIDGE_FILENAME));
+    }
+    candidates.push(workspace_bridge_path());
+    if let Some(path) = candidates.iter().find(|path| path.is_file()) {
+        return Ok(path.clone());
+    }
+
+    let searched = candidates
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(EmQuantError::InvalidRequest(format!(
+        "EMQuant bridge is not built; run tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac (searched: {searched})"
+    )))
 }
 
 fn source_code(instrument: &InstrumentId) -> String {
@@ -903,6 +959,16 @@ impl Auctions for EmQuantClient {
     }
 }
 
+impl Trades for EmQuantClient {
+    type Error = EmQuantError;
+
+    fn trades(&self, _request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
+        Err(EmQuantError::Unsupported(
+            "executed-trade fields and pagination are not verified in EMQuant".into(),
+        ))
+    }
+}
+
 impl OrderBooks for EmQuantClient {
     type Error = EmQuantError;
 
@@ -1034,5 +1100,27 @@ mod tests {
     #[test]
     fn converts_epoch_day_zero_to_unix_epoch_date() {
         assert_eq!(date_from_epoch_days(0), "1970-01-01");
+    }
+
+    #[test]
+    fn workspace_bridge_uses_the_builder_output_location() {
+        assert!(workspace_bridge_path()
+            .ends_with(Path::new("target").join("emquant").join(BRIDGE_FILENAME)));
+    }
+
+    #[test]
+    fn executed_trades_are_explicitly_unsupported() {
+        let client = EmQuantClient::new(std::env::current_exe().unwrap()).unwrap();
+        let instrument = InstrumentId::new(
+            magic_market_core::Exchange::Shanghai,
+            "600519",
+            magic_market_core::AssetClass::Equity,
+        )
+        .unwrap();
+        let request = TradesRequest::new(instrument, 20).unwrap();
+        assert!(matches!(
+            client.trades(&request),
+            Err(EmQuantError::Unsupported(_))
+        ));
     }
 }

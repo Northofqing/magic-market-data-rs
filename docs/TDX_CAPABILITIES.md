@@ -12,7 +12,8 @@ pinned `tdxrs` implementation. The following modules are present in the
 | Smart failover client | `TdxSmartClient` |
 | Quotes and bars | `protocol::parsers`, `net::*` |
 | Five-level order book | `OrderBooks` on blocking, smart and async clients; includes visible bid/ask depth plus record-level source/observation/provider/batch evidence |
-| Minute and transaction data | `protocol::parsers` |
+| Minute data | current and dated history through `protocol::parsers` and service facades |
+| Executed trades | normalized `Trades`/`AsyncTrades` on blocking, smart, direct and async clients; current and dated history with automatic paging, explicit source/observation evidence, and unknown source direction codes preserved |
 | Finance and corporate actions | `protocol::finance_fields`, `protocol::adjuster` |
 | Fund data | `fund` |
 | Block data | `block` |
@@ -43,6 +44,13 @@ industry, concept and index blocks; fund quote/bars/actions; and 16 F10
 categories. It also downloaded the 5,116,020-byte `gpcw20260331.zip`, validated
 and parsed 5,526 market-wide financial records, and extracted all 45 named
 indicators for `600519`.
+
+The normalized trade probe additionally returned 20/20 current/historical
+records with record-level evidence. Paging was exercised across real server
+boundaries: current trades returned 1,820/1,820 and historical trades returned
+2,001/2,001. TDX direction values `0/1/2` normalize to buy/sell/neutral; observed
+post-market values such as `5/8` remain `Unknown(value)` and mark quality
+incomplete rather than being guessed.
 
 `ProviderId::LocalTerminal` is reserved for an authorized, read-only local
 terminal/SDK adapter. It must never read account, position, cash, or order
