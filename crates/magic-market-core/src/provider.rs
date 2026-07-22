@@ -1,5 +1,18 @@
 use crate::{DataBatch, InstrumentId};
 
+/// Provider identity used in provenance and capability reporting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProviderId { Tdx, Tencent, Eastmoney, Sina, Baostock, Custom }
+
+/// Normalized realtime quote contract for cross-provider consumers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Quote { pub instrument: InstrumentId, pub price: crate::Price, pub volume: crate::Quantity, pub amount: Option<crate::Money> }
+
+/// Declares which data families a provider implements.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Capabilities { pub quotes: bool, pub bars: bool, pub minute: bool, pub trades: bool, pub fundamentals: bool, pub corporate_actions: bool, pub blocks: bool }
+impl Capabilities { pub const fn new() -> Self { Self { quotes: false, bars: false, minute: false, trades: false, fundamentals: false, corporate_actions: false, blocks: false } } }
+
 /// Standard bar interval shared by market-data providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarInterval { Minute1, Minute5, Minute15, Minute30, Hour1, Day, Week, Month, Year }
