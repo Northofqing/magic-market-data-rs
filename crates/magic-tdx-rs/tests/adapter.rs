@@ -1,4 +1,7 @@
-use magic_market_core::{AssetClass, AsyncHistoricalBars, AsyncRealtimeQuotes, BarsRequest, Exchange, HistoricalBars, InstrumentId};
+use magic_market_core::{
+    AssetClass, AsyncHistoricalBars, AsyncRealtimeQuotes, BarsRequest, Exchange, HistoricalBars,
+    InstrumentId,
+};
 use magic_tdx_rs::{TdxDirectClient, TdxHqClient, TdxSmartClient};
 #[test]
 fn tdx_client_implements_core_bars_contract() {
@@ -21,8 +24,18 @@ fn tdx_client_implements_core_bars_contract() {
 
 #[test]
 fn async_tdx_client_implements_core_contracts() {
-    fn accepts_bars<P: AsyncHistoricalBars<Bar = magic_tdx_rs::SecurityBar, Error = magic_tdx_rs::TdxError>>(_: &P) {}
-    fn accepts_quotes<P: AsyncRealtimeQuotes<Quote = magic_tdx_rs::SecurityQuote, Error = magic_tdx_rs::TdxError>>(_: &P) {}
+    fn accepts_bars<
+        P: AsyncHistoricalBars<Bar = magic_tdx_rs::SecurityBar, Error = magic_tdx_rs::TdxError>,
+    >(
+        _: &P,
+    ) {
+    }
+    fn accepts_quotes<
+        P: AsyncRealtimeQuotes<Quote = magic_tdx_rs::SecurityQuote, Error = magic_tdx_rs::TdxError>,
+    >(
+        _: &P,
+    ) {
+    }
     let client = magic_tdx_rs::AsyncTdxHqClient::new();
     accepts_bars(&client);
     accepts_quotes(&client);
