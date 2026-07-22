@@ -76,12 +76,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     for quote in quotes.records() {
         println!(
-            "quote code={} exchange={:?} price={} volume={} amount={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+            "quote code={} name={:?} exchange={:?} price={} previous_close={:?} open={:?} high={:?} low={:?} change_percent={:?} volume={} amount={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
             quote.instrument.code(),
+            quote.name,
             quote.instrument.exchange(),
             quote.price.get(),
+            quote.previous_close.map(|value| value.get()),
+            quote.open.map(|value| value.get()),
+            quote.high.map(|value| value.get()),
+            quote.low.map(|value| value.get()),
+            quote.change_percent.map(|value| value.get()),
             quote.volume.get(),
             quote.amount.map(Money::get),
+            quote.status,
             quote.source_at,
             quote.observed_at,
             quote.provider,

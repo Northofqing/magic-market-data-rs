@@ -10,7 +10,7 @@ pub use finance::FinanceService;
 pub use funds::FundService;
 use magic_market_core::{
     AuctionSnapshot, BarsRequest, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId,
-    MoneyFlow, OrderBook, Price, Quantity, RealtimeQuotes,
+    MoneyFlow, OrderBook, Price, Quantity, Quote, RealtimeQuotes,
 };
 pub use profile::ProfileService;
 use std::collections::HashMap;
@@ -53,10 +53,7 @@ impl AsyncTdxService {
         .await
     }
     /// Fetches strict realtime quotes concurrently through the async client.
-    pub async fn quotes(
-        &self,
-        instruments: &[InstrumentId],
-    ) -> Result<DataBatch<SecurityQuote>, TdxError> {
+    pub async fn quotes(&self, instruments: &[InstrumentId]) -> Result<DataBatch<Quote>, TdxError> {
         <AsyncTdxHqClient as magic_market_core::AsyncRealtimeQuotes>::realtime_quotes_async(
             &self.client,
             instruments,
@@ -289,10 +286,7 @@ impl TdxService {
         self.client.historical_bars(request)
     }
     /// Fetches strict realtime quotes.
-    pub fn quotes(
-        &self,
-        instruments: &[InstrumentId],
-    ) -> Result<DataBatch<SecurityQuote>, TdxError> {
+    pub fn quotes(&self, instruments: &[InstrumentId]) -> Result<DataBatch<Quote>, TdxError> {
         self.client.realtime_quotes(instruments)
     }
     /// Fetches quotes in protocol-sized chunks and restores the requested order.
@@ -300,7 +294,7 @@ impl TdxService {
     pub fn quotes_chunked(
         &self,
         instruments: &[InstrumentId],
-    ) -> Result<DataBatch<SecurityQuote>, TdxError> {
+    ) -> Result<DataBatch<Quote>, TdxError> {
         if instruments.is_empty() {
             return Err(TdxError::InvalidData("quote request is empty".into()));
         }
@@ -373,12 +367,7 @@ impl TdxService {
                     .ok_or_else(|| TdxError::InvalidData("TDX quote ordering mismatch".into()))?,
             );
         }
-        let records = ordered;
-        let mut provenance = magic_market_core::Provenance::new("tdx-smart", fetched_epoch());
-        if let Some(source_at) = records.first().map(|quote| quote.servertime.clone()) {
-            provenance = provenance.with_source_at(source_at);
-        }
-        Ok(DataBatch::strict(records, provenance))
+        crate::adapter::normalize_quotes("tdx-smart-chunked", instruments, ordered)
     }
     /// TDX has no standardized auditable money-flow packet.
     pub fn money_flows(

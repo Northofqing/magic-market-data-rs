@@ -51,8 +51,8 @@ if test "$1" = "--history"; then
   exit 0
 fi
 test "$1" = "600519.SH,000001.SZ"
-if test "$2" = "TIME,NOW,VOLUME,AMOUNT"; then
-  printf '%s\n' '{"records":[{"date":"2026-07-22","code":"000001.SZ","values":{"TIME":"10:00:01","NOW":12.5,"VOLUME":200,"AMOUNT":2500}},{"date":"2026-07-22","code":"600519.SH","values":{"TIME":"10:00:00","NOW":1300,"VOLUME":100,"AMOUNT":130000}}]}'
+if test "$2" = "TIME,NAME,NOW,PRECLOSE,OPEN,HIGH,LOW,PCTCHANGE,VOLUME,AMOUNT"; then
+  printf '%s\n' '{"records":[{"date":"2026-07-22","code":"000001.SZ","values":{"TIME":"10:00:01","NAME":"平安银行","NOW":12.5,"PRECLOSE":12.2,"OPEN":12.3,"HIGH":12.6,"LOW":12.1,"PCTCHANGE":2.459,"VOLUME":200,"AMOUNT":2500}},{"date":"2026-07-22","code":"600519.SH","values":{"TIME":"10:00:00","NAME":"贵州茅台","NOW":1300,"PRECLOSE":1290,"OPEN":1295,"HIGH":1305,"LOW":1288,"PCTCHANGE":0.7752,"VOLUME":100,"AMOUNT":130000}}]}'
 else
   printf '%s\n' '{"records":[{"date":"2026-07-22","code":"000001.SZ","values":{"TIME":"10:00:01","BUYPRICE1":12.49,"BUYVOLUME1":20,"SELLPRICE1":12.51,"SELLVOLUME1":30}},{"date":"2026-07-22","code":"600519.SH","values":{"TIME":"10:00:00","BUYPRICE1":1299,"BUYVOLUME1":10,"SELLPRICE1":1301,"SELLVOLUME1":11,"BUYPRICE2":1298,"BUYVOLUME2":12,"SELLPRICE2":1302,"SELLVOLUME2":13}}]}'
 fi
@@ -97,6 +97,15 @@ fn executes_bridge_and_normalizes_quotes_in_request_order() {
     assert_eq!(batch.records().len(), 2);
     assert_eq!(batch.records()[0].instrument.code(), "600519");
     assert_eq!(batch.records()[0].price, Price::new(1300.0).unwrap());
+    assert_eq!(batch.records()[0].name.as_deref(), Some("贵州茅台"));
+    assert_eq!(
+        batch.records()[0].previous_close,
+        Some(Price::new(1290.0).unwrap())
+    );
+    assert_eq!(batch.records()[0].open, Some(Price::new(1295.0).unwrap()));
+    assert_eq!(batch.records()[0].high, Some(Price::new(1305.0).unwrap()));
+    assert_eq!(batch.records()[0].low, Some(Price::new(1288.0).unwrap()));
+    assert_eq!(batch.records()[0].status, DataStatus::Available);
     assert_eq!(batch.records()[0].volume, Quantity::new(100.0).unwrap());
     assert_eq!(
         batch.records()[0].amount,

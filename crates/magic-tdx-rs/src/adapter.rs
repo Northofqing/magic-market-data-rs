@@ -2,9 +2,10 @@ use crate::error::TdxError;
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use magic_market_core::{
     AsyncHistoricalBars, AsyncRealtimeQuotes, AuctionSnapshot, Auctions, BarInterval, BarsRequest,
-    BookLevel, DataBatch, HistoricalBars, InstrumentId, MoneyFlow, MoneyFlows, OrderBook,
-    OrderBooks, Price, Quantity, RealtimeQuotes,
+    BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId, Money, MoneyFlow, MoneyFlows,
+    OrderBook, OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
 };
+use std::collections::{HashMap, HashSet};
 
 impl TdxHqClient {
     /// Returns the data families exposed through the core provider boundary.
@@ -64,13 +65,6 @@ fn bars_provenance(source: &str, records: &[SecurityBar]) -> magic_market_core::
         None => p,
     }
 }
-fn quotes_provenance(source: &str, records: &[SecurityQuote]) -> magic_market_core::Provenance {
-    let p = magic_market_core::Provenance::new(source, fetched_at());
-    match records.first() {
-        Some(quote) => p.with_source_at(quote.servertime.clone()),
-        None => p,
-    }
-}
 fn strict_bars(
     source: &str,
     records: Vec<SecurityBar>,
@@ -79,13 +73,139 @@ fn strict_bars(
     let provenance = bars_provenance(source, &records);
     Ok(DataBatch::strict(records, provenance))
 }
-fn strict_quotes(
+
+fn optional_quote_price(value: f64, field: &str) -> Result<Option<Price>, TdxError> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(TdxError::InvalidData(format!(
+            "TDX quote {field} must be finite and non-negative"
+        )));
+    }
+    if value == 0.0 {
+        Ok(None)
+    } else {
+        Price::new(value)
+            .map(Some)
+            .map_err(|error| TdxError::InvalidData(error.to_string()))
+    }
+}
+
+pub(crate) fn normalize_quotes(
     source: &str,
+    instruments: &[InstrumentId],
     records: Vec<SecurityQuote>,
-) -> Result<DataBatch<SecurityQuote>, TdxError> {
-    ensure_nonempty(&records)?;
-    let provenance = quotes_provenance(source, &records);
-    Ok(DataBatch::strict(records, provenance))
+) -> Result<DataBatch<Quote>, TdxError> {
+    if instruments.is_empty() {
+        return Err(TdxError::InvalidData("TDX quote request is empty".into()));
+    }
+    let mut requested = HashSet::new();
+    if instruments
+        .iter()
+        .any(|instrument| !requested.insert(instrument.clone()))
+    {
+        return Err(TdxError::InvalidData(
+            "TDX quote request contains duplicate instruments".into(),
+        ));
+    }
+    if records.len() != instruments.len() {
+        return Err(TdxError::InvalidData(format!(
+            "TDX quote cardinality mismatch: requested {}, received {}",
+            instruments.len(),
+            records.len()
+        )));
+    }
+    let mut by_key = HashMap::with_capacity(records.len());
+    for record in records {
+        let key = (record.market, record.code.clone());
+        if by_key.insert(key, record).is_some() {
+            return Err(TdxError::InvalidData(
+                "TDX returned a duplicate quote".into(),
+            ));
+        }
+    }
+
+    let observed_at = fetched_at();
+    let batch_id = format!("{source}:{observed_at}:quote");
+    let mut quotes = Vec::with_capacity(instruments.len());
+    let mut issues = Vec::new();
+    let mut batch_source_at = None;
+    for instrument in instruments {
+        let key = (market(instrument), instrument.code().to_owned());
+        let record = by_key
+            .remove(&key)
+            .ok_or_else(|| TdxError::InvalidData("TDX omitted a requested quote".into()))?;
+        let price =
+            Price::new(record.price).map_err(|error| TdxError::InvalidData(error.to_string()))?;
+        let previous_close = optional_quote_price(record.last_close, "previous close")?;
+        let open = optional_quote_price(record.open, "open")?;
+        let high = optional_quote_price(record.high, "high")?;
+        let low = optional_quote_price(record.low, "low")?;
+        let volume =
+            Quantity::new(record.vol).map_err(|error| TdxError::InvalidData(error.to_string()))?;
+        if !record.amount.is_finite() || record.amount < 0.0 {
+            return Err(TdxError::InvalidData(
+                "TDX quote amount must be finite and non-negative".into(),
+            ));
+        }
+        let amount = Money::new(record.amount)
+            .map(Some)
+            .map_err(|error| TdxError::InvalidData(error.to_string()))?;
+        let change_percent = previous_close
+            .map(|value| {
+                Ratio::new(
+                    (price.get() - value.get()) / value.get() * 100.0,
+                    RatioUnit::Percent,
+                )
+            })
+            .transpose()
+            .map_err(|error| TdxError::InvalidData(error.to_string()))?;
+        let source_at = (!record.servertime.is_empty()).then_some(record.servertime);
+        if batch_source_at.is_none() {
+            batch_source_at.clone_from(&source_at);
+        }
+        let complete = previous_close.is_some()
+            && open.is_some()
+            && high.is_some()
+            && low.is_some()
+            && source_at.is_some();
+        if !complete {
+            issues.push(format!(
+                "{}: one or more normalized quote fields unavailable",
+                instrument.code()
+            ));
+        }
+        issues.push(format!(
+            "{}: security name unavailable from the TDX quote packet",
+            instrument.code()
+        ));
+        quotes.push(Quote {
+            instrument: instrument.clone(),
+            name: None,
+            price,
+            previous_close,
+            open,
+            high,
+            low,
+            change_percent,
+            volume,
+            amount,
+            status: DataStatus::Unavailable,
+            source_at,
+            observed_at: observed_at.clone(),
+            provider: ProviderId::Tdx,
+            batch_id: batch_id.clone(),
+        });
+    }
+    if !by_key.is_empty() {
+        return Err(TdxError::InvalidData(
+            "TDX returned unexpected quotes".into(),
+        ));
+    }
+    let mut provenance =
+        magic_market_core::Provenance::new(source, observed_at).with_batch_id(batch_id);
+    if let Some(source_at) = batch_source_at {
+        provenance = provenance.with_source_at(source_at);
+    }
+    Ok(DataBatch::best_effort(quotes, provenance, issues))
 }
 
 impl HistoricalBars for TdxHqClient {
@@ -105,7 +225,7 @@ impl HistoricalBars for TdxHqClient {
 }
 
 impl RealtimeQuotes for TdxHqClient {
-    type Quote = SecurityQuote;
+    type Quote = Quote;
     type Error = TdxError;
     fn realtime_quotes(
         &self,
@@ -116,7 +236,7 @@ impl RealtimeQuotes for TdxHqClient {
             .map(|id| (market(id), id.code()))
             .collect();
         let records = self.get_security_quotes(&pairs)?;
-        strict_quotes("tdx", records)
+        normalize_quotes("tdx", instruments, records)
     }
 }
 
@@ -294,7 +414,7 @@ impl HistoricalBars for crate::TdxSmartClient {
 }
 
 impl RealtimeQuotes for crate::TdxSmartClient {
-    type Quote = SecurityQuote;
+    type Quote = Quote;
     type Error = TdxError;
     fn realtime_quotes(
         &self,
@@ -305,7 +425,7 @@ impl RealtimeQuotes for crate::TdxSmartClient {
             .map(|id| (market(id), id.code()))
             .collect();
         let records = self.get_security_quotes(&pairs)?;
-        strict_quotes("tdx-smart", records)
+        normalize_quotes("tdx-smart", instruments, records)
     }
 }
 
@@ -326,7 +446,7 @@ impl HistoricalBars for crate::TdxDirectClient {
 }
 
 impl RealtimeQuotes for crate::TdxDirectClient {
-    type Quote = SecurityQuote;
+    type Quote = Quote;
     type Error = TdxError;
     fn realtime_quotes(
         &self,
@@ -337,7 +457,7 @@ impl RealtimeQuotes for crate::TdxDirectClient {
             .map(|id| (market(id), id.code()))
             .collect();
         let records = self.get_security_quotes(&pairs)?;
-        strict_quotes("tdx-direct", records)
+        normalize_quotes("tdx-direct", instruments, records)
     }
 }
 
@@ -363,7 +483,7 @@ impl AsyncHistoricalBars for crate::AsyncTdxHqClient {
 }
 
 impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
-    type Quote = SecurityQuote;
+    type Quote = Quote;
     type Error = TdxError;
     async fn realtime_quotes_async(
         &self,
@@ -374,7 +494,96 @@ impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
             .map(|id| (market(id), id.code()))
             .collect();
         let records = self.get_security_quotes(&pairs).await?;
-        strict_quotes("tdx-async", records)
+        normalize_quotes("tdx-async", instruments, records)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use magic_market_core::{AssetClass, Exchange};
+
+    fn instrument(code: &str) -> InstrumentId {
+        InstrumentId::new(Exchange::Shanghai, code, AssetClass::Equity).unwrap()
+    }
+
+    fn source_quote(code: &str, price: f64) -> SecurityQuote {
+        SecurityQuote {
+            market: 1,
+            code: code.into(),
+            active1: 0,
+            price,
+            last_close: 100.0,
+            open: 101.0,
+            high: 103.0,
+            low: 99.0,
+            servertime: "10:00:01".into(),
+            vol: 1_000.0,
+            cur_vol: 10.0,
+            amount: 102_000.0,
+            s_vol: 400.0,
+            b_vol: 600.0,
+            bid1: 101.9,
+            bid_vol1: 10.0,
+            bid2: 101.8,
+            bid_vol2: 11.0,
+            bid3: 101.7,
+            bid_vol3: 12.0,
+            bid4: 101.6,
+            bid_vol4: 13.0,
+            bid5: 101.5,
+            bid_vol5: 14.0,
+            ask1: 102.1,
+            ask_vol1: 15.0,
+            ask2: 102.2,
+            ask_vol2: 16.0,
+            ask3: 102.3,
+            ask_vol3: 17.0,
+            ask4: 102.4,
+            ask_vol4: 18.0,
+            ask5: 102.5,
+            ask_vol5: 19.0,
+            reversed_bytes0: 0,
+            reversed_bytes1: 0,
+            reversed_bytes2: 0,
+            reversed_bytes3: 0,
+            reversed_bytes4: 0,
+            reversed_bytes5: 0,
+            reversed_bytes6: 0,
+            reversed_bytes7: 0,
+            reversed_bytes8: 0,
+            reversed_bytes9: 0,
+            active2: 0,
+        }
+    }
+
+    #[test]
+    fn normalized_quotes_restore_request_order_and_mark_missing_name() {
+        let instruments = [instrument("600001"), instrument("600002")];
+        let batch = normalize_quotes(
+            "test",
+            &instruments,
+            vec![source_quote("600002", 101.0), source_quote("600001", 102.0)],
+        )
+        .unwrap();
+        assert_eq!(batch.records()[0].instrument.code(), "600001");
+        assert_eq!(batch.records()[0].price, Price::new(102.0).unwrap());
+        assert_eq!(
+            batch.records()[0].change_percent,
+            Some(Ratio::new(2.0, RatioUnit::Percent).unwrap())
+        );
+        assert_eq!(batch.records()[0].status, DataStatus::Unavailable);
+        assert!(batch.records()[0].name.is_none());
+        assert_eq!(batch.quality().issues.len(), 2);
+    }
+
+    #[test]
+    fn normalized_quotes_reject_duplicates_and_missing_records() {
+        let duplicated = [instrument("600001"), instrument("600001")];
+        assert!(normalize_quotes("test", &duplicated, Vec::new()).is_err());
+
+        let requested = [instrument("600001"), instrument("600002")];
+        assert!(normalize_quotes("test", &requested, vec![source_quote("600001", 102.0)]).is_err());
     }
 }
 

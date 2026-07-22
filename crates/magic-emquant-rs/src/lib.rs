@@ -4,7 +4,7 @@
 use magic_market_core::{
     Adjustment, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, BookLevel, Capabilities,
     DataBatch, DataStatus, HistoricalBars, InstrumentId, Money, MoneyFlow, MoneyFlows, OrderBook,
-    OrderBooks, Price, ProviderId, Quantity, Quote, RealtimeQuotes,
+    OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -209,6 +209,36 @@ fn optional_number(
             .as_f64()
             .map(Some)
             .ok_or_else(|| EmQuantError::InvalidResponse(format!("invalid numeric field {field}"))),
+    }
+}
+
+fn optional_price(
+    values: &HashMap<String, Value>,
+    field: &str,
+) -> Result<Option<Price>, EmQuantError> {
+    match optional_number(values, field)? {
+        None | Some(0.0) => Ok(None),
+        Some(value) if value > 0.0 => Price::new(value)
+            .map(Some)
+            .map_err(|error| EmQuantError::InvalidResponse(error.to_string())),
+        Some(_) => Err(EmQuantError::InvalidResponse(format!(
+            "{field} must be positive when present"
+        ))),
+    }
+}
+
+fn optional_nonnegative_money(
+    values: &HashMap<String, Value>,
+    field: &str,
+) -> Result<Option<Money>, EmQuantError> {
+    match optional_number(values, field)? {
+        None => Ok(None),
+        Some(value) if value >= 0.0 => Money::new(value)
+            .map(Some)
+            .map_err(|error| EmQuantError::InvalidResponse(error.to_string())),
+        Some(_) => Err(EmQuantError::InvalidResponse(format!(
+            "{field} must be non-negative"
+        ))),
     }
 }
 
@@ -567,7 +597,8 @@ impl RealtimeQuotes for EmQuantClient {
                 "EMQuant rejects duplicate security codes".into(),
             ));
         }
-        let response = self.snapshot(&codes.join(","), "TIME,NOW,VOLUME,AMOUNT")?;
+        let indicators = "TIME,NAME,NOW,PRECLOSE,OPEN,HIGH,LOW,PCTCHANGE,VOLUME,AMOUNT";
+        let response = self.snapshot(&codes.join(","), indicators)?;
         if response.records.len() != instruments.len() {
             return Err(EmQuantError::InvalidResponse(format!(
                 "quote cardinality mismatch: requested {}, received {}",
@@ -583,6 +614,7 @@ impl RealtimeQuotes for EmQuantClient {
         let observed_at = observed_epoch();
         let batch_id = format!("eastmoney:{observed_at}:quote");
         let mut quotes = Vec::with_capacity(instruments.len());
+        let mut issues = Vec::new();
         let mut source_at = None;
         for (instrument, code) in instruments.iter().zip(codes) {
             let record = by_code.remove(&code).ok_or_else(|| {
@@ -596,23 +628,50 @@ impl RealtimeQuotes for EmQuantClient {
                 .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
             let volume = Quantity::new(required_number(&record.values, "VOLUME")?)
                 .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
-            let amount = optional_number(&record.values, "AMOUNT")?
-                .map(Money::new)
+            let name = value_text(&record.values, "NAME").filter(|value| !value.is_empty());
+            let previous_close = optional_price(&record.values, "PRECLOSE")?;
+            let open = optional_price(&record.values, "OPEN")?;
+            let high = optional_price(&record.values, "HIGH")?;
+            let low = optional_price(&record.values, "LOW")?;
+            let change_percent = optional_number(&record.values, "PCTCHANGE")?
+                .map(|value| Ratio::new(value, RatioUnit::Percent))
                 .transpose()
                 .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
-            let mut quote = Quote::new(
-                instrument.clone(),
+            let amount = optional_nonnegative_money(&record.values, "AMOUNT")?;
+            let complete = name.is_some()
+                && previous_close.is_some()
+                && open.is_some()
+                && high.is_some()
+                && low.is_some()
+                && change_percent.is_some()
+                && amount.is_some()
+                && record_source_at.is_some();
+            if !complete {
+                issues.push(format!(
+                    "{code}: one or more normalized quote fields unavailable"
+                ));
+            }
+            quotes.push(Quote {
+                instrument: instrument.clone(),
+                name,
                 price,
+                previous_close,
+                open,
+                high,
+                low,
+                change_percent,
                 volume,
                 amount,
-                observed_at.clone(),
-                ProviderId::Eastmoney,
-                batch_id.clone(),
-            );
-            if let Some(value) = record_source_at {
-                quote = quote.with_source_at(value);
-            }
-            quotes.push(quote);
+                status: if complete {
+                    DataStatus::Available
+                } else {
+                    DataStatus::Unavailable
+                },
+                source_at: record_source_at,
+                observed_at: observed_at.clone(),
+                provider: ProviderId::Eastmoney,
+                batch_id: batch_id.clone(),
+            });
         }
         if !by_code.is_empty() {
             return Err(EmQuantError::InvalidResponse(
@@ -624,7 +683,7 @@ impl RealtimeQuotes for EmQuantClient {
         if let Some(value) = source_at {
             provenance = provenance.with_source_at(value);
         }
-        Ok(DataBatch::strict(quotes, provenance))
+        Ok(DataBatch::best_effort(quotes, provenance, issues))
     }
 }
 

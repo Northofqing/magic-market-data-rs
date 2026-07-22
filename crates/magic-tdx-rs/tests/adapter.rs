@@ -31,7 +31,7 @@ fn async_tdx_client_implements_core_contracts() {
     ) {
     }
     fn accepts_quotes<
-        P: AsyncRealtimeQuotes<Quote = magic_tdx_rs::SecurityQuote, Error = magic_tdx_rs::TdxError>,
+        P: AsyncRealtimeQuotes<Quote = magic_market_core::Quote, Error = magic_tdx_rs::TdxError>,
     >(
         _: &P,
     ) {

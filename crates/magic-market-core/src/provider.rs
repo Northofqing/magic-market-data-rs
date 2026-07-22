@@ -17,9 +17,17 @@ pub enum ProviderId {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quote {
     pub instrument: InstrumentId,
+    pub name: Option<String>,
     pub price: crate::Price,
+    pub previous_close: Option<crate::Price>,
+    pub open: Option<crate::Price>,
+    pub high: Option<crate::Price>,
+    pub low: Option<crate::Price>,
+    pub change_percent: Option<crate::Ratio>,
     pub volume: crate::Quantity,
     pub amount: Option<crate::Money>,
+    /// Overall completeness of the normalized quote fields.
+    pub status: DataStatus,
     /// Timestamp supplied by the source, when the packet proves one.
     pub source_at: Option<String>,
     /// Local observation timestamp, kept separate from `source_at`.
@@ -40,9 +48,16 @@ impl Quote {
     ) -> Self {
         Self {
             instrument,
+            name: None,
             price,
+            previous_close: None,
+            open: None,
+            high: None,
+            low: None,
+            change_percent: None,
             volume,
             amount,
+            status: DataStatus::Unavailable,
             source_at: None,
             observed_at: observed_at.into(),
             provider,
