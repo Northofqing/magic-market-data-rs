@@ -104,12 +104,19 @@ impl BarsRequest {
         let start = start.into();
         let end = end.into();
         let valid = |s: &str| {
-            s.len() == 10
-                && s.as_bytes()[4] == b'-'
-                && s.as_bytes()[7] == b'-'
-                && s.bytes()
+            if s.len() != 10
+                || s.as_bytes()[4] != b'-'
+                || s.as_bytes()[7] != b'-'
+                || !s
+                    .bytes()
                     .enumerate()
                     .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
+            {
+                return false;
+            }
+            let month: u32 = s[5..7].parse().unwrap_or(0);
+            let day: u32 = s[8..10].parse().unwrap_or(0);
+            (1..=12).contains(&month) && (1..=31).contains(&day)
         };
         if !valid(&start) || !valid(&end) || start > end {
             return Err(crate::CoreError::InvalidRequest(
