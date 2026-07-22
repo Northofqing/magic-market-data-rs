@@ -43,3 +43,9 @@ MAGIC_EMQUANT_PROXY=host:port        # 可选，仅用户明确配置时启用
 
 账号、密码和 API token 不进入仓库、日志或测试 fixture。正式接入前必须先用官方示例
 确认登录、Quote 权限和 Level-2 权限，再启用对应 capability。
+
+本地 SDK 文件布局和示例语法可用以下只读检查验证：
+
+```text
+bash tools/emquant/check_sdk.sh /path/to/EMQuantAPI_CPP_Mac
+```
