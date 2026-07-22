@@ -78,6 +78,29 @@ impl AsyncTdxService {
             .await
             .map_err(Into::into)
     }
+    /// Fetches the complete market list atomically using the declared count.
+    pub async fn security_list_all(&self, market: u8) -> Result<Vec<SecurityInfo>, TdxError> {
+        const PAGE_SIZE: u16 = 1000;
+        let expected = usize::from(self.security_count(market).await?);
+        let mut all = Vec::with_capacity(expected);
+        let mut start = 0u16;
+        while all.len() < expected {
+            let page = self.security_list(market, start).await?;
+            if page.is_empty() || all.len() + page.len() > expected {
+                return Err(TdxError::InvalidData(
+                    "TDX security list cardinality mismatch".into(),
+                ));
+            }
+            all.extend(page);
+            if all.len() == expected {
+                break;
+            }
+            start = start
+                .checked_add(PAGE_SIZE)
+                .ok_or_else(|| TdxError::InvalidData("TDX security list offset overflow".into()))?;
+        }
+        Ok(all)
+    }
     /// Fetches current minute data.
     pub async fn minute_data(
         &self,
