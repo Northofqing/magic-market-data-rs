@@ -8,6 +8,8 @@ pub enum ProviderId {
     Eastmoney,
     Sina,
     Baostock,
+    /// Read-only data exposed by an authorized local terminal/SDK.
+    LocalTerminal,
     Custom,
 }
 
