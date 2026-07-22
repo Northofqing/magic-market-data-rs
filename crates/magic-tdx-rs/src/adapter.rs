@@ -1,4 +1,4 @@
-use magic_market_core::{BarInterval, BarsRequest, DataBatch, HistoricalBars, InstrumentId, RealtimeQuotes};
+use magic_market_core::{AsyncHistoricalBars, AsyncRealtimeQuotes, BarInterval, BarsRequest, DataBatch, HistoricalBars, InstrumentId, RealtimeQuotes};
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use crate::error::TdxError;
 
@@ -66,5 +66,24 @@ impl RealtimeQuotes for crate::TdxDirectClient {
         let pairs: Vec<(u8, &str)> = instruments.iter().map(|id| (market(id), id.code())).collect();
         let records = self.get_security_quotes(&pairs)?;
         Ok(DataBatch::strict(records, magic_market_core::Provenance::new("tdx-direct", "runtime")))
+    }
+}
+
+impl AsyncHistoricalBars for crate::AsyncTdxHqClient {
+    type Bar = SecurityBar;
+    type Error = TdxError;
+    async fn historical_bars_async(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
+        let records = self.get_security_bars(category(request.interval), market(&request.instrument), request.instrument.code(), 0, request.limit, 0).await?;
+        Ok(DataBatch::strict(records, magic_market_core::Provenance::new("tdx-async", "runtime")))
+    }
+}
+
+impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
+    type Quote = SecurityQuote;
+    type Error = TdxError;
+    async fn realtime_quotes_async(&self, instruments: &[InstrumentId]) -> Result<DataBatch<Self::Quote>, Self::Error> {
+        let pairs: Vec<(u8, &str)> = instruments.iter().map(|id| (market(id), id.code())).collect();
+        let records = self.get_security_quotes(&pairs).await?;
+        Ok(DataBatch::strict(records, magic_market_core::Provenance::new("tdx-async", "runtime")))
     }
 }

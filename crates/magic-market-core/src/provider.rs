@@ -33,3 +33,11 @@ pub trait HistoricalBars { type Bar; type Error: std::error::Error + Send + Sync
 
 /// Provider capability for realtime quotes.
 pub trait RealtimeQuotes { type Quote; type Error: std::error::Error + Send + Sync + 'static; fn realtime_quotes(&self, instruments: &[InstrumentId]) -> Result<DataBatch<Self::Quote>, Self::Error>; }
+
+/// Async provider capability for historical bars.
+#[allow(async_fn_in_trait)]
+pub trait AsyncHistoricalBars { type Bar; type Error: std::error::Error + Send + Sync + 'static; async fn historical_bars_async(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error>; }
+
+/// Async provider capability for realtime quotes.
+#[allow(async_fn_in_trait)]
+pub trait AsyncRealtimeQuotes { type Quote; type Error: std::error::Error + Send + Sync + 'static; async fn realtime_quotes_async(&self, instruments: &[InstrumentId]) -> Result<DataBatch<Self::Quote>, Self::Error>; }

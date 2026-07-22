@@ -11,4 +11,4 @@ pub use error::CoreError;
 pub use instrument::{AssetClass, Exchange, InstrumentId};
 pub use provenance::Provenance;
 pub use value::{Money, Price, Quantity, Ratio, RatioUnit};
-pub use provider::{BarInterval, BarsRequest, Capabilities, HistoricalBars, ProviderId, Quote, RealtimeQuotes};
+pub use provider::{AsyncHistoricalBars, AsyncRealtimeQuotes, BarInterval, BarsRequest, Capabilities, HistoricalBars, ProviderId, Quote, RealtimeQuotes};
