@@ -16,6 +16,9 @@ impl TdxHqClient {
             fundamentals: true,
             corporate_actions: true,
             blocks: true,
+            money_flow: false,
+            order_book: false,
+            auction: false,
         }
     }
 }

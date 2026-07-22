@@ -20,6 +20,53 @@ pub struct Quote {
     pub amount: Option<crate::Money>,
 }
 
+/// Availability state for optional source fields; absence is never encoded as zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataStatus {
+    Available,
+    Unavailable,
+    Stale,
+    Conflicted,
+    Unsupported,
+}
+
+/// Normalized money-flow snapshot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MoneyFlow {
+    pub instrument: InstrumentId,
+    pub main_net: Option<crate::Money>,
+    pub super_large_net: Option<crate::Money>,
+    pub large_net: Option<crate::Money>,
+    pub medium_net: Option<crate::Money>,
+    pub small_net: Option<crate::Money>,
+    pub status: DataStatus,
+}
+
+/// One level of a normalized five-level order book.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BookLevel {
+    pub price: Option<crate::Price>,
+    pub quantity: Option<crate::Quantity>,
+}
+
+/// Normalized order-book snapshot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OrderBook {
+    pub instrument: InstrumentId,
+    pub bids: [BookLevel; 5],
+    pub asks: [BookLevel; 5],
+    pub status: DataStatus,
+}
+
+/// Normalized call-auction snapshot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuctionSnapshot {
+    pub instrument: InstrumentId,
+    pub matched_price: Option<crate::Price>,
+    pub matched_quantity: Option<crate::Quantity>,
+    pub status: DataStatus,
+}
+
 /// Declares which data families a provider implements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
@@ -30,6 +77,9 @@ pub struct Capabilities {
     pub fundamentals: bool,
     pub corporate_actions: bool,
     pub blocks: bool,
+    pub money_flow: bool,
+    pub order_book: bool,
+    pub auction: bool,
 }
 impl Capabilities {
     pub const fn new() -> Self {
@@ -41,6 +91,9 @@ impl Capabilities {
             fundamentals: false,
             corporate_actions: false,
             blocks: false,
+            money_flow: false,
+            order_book: false,
+            auction: false,
         }
     }
 }
@@ -153,6 +206,33 @@ pub trait RealtimeQuotes {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error>;
+}
+
+/// Provider capability for money-flow snapshots.
+pub trait MoneyFlows {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn money_flows(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<MoneyFlow>, Self::Error>;
+}
+
+/// Provider capability for order books.
+pub trait OrderBooks {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn order_books(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<OrderBook>, Self::Error>;
+}
+
+/// Provider capability for call-auction snapshots.
+pub trait Auctions {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn auction_snapshots(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<AuctionSnapshot>, Self::Error>;
 }
 
 /// Async provider capability for historical bars.
