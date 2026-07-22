@@ -28,6 +28,22 @@ Python/PyO3 bindings are excluded. Real-network validation is opt-in through
 `examples/live_probe.rs`; deterministic validation is covered by the upstream
 unit and parser suite.
 
+The historical financial-file path first uses TDX's official
+`data.tdx.com.cn/tdxfin/` distribution endpoint and checks the advertised byte
+length, ZIP bounds, uncompressed length and CRC before parsing. The quote-server
+`0x06B9` report transport remains a fallback because current quote nodes may
+return the `gpcw.txt` manifest but an empty fragment for large ZIP files.
+
+On 2026-07-22, the release `live_probe` returned non-empty data for all TDX
+families exercised by the example: one stock quote; all 12 stock K-line
+categories; five index bars; 27,590 Shanghai security records reported and a
+1,000-record list page; 240 current and 240 historical minute points; 20 current
+and 20 historical transactions; current finance; 45 corporate-action records;
+industry, concept and index blocks; fund quote/bars/actions; and 16 F10
+categories. It also downloaded the 5,116,020-byte `gpcw20260331.zip`, validated
+and parsed 5,526 market-wide financial records, and extracted all 45 named
+indicators for `600519`.
+
 `ProviderId::LocalTerminal` is reserved for an authorized, read-only local
 terminal/SDK adapter. It must never read account, position, cash, or order
 state, and it remains unimplemented until the terminal's official local API or

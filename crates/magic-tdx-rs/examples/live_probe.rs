@@ -71,6 +71,10 @@ fn main() {
                 Ok(items) => println!("xdxr={} ", items.len()),
                 Err(error) => println!("xdxr=error error={error}"),
             }
+            match client.get_security_quotes(&[(1, "510300")]) {
+                Ok(items) => println!("fund_quotes_via_smart={} ", items.len()),
+                Err(error) => println!("fund_quotes_via_smart=error error={error}"),
+            }
             let blocks = magic_tdx_rs::TdxBlockClient::with_default("180.153.18.170");
             match blocks.get_industry_blocks() {
                 Ok(items) => println!("blocks_industry={}", items.len()),
@@ -113,13 +117,33 @@ fn main() {
             match finance.get_financial_list() {
                 Ok(files) => {
                     println!("financial_files={}", files.len());
-                    if let Some(file) = files.first() {
-                        match finance.get_finance_indicators(
-                            &file.filename,
-                            file.filesize,
-                            "600519",
-                        ) {
-                            Ok(values) => println!("finance_indicators={}", values.len()),
+                    for file in files.iter().take(3) {
+                        println!(
+                            "financial_file name={} size={} hash={}",
+                            file.filename, file.filesize, file.hash
+                        );
+                    }
+                    if let Some(file) = files.iter().find(|file| file.filesize >= 20_000) {
+                        match finance.get_financial_data(&file.filename, file.filesize) {
+                            Ok(records) => {
+                                println!(
+                                    "financial_records file={} count={}",
+                                    file.filename,
+                                    records.len()
+                                );
+                                match records.iter().find(|record| record.code == "600519") {
+                                    Some(record) => println!(
+                                        "finance_indicators={}",
+                                        magic_tdx_rs::protocol::finance_fields::extract_indicators(
+                                            &record.fields
+                                        )
+                                        .len()
+                                    ),
+                                    None => {
+                                        println!("finance_indicators=error error=600519 missing")
+                                    }
+                                }
+                            }
                             Err(error) => println!("finance_indicators=error error={error}"),
                         }
                     }

@@ -230,6 +230,11 @@ impl TdxHqClient {
         self.blocked_servers.lock().unwrap().clone()
     }
 
+    /// Returns the server backing the current connection, when known.
+    pub fn connected_server(&self) -> Option<(String, u16)> {
+        self.last_server.lock().unwrap().clone()
+    }
+
     /// 清空黑名单
     pub fn clear_blocked_servers(&self) {
         self.blocked_servers.lock().unwrap().clear();

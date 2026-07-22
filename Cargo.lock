@@ -91,6 +91,7 @@ dependencies = [
 name = "magic-tdx-rs"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "encoding_rs",
  "flate2",
  "magic-market-core",

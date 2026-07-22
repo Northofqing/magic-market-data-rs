@@ -5,7 +5,7 @@
 //!
 //! 支持的基金类型: ETF、LOF、REITs、分级基金、债券基金等。
 
-use crate::error::Result;
+use crate::error::{Result, TdxError};
 use crate::net::client::TdxHqClient;
 use crate::protocol::types::{MinuteTimePrice, TickData};
 
@@ -53,7 +53,28 @@ impl TdxHqFundClient {
 
     /// 连接到任意可用服务器
     pub fn connect_to_any(&self, timeout: Option<f64>) -> Result<bool> {
-        self.inner.connect_to_any(timeout)
+        let maximum_attempts = crate::protocol::constants::PRIMARY_SERVERS.len()
+            + crate::protocol::constants::ALL_KNOWN_SERVERS.len();
+        for _ in 0..maximum_attempts {
+            if !self.inner.connect_to_any(timeout)? {
+                return Ok(false);
+            }
+            match self.inner.get_security_quotes(&[(MARKET_SH, "510300")]) {
+                Ok(quotes) if quotes.len() == 1 && quotes[0].code == "510300" => return Ok(true),
+                _ => {
+                    let Some((ip, port)) = self.inner.connected_server() else {
+                        return Err(TdxError::InvalidData(
+                            "TDX fund quote health check failed without a connected server".into(),
+                        ));
+                    };
+                    self.inner.block_server(&ip, port);
+                    self.inner.disconnect();
+                }
+            }
+        }
+        Err(TdxError::InvalidData(
+            "no TDX server passed the fund quote health check".into(),
+        ))
     }
 
     /// 断开连接

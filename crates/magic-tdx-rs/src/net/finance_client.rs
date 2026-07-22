@@ -19,9 +19,10 @@
 //! | `get_report_file(filename, offset)` | ≤30KB | 分片下载 gpcw 文件 |
 //! | `get_financial_list()` | ~2KB | 可用报告期列表 (gpcw.txt) |
 
-use flate2::read::ZlibDecoder;
+use flate2::read::{DeflateDecoder, ZlibDecoder};
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -40,6 +41,283 @@ const DEFAULT_FINANCE_TIMEOUT: f64 = 15.0;
 const CHUNK_SIZE: u32 = 0x7530;
 /// 磁盘缓存有效期 (24 小时)
 const CACHE_TTL: Duration = Duration::from_secs(24 * 3600);
+/// Upper bound for one uncompressed market-wide financial report.
+const MAX_REPORT_SIZE: usize = 256 * 1024 * 1024;
+/// Official TDX after-hours financial-data distribution endpoint.
+const FINANCIAL_HTTP_HOST: &str = "data.tdx.com.cn";
+const MAX_HTTP_HEADER_SIZE: usize = 64 * 1024;
+
+fn zip_u16(data: &[u8], offset: usize) -> Result<u16> {
+    let bytes = data
+        .get(offset..offset + 2)
+        .ok_or_else(|| crate::error::TdxError::InvalidData("truncated ZIP metadata".into()))?;
+    Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
+}
+
+fn zip_u32(data: &[u8], offset: usize) -> Result<u32> {
+    let bytes = data
+        .get(offset..offset + 4)
+        .ok_or_else(|| crate::error::TdxError::InvalidData("truncated ZIP metadata".into()))?;
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+/// Extracts the first DAT entry from a bounded, non-encrypted ZIP archive.
+fn extract_financial_zip(data: &[u8]) -> Result<Vec<u8>> {
+    const EOCD_SIGNATURE: &[u8; 4] = b"PK\x05\x06";
+    const CENTRAL_SIGNATURE: u32 = 0x0201_4b50;
+    const LOCAL_SIGNATURE: u32 = 0x0403_4b50;
+    if data.len() < 22 {
+        return Err(crate::error::TdxError::InvalidData(
+            "financial ZIP is too small".into(),
+        ));
+    }
+    let search_start = data.len().saturating_sub(65_557);
+    let eocd = data[search_start..]
+        .windows(4)
+        .rposition(|window| window == EOCD_SIGNATURE)
+        .map(|position| search_start + position)
+        .ok_or_else(|| {
+            crate::error::TdxError::InvalidData("financial ZIP has no end record".into())
+        })?;
+    let entries = usize::from(zip_u16(data, eocd + 10)?);
+    let central_size = zip_u32(data, eocd + 12)? as usize;
+    let central_offset = zip_u32(data, eocd + 16)? as usize;
+    let central_end = central_offset.checked_add(central_size).ok_or_else(|| {
+        crate::error::TdxError::InvalidData("financial ZIP central directory overflow".into())
+    })?;
+    if entries == 0 || central_end > eocd || central_end > data.len() {
+        return Err(crate::error::TdxError::InvalidData(
+            "financial ZIP central directory is invalid".into(),
+        ));
+    }
+
+    let mut cursor = central_offset;
+    for _ in 0..entries {
+        if zip_u32(data, cursor)? != CENTRAL_SIGNATURE {
+            return Err(crate::error::TdxError::InvalidData(
+                "financial ZIP central entry signature is invalid".into(),
+            ));
+        }
+        let flags = zip_u16(data, cursor + 8)?;
+        let method = zip_u16(data, cursor + 10)?;
+        let expected_crc = zip_u32(data, cursor + 16)?;
+        let compressed_size = zip_u32(data, cursor + 20)? as usize;
+        let uncompressed_size = zip_u32(data, cursor + 24)? as usize;
+        let name_length = usize::from(zip_u16(data, cursor + 28)?);
+        let extra_length = usize::from(zip_u16(data, cursor + 30)?);
+        let comment_length = usize::from(zip_u16(data, cursor + 32)?);
+        let local_offset = zip_u32(data, cursor + 42)? as usize;
+        let name_start = cursor + 46;
+        let name_end = name_start.checked_add(name_length).ok_or_else(|| {
+            crate::error::TdxError::InvalidData("financial ZIP entry name overflow".into())
+        })?;
+        let name = data.get(name_start..name_end).ok_or_else(|| {
+            crate::error::TdxError::InvalidData("truncated financial ZIP entry name".into())
+        })?;
+        let next = name_end
+            .checked_add(extra_length)
+            .and_then(|value| value.checked_add(comment_length))
+            .ok_or_else(|| {
+                crate::error::TdxError::InvalidData("financial ZIP entry overflow".into())
+            })?;
+        if next > central_end {
+            return Err(crate::error::TdxError::InvalidData(
+                "financial ZIP entry exceeds central directory".into(),
+            ));
+        }
+        if String::from_utf8_lossy(name)
+            .to_ascii_lowercase()
+            .ends_with(".dat")
+        {
+            if flags & 1 != 0 {
+                return Err(crate::error::TdxError::InvalidData(
+                    "encrypted financial ZIP entries are unsupported".into(),
+                ));
+            }
+            if uncompressed_size == 0 || uncompressed_size > MAX_REPORT_SIZE {
+                return Err(crate::error::TdxError::InvalidData(format!(
+                    "financial ZIP uncompressed size {uncompressed_size} is invalid"
+                )));
+            }
+            if zip_u32(data, local_offset)? != LOCAL_SIGNATURE {
+                return Err(crate::error::TdxError::InvalidData(
+                    "financial ZIP local entry signature is invalid".into(),
+                ));
+            }
+            let local_name_length = usize::from(zip_u16(data, local_offset + 26)?);
+            let local_extra_length = usize::from(zip_u16(data, local_offset + 28)?);
+            let payload_start = local_offset
+                .checked_add(30)
+                .and_then(|value| value.checked_add(local_name_length))
+                .and_then(|value| value.checked_add(local_extra_length))
+                .ok_or_else(|| {
+                    crate::error::TdxError::InvalidData(
+                        "financial ZIP payload offset overflow".into(),
+                    )
+                })?;
+            let payload_end = payload_start.checked_add(compressed_size).ok_or_else(|| {
+                crate::error::TdxError::InvalidData("financial ZIP payload overflow".into())
+            })?;
+            let payload = data.get(payload_start..payload_end).ok_or_else(|| {
+                crate::error::TdxError::InvalidData("truncated financial ZIP payload".into())
+            })?;
+            let decoded = match method {
+                0 => payload.to_vec(),
+                8 => {
+                    let mut output = Vec::with_capacity(uncompressed_size);
+                    DeflateDecoder::new(payload)
+                        .take((MAX_REPORT_SIZE + 1) as u64)
+                        .read_to_end(&mut output)
+                        .map_err(|error| {
+                            crate::error::TdxError::InvalidData(format!(
+                                "financial ZIP deflate failed: {error}"
+                            ))
+                        })?;
+                    output
+                }
+                value => {
+                    return Err(crate::error::TdxError::InvalidData(format!(
+                        "financial ZIP compression method {value} is unsupported"
+                    )));
+                }
+            };
+            if decoded.len() != uncompressed_size {
+                return Err(crate::error::TdxError::InvalidData(format!(
+                    "financial ZIP size mismatch: expected {uncompressed_size}, decoded {}",
+                    decoded.len()
+                )));
+            }
+            if crc32fast::hash(&decoded) != expected_crc {
+                return Err(crate::error::TdxError::InvalidData(
+                    "financial ZIP CRC mismatch".into(),
+                ));
+            }
+            return Ok(decoded);
+        }
+        cursor = next;
+    }
+    Err(crate::error::TdxError::InvalidData(
+        "financial ZIP contains no DAT entry".into(),
+    ))
+}
+
+fn decode_financial_payload(filename: &str, data: &[u8]) -> Result<Vec<u8>> {
+    if data.starts_with(b"PK\x03\x04") || filename.to_ascii_lowercase().ends_with(".zip") {
+        extract_financial_zip(data)
+    } else {
+        Ok(data.to_vec())
+    }
+}
+
+fn decode_http_response(response: &[u8], expected_size: u32) -> Result<Vec<u8>> {
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|position| position + 4)
+        .ok_or_else(|| {
+            crate::error::TdxError::InvalidData(
+                "financial HTTP response has no complete header".into(),
+            )
+        })?;
+    if header_end > MAX_HTTP_HEADER_SIZE {
+        return Err(crate::error::TdxError::InvalidData(
+            "financial HTTP response header is too large".into(),
+        ));
+    }
+    let headers = std::str::from_utf8(&response[..header_end]).map_err(|_| {
+        crate::error::TdxError::InvalidData("financial HTTP header is not ASCII".into())
+    })?;
+    let mut lines = headers.split("\r\n");
+    let status = lines.next().unwrap_or_default();
+    let status_code = status
+        .split_ascii_whitespace()
+        .nth(1)
+        .and_then(|value| value.parse::<u16>().ok())
+        .ok_or_else(|| {
+            crate::error::TdxError::InvalidData("financial HTTP status is invalid".into())
+        })?;
+    if status_code != 200 {
+        return Err(crate::error::TdxError::InvalidData(format!(
+            "financial HTTP server returned status {status_code}"
+        )));
+    }
+
+    let mut content_length = None;
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("transfer-encoding")
+                && value.trim().eq_ignore_ascii_case("chunked")
+            {
+                return Err(crate::error::TdxError::InvalidData(
+                    "chunked financial HTTP responses are unsupported".into(),
+                ));
+            }
+            if name.eq_ignore_ascii_case("content-length") {
+                content_length = Some(value.trim().parse::<usize>().map_err(|_| {
+                    crate::error::TdxError::InvalidData(
+                        "financial HTTP content length is invalid".into(),
+                    )
+                })?);
+            }
+        }
+    }
+
+    let body = response.get(header_end..).ok_or_else(|| {
+        crate::error::TdxError::InvalidData("financial HTTP body is missing".into())
+    })?;
+    if body.len() > MAX_REPORT_SIZE {
+        return Err(crate::error::TdxError::InvalidData(format!(
+            "financial HTTP body exceeds {MAX_REPORT_SIZE} bytes"
+        )));
+    }
+    if let Some(length) = content_length {
+        if body.len() != length {
+            return Err(crate::error::TdxError::InvalidData(format!(
+                "financial HTTP size mismatch: header {length}, received {}",
+                body.len()
+            )));
+        }
+    }
+    if expected_size != 0 && body.len() != expected_size as usize {
+        return Err(crate::error::TdxError::InvalidData(format!(
+            "financial file size mismatch: list {expected_size}, received {}",
+            body.len()
+        )));
+    }
+    Ok(body.to_vec())
+}
+
+fn report_file_packet(filename: &str, offset: u32) -> Vec<u8> {
+    let name_bytes = filename.as_bytes();
+    let mut name_buf = [0u8; 100];
+    let len = name_bytes.len().min(name_buf.len());
+    name_buf[..len].copy_from_slice(&name_bytes[..len]);
+
+    let data_length = 4 + 4 + name_buf.len();
+    let frame_length = (2 + data_length) as u16;
+    let mut packet = Vec::with_capacity(12 + data_length);
+    packet.extend_from_slice(&[0x0c, 0x00, 0x00, 0x00, 0x00, 0x01]);
+    packet.extend_from_slice(&frame_length.to_le_bytes());
+    packet.extend_from_slice(&frame_length.to_le_bytes());
+    packet.extend_from_slice(&0x06B9u16.to_le_bytes());
+    packet.extend_from_slice(&offset.to_le_bytes());
+    packet.extend_from_slice(&CHUNK_SIZE.to_le_bytes());
+    packet.extend_from_slice(&name_buf);
+    packet
+}
+
+fn decode_report_chunk(body: &[u8]) -> Result<Vec<u8>> {
+    // TDX 0x06B9 responses carry a four-byte transport prefix followed by
+    // the complete file fragment.  The prefix is not a reliable fragment
+    // length (some report servers return zero there), so mirror the protocol
+    // implementations used by current TDX clients and consume the remainder.
+    if body.len() < 4 {
+        return Err(crate::error::TdxError::InvalidData(
+            "report file response is shorter than its 4-byte prefix".into(),
+        ));
+    }
+    Ok(body[4..].to_vec())
+}
 
 // ================================================================
 // 财务客户端
@@ -165,6 +443,82 @@ impl TdxFinanceClient {
         }
     }
 
+    fn download_financial_http(&self, filename: &str, expected_size: u32) -> Result<Vec<u8>> {
+        if filename.is_empty()
+            || !filename
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        {
+            return Err(crate::error::TdxError::InvalidData(
+                "financial filename contains unsupported characters".into(),
+            ));
+        }
+        if expected_size as usize > MAX_REPORT_SIZE {
+            return Err(crate::error::TdxError::InvalidData(format!(
+                "financial file exceeds {MAX_REPORT_SIZE} bytes"
+            )));
+        }
+
+        let timeout = Duration::from_secs_f64(self.timeout);
+        let addresses = (FINANCIAL_HTTP_HOST, 80)
+            .to_socket_addrs()
+            .map_err(|error| {
+                crate::error::TdxError::Connection(format!(
+                    "resolve {FINANCIAL_HTTP_HOST} failed: {error}"
+                ))
+            })?;
+        let mut last_error = None;
+        let mut stream = None;
+        for address in addresses {
+            match TcpStream::connect_timeout(&address, timeout) {
+                Ok(value) => {
+                    stream = Some(value);
+                    break;
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        let mut stream = stream.ok_or_else(|| {
+            crate::error::TdxError::Connection(format!(
+                "connect to {FINANCIAL_HTTP_HOST}:80 failed: {}",
+                last_error
+                    .map(|error| error.to_string())
+                    .unwrap_or_else(|| "no resolved address".into())
+            ))
+        })?;
+        stream.set_read_timeout(Some(timeout)).map_err(|error| {
+            crate::error::TdxError::Connection(format!("set HTTP read timeout: {error}"))
+        })?;
+        stream.set_write_timeout(Some(timeout)).map_err(|error| {
+            crate::error::TdxError::Connection(format!("set HTTP write timeout: {error}"))
+        })?;
+        let request = format!(
+            "GET /tdxfin/{filename} HTTP/1.1\r\nHost: {FINANCIAL_HTTP_HOST}\r\nUser-Agent: magic-tdx-rs/0.1\r\nAccept: application/zip,application/octet-stream\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n"
+        );
+        stream.write_all(request.as_bytes()).map_err(|error| {
+            crate::error::TdxError::Connection(format!("send financial HTTP request: {error}"))
+        })?;
+
+        let response_limit = MAX_REPORT_SIZE + MAX_HTTP_HEADER_SIZE;
+        let mut response = Vec::with_capacity(expected_size as usize + 1024);
+        let mut buffer = [0u8; 16 * 1024];
+        loop {
+            let read = stream.read(&mut buffer).map_err(|error| {
+                crate::error::TdxError::Connection(format!("read financial HTTP response: {error}"))
+            })?;
+            if read == 0 {
+                break;
+            }
+            if response.len().saturating_add(read) > response_limit {
+                return Err(crate::error::TdxError::InvalidData(
+                    "financial HTTP response exceeds the configured limit".into(),
+                ));
+            }
+            response.extend_from_slice(&buffer[..read]);
+        }
+        decode_http_response(&response, expected_size)
+    }
+
     // ============================================================
     // 单股票实时财务
     // ============================================================
@@ -197,36 +551,9 @@ impl TdxFinanceClient {
 
     /// 下载报告文件的单个分片 (不走缓存 — 分片由上层 get_report_file_by_size 管理)
     pub fn get_report_file(&self, filename: &str, offset: u32) -> Result<Vec<u8>> {
-        let name_bytes = filename.as_bytes();
-        let mut name_buf = [0u8; 100];
-        let len = name_bytes.len().min(100);
-        name_buf[..len].copy_from_slice(&name_bytes[..len]);
-
-        let raw_data_len = 2 + 4 + 4 + 100;
-        let mut raw_data = Vec::with_capacity(raw_data_len);
-        raw_data.extend_from_slice(&0x06B9u16.to_le_bytes());
-        raw_data.extend_from_slice(&offset.to_le_bytes());
-        raw_data.extend_from_slice(&CHUNK_SIZE.to_le_bytes());
-        raw_data.extend_from_slice(&name_buf);
-
-        let pkg_len = raw_data_len as u16;
-        let mut packet = Vec::with_capacity(6 + pkg_len as usize);
-        packet.extend_from_slice(&[0x0c, 0x12, 0x34, 0x00, 0x00, 0x00]);
-        packet.extend_from_slice(&pkg_len.to_le_bytes());
-        packet.extend_from_slice(&pkg_len.to_le_bytes());
-        packet.extend_from_slice(&raw_data);
-
+        let packet = report_file_packet(filename, offset);
         let body = self.send_and_recv(&packet)?;
-        if body.len() < 4 {
-            return Ok(Vec::new());
-        }
-
-        let chunk_size = u32::from_le_bytes([body[0], body[1], body[2], body[3]]) as usize;
-        if chunk_size > 0 && body.len() >= 4 + chunk_size {
-            Ok(body[4..4 + chunk_size].to_vec())
-        } else {
-            Ok(Vec::new())
-        }
+        decode_report_chunk(&body)
     }
 
     /// 下载完整的报告文件 (自动分片 + 重组, 优先磁盘缓存)
@@ -317,8 +644,26 @@ impl TdxFinanceClient {
         filesize: u32,
     ) -> Result<Vec<FinancialRecord>> {
         let full = format!("tdxfin/{}", filename);
-        let data = self.get_report_file_by_size(&full, filesize)?;
-        parse_financial(&data)
+        let data = if let Some(cached) = self.cache_get(&full) {
+            cached
+        } else {
+            let downloaded = match self.download_financial_http(filename, filesize) {
+                Ok(data) => data,
+                Err(http_error) => {
+                    logw!(
+                        "finance",
+                        "official HTTP download failed for {}: {}; trying quote server",
+                        filename,
+                        http_error
+                    );
+                    self.download_report_file(&full, filesize)?
+                }
+            };
+            self.cache_put(&full, &downloaded);
+            downloaded
+        };
+        let decoded = decode_financial_payload(filename, &data)?;
+        parse_financial(&decoded)
     }
 
     // ============================================================
@@ -381,6 +726,120 @@ pub struct GpcwFileInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::write::DeflateEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    fn test_zip(payload: &[u8], deflated: bool) -> Vec<u8> {
+        let name = b"gpcw20260331.dat";
+        let method = if deflated { 8u16 } else { 0u16 };
+        let compressed = if deflated {
+            let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(payload).unwrap();
+            encoder.finish().unwrap()
+        } else {
+            payload.to_vec()
+        };
+        let crc = crc32fast::hash(payload);
+        let mut zip = Vec::new();
+        zip.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+        zip.extend_from_slice(&20u16.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&method.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&crc.to_le_bytes());
+        zip.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        zip.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        zip.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(name);
+        zip.extend_from_slice(&compressed);
+
+        let central_offset = zip.len() as u32;
+        zip.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+        zip.extend_from_slice(&20u16.to_le_bytes());
+        zip.extend_from_slice(&20u16.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&method.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&crc.to_le_bytes());
+        zip.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        zip.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        zip.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&0u32.to_le_bytes());
+        zip.extend_from_slice(&0u32.to_le_bytes());
+        zip.extend_from_slice(name);
+        let central_size = zip.len() as u32 - central_offset;
+
+        zip.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip.extend_from_slice(&1u16.to_le_bytes());
+        zip.extend_from_slice(&1u16.to_le_bytes());
+        zip.extend_from_slice(&central_size.to_le_bytes());
+        zip.extend_from_slice(&central_offset.to_le_bytes());
+        zip.extend_from_slice(&0u16.to_le_bytes());
+        zip
+    }
+
+    #[test]
+    fn extracts_stored_and_deflated_financial_zip() {
+        let payload = b"financial report payload";
+        assert_eq!(
+            extract_financial_zip(&test_zip(payload, false)).unwrap(),
+            payload
+        );
+        assert_eq!(
+            extract_financial_zip(&test_zip(payload, true)).unwrap(),
+            payload
+        );
+    }
+
+    #[test]
+    fn report_file_packet_uses_control_one_frame() {
+        let packet = report_file_packet("tdxfin/gpcw.txt", 0x1234_5678);
+        assert_eq!(packet.len(), 120);
+        assert_eq!(packet[0], 0x0c);
+        assert_eq!(packet[5], 0x01);
+        assert_eq!(&packet[6..10], &[0x6e, 0x00, 0x6e, 0x00]);
+        assert_eq!(&packet[10..12], &[0xb9, 0x06]);
+        assert_eq!(&packet[12..16], &0x1234_5678u32.to_le_bytes());
+        assert_eq!(&packet[16..20], &CHUNK_SIZE.to_le_bytes());
+    }
+
+    #[test]
+    fn report_chunk_ignores_non_length_transport_prefix() {
+        assert_eq!(
+            decode_report_chunk(&[0, 0, 0, 0, b'P', b'K']).unwrap(),
+            b"PK"
+        );
+        assert!(decode_report_chunk(&[0, 0, 0]).is_err());
+    }
+
+    #[test]
+    fn validates_complete_financial_http_response() {
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nPK12";
+        assert_eq!(decode_http_response(response, 4).unwrap(), b"PK12");
+        assert!(decode_http_response(response, 5).is_err());
+        assert!(decode_http_response(b"HTTP/1.1 404 Not Found\r\n\r\n", 0).is_err());
+    }
+
+    #[test]
+    fn rejects_financial_zip_with_bad_crc() {
+        let mut zip = test_zip(b"financial report payload", true);
+        let central_offset = zip_u32(&zip, zip.len() - 6).unwrap() as usize;
+        zip[central_offset + 16] ^= 0xff;
+        assert!(extract_financial_zip(&zip)
+            .unwrap_err()
+            .to_string()
+            .contains("CRC"));
+    }
 
     #[test]
     fn test_new_client() {

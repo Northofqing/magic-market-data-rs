@@ -10,6 +10,7 @@ serde = { workspace = true }
 serde_json = "1"
 thiserror = { workspace = true }
 flate2 = "1"
+crc32fast = "1"
 encoding_rs = "0.8"
 regex = "1"
 tokio = { version = "1.50", features = ["net","io-util","rt","rt-multi-thread","time","sync","macros"] }
