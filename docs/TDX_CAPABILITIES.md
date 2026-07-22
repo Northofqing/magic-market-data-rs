@@ -11,12 +11,18 @@ pinned `tdxrs` implementation. The following modules are present in the
 | Tokio async client | `AsyncTdxHqClient` |
 | Smart failover client | `TdxSmartClient` |
 | Quotes and bars | `protocol::parsers`, `net::*` |
+| Five-level order book | `OrderBooks` on `TdxHqClient` and `TdxSmartClient`; derived from quote bid/ask levels with source timestamps |
 | Minute and transaction data | `protocol::parsers` |
 | Finance and corporate actions | `protocol::finance_fields`, `protocol::adjuster` |
 | Fund data | `fund` |
 | Block data | `block` |
 | F10/profile | `profile`, `TdxF10Client` |
 | Local readers | `reader` |
+
+The core contract also declares `MoneyFlows` and `Auctions`. TDX does not expose
+auditable standardized feeds for those families, so their capabilities remain
+explicitly `false`; callers receive an unsupported disposition rather than
+fabricated zeros or empty successful batches.
 
 Python/PyO3 bindings are excluded. Real-network validation is opt-in through
 `examples/live_probe.rs`; deterministic validation is covered by the upstream
