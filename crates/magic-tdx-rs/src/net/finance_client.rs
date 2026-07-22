@@ -279,10 +279,15 @@ fn decode_http_response(response: &[u8], expected_size: u32) -> Result<Vec<u8>> 
         }
     }
     if expected_size != 0 && body.len() != expected_size as usize {
-        return Err(crate::error::TdxError::InvalidData(format!(
-            "financial file size mismatch: list {expected_size}, received {}",
+        // gpcw.txt and the HTTP object are updated independently. The list
+        // size is an allocation hint; HTTP framing followed by ZIP entry-size
+        // and CRC validation supplies the integrity gate.
+        logw!(
+            "finance",
+            "financial list size is stale: expected {}, received {}; validating ZIP metadata and CRC",
+            expected_size,
             body.len()
-        )));
+        );
     }
     Ok(body.to_vec())
 }
@@ -826,7 +831,7 @@ mod tests {
     fn validates_complete_financial_http_response() {
         let response = b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nPK12";
         assert_eq!(decode_http_response(response, 4).unwrap(), b"PK12");
-        assert!(decode_http_response(response, 5).is_err());
+        assert_eq!(decode_http_response(response, 5).unwrap(), b"PK12");
         assert!(decode_http_response(b"HTTP/1.1 404 Not Found\r\n\r\n", 0).is_err());
     }
 

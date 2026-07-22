@@ -1,6 +1,6 @@
 use magic_market_core::{
     AssetClass, AsyncHistoricalBars, AsyncRealtimeQuotes, AsyncTrades, BarsRequest, Exchange,
-    HistoricalBars, InstrumentId, Trades,
+    HistoricalBars, InstrumentId, SecurityMetadataProvider, Trades,
 };
 use magic_tdx_rs::{TdxDirectClient, TdxHqClient, TdxSmartClient};
 #[test]
@@ -25,6 +25,10 @@ fn tdx_client_implements_core_bars_contract() {
     accepts_trades(&TdxHqClient::new());
     accepts_trades(&TdxSmartClient::new());
     accepts_trades(&TdxDirectClient::new("127.0.0.1", 7709, 1.0));
+
+    fn accepts_metadata<P: SecurityMetadataProvider<Error = magic_tdx_rs::TdxError>>(_: &P) {}
+    accepts_metadata(&TdxHqClient::new());
+    accepts_metadata(&TdxSmartClient::new());
 }
 
 #[test]

@@ -49,7 +49,7 @@ fn print_bars(label: &str, bars: &DataBatch<Bar>) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let codes =
-        std::env::var("MAGIC_EMQUANT_CODES").unwrap_or_else(|_| "600519.SH,000001.SZ".to_owned());
+        std::env::var("MAGIC_EMQUANT_CODES").unwrap_or_else(|_| "600396.SH,000001.SZ".to_owned());
     let instruments = codes
         .split(',')
         .map(parse_instrument)

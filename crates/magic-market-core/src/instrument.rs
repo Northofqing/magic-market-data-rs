@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum Exchange {
     Shanghai,
     Shenzhen,
+    Beijing,
 }
 /// Instrument category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

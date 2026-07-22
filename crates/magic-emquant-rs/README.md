@@ -16,8 +16,9 @@ cargo run -p magic-emquant-rs --example live_probe --release
 
 The builder always resolves paths relative to this repository and writes the
 executable to `target/emquant/emquant-snapshot` by default. It also installs the
-encrypted server list, a project-local SDK library, and a stable link to the
-activation file when present under ignored `target/emquant/runtime`. On macOS,
+encrypted server list, activator image assets, a project-local SDK library, and
+a protected project-local copy of the activation file when present under ignored
+`target/emquant/runtime`. On macOS,
 the builder clears quarantine metadata and ad-hoc signs only the local library
 copy; the vendor download remains unchanged. The Rust adapter and bridge discover
 those project-local paths automatically. `MAGIC_EMQUANT_BRIDGE`,
@@ -28,10 +29,12 @@ If the probe reports `10001014 (EQERR_NEED_ACTIVATE)`, run the prepared
 `target/emquant/runtime/loginactivator_mac` beside `ServerList.json.e` and
 complete the official API activation flow. It writes `userInfo` into that
 ignored runtime directory. A desktop Eastmoney login is a separate session and
-does not activate EMQuant API access.
+does not activate EMQuant API access. The macOS activator requires GTK 3 and
+uses the API account's bound mobile number plus a verification code; it is not
+a username/password form.
 
 `MAGIC_EMQUANT_CODES` optionally selects comma-separated `CODE.SH`/`CODE.SZ`
-instruments. It defaults to `600519.SH,000001.SZ`. The probe prints every
+instrument. It defaults to `600396.SH,000001.SZ` (华电辽能、平安银行). The probe prints every
 normalized quote and all five bid/ask levels together with source and fetch
 provenance. It also prints the latest five unadjusted daily OHLCV bars for the
 first instrument. Authentication or entitlement failures are returned as

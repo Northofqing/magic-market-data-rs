@@ -1,11 +1,13 @@
-use magic_market_core::{AssetClass, Exchange, InstrumentId, Trades, TradesRequest};
+use magic_market_core::{
+    AssetClass, Exchange, InstrumentId, SecurityMetadataProvider, Trades, TradesRequest,
+};
 use magic_tdx_rs::TdxSmartClient;
 fn main() {
     let client = TdxSmartClient::new();
     match client.connect_to_any(Some(3.0)) {
         Ok(true) => {
             println!("connected=true");
-            match client.get_security_quotes(&[(1, "600519")]) {
+            match client.get_security_quotes(&[(1, "600396")]) {
                 Ok(quotes) => println!(
                     "quotes={} first_price={}",
                     quotes.len(),
@@ -13,7 +15,7 @@ fn main() {
                 ),
                 Err(error) => println!("quotes=error error={error}"),
             }
-            match client.get_security_bars(4, 1, "600519", 0, 5, 0) {
+            match client.get_security_bars(4, 1, "600396", 0, 5, 0) {
                 Ok(bars) => println!(
                     "bars={} first_datetime={}",
                     bars.len(),
@@ -23,7 +25,7 @@ fn main() {
             }
             let inner = client.inner();
             for category in 0_u8..=11 {
-                match inner.get_security_bars(category, 1, "600519", 0, 1, 0) {
+                match inner.get_security_bars(category, 1, "600396", 0, 1, 0) {
                     Ok(items) => println!("stock_kline category={category} count={}", items.len()),
                     Err(error) => println!("stock_kline category={category} error={error}"),
                 }
@@ -48,23 +50,58 @@ fn main() {
                 ),
                 Err(error) => println!("security_list=error error={error}"),
             }
-            match inner.get_minute_time_data(1, "600519") {
+            let metadata_instruments = [
+                InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
+                    .expect("valid Shanghai metadata instrument"),
+                InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity)
+                    .expect("valid Shenzhen metadata instrument"),
+            ];
+            match client.security_metadata(&metadata_instruments) {
+                Ok(batch) => {
+                    println!(
+                        "security_metadata={} provenance={:?} quality={:?}",
+                        batch.records().len(),
+                        batch.provenance(),
+                        batch.quality()
+                    );
+                    for record in batch.records() {
+                        println!(
+                            "security code={} exchange={:?} name={:?} board={:?} is_st={:?} listed_on={:?} price_limit_percent={:?} price_limit_version={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                            record.instrument.code(),
+                            record.instrument.exchange(),
+                            record.name,
+                            record.board,
+                            record.is_st,
+                            record.listed_on,
+                            record.price_limit.percent,
+                            record.price_limit.version,
+                            record.status,
+                            record.source_at,
+                            record.observed_at,
+                            record.provider,
+                            record.batch_id
+                        );
+                    }
+                }
+                Err(error) => println!("security_metadata=error error={error}"),
+            }
+            match inner.get_minute_time_data(1, "600396") {
                 Ok(items) => println!("minute_data={} ", items.len()),
                 Err(error) => println!("minute_data=error error={error}"),
             }
-            match inner.get_history_minute_time_data(1, "600519", 20260721) {
+            match inner.get_history_minute_time_data(1, "600396", 20260721) {
                 Ok(items) => println!("minute_history date=20260721 count={}", items.len()),
                 Err(error) => println!("minute_history=error error={error}"),
             }
-            match inner.get_transaction_data(1, "600519", 0, 20) {
+            match inner.get_transaction_data(1, "600396", 0, 20) {
                 Ok(items) => println!("transactions={} ", items.len()),
                 Err(error) => println!("transactions=error error={error}"),
             }
-            match inner.get_history_transaction_data(1, "600519", 0, 20, 20260721) {
+            match inner.get_history_transaction_data(1, "600396", 0, 20, 20260721) {
                 Ok(items) => println!("transactions_history date=20260721 count={}", items.len()),
                 Err(error) => println!("transactions_history=error error={error}"),
             }
-            let instrument = InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity)
+            let instrument = InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
                 .expect("valid probe instrument");
             let current_request =
                 TradesRequest::new(instrument.clone(), 20).expect("valid current trade request");
@@ -150,11 +187,11 @@ fn main() {
                 ),
                 Err(error) => println!("trade_pagination_history=error error={error}"),
             }
-            match inner.get_finance_info(1, "600519") {
+            match inner.get_finance_info(1, "600396") {
                 Ok(_) => println!("finance_info=ok"),
                 Err(error) => println!("finance_info=error error={error}"),
             }
-            match inner.get_xdxr_info(1, "600519") {
+            match inner.get_xdxr_info(1, "600396") {
                 Ok(items) => println!("xdxr={} ", items.len()),
                 Err(error) => println!("xdxr=error error={error}"),
             }
@@ -196,7 +233,7 @@ fn main() {
             }
             let f10 =
                 magic_tdx_rs::net::f10_client::TdxF10Client::new("180.153.18.170", 7709, Some(3.0));
-            match f10.get_category_auto("600519") {
+            match f10.get_category_auto("600396") {
                 Ok(items) => println!("f10_categories={} ", items.len()),
                 Err(error) => println!("f10_categories=error error={error}"),
             }
@@ -218,7 +255,7 @@ fn main() {
                                     file.filename,
                                     records.len()
                                 );
-                                match records.iter().find(|record| record.code == "600519") {
+                                match records.iter().find(|record| record.code == "600396") {
                                     Some(record) => println!(
                                         "finance_indicators={}",
                                         magic_tdx_rs::protocol::finance_fields::extract_indicators(
@@ -227,7 +264,7 @@ fn main() {
                                         .len()
                                     ),
                                     None => {
-                                        println!("finance_indicators=error error=600519 missing")
+                                        println!("finance_indicators=error error=600396 missing")
                                     }
                                 }
                             }

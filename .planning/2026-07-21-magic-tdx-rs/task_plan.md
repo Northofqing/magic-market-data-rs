@@ -45,7 +45,7 @@ Status: complete
 
 ### Phase 5: Write and review Gate A spec
 
-Status: in_progress
+Status: complete
 
 - Write `docs/superpowers/specs/2026-07-21-magic-tdx-rs-design.md`.
 - Self-review for placeholders, contradictions, scope, ambiguous acceptance criteria, and unsupported code claims.
@@ -67,18 +67,35 @@ Status: complete
 
 ### Phase 7: Implement Gate B
 
-Status: pending (awaiting review of the implementation plan)
+Status: complete
 
 - Execute only the approved implementation plan.
 - Add failure-path tests and upstream compatibility evidence.
 
 ### Phase 8: Verify Gates C and D
 
-Status: pending
+Status: complete
 
 - Run formatting, strict Clippy, tests, compliance, coverage, benchmarks, and controlled live-data validation.
 - Run rustdoc/doctests, compile documented examples, and verify documentation links/API coverage.
 - Report status as In Progress/Blocked unless every applicable DoD item has evidence.
+
+### Phase 9: Provider expansion and downstream P0/P1 contracts
+
+Status: complete
+
+- Completed and pushed the provider-neutral Quote, OrderBook, MoneyFlow,
+  Auction, and Trades contracts plus TDX/EMQuant dispositions.
+- Completed TDX current/historical trade pagination with unit and live
+  cross-page evidence.
+- Packaged the EMQuant bridge and SDK runtime under ignored project paths;
+  activation is complete and live records await account API entitlement.
+- Completed: represent Beijing exchange and auditable security metadata,
+  including explicit unavailable fields instead of inferred fake completeness.
+- Completed final tests, strict Clippy, rustdoc/doctests, Rust 1.83 check,
+  documentation links, compliance, TDX live validation, and EMQuant failure-path
+  validation. EMQuant live records remain externally blocked by account
+  entitlement `10001003/EQERR_NO_ACCESS`, not unfinished repository code.
 
 ## Decisions
 
@@ -122,6 +139,7 @@ Status: pending
 | Upstream all-feature tests fail at PyO3 dylib linking on macOS x86_64 | 1 | Treat as proof for pure-Rust architectural separation; do not retry unchanged. |
 | Multi-hunk phase-status patch did not match its context | 1 | Re-read the task plan and applied the exact smaller hunks. |
 | New design document is hidden by repository `/docs` ignore rule | 1 | Force-add only the exact design file and verify the staged manifest before commit. |
+| Parallel EMQuant fake bridges intermittently produced empty JSON | 1 | Reproduced both tests individually, identified timestamp/PID temp-path collision, and added an atomic per-process id. |
 | Destination Git index is read-only inside the workspace sandbox | 2 | Retried exact scoped `git add` operations with explicit approved elevated Git metadata access. |
 | Source cleanup pathspec did not match after its active branch changed | 1 | Re-read branch/index status; the active source branch does not track the spec, so no cleanup commit is required. Preserved the historical design branch for recovery. |
 | Final range check used nonexistent `HEAD~2` in a two-commit repository | 1 | Validate the root and follow-up commits individually with `git diff-tree --check --root`. |

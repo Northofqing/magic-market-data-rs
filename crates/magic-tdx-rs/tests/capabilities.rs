@@ -10,7 +10,7 @@ fn tdx_advertises_all_core_data_families() {
             && c.corporate_actions
             && c.blocks
     );
-    assert!(!c.money_flow && c.order_book && !c.auction);
+    assert!(!c.money_flow && c.order_book && !c.auction && c.security_metadata);
 }
 
 #[test]

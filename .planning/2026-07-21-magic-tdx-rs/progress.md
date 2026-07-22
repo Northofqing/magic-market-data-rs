@@ -98,3 +98,34 @@
 - Completed Phase 6 implementation planning: the index and five ordered phase plans
   are self-reviewed and ready for execution after plan-set review. Implementation code
   remains untouched.
+
+## 2026-07-22 continuation
+
+- Pushed `2475246` with project-local EMQuant bridge/runtime packaging,
+  automatic path discovery, macOS library remediation, actionable activation
+  diagnostics, provider-neutral trades, TDX sync/async auto-pagination, parser
+  repair, and live cross-page evidence.
+- Passed workspace all-target tests (219 TDX unit tests plus integrations), all
+  doctests, strict Clippy, Rust 1.83 check, rustdoc, link checks, and compliance.
+- Opened the prepared official EMQuant activator; `userInfo` is not generated
+  yet, so real EMQuant queries remain account-activation blocked.
+- Installed the missing GTK 3 runtime, diagnosed the missing activator image
+  assets, and updated project-local EMQuant packaging to include them.
+- Completed SMS activation, protected `target/emquant/runtime/userInfo` with
+  mode 0600, and proved that the official SDK reads it. The live account now
+  returns `10001003/EQERR_NO_ACCESS`, so real EMQuant records await API product
+  entitlement.
+- Added actionable official login-code diagnostics and repaired parallel
+  fake-bridge test isolation with a monotonic per-process identifier.
+- Started Phase 9 security metadata and Beijing-exchange work.
+- Added first-class Beijing exchange and normalized source-evidenced security
+  metadata to core, TDX blocking/smart adapters, service facade, tests, docs,
+  and the live probe. Unverified Beijing provider mappings fail explicitly.
+- Changed both provider probes' default Shanghai sample to 华电辽能 `600396`
+  and completed a successful full TDX live rerun with real records across every
+  family exercised by the example.
+- Repaired stale financial-manifest size handling while retaining HTTP and ZIP
+  integrity checks; real market-wide financial parsing now succeeds again.
+- Final verification passed: workspace all-target tests, strict Clippy, rustdoc,
+  doctests (11 passed, 3 explicitly ignored), Rust 1.83 all-target check,
+  documentation links, compliance, runtime packaging, and diff hygiene.

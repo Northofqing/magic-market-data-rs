@@ -25,6 +25,7 @@ SDK 版权声明要求授权使用；构建脚本只把本机动态库复制到 
 | 盘口/Level-2 | `csqsnapshot` 五档指标 | Rust 适配完成，待 Level-2 权限验证 |
 | 日级资金流 | `css` 大/中/小单流入流出指标 | Rust 适配完成，待授权登录验证 |
 | 开盘集合竞价 | 未找到完整可验证字段集 | 显式 `Unsupported` |
+| 证券元数据 | 未完成字段与源时间验证 | 显式 `Unsupported` |
 
 ## 安全边界
 
@@ -58,7 +59,7 @@ bash tools/emquant/check_sdk.sh /path/to/EMQuantAPI_CPP_Mac
 
 ```text
 tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac
-target/emquant/emquant-snapshot 600519.SH PRECLOSE,OPEN,HIGH,LOW,NOW,AMOUNT
+target/emquant/emquant-snapshot 600396.SH PRECLOSE,OPEN,HIGH,LOW,NOW,AMOUNT
 ```
 
 程序只解析 `csqsnapshot`，向标准输出写 JSON；错误信息不包含凭据。
@@ -71,7 +72,8 @@ cargo run -p magic-emquant-rs --example live_probe --release
 
 构建脚本无论从哪个目录调用，都会把桥接程序放到仓库固定路径
 `target/emquant/emquant-snapshot`，把加密服务器列表和 SDK 动态库复制到 Git 忽略的
-`target/emquant/runtime/`，并在那里建立指向存在时的 `userInfo` 激活文件的固定链接。
+`target/emquant/runtime/`，复制激活器的 `image/` 资源，并在那里建立指向存在时的
+`userInfo` 激活文件的权限受限本地副本。
 在 macOS 上，脚本会清除动态库复制件的下载隔离属性，并只对复制件执行本机临时
 签名，以免被系统的动态库验证策略拒绝；Downloads 中的厂商原文件不会修改。
 Rust 适配层和桥接器
@@ -83,8 +85,17 @@ Rust 适配层和桥接器
 `target/emquant/runtime/loginactivator_mac`，在官方界面完成 API 激活。该程序与
 `ServerList.json.e` 位于同一目录，成功后会在这个 Git 忽略目录生成 `userInfo`。
 东方财富桌面客户端登录与 EMQuant API 激活是两套独立会话，前者不会替代后者。
+macOS 激活器依赖 GTK 3，界面使用账号绑定手机号与短信验证码，不提供用户名密码
+输入框。`userInfo` 应设为仅当前用户可读写，且绝不能提交、打印或复制进发布包。
 
-默认查询 `600519.SH,000001.SZ`，也可通过 `MAGIC_EMQUANT_CODES` 修改。输出包含
+本机在 2026-07-22 已完成短信激活并证明 SDK 能读取 `userInfo`；真实探针随后返回
+`10001003 (EQERR_NO_ACCESS)`。官方随包头文件与 PDF 将该码定义为“用户无 API
+权限”，因此当前剩余阻塞是账号尚未开通 EMQuant API 产品权限，不是路径、签名、
+网络或桥接代码。开通权限后可直接重跑探针；项目已经为无权限、权限过期、Level-2
+无权限、登录数上限、设备不一致和令牌过期提供可操作诊断。
+
+默认查询 `600396.SH,000001.SZ`（华电辽能、平安银行），也可通过
+`MAGIC_EMQUANT_CODES` 修改。输出包含
 实时价、成交量、成交额、五档买卖价量、可见买卖总深度及逐记录证据，以及第一只证券最近五根不复权日线和
 5 分钟线的 OHLCV、成交额、源时间、采集时间和批次 ID。日/周/月/年 K 线使用官方 `csd`，
 明确传入 `Period=1..4,AdjustFlag=1,Order=1`；空结果、代码错配、重复/逆序日期和

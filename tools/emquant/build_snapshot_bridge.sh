@@ -29,10 +29,13 @@ if [[ $(uname -s) == Darwin ]]; then
   xattr -c "$runtime_activator"
   codesign --force --sign - --timestamp=none "$runtime_activator"
 fi
+mkdir -p "$runtime_dir/image"
+cp -R "$sdk_bin/image/." "$runtime_dir/image/"
 install -m 0600 "$sdk_bin/ServerList.json.e" "$runtime_dir/ServerList.json.e"
 if [[ -f "$sdk_bin/userInfo" ]]; then
-  ln -sfn "$sdk_bin/userInfo" "$runtime_dir/userInfo"
+  install -m 0600 "$sdk_bin/userInfo" "$runtime_dir/userInfo"
 elif [[ -f "$runtime_dir/userInfo" ]]; then
+  chmod 0600 "$runtime_dir/userInfo"
   printf 'preserved existing EMQuant activation file %s\n' "$runtime_dir/userInfo"
 else
   printf 'warning: EMQuant activation is required; run %s\n' "$runtime_activator" >&2

@@ -8,15 +8,21 @@ use magic_market_core::{
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+static NEXT_BRIDGE_ID: AtomicU64 = AtomicU64::new(0);
 
 fn fake_bridge() -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock")
         .as_nanos();
-    let directory =
-        std::env::temp_dir().join(format!("magic-emquant-fake-{}-{nonce}", std::process::id()));
+    let id = NEXT_BRIDGE_ID.fetch_add(1, Ordering::Relaxed);
+    let directory = std::env::temp_dir().join(format!(
+        "magic-emquant-fake-{}-{nonce}-{id}",
+        std::process::id()
+    ));
     fs::create_dir_all(&directory).expect("create fake bridge directory");
     let bridge = directory.join("snapshot");
     fs::write(

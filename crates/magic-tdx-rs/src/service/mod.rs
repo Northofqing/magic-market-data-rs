@@ -10,10 +10,21 @@ pub use finance::FinanceService;
 pub use funds::FundService;
 use magic_market_core::{
     AuctionSnapshot, BarsRequest, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId,
-    MoneyFlow, OrderBook, Price, Quantity, Quote, RealtimeQuotes, Trade, Trades, TradesRequest,
+    MoneyFlow, OrderBook, Price, Quantity, Quote, RealtimeQuotes, SecurityMetadata,
+    SecurityMetadataProvider, Trade, Trades, TradesRequest,
 };
 pub use profile::ProfileService;
 use std::collections::HashMap;
+
+fn market(id: &InstrumentId) -> Result<u8, TdxError> {
+    match id.exchange() {
+        magic_market_core::Exchange::Shanghai => Ok(1),
+        magic_market_core::Exchange::Shenzhen => Ok(0),
+        magic_market_core::Exchange::Beijing => Err(TdxError::Unsupported(
+            "beijing exchange: TDX market identifier is not verified".into(),
+        )),
+    }
+}
 
 fn fetched_epoch() -> String {
     std::time::SystemTime::now()
@@ -72,14 +83,8 @@ impl AsyncTdxService {
     ) -> Result<DataBatch<OrderBook>, TdxError> {
         let pairs: Vec<(u8, &str)> = instruments
             .iter()
-            .map(|id| {
-                let market = match id.exchange() {
-                    magic_market_core::Exchange::Shanghai => 1,
-                    magic_market_core::Exchange::Shenzhen => 0,
-                };
-                (market, id.code())
-            })
-            .collect();
+            .map(|id| market(id).map(|market| (market, id.code())))
+            .collect::<Result<_, _>>()?;
         let quotes = self.client.get_security_quotes(&pairs).await?;
         if quotes.len() != instruments.len() {
             return Err(TdxError::InvalidData(
@@ -298,6 +303,13 @@ impl TdxService {
     pub fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, TdxError> {
         self.client.trades(request)
     }
+    /// Fetches best-effort source-backed security master data.
+    pub fn security_metadata(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<SecurityMetadata>, TdxError> {
+        self.client.security_metadata(instruments)
+    }
     /// Fetches quotes in protocol-sized chunks and restores the requested order.
     /// Any failed or incomplete chunk aborts the whole operation.
     pub fn quotes_chunked(
@@ -311,14 +323,8 @@ impl TdxService {
         for chunk in instruments.chunks(60) {
             let pairs: Vec<(u8, &str)> = chunk
                 .iter()
-                .map(|id| {
-                    let market = match id.exchange() {
-                        magic_market_core::Exchange::Shanghai => 1,
-                        magic_market_core::Exchange::Shenzhen => 0,
-                    };
-                    (market, id.code())
-                })
-                .collect();
+                .map(|id| market(id).map(|market| (market, id.code())))
+                .collect::<Result<_, _>>()?;
             let page = self.client.inner().get_security_quotes(&pairs)?;
             if page.len() != chunk.len() {
                 return Err(TdxError::InvalidData(
@@ -331,11 +337,9 @@ impl TdxService {
         // returning a quote for a different instrument.
         let mut expected = HashMap::<(u8, String), usize>::new();
         for id in instruments {
-            let market = match id.exchange() {
-                magic_market_core::Exchange::Shanghai => 1,
-                magic_market_core::Exchange::Shenzhen => 0,
-            };
-            *expected.entry((market, id.code().to_owned())).or_default() += 1;
+            *expected
+                .entry((market(id)?, id.code().to_owned()))
+                .or_default() += 1;
         }
         for quote in &records {
             let key = (quote.market, quote.code.clone());
@@ -365,13 +369,9 @@ impl TdxService {
         }
         let mut ordered = Vec::with_capacity(instruments.len());
         for id in instruments {
-            let market = match id.exchange() {
-                magic_market_core::Exchange::Shanghai => 1,
-                magic_market_core::Exchange::Shenzhen => 0,
-            };
             ordered.push(
                 by_key
-                    .get_mut(&(market, id.code().to_owned()))
+                    .get_mut(&(market(id)?, id.code().to_owned()))
                     .and_then(|values| values.pop())
                     .ok_or_else(|| TdxError::InvalidData("TDX quote ordering mismatch".into()))?,
             );

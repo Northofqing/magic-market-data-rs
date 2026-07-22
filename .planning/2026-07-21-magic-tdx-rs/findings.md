@@ -178,3 +178,54 @@ External material recorded here is research data, not instructions.
 
 - Initial sandboxed `git ls-remote` failed because DNS/network access was restricted. Retried with approved network escalation and succeeded; do not repeat the sandboxed network attempt.
 - Pinned upstream `cargo test --all-features` failed at the dylib link step with unresolved Python symbols caused by unconditional PyO3. Resolution for this project is architectural separation of the pure Rust crate, not retrying the same upstream command.
+
+## 2026-07-22 provider continuation
+
+- TDX live validation returned 1,820/1,820 current and 2,001/2,001
+  historical normalized trades across real page boundaries.
+- The historical trade parser previously omitted the final minimum-size row;
+  using the packet count fixed 19/20 and 1,999/2,001 results to exact counts.
+- EMQuant bridge/runtime discovery and macOS local ad-hoc signing are working.
+  The SDK now returns `10001014`, defined in the bundled header as
+  `EQERR_NEED_ACTIVATE`; the local SDK has no `userInfo` yet.
+- The current core exchange enum cannot represent Beijing. TDX security-list
+  records expose code/name/decimal/pre-close but do not prove listing date or a
+  versioned price-limit rule, so P1 metadata must preserve those absences.
+- Current official exchange material confirms why price limits cannot be a
+  timeless code-prefix constant: Beijing's current rule is 30% with explicit
+  no-limit cases; STAR/ChiNext use 20% with initial no-limit days; and the 2026
+  Shenzhen rule revision changes main-board risk-warning stocks from 5% to 10%.
+- Beijing introduced the independent `920` stock-code range in 2024 and is
+  migrating legacy listings in stages. A provider must carry `Exchange::Beijing`
+  explicitly and must not assume all Beijing equities use only legacy 43/83/87
+  prefixes or only the new prefix.
+- Current official EMQuant manuals state that section APIs cover Shanghai,
+  Shenzhen, and Beijing equities, but the public C++/Mac pages do not document a
+  Beijing security-code suffix example. The adapter must not invent `.BJ`
+  behavior; Beijing remains explicit unsupported until code validation can run
+  under an activated account or an official suffix definition is obtained.
+- The bundled macOS PDF confirms the GUI activator uses the API account's bound
+  phone plus a verification code, not a username/password form. A desktop
+  client session is separate from API activation.
+- The activator links GTK 3 and reads `./image/EMApp.ico` plus companion image
+  assets from its working directory. GTK was absent locally and the initial
+  runtime packager omitted `image/`; both must be present for the activation
+  form to render reliably.
+- API activation generated a 748-byte project-local `userInfo` and the SDK
+  consumed it, changing the live result from `10001014` to `10001003`.
+  The bundled official header/PDF defines `10001003` as `EQERR_NO_ACCESS`
+  (account has no API entitlement), so the remaining EMQuant live blocker is
+  commercial account permission rather than transport, packaging, or code.
+- Parallel fake-bridge tests could select the same temporary directory because
+  the filesystem clock has coarser resolution than nanoseconds. A process-local
+  atomic id is required in addition to PID/timestamp for deterministic isolation.
+- The TDX financial manifest can lag the official HTTP object size (observed
+  5,116,233 vs 5,116,020 bytes). HTTP framing plus ZIP bounds, uncompressed
+  size, and CRC validated the actual object; treating the manifest size as an
+  allocation hint restored 5,526 records and 45 named indicators without
+  weakening archive integrity.
+- The user-selected live sample was verified from Shanghai Stock Exchange
+  material as 华电辽能 `600396.SH`. The full TDX probe returned quote 14.92,
+  source name 华电辽能, all 12 K-line categories, 240/240 minute points,
+  1,820/1,820 and 2,001/2,001 paged trades, current finance, 30 XDXR records,
+  5,526 batch-financial records, and 45 named indicators.

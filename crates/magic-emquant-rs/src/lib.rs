@@ -4,8 +4,8 @@
 use magic_market_core::{
     Adjustment, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, BookLevel, Capabilities,
     DataBatch, DataStatus, HistoricalBars, InstrumentId, Money, MoneyFlow, MoneyFlows, OrderBook,
-    OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes, Trade,
-    Trades, TradesRequest,
+    OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
+    SecurityMetadata, SecurityMetadataProvider, Trade, Trades, TradesRequest,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -240,12 +240,18 @@ pub fn discover_bridge_path() -> Result<PathBuf, EmQuantError> {
     )))
 }
 
-fn source_code(instrument: &InstrumentId) -> String {
+fn source_code(instrument: &InstrumentId) -> Result<String, EmQuantError> {
     let suffix = match instrument.exchange() {
         magic_market_core::Exchange::Shanghai => "SH",
         magic_market_core::Exchange::Shenzhen => "SZ",
+        magic_market_core::Exchange::Beijing => {
+            return Err(EmQuantError::Unsupported(
+                "beijing exchange code suffix is not verified by the bundled SDK documentation"
+                    .into(),
+            ));
+        }
     };
-    format!("{}.{}", instrument.code(), suffix)
+    Ok(format!("{}.{}", instrument.code(), suffix))
 }
 
 fn required_number(values: &HashMap<String, Value>, field: &str) -> Result<f64, EmQuantError> {
@@ -647,7 +653,10 @@ impl RealtimeQuotes for EmQuantClient {
             ));
         }
         let mut seen = HashSet::new();
-        let codes: Vec<String> = instruments.iter().map(source_code).collect();
+        let codes: Vec<String> = instruments
+            .iter()
+            .map(source_code)
+            .collect::<Result<_, _>>()?;
         if codes.iter().any(|code| !seen.insert(code.clone())) {
             return Err(EmQuantError::InvalidRequest(
                 "EMQuant rejects duplicate security codes".into(),
@@ -749,7 +758,7 @@ impl HistoricalBars for EmQuantClient {
 
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Bar>, Self::Error> {
         let (start, end) = default_date_range(request)?;
-        let code = source_code(&request.instrument);
+        let code = source_code(&request.instrument)?;
         let minute = minute_width(request.interval);
         let (method, indicators, options) = if let Some(period) = daily_period(request.interval) {
             (
@@ -859,7 +868,10 @@ impl MoneyFlows for EmQuantClient {
             ));
         }
         let mut seen = HashSet::new();
-        let codes: Vec<String> = instruments.iter().map(source_code).collect();
+        let codes: Vec<String> = instruments
+            .iter()
+            .map(source_code)
+            .collect::<Result<_, _>>()?;
         if codes.iter().any(|code| !seen.insert(code.clone())) {
             return Err(EmQuantError::InvalidRequest(
                 "EMQuant rejects duplicate security codes".into(),
@@ -969,6 +981,19 @@ impl Trades for EmQuantClient {
     }
 }
 
+impl SecurityMetadataProvider for EmQuantClient {
+    type Error = EmQuantError;
+
+    fn security_metadata(
+        &self,
+        _instruments: &[InstrumentId],
+    ) -> Result<DataBatch<SecurityMetadata>, Self::Error> {
+        Err(EmQuantError::Unsupported(
+            "security master fields and their source timestamps are not verified in EMQuant".into(),
+        ))
+    }
+}
+
 impl OrderBooks for EmQuantClient {
     type Error = EmQuantError;
 
@@ -982,7 +1007,10 @@ impl OrderBooks for EmQuantClient {
             ));
         }
         let mut seen = HashSet::new();
-        let codes: Vec<String> = instruments.iter().map(source_code).collect();
+        let codes: Vec<String> = instruments
+            .iter()
+            .map(source_code)
+            .collect::<Result<_, _>>()?;
         if codes.iter().any(|code| !seen.insert(code.clone())) {
             return Err(EmQuantError::InvalidRequest(
                 "EMQuant rejects duplicate security codes".into(),

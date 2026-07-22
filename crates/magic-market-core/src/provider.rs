@@ -168,6 +168,42 @@ pub struct Trade {
     pub batch_id: String,
 }
 
+/// Normalized listing board. `Unknown` preserves a source value that cannot be
+/// mapped without guessing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Board {
+    Main,
+    ChiNext,
+    Star,
+    Beijing,
+    Unknown,
+}
+
+/// Source-backed daily price-limit rule. Missing values remain `None`; callers
+/// must not infer a current rule from an instrument code alone.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PriceLimitRule {
+    pub percent: Option<crate::Ratio>,
+    pub version: Option<String>,
+}
+
+/// Provider-neutral security master record with field-level availability.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SecurityMetadata {
+    pub instrument: InstrumentId,
+    pub name: Option<String>,
+    pub board: Option<Board>,
+    pub is_st: Option<bool>,
+    /// Source listing date in `YYYY-MM-DD` form, when supplied.
+    pub listed_on: Option<String>,
+    pub price_limit: PriceLimitRule,
+    pub status: DataStatus,
+    pub source_at: Option<String>,
+    pub observed_at: String,
+    pub provider: ProviderId,
+    pub batch_id: String,
+}
+
 /// Declares which data families a provider implements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
@@ -181,6 +217,7 @@ pub struct Capabilities {
     pub money_flow: bool,
     pub order_book: bool,
     pub auction: bool,
+    pub security_metadata: bool,
 }
 impl Capabilities {
     pub const fn new() -> Self {
@@ -195,6 +232,7 @@ impl Capabilities {
             money_flow: false,
             order_book: false,
             auction: false,
+            security_metadata: false,
         }
     }
 }
@@ -462,6 +500,15 @@ pub trait Auctions {
 pub trait Trades {
     type Error: std::error::Error + Send + Sync + 'static;
     fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error>;
+}
+
+/// Provider capability for source-backed security master data.
+pub trait SecurityMetadataProvider {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn security_metadata(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<SecurityMetadata>, Self::Error>;
 }
 
 /// Async provider capability for historical bars.
