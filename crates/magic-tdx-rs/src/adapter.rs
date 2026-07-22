@@ -1,8 +1,8 @@
 use crate::error::TdxError;
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use magic_market_core::{
-    AsyncHistoricalBars, AsyncRealtimeQuotes, BarInterval, BarsRequest, DataBatch, HistoricalBars,
-    InstrumentId, RealtimeQuotes,
+    AsyncHistoricalBars, AsyncRealtimeQuotes, BarInterval, BarsRequest, BookLevel, DataBatch,
+    HistoricalBars, InstrumentId, OrderBook, OrderBooks, Price, Quantity, RealtimeQuotes,
 };
 
 impl TdxHqClient {
@@ -116,6 +116,66 @@ impl RealtimeQuotes for TdxHqClient {
             .collect();
         let records = self.get_security_quotes(&pairs)?;
         strict_quotes("tdx", records)
+    }
+}
+
+fn book_level(price: f64, quantity: f64) -> Result<BookLevel, TdxError> {
+    let price = if price > 0.0 {
+        Some(Price::new(price).map_err(|e| TdxError::InvalidData(e.to_string()))?)
+    } else {
+        None
+    };
+    let quantity = if quantity >= 0.0 {
+        Some(Quantity::new(quantity).map_err(|e| TdxError::InvalidData(e.to_string()))?)
+    } else {
+        None
+    };
+    Ok(BookLevel { price, quantity })
+}
+
+impl OrderBooks for TdxHqClient {
+    type Error = TdxError;
+    fn order_books(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<OrderBook>, Self::Error> {
+        let pairs: Vec<(u8, &str)> = instruments
+            .iter()
+            .map(|id| (market(id), id.code()))
+            .collect();
+        let quotes = self.get_security_quotes(&pairs)?;
+        if quotes.len() != instruments.len() {
+            return Err(TdxError::InvalidData(
+                "TDX order-book cardinality mismatch".into(),
+            ));
+        }
+        let mut books = Vec::with_capacity(quotes.len());
+        for (id, quote) in instruments.iter().zip(quotes) {
+            let bids = [
+                book_level(quote.bid1, quote.bid_vol1)?,
+                book_level(quote.bid2, quote.bid_vol2)?,
+                book_level(quote.bid3, quote.bid_vol3)?,
+                book_level(quote.bid4, quote.bid_vol4)?,
+                book_level(quote.bid5, quote.bid_vol5)?,
+            ];
+            let asks = [
+                book_level(quote.ask1, quote.ask_vol1)?,
+                book_level(quote.ask2, quote.ask_vol2)?,
+                book_level(quote.ask3, quote.ask_vol3)?,
+                book_level(quote.ask4, quote.ask_vol4)?,
+                book_level(quote.ask5, quote.ask_vol5)?,
+            ];
+            books.push(OrderBook {
+                instrument: id.clone(),
+                bids,
+                asks,
+                status: magic_market_core::DataStatus::Available,
+            });
+        }
+        Ok(DataBatch::strict(
+            books,
+            magic_market_core::Provenance::new("tdx", fetched_at()),
+        ))
     }
 }
 
