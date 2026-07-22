@@ -179,6 +179,50 @@ impl OrderBooks for TdxHqClient {
     }
 }
 
+impl OrderBooks for crate::TdxSmartClient {
+    type Error = TdxError;
+    fn order_books(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<OrderBook>, Self::Error> {
+        let pairs: Vec<(u8, &str)> = instruments
+            .iter()
+            .map(|id| (market(id), id.code()))
+            .collect();
+        let quotes = self.get_security_quotes(&pairs)?;
+        if quotes.len() != instruments.len() {
+            return Err(TdxError::InvalidData(
+                "TDX smart order-book cardinality mismatch".into(),
+            ));
+        }
+        let mut books = Vec::with_capacity(quotes.len());
+        for (id, quote) in instruments.iter().zip(quotes) {
+            books.push(OrderBook {
+                instrument: id.clone(),
+                bids: [
+                    book_level(quote.bid1, quote.bid_vol1)?,
+                    book_level(quote.bid2, quote.bid_vol2)?,
+                    book_level(quote.bid3, quote.bid_vol3)?,
+                    book_level(quote.bid4, quote.bid_vol4)?,
+                    book_level(quote.bid5, quote.bid_vol5)?,
+                ],
+                asks: [
+                    book_level(quote.ask1, quote.ask_vol1)?,
+                    book_level(quote.ask2, quote.ask_vol2)?,
+                    book_level(quote.ask3, quote.ask_vol3)?,
+                    book_level(quote.ask4, quote.ask_vol4)?,
+                    book_level(quote.ask5, quote.ask_vol5)?,
+                ],
+                status: magic_market_core::DataStatus::Available,
+            });
+        }
+        Ok(DataBatch::strict(
+            books,
+            magic_market_core::Provenance::new("tdx-smart", fetched_at()),
+        ))
+    }
+}
+
 impl HistoricalBars for crate::TdxSmartClient {
     type Bar = SecurityBar;
     type Error = TdxError;
