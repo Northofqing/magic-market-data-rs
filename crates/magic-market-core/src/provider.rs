@@ -95,6 +95,31 @@ impl BarsRequest {
             limit,
         })
     }
+    /// Adds an inclusive ISO date range after validating ordering and format.
+    pub fn with_range(
+        mut self,
+        start: impl Into<String>,
+        end: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        let start = start.into();
+        let end = end.into();
+        let valid = |s: &str| {
+            s.len() == 10
+                && s.as_bytes()[4] == b'-'
+                && s.as_bytes()[7] == b'-'
+                && s.bytes()
+                    .enumerate()
+                    .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
+        };
+        if !valid(&start) || !valid(&end) || start > end {
+            return Err(crate::CoreError::InvalidRequest(
+                "invalid date range".into(),
+            ));
+        }
+        self.start = Some(start);
+        self.end = Some(end);
+        Ok(self)
+    }
 }
 
 /// Provider capability for historical bars.

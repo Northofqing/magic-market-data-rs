@@ -10,4 +10,6 @@ pub enum CoreError {
     },
     #[error("invalid instrument: {0}")]
     InvalidInstrument(String),
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
 }
