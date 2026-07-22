@@ -1,0 +1,28 @@
+name: Security and release gates
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-llvm-cov --locked
+      - run: cargo llvm-cov --workspace --all-features --json --output-path coverage.json -- --test-threads=1
+      - run: python3 tools/coverage/check_thresholds.py coverage.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-json
+          path: coverage.json
