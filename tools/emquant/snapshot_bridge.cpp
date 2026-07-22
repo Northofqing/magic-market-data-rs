@@ -77,8 +77,14 @@ int main(int argc, char **argv) {
     const char *server_dir = std::getenv("MAGIC_EMQUANT_SERVER_LIST");
     const char *username = std::getenv("MAGIC_EMQUANT_USERNAME");
     const char *password = std::getenv("MAGIC_EMQUANT_PASSWORD");
-    if (!library || !server_dir || !username || !password) {
-        std::cerr << "missing MAGIC_EMQUANT_LIB, MAGIC_EMQUANT_SERVER_LIST, MAGIC_EMQUANT_USERNAME or MAGIC_EMQUANT_PASSWORD\n";
+    if (!library || !server_dir) {
+        std::cerr << "missing MAGIC_EMQUANT_LIB or MAGIC_EMQUANT_SERVER_LIST\n";
+        return 2;
+    }
+    const bool has_username = username && username[0] != '\0';
+    const bool has_password = password && password[0] != '\0';
+    if (has_username != has_password) {
+        std::cerr << "MAGIC_EMQUANT_USERNAME and MAGIC_EMQUANT_PASSWORD must be set together\n";
         return 2;
     }
     void *handle = dlopen(library, RTLD_NOW | RTLD_LOCAL);
@@ -93,9 +99,13 @@ int main(int argc, char **argv) {
     const auto release_data = symbol<ReleaseData>(handle, "releasedata");
     set_server_dir(server_dir);
     EQLOGININFO login{};
-    std::strncpy(login.userName, username, sizeof(login.userName) - 1);
-    std::strncpy(login.password, password, sizeof(login.password) - 1);
-    const EQErr login_error = start(&login, "TestLatency=0,ForceLogin=0,LogLevel=0", discard_log);
+    EQLOGININFO *login_pointer = nullptr;
+    if (has_username && has_password) {
+        std::strncpy(login.userName, username, sizeof(login.userName) - 1);
+        std::strncpy(login.password, password, sizeof(login.password) - 1);
+        login_pointer = &login;
+    }
+    const EQErr login_error = start(login_pointer, "TestLatency=0,ForceLogin=0,LogLevel=0", discard_log);
     if (login_error != EQERR_SUCCESS) {
         std::cerr << "EMQuant login failed with code " << login_error << '\n';
         dlclose(handle);

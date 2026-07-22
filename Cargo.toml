@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/magic-market-core", "crates/magic-tdx-rs"]
+members = ["crates/magic-market-core", "crates/magic-tdx-rs", "crates/magic-emquant-rs"]
 resolver = "2"
 [workspace.package]
 edition = "2021"

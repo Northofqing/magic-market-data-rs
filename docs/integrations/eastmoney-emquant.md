@@ -18,11 +18,11 @@ SDK 版权声明要求授权使用；项目不复制动态库、不提交账号�
 
 | 项目契约 | EMQuant API | 状态 |
 | --- | --- | --- |
-| 实时 Quote | `csq` / `csqsnapshot` | 待授权登录验证 |
+| 实时 Quote | `csqsnapshot` | Rust 适配完成，待授权登录验证 |
 | 日线 | `csc` | 待授权登录验证 |
 | 分钟线 | `cmc` / `chmc` | 待授权登录验证 |
 | 逐笔 | `chq` | 取决于权限 |
-| 盘口/Level-2 | `csqsnapshot` 指标集 | 取决于 Level-2 权限 |
+| 盘口/Level-2 | `csqsnapshot` 五档指标 | Rust 适配完成，待 Level-2 权限验证 |
 | 资金流 | 指标查询 | 取决于产品权限 |
 | 集合竞价 | 实时指标/快照 | 取决于产品权限 |
 
@@ -33,16 +33,19 @@ SDK 版权声明要求授权使用；项目不复制动态库、不提交账号�
 - 每次返回都必须填充 `provider=Eastmoney`、`observed_at`、批次 ID；只有源明确提供时才填 `source_at`。
 - 未授权、权限不足、字段缺失或源时间不可证明时返回结构化错误/`Unsupported`，不能填 0。
 
-## 配置约定（计划）
+## 配置约定
 
 ```text
 MAGIC_EMQUANT_LIB=/absolute/path/to/libEMQuantAPIx64.dylib
-MAGIC_EMQUANT_SERVER_LIST=/absolute/path/to/ServerList.json.e
-MAGIC_EMQUANT_PROXY=host:port        # 可选，仅用户明确配置时启用
+MAGIC_EMQUANT_SERVER_LIST=/absolute/path/to/sdk/x64/bin
+MAGIC_EMQUANT_USERNAME=旧版授权账号  # 可选，必须与密码同时设置
+MAGIC_EMQUANT_PASSWORD=旧版授权密码  # 可选，必须与账号同时设置
 ```
 
-账号、密码和 API token 不进入仓库、日志或测试 fixture。正式接入前必须先用官方示例
-确认登录、Quote 权限和 Level-2 权限，再启用对应 capability。
+账号、密码和激活令牌不进入仓库、日志或测试 fixture。EMQuant 2.0 及以后按照官方
+头文件说明，默认使用与 `ServerList.json.e` 同目录的 `userInfo` 激活令牌自动登录，
+无需传账号密码。正式接入前必须先用官方激活工具/示例确认登录、Quote 权限和
+Level-2 权限，再启用对应 capability。
 
 本地 SDK 文件布局和示例语法可用以下只读检查验证：
 
@@ -50,15 +53,36 @@ MAGIC_EMQUANT_PROXY=host:port        # 可选，仅用户明确配置时启用
 bash tools/emquant/check_sdk.sh /path/to/EMQuantAPI_CPP_Mac
 ```
 
-只读快照桥接程序可独立构建，账号和密码只从进程环境读取：
+只读快照桥接程序可独立构建；新版 SDK 使用官方激活令牌，旧版 SDK 的可选账号和
+密码只从进程环境读取：
 
 ```text
 tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac
 MAGIC_EMQUANT_LIB=/path/to/libEMQuantAPIx64.dylib \
 MAGIC_EMQUANT_SERVER_LIST=/path/to/sdk/x64/bin \
-MAGIC_EMQUANT_USERNAME=... \
-MAGIC_EMQUANT_PASSWORD=... \
 target/emquant/emquant-snapshot 600519.SH PRECLOSE,OPEN,HIGH,LOW,NOW,AMOUNT
 ```
 
 程序只解析 `csqsnapshot`，向标准输出写 JSON；错误信息不包含凭据。
+
+Rust 适配层和实盘探针：
+
+```text
+MAGIC_EMQUANT_BRIDGE=target/emquant/emquant-snapshot \
+MAGIC_EMQUANT_LIB=/path/to/libEMQuantAPIx64.dylib \
+MAGIC_EMQUANT_SERVER_LIST=/path/to/sdk/x64/bin \
+cargo run -p magic-emquant-rs --example live_probe --release
+```
+
+默认查询 `600519.SH,000001.SZ`，也可通过 `MAGIC_EMQUANT_CODES` 修改。输出包含
+实时价、成交量、成交额、五档买卖价量、源时间、采集时间和批次 ID。若登录或权限
+不足，命令明确失败，不会回退到测试数据。Rust 适配层默认在 30 秒后终止无响应的
+SDK 子进程，可通过正整数 `MAGIC_EMQUANT_TIMEOUT_SECS` 调整。
+
+## 本地客户端探测结论
+
+2026-07-22 在 macOS 东方财富客户端运行期间做了只读进程检查：客户端建立了到
+远端行情端口的出站连接，但没有开放归属于该进程的本地 TCP 监听端口。其打开的
+本地数据库属于界面缓存和用户配置，未发现有文档支持的本地行情 API。因此项目不
+代理、解密或重放客户端私有连接，也不读取账号配置；可审计的接入路径仍是官方
+EMQuant SDK。
