@@ -17,7 +17,7 @@ impl TdxHqClient {
             corporate_actions: true,
             blocks: true,
             money_flow: false,
-            order_book: false,
+            order_book: true,
             auction: false,
         }
     }
