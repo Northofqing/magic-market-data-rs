@@ -39,6 +39,7 @@ fn statements_retain_stable_key_source_label_and_absence() {
 
     assert!(statement.lines[1].value.is_none());
     assert_eq!(statement.provider_id(), ProviderId::Sina);
+    assert_eq!(statement.evidence_batch_id(), "batch");
     assert_eq!(
         serde_json::from_str::<FinancialStatement>(&serde_json::to_string(&statement).unwrap())
             .unwrap(),
@@ -60,4 +61,6 @@ fn company_profile_is_typed_without_guessing_facts() {
     };
     assert!(profile.industry.is_none());
     assert_eq!(profile.total_shares.unwrap().get(), 1_000.0);
+    assert_eq!(profile.provider_id(), ProviderId::Sina);
+    assert_eq!(profile.evidence_batch_id(), "batch");
 }

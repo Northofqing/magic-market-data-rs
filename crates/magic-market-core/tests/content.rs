@@ -38,7 +38,9 @@ fn news_and_announcement_urls_are_https_and_sourced() {
     };
 
     assert_eq!(news.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(news.evidence_batch_id(), "batch");
     assert_eq!(announcement.provider_id(), ProviderId::Cninfo);
+    assert_eq!(announcement.evidence_batch_id(), "batch");
     assert!(serde_json::from_str::<NewsItem>(
         &serde_json::to_string(&news)
             .unwrap()
@@ -60,7 +62,23 @@ fn unanswered_investor_question_is_not_fabricated() {
         evidence(ProviderId::Cninfo),
     )
     .unwrap();
+    assert_eq!(question.question_id().as_str(), "q-1");
+    assert_eq!(question.instrument(), &instrument());
+    assert_eq!(question.company().as_str(), "公司");
+    assert_eq!(question.question().as_str(), "请问项目进展？");
+    assert_eq!(question.question_at().as_str(), "2026-07-23 09:00:00");
     assert!(question.answer().is_none());
+    assert!(question.answer_at().is_none());
+    assert!(question.source_question_id().is_none());
+    assert!(question.answerer().is_none());
+    assert_eq!(question.evidence().provider(), ProviderId::Cninfo);
+    assert_eq!(question.provider_id(), ProviderId::Cninfo);
+    assert_eq!(question.evidence_batch_id(), "batch");
+    assert_eq!(
+        serde_json::from_value::<InvestorQuestion>(serde_json::to_value(&question).unwrap())
+            .unwrap(),
+        question
+    );
 
     assert!(InvestorQuestion::new(
         NonEmptyText::new("q-2").unwrap(),

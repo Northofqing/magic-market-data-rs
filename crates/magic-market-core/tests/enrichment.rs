@@ -30,8 +30,19 @@ fn market_statistics_preserve_optional_values_and_evidence() {
     .unwrap();
 
     assert_eq!(statistics.instrument(), &instrument());
+    assert_eq!(statistics.turnover_rate().unwrap().get(), 2.5);
     assert_eq!(statistics.trailing_pe().unwrap().get(), 12.3);
     assert!(statistics.static_pe().is_none());
+    assert_eq!(statistics.pb().unwrap().get(), 1.4);
+    assert_eq!(
+        statistics.total_market_cap().unwrap().get(),
+        6_000_000_000.0
+    );
+    assert!(statistics.floating_market_cap().is_none());
+    assert_eq!(statistics.upper_limit().unwrap().get(), 4.4);
+    assert_eq!(statistics.lower_limit().unwrap().get(), 3.6);
+    assert_eq!(statistics.volume_ratio().unwrap().get(), 0.9);
+    assert_eq!(statistics.evidence().provider(), ProviderId::Tencent);
     assert_eq!(statistics.provider_id(), ProviderId::Tencent);
     assert_eq!(statistics.evidence_batch_id(), "tencent:600396");
 
@@ -83,7 +94,15 @@ fn technical_bar_distinguishes_source_mas_from_raw_bar() {
 
     assert_eq!(technical.ma5().unwrap().get(), 4.0);
     assert!(technical.ma10().is_none());
+    assert!(technical.ma20().is_none());
+    assert_eq!(technical.bar(), &bar);
+    assert_eq!(technical.evidence().provider(), ProviderId::Baidu);
     assert_eq!(technical.provider_id(), ProviderId::Baidu);
+    assert_eq!(technical.evidence_batch_id(), "baidu:600396");
+    assert_eq!(
+        serde_json::from_value::<TechnicalBar>(serde_json::to_value(&technical).unwrap()).unwrap(),
+        technical
+    );
     assert!(TechnicalBar::new(
         bar.clone(),
         None,

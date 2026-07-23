@@ -1,7 +1,8 @@
 use magic_market_core::{
     AssetClass, BoardCategory, BoardMembership, ConceptHit, DragonTigerEntry, DragonTigerSeat,
-    DragonTigerSide, Exchange, InstrumentId, IsoDate, Money, NonEmptyText, PopularityRank,
-    PositiveU32, ProviderId, SourceEvidence, SourcedRecord, StrongStockReason,
+    DragonTigerSide, Exchange, FiniteNumber, InstrumentId, InstrumentSignalRequest, IsoDate,
+    MarketRankingEntry, MarketRankingKind, Money, NonEmptyText, PopularityRank, PositiveU32,
+    ProviderId, SourceEvidence, SourcedRecord, StrongStockReason,
 };
 
 fn instrument() -> InstrumentId {
@@ -31,7 +32,10 @@ fn board_and_reason_contracts_preserve_unknown_categories() {
     };
 
     assert_eq!(board.category, BoardCategory::Unknown);
+    assert_eq!(board.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(board.evidence_batch_id(), "board");
     assert_eq!(reason.provider_id(), ProviderId::Tonghuashun);
+    assert_eq!(reason.evidence_batch_id(), "reason");
     assert_eq!(
         serde_json::from_str::<BoardMembership>(&serde_json::to_string(&board).unwrap()).unwrap(),
         board
@@ -66,6 +70,10 @@ fn dragon_tiger_missing_amounts_remain_absent() {
     assert_eq!(entry.buy_amount.unwrap().get(), 0.0);
     assert!(entry.sell_amount.is_none());
     assert_eq!(seat.rank.get(), 1);
+    assert_eq!(entry.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(entry.evidence_batch_id(), "entry");
+    assert_eq!(seat.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(seat.evidence_batch_id(), "seat");
 }
 
 #[test]
@@ -89,8 +97,18 @@ fn popularity_join_retains_both_evidence_records() {
         detail: None,
         evidence: evidence(ProviderId::Eastmoney, "concept"),
     };
+    let ranking = MarketRankingEntry {
+        kind: MarketRankingKind::Popularity,
+        rank: PositiveU32::new(1).unwrap(),
+        instrument: Some(instrument()),
+        label: NonEmptyText::new("热度").unwrap(),
+        return_ratio: None,
+        value: Some(FiniteNumber::new(99.0).unwrap()),
+        evidence: evidence(ProviderId::Eastmoney, "ranking"),
+    };
 
     assert_eq!(rank.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(rank.evidence_batch_id(), "rank");
     assert_eq!(
         rank.quote_evidence.as_ref().unwrap().provider(),
         ProviderId::Tencent
@@ -100,5 +118,24 @@ fn popularity_join_retains_both_evidence_records() {
         .replace(",\"concepts\":[]", "");
     let restored: PopularityRank = serde_json::from_str(&legacy_json).unwrap();
     assert!(restored.concepts.is_empty());
+    assert_eq!(ranking.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(ranking.evidence_batch_id(), "ranking");
+    assert_eq!(hit.provider_id(), ProviderId::Eastmoney);
     assert_eq!(hit.evidence_batch_id(), "concept");
+}
+
+#[test]
+fn signal_request_round_trip_preserves_optional_trading_date() {
+    let request = InstrumentSignalRequest::new(instrument(), PositiveU32::new(100).unwrap())
+        .unwrap()
+        .with_trading_date(IsoDate::new("2026-07-23").unwrap());
+    assert_eq!(request.instrument(), &instrument());
+    assert_eq!(request.trading_date().unwrap().as_str(), "2026-07-23");
+    assert_eq!(request.limit().get(), 100);
+    assert_eq!(
+        serde_json::from_value::<InstrumentSignalRequest>(serde_json::to_value(&request).unwrap())
+            .unwrap(),
+        request
+    );
+    assert!(InstrumentSignalRequest::new(instrument(), PositiveU32::new(10_001).unwrap()).is_err());
 }
