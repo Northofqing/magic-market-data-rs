@@ -15,6 +15,6 @@ pub use provider::{
     AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, Board, BookLevel, Capabilities,
     DataStatus, HistoricalBars, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
     OrderBook, OrderBooks, PriceLimitRule, ProviderId, Quote, RealtimeQuotes, SecurityMetadata,
-    SecurityMetadataProvider, Trade, TradeSide, Trades, TradesRequest,
+    SecurityMetadataProvider, SourcedRecord, Trade, TradeSide, Trades, TradesRequest,
 };
 pub use value::{Money, Price, Quantity, Ratio, RatioUnit};

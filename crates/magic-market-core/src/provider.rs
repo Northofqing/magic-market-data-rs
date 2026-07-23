@@ -43,6 +43,12 @@ pub enum ProviderId {
     Custom,
 }
 
+/// Common source evidence exposed by every normalized market-data record.
+pub trait SourcedRecord {
+    fn provider_id(&self) -> ProviderId;
+    fn evidence_batch_id(&self) -> &str;
+}
+
 /// Normalized realtime quote contract for cross-provider consumers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "QuoteWire")]
@@ -1803,3 +1809,30 @@ pub trait AsyncTrades {
     type Error: std::error::Error + Send + Sync + 'static;
     async fn trades_async(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error>;
 }
+
+macro_rules! impl_sourced_record {
+    ($($record:ty),+ $(,)?) => {
+        $(
+            impl SourcedRecord for $record {
+                fn provider_id(&self) -> ProviderId {
+                    self.provider()
+                }
+
+                fn evidence_batch_id(&self) -> &str {
+                    self.batch_id()
+                }
+            }
+        )+
+    };
+}
+
+impl_sourced_record!(
+    Quote,
+    Bar,
+    MinutePoint,
+    Trade,
+    MoneyFlow,
+    OrderBook,
+    AuctionSnapshot,
+    SecurityMetadata,
+);
