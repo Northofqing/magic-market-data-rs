@@ -293,6 +293,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-market-router"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "magic-tdx-rs"
 version = "0.2.0"
 dependencies = [

@@ -84,3 +84,6 @@ Status: pending
 | `quality.rs` was queried but Core keeps `QualityReport` in `batch.rs` | 1 | Read `batch.rs` completely and use its public API. |
 | Task 1 red test could not import `SourcedRecord` | 1 | Expected TDD failure; added and exported the common evidence trait. |
 | Git could not write `.git/index.lock` because the data volume had 116 MiB free | 1 | Confirmed `target/debug` was a 4.8 GiB reproducible cache; removed only that directory and preserved `target/dist` plus `target/emquant`. |
+| Task 2 red test could not find package `magic-market-router` | 1 | Expected TDD failure; added the workspace member and minimal source/error contracts. |
+| Task 3 red test could not import routing state-machine types | 1 | Expected TDD failure; added acceptance, trace, aggregate error and failover implementations. |
+| Task 4 red test could not import the eight family adapter constructors | 1 | Expected TDD failure; added generic Core-trait adapters and family aliases. |
