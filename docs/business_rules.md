@@ -20,3 +20,23 @@ unverified Shanghai/Shenzhen provider market number.
 Financial manifest sizes are bounded allocation hints. HTTP framing plus ZIP
 entry bounds, uncompressed size, and CRC are mandatory before parsing or cache
 admission.
+## BR-009 Public-provider capability admission
+An optional public-web capability is advertised only after deterministic
+contract tests and a bounded live probe both prove the normalized records,
+source identity, source time when supplied, observation time and batch
+identity. Authentication-gated or unverified families remain false and return
+a typed `Authentication`, `Unsupported` or protocol error.
+
+## BR-010 Public-provider request bounds and pacing
+Every public-web request enforces its verified positive row bound before I/O.
+Clones of one Provider client share the same request limiter. Where the source
+contract requires pacing, request starts are serialized at no less than the
+documented interval; HTTP 429 and limiter failure are explicit errors and do
+not trigger an unpaced retry.
+
+## BR-011 Public-provider duplicate identity
+Within one atomic Provider batch, duplicate business identities are rejected
+as protocol failures. The only admitted exception is semantic-search output:
+rows with the same normalized security identity are collapsed to the
+source-supplied highest score, with deterministic first-seen tie breaking.
+No downstream consumer may deduplicate by display name.
