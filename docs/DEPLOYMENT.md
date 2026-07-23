@@ -8,9 +8,9 @@
 
 - `magic-tdx-live-probe`：TDX 全能力真实探针；
 - `magic-emquant-live-probe`：官方 EMQuant SDK 探针；
-- `magic-tencent-live-probe`：腾讯 Quote/五档/K线/分时/逐笔探针；
+- `magic-tencent-live-probe`：腾讯 Quote/五档/K线/分时/逐笔/市场统计探针；
 - `magic-tencent-load-probe`：有界短时并发探针；
-- `magic-sina-live-probe`：新浪 Quote/五档/K线/最新分时探针；
+- `magic-sina-live-probe`：新浪 Quote/五档/K线/最新分时/财务三表/ETF 期权探针；
 - `magic-sina-load-probe`：最多 40 请求/4 线程的有界短时并发探针；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
@@ -92,7 +92,7 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | --- | --- | --- |
 | TDX | 已配置行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` | `~/.tdxrs/server_cache.json`；调用方指定的财务缓存 |
 | Tencent | `qt.gtimg.cn:443`、`web.ifzq.gtimg.cn:443`、`ifzq.gtimg.cn:443`、`stock.gtimg.cn:443`，HTTPS | 无持久缓存 |
-| Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`，HTTPS | 无持久缓存 |
+| Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`、`stock.finance.sina.com.cn:443`，HTTPS | 无持久缓存 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
 
 防火墙应只开放所需出站目标。TDX 财务下载当前是厂商 HTTP 分发端点，代码通过响应
@@ -165,21 +165,37 @@ market_release_dir=target/dist/$(git rev-parse HEAD)
 MAGIC_TENCENT_LOAD_OPERATION=mixed MAGIC_TENCENT_LOAD_REQUESTS=20 \
   MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
   "$market_release_dir/bin/magic-tencent-load-probe"
+MAGIC_TENCENT_LOAD_OPERATION=statistics MAGIC_TENCENT_LOAD_REQUESTS=12 \
+  MAGIC_TENCENT_LOAD_CONCURRENCY=3 \
+  "$market_release_dir/bin/magic-tencent-load-probe"
 MAGIC_SINA_LOAD_OPERATION=mixed MAGIC_SINA_LOAD_REQUESTS=20 \
   MAGIC_SINA_LOAD_CONCURRENCY=4 \
+  "$market_release_dir/bin/magic-sina-load-probe"
+MAGIC_SINA_LOAD_OPERATION=financial MAGIC_SINA_LOAD_REQUESTS=6 \
+  MAGIC_SINA_LOAD_CONCURRENCY=2 \
+  "$market_release_dir/bin/magic-sina-load-probe"
+MAGIC_SINA_LOAD_OPERATION=options MAGIC_SINA_LOAD_REQUESTS=6 \
+  MAGIC_SINA_LOAD_CONCURRENCY=2 \
+  MAGIC_SINA_OPTION_UNDERLYING=510050 \
+  MAGIC_SINA_OPTION_SAMPLE_CONTRACTS=2 \
   "$market_release_dir/bin/magic-sina-load-probe"
 MAGIC_EMQUANT_BRIDGE=/opt/magic-market-data/libexec/emquant/emquant-snapshot \
   "$market_release_dir/bin/magic-emquant-live-probe"
 ```
 
+期权 load probe 默认在同次运行开始时自动发现当前合约，发现步骤不计入负载耗时。
+需要复测指定合约时，可用 `MAGIC_SINA_OPTION_CONTRACTS` 传入逗号分隔代码；代码
+不会回退到可能已经到期的固定合约。
+
 所有探针都以退出码表达真假：预期能力缺记录、代码错配、协议异常、无权限或超时会
 退出非零，不会打印模拟记录后成功。TDX 探针理解周末、盘前、午休和盘后差异；
 Tencent 盘前零现价会明确失败，涨跌停缺档会标记质量不完整，load probe 会轮转
-Quote、日线、分时和当日逐笔；router probe 必须打印 TDX 的失败/质量拒绝、
+Quote、日线、分时、当日逐笔和市场统计；router probe 必须打印 TDX 的失败/质量拒绝、
 Tencent 的选中状态和真实 Quote；EMQuant 当前会打印真实日线和资金流，但因
 Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打印六类 K 线、
-三市场五档和最新交易日分时，日线成交额
-和涨跌停空侧保持缺失。路由探针没有缓存或跨源拼接，两个来源都失败时退出非零。
+三市场五档、最新交易日分时、三张财务报表，以及已实测 510050 的 ETF 期权合约、
+最优买卖一档 T 型报价和希腊字母；日线成交额和涨跌停空侧保持缺失。路由探针没有
+缓存或跨源拼接，两个来源都失败时退出非零。
 
 上线门至少保存以下证据，但不要保存账号、令牌或原始登录包：
 
@@ -211,8 +227,9 @@ Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打�
 错误，并根据业务数据族选择完整性和来源时间门。
 
 容器可运行 Core、TDX、Tencent 和 Sina，但必须允许上述出站网络并给 TDX 一个可写
-HOME。EMQuant 只有在厂商许可证允许、架构匹配、SDK 能在容器中激活且运行时文件
-通过秘密挂载提供时才可容器化；默认发布包不包含这些文件。
+HOME。Sina 财务和期权仍是无账号的只读 HTTPS 请求，不需要复制桌面客户端文件。
+EMQuant 只有在厂商许可证允许、架构匹配、SDK 能在容器中激活且运行时文件通过秘密
+挂载提供时才可容器化；默认发布包不包含这些文件。
 
 ## 回滚与升级
 

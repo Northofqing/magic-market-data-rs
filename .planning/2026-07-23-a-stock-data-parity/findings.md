@@ -300,6 +300,64 @@
 - Existing live probes already print every normalized base field. Slice B
   probes should extend these executables instead of introducing hidden
   one-off verification binaries.
+- The only current construction sites for `OptionContract`, `OptionQuote` and
+  `OptionGreeks` are Core tests; Router routes them generically. Widening these
+  new records and changing the discovery filter from exact date to contract
+  month therefore has a small, fully searchable compatibility surface.
+- Financial lines already retain both a normalized key and source label with
+  optional numeric value/unit. Sina can populate every returned row, including
+  source-empty values, without converting absence to zero.
+- A real 2026-07-23 Tencent response for `sh600396`, `sh000001` and `sh510050`
+  confirmed all three identities use market code `1` plus the exact requested
+  symbol. Equity fields 38/39/44/45/46/47/48/49/52 were populated.
+- The real index response uses `-1` sentinels for upper/lower limits, while the
+  ETF response leaves PE fields blank and supplies PB as explicit zero. The
+  adapter must map non-positive price sentinels to absent, blanks to absent and
+  retain explicit finite zero for scalar statistics.
+- Current base snapshots already parse the full response while ignoring fields
+  after 37. A private optional enrichment payload on `Snapshot` lets one
+  response serve the new Provider without affecting existing quote behavior.
+- The real Sina income response for `sh600396` confirms the corrected shape and
+  additionally exposes stable `item_field` English keys, `rCurrency`,
+  `publish_date`, `update_time`, `item_source` and nullable `item_value`.
+  There is no need to invent keys or announcement dates.
+- `report_list` is a JSON object whose iteration order is not an API ordering
+  guarantee. The parser must sort normalized report periods explicitly and
+  reject duplicate/invalid dates, empty item keys/labels and non-finite values.
+- Existing Sina source modules share `now`, exact instrument validation and the
+  injected transport from `lib.rs`; a new `financials.rs` can follow the same
+  pattern and return normalized `DataBatch<FinancialStatement>` directly.
+- Reference v3.5.0 intentionally requests eight statement periods by default;
+  matching that bound is sufficient parity and keeps the existing 1 MiB
+  response limit meaningful.
+- A live balance-sheet response reported status code 0, 102 total available
+  periods and returned the requested two. Each period had 141 display rows.
+  Structural section headings can have both `item_field` and `item_value`
+  empty; they are not financial facts and must be skipped rather than assigned
+  fabricated keys.
+- The source `report_count` is the total history count, not the returned-page
+  cardinality, so it must not be compared to `report_list.len()`.
+- The real cash-flow response uses the same status/currency/publish metadata
+  and exposes stable keys such as `LABORGETCASH`; statement-kind parsing can
+  share one strict response implementation.
+- The live 8-period balance response repeats `DOMETICKSETT` twice per period
+  with identical label, null value, group and display type. This is a source
+  duplicate, not two distinguishable facts. Retain one normalized copy and
+  emit an explicit quality issue; continue to reject conflicting duplicates.
+- Parallel Sina option implementation confirmed the 2026-07-23 live shapes:
+  discovery repeats the nearest month as a marker, T-quotes have 51 fields and
+  Greeks have 17 raw fields with positions 1..3 exactly empty.
+- Core `Money` deliberately permits signed fund-flow values, so each Provider
+  amount field must enforce its own semantics. Sina option turnover amount is
+  non-negative and needs an adapter-level check.
+- Sina T-quote source time is `YYYY-MM-DD HH:MM:SS`; record evidence should
+  validate and normalize it to `YYYY-MM-DDTHH:MM:SS+08:00`, matching the rest
+  of the workspace.
+- The full real Sina probe passed after the duplicate-source fix and option
+  wiring. Documentation still labels Tencent statistics and Sina statements/
+  options as pending or unsupported in the top status, intelligence matrix,
+  Provider matrix, deployment probe descriptions and integration contracts;
+  Slice B cannot ship until all of these statements are reconciled.
 
 ## Technical decisions
 
@@ -321,3 +379,43 @@
 | --- | --- |
 | A combined audit command tried to read reference `SKILL.md` from the local workspace and stopped before the release-script reads | Logged the path mix-up and split subsequent reads by their correct working directories. |
 | The first Slice B planning append targeted a heading that does not exist | Inspected the actual planning tail and patched the existing audit section without losing prior findings. |
+| Task 1's first post-edit format check found only import wrapping | Applied rustfmt and confirmed Core/Router strict Clippy with `-D warnings`. |
+## 2026-07-23 Slice B documentation decisions
+
+- README and Tencent integration documentation now describe the implemented Tencent `MarketStatisticsProvider`, its source fields, units, live probe, and measured load result.
+- Sina documentation must cover three independent public-source families: base quote/K-line/minute data, financial statements (`fzb`/`lrb`/`llb`), and ETF option discovery/T-quote/Greeks.
+- Sina firewall documentation must include both `hq.sinajs.cn` and `stock.finance.sina.com.cn`; financial reports use `quotes.sina.cn`.
+- Performance documentation must distinguish the earlier Tencent four-operation mixed run from the new current five-operation rotation, and record dedicated statistics/financial/options measurements without retroactively changing historical evidence.
+- Sina load probe now accepts `quotes`, `bars`, `minute`, `financial`, `options`, and `mixed`; it enforces 40-request/4-worker limits.
+- Sina option safety limits are 12 months, 256 contracts per call/put list, 4,096 discovered contracts, 50 contracts per quote/Greek batch, and 128 decoded fields.
+- Sina financial statement requests accept at most 10 instruments. Router source adapter names must be checked from the Core tree before documenting them; the first lookup used an obsolete router file path.
+- `docs/PERFORMANCE_RESULTS.md` still describes Tencent `mixed` as four families even though current code has five; historical 100/8 evidence must remain labeled as the pre-statistics rotation.
+- Deployment currently describes Sina only as Quote/K-line/minute and opens two Sina hosts. It must add financial/options capabilities, `stock.finance.sina.com.cn`, and updated health/load operations without changing the seven packaged probe binary count.
+- Changelog already contains the Core intelligence-contract/analysis slice, but not the implemented Tencent statistics or Sina statements/options.
+- Two full Rust 1.83 checks reused a stale `magic_market_core` artifact: Cargo checked only `magic-sina-rs` and reported the pre-widening option API even though the source exports `ContractMonth` and the new fields. Manifests and `cargo metadata` confirm Sina points to the local Core path. The next diagnostic must use a fresh isolated target directory to distinguish stale incremental metadata from source defects.
+
+## 2026-07-23 independent Slice B review
+
+- No P0 findings; ten P1 findings block commit.
+- Tencent base Quote/OrderBook/metadata parsing currently invokes extended statistics parsing and can fail on enrichment-only anomalies; these paths must be isolated and tested.
+- Tencent statistics must not return a strict complete batch when every statistic is absent.
+- Core option records need checked deserialization for cross-field month/date, money, book, OHLC/limit, timestamp, and Greek-domain invariants.
+- Sina option output documents five levels but currently retains only top-of-book; either implement the five verified levels or narrow the contract/documentation. Completeness target favors implementation.
+- Sina Greeks need domain/range checks; contract-list and quote field-count caps must be separated.
+- Only 510050 has live evidence; 510300/588000/510500 must be probed before being called live-verified, otherwise documentation must label them implemented/unverified.
+- Docs use the wrong sample-count environment variable; load options has a stale hard-coded contract and must discover or require current contracts deterministically.
+- Router option adapters lack forwarding/evidence tests.
+- Tencent changelog falsely mentions a 52-week range that is not represented by Core.
+- Core option structs currently derive `Deserialize` directly and have no constructors; checked deserialization should use private raw DTOs plus shared `validate()` methods so source adapters and serde enforce identical cross-field invariants.
+- Sina option decoding uses one global 128-field cap before determining record type, which makes the documented 256-code list cap unreachable. Split the decoder cap from per-record semantic caps (or raise the shell cap to cover list records while quote/Greek parsers enforce their exact maxima).
+- The reference project's actual `sina_option_tquote` function maps only top bid/ask plus summary fields; its changelog claim of five levels is not backed by that function. The raw 12..31 fields look like ten price/quantity pairs, but the fixture's apparent ask-one quantity does not equal summary `ask_vol`, so field semantics need external/source verification before standardizing them as a five-level book.
+- Core already has checked `BookLevel`, but adding option five-level arrays without verified source ordering would violate the no-fabrication rule. Until verified, accurately document top-of-book rather than treating the reference changelog as a field contract.
+- Core `SourceEvidence` validates non-empty timestamp text but not ISO calendar semantics, so `OptionQuote` needs its own checked `quote_at` validator. The project already has private date/time validators in `provider.rs`; options can implement an equivalent strict `YYYY-MM-DDTHH:MM:SS+HH:MM` calendar check without exposing unrelated provider internals.
+- Core `Money` is intentionally signed for net-flow records, so option quote validation must explicitly require non-negative amount at the record layer.
+- `IsoDate` exposes checked `as_str()`, allowing exact `OptionContract.expiry` month matching without duplicating calendar logic. `quote_at` uses a full timestamp rather than `IsoDate`, so only its date prefix can reuse `IsoDate`; clock and UTC-offset syntax need local validation.
+- Probe/docs lane removed stale option contracts, unified `MAGIC_SINA_OPTION_SAMPLE_CONTRACTS`, added one-time current-contract discovery, removed the Tencent 52-week claim, and correctly separated 510050 live evidence from three implemented/unverified ETF underlyings.
+- Follow-up doc audit found two residual wording issues: `OptionCapabilities` uses `quotes`, not `t_quotes`; Sina option response limits are now a 257-field envelope with semantic caps of 64 quote fields and 32 Greek fields, not a universal 128.
+- Second independent review closed the original ten findings but found a Unicode panic path in fixed-byte `quote_at` slicing, a Sina direct-construction gap for zero/half book levels and negative amplitude, and an omitted Sina option host in README.
+- The timestamp validator now rejects non-ASCII before slicing and has a `catch_unwind` regression. Sina atomically normalizes zero-price/zero-quantity top levels, rejects half levels/negative amplitude, and its normalized record must round-trip through Core serde. README now lists all three Sina hosts.
+- Final Slice B scope is 24 tracked modified files plus two intended new Sina modules (`financials.rs`, `options.rs`), with 2,048 tracked insertions and 145 deletions before adding the new-file line count. `git diff --check` passes. The only unrelated untracked file is the user's requirements document and remains excluded.
+- Final staged scope is 26 files with 3,533 insertions and 145 deletions, including the two intended new Sina modules. Cached diff whitespace passes; `docs/integrations/stock-analysis-market-data-requirements.md` is the sole unstaged/untracked file.

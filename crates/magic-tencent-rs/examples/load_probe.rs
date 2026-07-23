@@ -1,6 +1,6 @@
 use magic_market_core::{
-    AssetClass, BarInterval, BarsRequest, Exchange, HistoricalBars, InstrumentId, MinuteData,
-    MinuteDataRequest, RealtimeQuotes, Trades, TradesRequest,
+    AssetClass, BarInterval, BarsRequest, Exchange, HistoricalBars, InstrumentId,
+    MarketStatisticsProvider, MinuteData, MinuteDataRequest, RealtimeQuotes, Trades, TradesRequest,
 };
 use magic_tencent_rs::TencentClient;
 use std::error::Error;
@@ -16,6 +16,7 @@ enum Operation {
     Bars,
     Minute,
     Trades,
+    Statistics,
     Mixed,
 }
 
@@ -26,8 +27,9 @@ impl Operation {
             "bars" => Ok(Self::Bars),
             "minute" => Ok(Self::Minute),
             "trades" => Ok(Self::Trades),
+            "statistics" => Ok(Self::Statistics),
             "mixed" => Ok(Self::Mixed),
-            _ => Err("operation must be one of quotes, bars, minute, trades, mixed"),
+            _ => Err("operation must be one of quotes, bars, minute, trades, statistics, mixed"),
         }
     }
 
@@ -37,17 +39,19 @@ impl Operation {
             Self::Bars => "bars",
             Self::Minute => "minute",
             Self::Trades => "trades",
+            Self::Statistics => "statistics",
             Self::Mixed => "mixed",
         }
     }
 
     const fn for_request(self, index: usize) -> Self {
         match self {
-            Self::Mixed => match index % 4 {
+            Self::Mixed => match index % 5 {
                 0 => Self::Quotes,
                 1 => Self::Bars,
                 2 => Self::Minute,
-                _ => Self::Trades,
+                3 => Self::Trades,
+                _ => Self::Statistics,
             },
             value => value,
         }
@@ -59,6 +63,7 @@ fn execute(
     operation: Operation,
     index: usize,
     instruments: &[InstrumentId],
+    statistics_instruments: &[InstrumentId],
     primary: &InstrumentId,
 ) -> Result<usize, String> {
     match operation.for_request(index) {
@@ -86,6 +91,10 @@ fn execute(
                     .map(|batch| batch.records().len())
                     .map_err(|error| error.to_string())
             }),
+        Operation::Statistics => client
+            .market_statistics(statistics_instruments)
+            .map(|batch| batch.records().len())
+            .map_err(|error| error.to_string()),
         Operation::Mixed => unreachable!("mixed is resolved before dispatch"),
     }
 }
@@ -127,6 +136,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity)?,
     ]);
     let primary = Arc::new(instruments[0].clone());
+    let statistics_instruments = Arc::new(vec![
+        instruments[0].clone(),
+        InstrumentId::new(Exchange::Shanghai, "000001", AssetClass::Index)?,
+        InstrumentId::new(Exchange::Shanghai, "510050", AssetClass::Fund)?,
+    ]);
     let client = TencentClient::with_timeout(Duration::from_secs(10))?;
     let (sender, receiver) = mpsc::channel();
     let started = Instant::now();
@@ -135,6 +149,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let sender = sender.clone();
         let client = client.clone();
         let instruments = Arc::clone(&instruments);
+        let statistics_instruments = Arc::clone(&statistics_instruments);
         let primary = Arc::clone(&primary);
         workers.push(
             std::thread::Builder::new()
@@ -142,8 +157,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .spawn(move || {
                     for index in (worker..requests).step_by(concurrency) {
                         let request_started = Instant::now();
-                        let result =
-                            execute(&client, operation, index, &instruments, primary.as_ref());
+                        let result = execute(
+                            &client,
+                            operation,
+                            index,
+                            &instruments,
+                            &statistics_instruments,
+                            primary.as_ref(),
+                        );
                         let _ = sender.send((request_started.elapsed(), result));
                     }
                 })?,
@@ -222,6 +243,7 @@ mod tests {
         assert_eq!(mixed.for_request(1).label(), "bars");
         assert_eq!(mixed.for_request(2).label(), "minute");
         assert_eq!(mixed.for_request(3).label(), "trades");
-        assert_eq!(mixed.for_request(4).label(), "quotes");
+        assert_eq!(mixed.for_request(4).label(), "statistics");
+        assert_eq!(mixed.for_request(5).label(), "quotes");
     }
 }

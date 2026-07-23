@@ -11,7 +11,10 @@
 
 - 华电辽能 `600396.SH`；
 - 平安银行 `000001.SZ`；
-- 太湖远大 `920118.BJ`。
+- 太湖远大 `920118.BJ`；
+- 华电辽能的资产负债表、利润表和现金流量表；
+- 上证 50 ETF `510050` 的合约月份、全部认购/认沽合约、最优买卖一档 T 型报价和
+  希腊字母。
 
 一次实测只证明当时端点和字段可用，不构成厂商性能承诺。字段或协议变化后必须重新
 运行确定性测试和真实探针。
@@ -22,6 +25,9 @@
 | --- | --- | --- |
 | Quote / 五档 / 部分元数据 | `https://hq.sinajs.cn/list=` | 最多 50 个不重复沪深京 A 股符号；必须发送 `Referer: https://finance.sina.com.cn/` |
 | K 线 / 当前分时输入 | `https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData` | 单证券；最多 800 根 K 线；当前分时固定最多 300 根 1 分钟线 |
+| 财务三表 | `https://quotes.sina.cn/cn/api/openapi.php/CompanyFinanceService.getFinanceReport2022` | 最多 10 个沪深证券；每类默认 8 个报告期 |
+| ETF 期权月份 | `https://stock.finance.sina.com.cn/futures/api/openapi.php/StockOptionService.getStockName` | 单个受支持标的；最多 12 个月 |
+| ETF 期权合约、T 型报价、希腊字母 | `https://hq.sinajs.cn/list=` | 合约发现最多 4,096 个；单批最多 50 个；必须发送 `Referer: https://stock.finance.sina.com.cn/` |
 
 客户端只接受 HTTPS，拒绝重定向，connect/read/write 使用正的有界超时，单响应最多
 1 MiB。克隆 `SinaClient` 会共享同一个 `ureq` 连接池。
@@ -123,6 +129,49 @@ API。`MinuteData` 无日期请求使用严格受限的 300 根 `scale=1` K 线�
 Quote 与 K 线来自不同公开端点，不是一个原子快照，累计量额可能有小幅差异。Provider
 不跨端点改写或拼接记录；调用方可以用各自的源时间和观测时间进行冲突/新鲜度判断。
 
+## 财务三表
+
+`FinancialStatements` 使用新浪公开 `CompanyFinanceService`，分别请求：
+
+| Core 报表 | 新浪 source |
+| --- | --- |
+| 资产负债表 | `fzb` |
+| 利润表 | `lrb` |
+| 现金流量表 | `llb` |
+
+响应根必须包含 `result.data.report_list`。每个报告期保留来源报告日、发布日期、币种、
+原始英文 `item_field`（标准化为小写）、中文标题和可空数值；不猜测或补造单位。结构性
+空标题会被跳过。来源有时会返回完全相同的重复字段，Provider 会保留一份并在记录质量
+中注明；同名但值或标题冲突的字段会直接报协议错误。
+
+当前只支持上海、深圳证券；北京证券在联网前返回 `Unsupported`。每类报表默认返回
+最近 8 个报告期，批量请求最多 10 个不重复证券。真实探针逐一验证三张报表非空、报告期
+有序、字段键唯一且来源证据完整。
+
+## ETF 期权
+
+`OptionData` 已实现新浪公开期权页覆盖的四个上海 ETF 标的：
+
+- `510050` 上证 50 ETF；
+- `510300` 沪深 300 ETF；
+- `588000` 科创 50 ETF；
+- `510500` 中证 500 ETF。
+
+2026-07-23 的真实网络验收只覆盖 `510050`。`510300`、`588000` 和 `510500`
+保留为已实现待实测，分别通过完整 live probe 前不得标为实盘可用。
+
+Provider 先发现有效 `YYYY-MM` 合约月份，再分别读取认购/认沽列表并生成稳定
+`OptionContract`。T 型报价保留名称、标的、方向、月份、最新价、涨跌、开高低、昨结、
+成交量、成交额、持仓量、最优买卖一档、涨跌停以及严格标准化的来源时间。源响应中
+更深的槽位缺少本项目可验证的稳定字段合同，因此不标准化、也不宣称五档期权盘口。
+希腊字母保留 Delta、Gamma、Theta、Vega、隐含波动率和来源可得字段；来源没有 Rho
+时保持 `None`。
+
+解析器拒绝非法月份、未知标的、重复/矛盾合约、负成交量额、交叉盘口、非法价格范围、
+字段不足或超上限。边界为 12 个合约月、每个认购/认沽列表 256 个合约、总发现
+4,096 个、单批报价或希腊字母 50 个。响应壳最多 257 个字段；报价行最多 64 个，
+希腊字母行最多 32 个。不会用 Black-Scholes 自行计算并冒充来源希腊字母或 IV。
+
 ## 部分证券元数据
 
 来源快照提供名称，ST 标志只按名称前缀识别。板块按交易所和代码派生：
@@ -144,15 +193,23 @@ minute=true          # 仅最新交易日，无历史日期选择
 order_book=true
 security_metadata=true
 trades=false
-fundamentals=false
+fundamentals=true       # 资产负债表、利润表、现金流量表
 corporate_actions=false
 blocks=false
 money_flow=false
 auction=false
 ```
 
+期权能力由独立的 `OptionCapabilities` 声明：
+
+```text
+contract_discovery=true
+quotes=true
+greeks=true
+```
+
 成交明细展示 HTML 不作为稳定逐笔合同。不得从 Quote、五档或 K 线推导并冒充
-MoneyFlow、集合竞价、财务、公司行为或板块来源字段。
+MoneyFlow、集合竞价、公司行为或板块来源字段。
 
 ## 运行
 
@@ -160,12 +217,15 @@ MoneyFlow、集合竞价、财务、公司行为或板块来源字段。
 
 ```bash
 MAGIC_SINA_CODES=600396.SH,000001.SZ,920118.BJ \
+MAGIC_SINA_OPTION_UNDERLYING=510050 \
+MAGIC_SINA_OPTION_SAMPLE_CONTRACTS=2 \
 MAGIC_SINA_TIMEOUT_SECS=10 \
 cargo run -p magic-sina-rs --example live_probe --release --locked --offline
 ```
 
 探针打印 Quote、全部五档、部分元数据、六个支持周期、北京 5 分钟/日线、每个证券的
-当前分时点和所有不支持能力。任一预期数据族为空或协议错误会退出非零。
+当前分时点、三张财务报表的全部报告期、全部发现的期权合约、样本 T 型报价/希腊字母
+和所有不支持能力。任一预期数据族为空或协议错误会退出非零。
 
 有界并发探针：
 
@@ -176,13 +236,29 @@ MAGIC_SINA_LOAD_CONCURRENCY=4 \
 cargo run -p magic-sina-rs --example load_probe --release --locked --offline
 ```
 
-operation 可选 `quotes`、`bars`、`minute`、`mixed`。程序在联网前强制最多 40 请求、
-4 线程。2026-07-23 的默认本地样本结果：
+operation 可选 `quotes`、`bars`、`minute`、`financial`、`options`、`mixed`。
+`options` 默认在计时和启动 worker 前，按 `MAGIC_SINA_OPTION_UNDERLYING`（默认
+`510050`）执行一次当前合约发现，并选择
+`MAGIC_SINA_OPTION_SAMPLE_CONTRACTS`（默认 2）个合约。部署方也可用
+`MAGIC_SINA_OPTION_CONTRACTS` 显式覆盖；没有固定的到期合约后备值。程序在联网前
+强制最多 40 请求、4 线程。2026-07-23 的默认基础数据混合样本结果：
 
 ```text
 requests=20 concurrency=4 successes=20 failures=0 records=1477
 requests_per_second=11.69
 latency_us_p50=207786 latency_us_p95=645489 latency_us_max=788549
+```
+
+专项真实短样本：
+
+```text
+operation=financial requests=6 concurrency=2 successes=6 failures=0 records=48
+requests_per_second=18.19
+latency_us_p50=50705 latency_us_p95=210571 latency_us_max=213895
+
+operation=options requests=6 concurrency=2 successes=6 failures=0 records=24
+requests_per_second=22.30
+latency_us_p50=62005 latency_us_p95=131468 latency_us_max=144344
 ```
 
 这只是一次有界短样本，不是厂商 SLA 或推荐限频。
@@ -191,7 +267,8 @@ latency_us_p50=207786 latency_us_p95=645489 latency_us_max=788549
 
 Router 的生产依赖保持只有 Core。应用在自己的组合根使用现有
 `quote_source`、`bars_source`、`minute_source`、`order_book_source` 和
-`security_metadata_source` 注册 `ProviderId::Sina`。
+`security_metadata_source` 注册基础 Sina Provider；财务三表和 ETF 期权也通过 Core
+对应的来源适配器注册，不要求 Router 依赖 Sina crate。
 
 生产服务必须额外实现 Provider 级限频、退避、熔断、交易阶段新鲜度门、监控和合法
 缓存。Sina client 应长期复用，不能为每条记录启动 probe。防火墙只需允许：
@@ -199,6 +276,7 @@ Router 的生产依赖保持只有 Core。应用在自己的组合根使用现�
 ```text
 hq.sinajs.cn:443
 quotes.sina.cn:443
+stock.finance.sina.com.cn:443
 ```
 
 Provider 不写持久缓存，不需要用户名、密码、Cookie 或本地客户端。部署与日志不得

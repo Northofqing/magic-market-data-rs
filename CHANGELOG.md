@@ -41,6 +41,9 @@ Breaking migrations:
   Beijing intraday bars/trades, money flow, and auction remain explicit.
 - Expanded the Tencent bounded load probe with per-family and mixed modes; the
   100-request/8-worker mixed live run completed without failures.
+- Added Tencent `MarketStatisticsProvider` for turnover rate, PE/PB, market
+  capitalization and source price limits across equities, indices and funds. A
+  12-request/3-worker live statistics run completed without failures.
 - Added `magic-sina-rs`, a supplemental HTTPS/GB18030/JSON Provider with strict
   沪深京 Quote/five-level books, selected intraday/daily bars, current
   latest-session minute accumulation and partial security metadata.
@@ -51,6 +54,18 @@ Breaking migrations:
   all declared families; the 20-request/4-worker mixed run completed without
   failures and the final run reported 11.69 requests/s with 207.786 ms p50
   latency.
+- Added Sina balance-sheet, income-statement and cash-flow providers with
+  nullable source fields, duplicate-field diagnostics and checked report
+  evidence. A 6-request/2-worker real load run returned 48 periods without
+  failures.
+- Added Sina ETF-option month/contract discovery, top-of-book T-quotes and
+  source Greeks/IV for 510050, 510300, 588000 and 510500. The real live probe
+  has verified 510050; the other three implemented underlyings still require
+  separate live verification. A 6-request/2-worker 510050 option load run
+  completed without failures.
+- Expanded Core option contracts with checked expiry months, optional expiry
+  dates/strikes, full quote fields and source Greek values while preserving
+  explicit absence instead of calculating unverified values.
 - Added `magic-market-router`, a provider-neutral first-acceptable-batch
   failover chain with explicit failure classification, quality/source-time
   gates, record/batch evidence checks and ordered attempt traces for every Core

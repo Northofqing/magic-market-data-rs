@@ -56,9 +56,10 @@ Command:
 cargo run -p magic-tencent-rs --example load_probe --release --offline
 ```
 
-The probe now supports `quotes`, `bars`, `minute`, `trades`, and `mixed`.
-Observed on the development machine on 2026-07-23 with `mixed`, which rotates
-the four operation families for 华电辽能 `600396.SH`:
+The probe now supports `quotes`, `bars`, `minute`, `trades`, `statistics`, and
+`mixed`. The following historical sample was observed on the development
+machine on 2026-07-23 before statistics joined the rotation; that version of
+`mixed` rotated the four base operation families for 华电辽能 `600396.SH`:
 
 ```text
 requests=100 concurrency=8 successes=100 failures=0 records=3700
@@ -66,7 +67,58 @@ elapsed_seconds=1.770 requests_per_second=56.49
 latency_us_p50=100077 latency_us_p95=219676 latency_us_max=251169
 ```
 
+After `MarketStatisticsProvider` was added, a dedicated current-code statistics
+sample for 华电辽能、上证指数 and 上证 50 ETF completed:
+
+```text
+operation=statistics requests=12 concurrency=3 successes=12 failures=0 records=36
+requests_per_second=28.76
+latency_us_p50=66801 latency_us_p95=181955 latency_us_max=192500
+```
+
 This is a short, bounded connectivity/load sample against an undocumented
 public endpoint, not a vendor SLA or a safe sustained request rate. The probe
 defaults deliberately remain small; operators must apply their own rate limit
 and authorization policy.
+
+## Sina HTTPS bounded load probes
+
+The current probe supports `quotes`, `bars`, `minute`, `financial`, `options`,
+and `mixed`, with hard limits of 40 requests and four workers. The base-data
+mixed sample on 2026-07-23 completed:
+
+```text
+requests=20 concurrency=4 successes=20 failures=0 records=1477
+requests_per_second=11.69
+latency_us_p50=207786 latency_us_p95=645489 latency_us_max=788549
+```
+
+Dedicated current-code samples for the newly added sources completed. The
+option run covered 510050; 510300, 588000 and 510500 are implemented but have
+not yet passed separate live runs:
+
+```text
+operation=financial requests=6 concurrency=2 successes=6 failures=0 records=48
+requests_per_second=18.19
+latency_us_p50=50705 latency_us_p95=210571 latency_us_max=213895
+
+operation=options requests=6 concurrency=2 successes=6 failures=0 records=24
+requests_per_second=22.30
+latency_us_p50=62005 latency_us_p95=131468 latency_us_max=144344
+```
+
+The option sample used real contracts discovered immediately before the run.
+These are short connectivity/load observations, not published endpoint capacity
+or permission to sustain the measured rate.
+
+After the fixed-contract fallback was removed, the current load probe was
+rerun without `MAGIC_SINA_OPTION_CONTRACTS`. It discovered two current 510050
+contracts once before starting the timed worker and completed:
+
+```text
+option_load_contracts source=discovery underlying=510050 count=2
+operation=options requests=2 concurrency=1 successes=2 failures=0 records=8
+requests_per_second=18.32
+latency_us_p50=54445 latency_us_p95=54445 latency_us_max=54551
+load_probe_status=passed
+```

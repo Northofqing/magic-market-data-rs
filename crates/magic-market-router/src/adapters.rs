@@ -2,18 +2,18 @@ use crate::{FailoverChain, SourceError, SourceFn};
 use magic_market_core::{
     Announcement, Announcements, AuctionSnapshot, Auctions, Bar, BarsRequest, BlockTrade,
     BlockTrades, BoardCategory, BoardFlow, BoardFlows, BoardMembership, BoardMembershipProvider,
-    ConceptHit, ConceptHits, ConsensusData, ConsensusSnapshot, DividendPlan, DividendPlans,
-    DragonTigerData, DragonTigerEntry, DragonTigerSeat, FinancialStatement, FinancialStatements,
-    FlowInterval, FundFlowPoint, FundFlowRequest, FundFlowSeries, HistoricalBars, HolderCount,
-    HolderCounts, InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest,
-    InvestorQuestion, InvestorQuestions, IsoDate, LimitPoolEntry, LimitPoolRequest, LimitPools,
-    LockupEvent, LockupEvents, MarginBalance, MarginData, MarketRankingEntry, MarketRankingKind,
-    MarketRankings, MarketStatistics, MarketStatisticsProvider, MinuteData, MinuteDataRequest,
-    MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider, NonEmptyText, OptionContract,
-    OptionData, OptionGreeks, OptionQuote, OrderBook, OrderBooks, PopularityData, PopularityRank,
-    PositiveU32, ProviderId, Quote, RealtimeQuotes, ResearchReport, ResearchReports,
-    ResearchRequest, SecurityMetadata, SecurityMetadataProvider, SecurityProfile, SecurityProfiles,
-    SemanticSearch, SemanticSearchDocument, SemanticSearchRequest, StatementKind,
+    ConceptHit, ConceptHits, ConsensusData, ConsensusSnapshot, ContractMonth, DividendPlan,
+    DividendPlans, DragonTigerData, DragonTigerEntry, DragonTigerSeat, FinancialStatement,
+    FinancialStatements, FlowInterval, FundFlowPoint, FundFlowRequest, FundFlowSeries,
+    HistoricalBars, HolderCount, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
+    InstrumentSignalRequest, InvestorQuestion, InvestorQuestions, LimitPoolEntry, LimitPoolRequest,
+    LimitPools, LockupEvent, LockupEvents, MarginBalance, MarginData, MarketRankingEntry,
+    MarketRankingKind, MarketRankings, MarketStatistics, MarketStatisticsProvider, MinuteData,
+    MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider, NonEmptyText,
+    OptionContract, OptionData, OptionGreeks, OptionQuote, OrderBook, OrderBooks, PopularityData,
+    PopularityRank, PositiveU32, ProviderId, Quote, RealtimeQuotes, ResearchReport,
+    ResearchReports, ResearchRequest, SecurityMetadata, SecurityMetadataProvider, SecurityProfile,
+    SecurityProfiles, SemanticSearch, SemanticSearchDocument, SemanticSearchRequest, StatementKind,
     StrongStockReason, StrongStockReasons, TechnicalBar, TechnicalBarsProvider, Trade, Trades,
     TradesRequest,
 };
@@ -56,7 +56,7 @@ pub type SecurityProfileRouter = FailoverChain<[InstrumentId], SecurityProfile>;
 pub type FinancialStatementRequest = (Vec<InstrumentId>, StatementKind);
 pub type FinancialStatementRouter = FailoverChain<FinancialStatementRequest, FinancialStatement>;
 pub type LimitPoolRouter = FailoverChain<LimitPoolRequest, LimitPoolEntry>;
-pub type OptionContractsRequest = (InstrumentId, Option<IsoDate>);
+pub type OptionContractsRequest = (InstrumentId, Option<ContractMonth>);
 pub type OptionContractRouter = FailoverChain<OptionContractsRequest, OptionContract>;
 pub type OptionQuoteRouter = FailoverChain<[NonEmptyText], OptionQuote>;
 pub type OptionGreeksRouter = FailoverChain<[NonEmptyText], OptionGreeks>;

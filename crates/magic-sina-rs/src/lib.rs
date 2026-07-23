@@ -6,7 +6,9 @@
 //! deterministic parsers and real probes.
 
 mod bars;
+mod financials;
 mod minute;
+mod options;
 
 use encoding_rs::GB18030;
 use magic_market_core::{
@@ -46,6 +48,10 @@ pub enum SinaError {
 /// Bounded byte transport used by the adapter and deterministic fixtures.
 pub trait SnapshotTransport: Send + Sync {
     fn get(&self, url: &str) -> Result<Vec<u8>, SinaError>;
+
+    fn get_with_referer(&self, url: &str, _referer: &str) -> Result<Vec<u8>, SinaError> {
+        self.get(url)
+    }
 }
 
 #[derive(Clone)]
@@ -69,19 +75,22 @@ impl HttpsTransport {
                 .build(),
         })
     }
-}
 
-impl SnapshotTransport for HttpsTransport {
-    fn get(&self, url: &str) -> Result<Vec<u8>, SinaError> {
+    fn request(&self, url: &str, referer: &str) -> Result<Vec<u8>, SinaError> {
         if !url.starts_with("https://") {
             return Err(SinaError::InvalidRequest(
                 "Sina endpoint must use HTTPS".into(),
             ));
         }
+        if !referer.starts_with("https://") {
+            return Err(SinaError::InvalidRequest(
+                "Sina Referer must use HTTPS".into(),
+            ));
+        }
         let response = self
             .agent
             .get(url)
-            .set("Referer", "https://finance.sina.com.cn/")
+            .set("Referer", referer)
             .set("User-Agent", "magic-sina-rs/0.2")
             .call()
             .map_err(|error| SinaError::Transport(error.to_string()))?;
@@ -103,6 +112,16 @@ impl SnapshotTransport for HttpsTransport {
             )));
         }
         Ok(body)
+    }
+}
+
+impl SnapshotTransport for HttpsTransport {
+    fn get(&self, url: &str) -> Result<Vec<u8>, SinaError> {
+        self.request(url, "https://finance.sina.com.cn/")
+    }
+
+    fn get_with_referer(&self, url: &str, referer: &str) -> Result<Vec<u8>, SinaError> {
+        self.request(url, referer)
     }
 }
 
@@ -151,7 +170,7 @@ impl SinaClient {
             bars: true,
             minute: true,
             trades: false,
-            fundamentals: false,
+            fundamentals: true,
             corporate_actions: false,
             blocks: false,
             money_flow: false,

@@ -26,14 +26,14 @@ source exposes real fields or lacks an exact expiry.
 - Modify: `crates/magic-market-core/tests/options.rs`
 - Modify: `crates/magic-market-router/tests/intelligence_routing.rs`
 
-- [ ] Add RED tests for a source-known contract month with absent exact expiry
+- [x] Add RED tests for a source-known contract month with absent exact expiry
   and strike.
-- [ ] Add bid/ask quantities, strike, open/high/low/previous close, limits,
+- [x] Add bid/ask quantities, strike, open/high/low/previous close, limits,
   amount and source name to option quotes.
-- [ ] Add source name, volume, high/low, trade code, strike, last and theoretical
+- [x] Add source name, volume, high/low, trade code, strike, last and theoretical
   price to Greeks while retaining optional rho.
-- [ ] Keep checked serde and `SourcedRecord` evidence invariants.
-- [ ] Run focused Core and Router tests.
+- [x] Keep checked serde and `SourcedRecord` evidence invariants.
+- [x] Run focused Core and Router tests.
 
 ### Task 2: Implement Tencent market statistics test-first
 
@@ -43,17 +43,17 @@ source exposes real fields or lacks an exact expiry.
 - Modify: `crates/magic-tencent-rs/examples/live_probe.rs`
 - Modify: `crates/magic-tencent-rs/examples/load_probe.rs`
 
-- [ ] Add extended fixture records and RED tests for fields
+- [x] Add extended fixture records and RED tests for fields
   38/39/44/45/46/47/48/49/52 and CNY market-cap unit conversion.
-- [ ] Keep the existing base quote parser valid for responses ending at field
+- [x] Keep the existing base quote parser valid for responses ending at field
   37; reject truncated enrichment only from the enrichment operation.
-- [ ] Accept explicit equity/index/fund identities for market statistics without
+- [x] Accept explicit equity/index/fund identities for market statistics without
   weakening equity-only quote/order-book unit guarantees.
-- [ ] Implement `MarketStatisticsProvider` with exact cardinality, no prefix
+- [x] Implement `MarketStatisticsProvider` with exact cardinality, no prefix
   guessing, optional-field preservation and Tencent evidence.
-- [ ] Print every statistic for equity, index and ETF in `live_probe`; add a
+- [x] Print every statistic for equity, index and ETF in `live_probe`; add a
   bounded market-statistics load operation.
-- [ ] Run deterministic, live and conservative load probes.
+- [x] Run deterministic, live and conservative load probes.
 
 ### Task 3: Implement Sina financial statements test-first
 
@@ -65,17 +65,17 @@ source exposes real fields or lacks an exact expiry.
 - Modify: `crates/magic-sina-rs/examples/live_probe.rs`
 - Modify: `crates/magic-sina-rs/examples/load_probe.rs`
 
-- [ ] Add fixture tests for the corrected
+- [x] Add fixture tests for the corrected
   `result.data.report_list.<period>.data[]` shape.
-- [ ] Map balance/income/cash-flow requests to `fzb/lrb/llb` without exchange
+- [x] Map balance/income/cash-flow requests to `fzb/lrb/llb` without exchange
   guessing and bound period counts.
-- [ ] Parse every finite numeric line, retain the source label and use
+- [x] Parse every finite numeric line, retain the source label and use
   deterministic normalized keys without manufacturing units or dates.
-- [ ] Implement `FinancialStatements` with strict source response validation,
+- [x] Implement `FinancialStatements` with strict source response validation,
   evidence and truthful incomplete-quality issues.
-- [ ] Print all three statements in `live_probe`; add a bounded financial load
+- [x] Print all three statements in `live_probe`; add a bounded financial load
   operation.
-- [ ] Run deterministic and real endpoint probes.
+- [x] Run deterministic and real endpoint probes.
 
 ### Task 4: Implement Sina ETF options test-first
 
@@ -86,18 +86,18 @@ source exposes real fields or lacks an exact expiry.
 - Modify: `crates/magic-sina-rs/examples/live_probe.rs`
 - Modify: `crates/magic-sina-rs/examples/load_probe.rs`
 
-- [ ] Add fixtures for month discovery, call/put code lists, 43-field T-quotes
+- [x] Add fixtures for month discovery, call/put code lists, 43-field T-quotes
   and 16-field Greeks with exactly three structural blank slots.
-- [ ] Support the verified ETF underlyings through an explicit code/category
+- [x] Support the verified ETF underlyings through an explicit code/category
   table and reject unknown assets.
-- [ ] Preserve source contract month where exact expiry is absent and fetch
+- [x] Preserve source contract month where exact expiry is absent and fetch
   quote/Greeks only for explicitly requested bounded code lists.
-- [ ] Add a per-request Referer transport method while retaining compatibility
+- [x] Add a per-request Referer transport method while retaining compatibility
   with injected fixture transports.
-- [ ] Implement `OptionData`, full T-quote/Greeks parsing and source evidence.
-- [ ] Print discovery, quote and Greeks values in `live_probe`; add conservative
+- [x] Implement `OptionData`, full T-quote/Greeks parsing and source evidence.
+- [x] Print discovery, quote and Greeks values in `live_probe`; add conservative
   options load operations.
-- [ ] Run deterministic and real endpoint probes.
+- [x] Run deterministic and real endpoint probes.
 
 ### Task 5: Slice B documentation and release gate
 
@@ -108,9 +108,9 @@ source exposes real fields or lacks an exact expiry.
 - Modify: `.planning/2026-07-23-a-stock-data-parity/task_plan.md`
 - Modify: `.planning/2026-07-23-a-stock-data-parity/progress.md`
 
-- [ ] Document exact supported fields, units, endpoint stability and remaining
+- [x] Document exact supported fields, units, endpoint stability and remaining
   reference-project Provider gaps.
-- [ ] Run format, Rust 1.83 locked all-target check and all workspace tests.
-- [ ] Run strict workspace Clippy, rustdoc, doctests, docs links and compliance.
+- [x] Run format, Rust 1.83 locked all-target check and all workspace tests.
+- [x] Run strict workspace Clippy, rustdoc, doctests, docs links and compliance.
 - [ ] Review the complete diff, verify the user's requirements file is unstaged,
   commit Slice B, push `main` and record the commit.

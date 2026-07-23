@@ -1,7 +1,7 @@
 use magic_market_core::{
-    AssetClass, BarInterval, BarsRequest, Exchange, HistoricalBars, InstrumentId, MinuteData,
-    MinuteDataRequest, Money, OrderBooks, RealtimeQuotes, SecurityMetadataProvider, Trades,
-    TradesRequest,
+    AssetClass, BarInterval, BarsRequest, Exchange, HistoricalBars, InstrumentId,
+    MarketStatisticsProvider, MinuteData, MinuteDataRequest, Money, OrderBooks, RealtimeQuotes,
+    SecurityMetadataProvider, Trades, TradesRequest,
 };
 use magic_tencent_rs::TencentClient;
 use std::error::Error;
@@ -19,6 +19,22 @@ fn parse_instrument(value: &str) -> Result<InstrumentId, Box<dyn Error>> {
         _ => return Err("exchange suffix must be SH, SZ or BJ".into()),
     };
     Ok(InstrumentId::new(exchange, code, AssetClass::Equity)?)
+}
+
+fn parse_statistics_instrument(value: &str) -> Result<InstrumentId, Box<dyn Error>> {
+    let (identity, asset_class) = value
+        .trim()
+        .rsplit_once(':')
+        .ok_or("statistics identity must use CODE.EXCHANGE:ASSET")?;
+    let mut instrument = parse_instrument(identity)?;
+    let asset_class = match asset_class.to_ascii_uppercase().as_str() {
+        "EQUITY" => AssetClass::Equity,
+        "INDEX" => AssetClass::Index,
+        "FUND" | "ETF" => AssetClass::Fund,
+        _ => return Err("statistics asset must be EQUITY, INDEX, FUND or ETF".into()),
+    };
+    instrument = InstrumentId::new(instrument.exchange(), instrument.code(), asset_class)?;
+    Ok(instrument)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -39,6 +55,44 @@ fn main() -> Result<(), Box<dyn Error>> {
         "provider=tencent-web capabilities={:?}",
         TencentClient::capabilities()
     );
+    let statistics_codes = std::env::var("MAGIC_TENCENT_STATISTICS_CODES")
+        .unwrap_or_else(|_| "600396.SH:EQUITY,000001.SH:INDEX,510050.SH:ETF".to_owned());
+    let statistics_instruments = statistics_codes
+        .split(',')
+        .map(parse_statistics_instrument)
+        .collect::<Result<Vec<_>, _>>()?;
+    let statistics = client.market_statistics(&statistics_instruments)?;
+    if statistics.records().len() != statistics_instruments.len() {
+        return Err("market-statistics response cardinality mismatch".into());
+    }
+    println!(
+        "market_statistics count={} provenance={:?} quality={:?}",
+        statistics.records().len(),
+        statistics.provenance(),
+        statistics.quality()
+    );
+    for record in statistics.records() {
+        println!(
+            "market_stat code={} exchange={:?} asset_class={:?} turnover_percent={:?} trailing_pe={:?} static_pe={:?} pb={:?} total_market_cap_yuan={:?} floating_market_cap_yuan={:?} upper_limit={:?} lower_limit={:?} volume_ratio={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+            record.instrument().code(),
+            record.instrument().exchange(),
+            record.instrument().asset_class(),
+            record.turnover_rate().map(|value| value.get()),
+            record.trailing_pe().map(|value| value.get()),
+            record.static_pe().map(|value| value.get()),
+            record.pb().map(|value| value.get()),
+            record.total_market_cap().map(Money::get),
+            record.floating_market_cap().map(Money::get),
+            record.upper_limit().map(|value| value.get()),
+            record.lower_limit().map(|value| value.get()),
+            record.volume_ratio().map(|value| value.get()),
+            record.evidence().source_at(),
+            record.evidence().observed_at(),
+            record.evidence().provider(),
+            record.evidence().batch_id()
+        );
+    }
+
     let quotes = client.realtime_quotes(&instruments)?;
     if quotes.records().len() != instruments.len() {
         return Err("quote response cardinality mismatch".into());

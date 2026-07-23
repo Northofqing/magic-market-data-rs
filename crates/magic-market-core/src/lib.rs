@@ -41,7 +41,8 @@ pub use limit_pool::{
     LimitPoolCapabilities, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools,
 };
 pub use options::{
-    OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind, OptionQuote,
+    ContractMonth, OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind,
+    OptionQuote,
 };
 pub use provenance::Provenance;
 pub use provider::{

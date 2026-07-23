@@ -11,9 +11,10 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 > 当前状态（2026-07-23）：TDX、Tencent、Sina 和 TDX→Tencent 路由已有真实网络验收；
 > Choice/EMQuant 已完成设备激活和 API 登录，日线与日级资金流已取得真实记录；
 > Quote、盘口和分钟线仍返回 `10001012/EQERR_ACCESS_INSUFFICIENCE`，需补充对应产品
-> 或字段权限后才能上线这些数据族。研报、信号、资金面、新闻、公告、打板、期权和
-> 舆情互动的 Provider 无关契约及纯分析层已完成；对应网页 Provider 尚在后续分片
-> 接入，不能把“有契约”写成“已取得真实数据”。
+> 或字段权限后才能上线这些数据族。Tencent 行情统计、Sina 财务三表和 510050 ETF
+> 期权已经完成真实网络验收；Sina 另外三个 ETF 期权标的已实现待逐一实测。研报、
+> 信号、资金面、新闻、公告、打板和舆情互动仍只有 Provider 无关契约及纯分析层，
+> 对应网页 Provider 尚在后续分片接入。
 
 ## 项目定位
 
@@ -40,8 +41,8 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | `magic-market-core` | Provider 无关的证券标识、请求、值对象、标准化记录、批次证据和 Provider traits | 不联网，不选择数据源 |
 | `magic-market-router` | 第一个合格批次的顺序切源、错误分类、质量门、来源时间门和完整 attempt trace | 不缓存、不跨源合并、不维护熔断状态 |
 | `magic-tdx-rs` | 纯 Rust TDX 协议、同步/异步/直连/Smart 客户端、服务门面和本地文件读取器 | MoneyFlow 与集合竞价显式不支持 |
-| `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖已验证的沪深京基础行情 | 公共网页接口，无正式 SLA |
-| `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖已验证的沪深京 Quote/五档和指定 K 线 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
+| `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
+| `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖基础行情、沪深财务三表和沪市 ETF 期权 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
 | `magic-emquant-rs` | 通过独立 C++ bridge 调用官方 Choice/EMQuant SDK 的只读适配层 | 厂商 SDK、授权和激活文件不进入仓库 |
 | `magic-market-analysis` | 基于标准化记录的均线、估值、涨停情绪和跨源诊断 | 纯函数、不联网；主观估值锚点必须由调用方配置 |
 
@@ -96,20 +97,20 @@ Core 当前定义八类统一数据族：
 ### 扩展数据与分析契约
 
 参考 [a-stock-data](https://github.com/simonlin1212/a-stock-data) 的产品能力分层后，
-Core 已增加以下 Provider 无关领域。这里的状态只表示 Rust 类型、受检
-反序列化、Provider trait 和 Router 适配器已经通过确定性测试，不表示相应公开网页
-端点已经实盘连通。
+Core 已增加以下 Provider 无关领域。表中“实盘”表示对应 Provider 已通过真实网络
+probe；其余“契约/路由完成”只表示 Rust 类型、受检反序列化、Provider trait 和
+Router 适配器已经通过确定性测试。
 
 | 领域 | 主要记录 | 当前状态 |
 | --- | --- | --- |
-| 行情增强 | `MarketStatistics`、`TechnicalBar` | 契约/路由完成；Tencent/Baidu Provider 待接 |
+| 行情增强 | `MarketStatistics`、`TechnicalBar` | Tencent 股票/指数/ETF 统计实盘；Baidu 技术 K 线待接 |
 | 研报与一致预期 | `ResearchReport`、`ConsensusSnapshot`、`SemanticSearchDocument` | 契约/路由完成；Eastmoney/同花顺/iwencai 待接 |
 | 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | 契约/路由完成；Provider 待接 |
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | 契约/路由完成；Provider 待接 |
 | 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | 契约/路由完成；Eastmoney/CLS/CNInfo 待接 |
-| 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | 契约/路由完成；Sina/TDX 映射待接 |
+| 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | Sina 沪深三表实盘；SecurityProfile/TDX 映射待接 |
 | 打板 | 四类 `LimitPoolEntry` | 原始契约/路由完成；Eastmoney/同花顺待接 |
-| ETF 期权 | `OptionContract`、`OptionQuote`、`OptionGreeks` | 契约/路由完成；Sina Provider 待接 |
+| ETF 期权 | `OptionContract`、`OptionQuote`、`OptionGreeks` | Sina 510050 实盘；510300/588000/510500 已实现待实测 |
 
 所有扩展记录使用受检 `SourceEvidence`；非空文本、HTTPS URL、Gregorian 日期、
 有限数和正排名都无法通过反序列化绕过。人气榜与 Quote、价格与一致预期等非原子
@@ -139,9 +140,11 @@ Core 已增加以下 Provider 无关领域。这里的状态只表示 Rust 类�
 | 分时 | 实盘：当日与按日期历史 | 实盘：当日与历史；市场边界见专项文档 | 部分实盘：最新交易日，由 1 分钟线累计；历史日期不支持 | 未接入独立 `MinuteData`；分钟 K 见上一行 |
 | 逐笔 | 实盘：当日与历史，自动翻页 | 部分实盘：沪深当日；历史与北京不支持 | 不支持 | 不支持 |
 | 五档盘口 | 实盘：沪深京 | 实盘：沪深京 | 实盘：沪深京；真实空侧标部分不可用 | 已实现/权限不足：查询返回 `10001012` |
+| 行情统计 | 不支持统一契约 | 实盘：股票/指数/ETF 的换手、PE/PB、市值、涨跌停价、量比 | 不支持 | 当前未接入 |
 | 资金流 | 不支持 | 不支持 | 不支持 | 实盘：日级大中小单净流入 |
 | 证券列表/元数据 | 沪深全市场列表与部分标准化元数据；北京列表端点不支持 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 未验证，当前 capability 关闭 |
-| 财务数据 | 实盘：实时 34 项、报告包和 45 个命名指标 | 不支持 | 不支持 | 当前未接入统一财务契约 |
+| 财务数据 | 实盘：实时 34 项、报告包和 45 个命名指标 | 不支持 | 实盘：沪深资产负债表/利润表/现金流量表，各最近 8 期 | 当前未接入统一财务契约 |
+| ETF 期权 | 不支持 | 不支持 | 510050 实盘；另 3 个沪市 ETF 已实现待实测 | 不支持 |
 | 除权除息 | 实盘：XDXR 分红/送股/配股/缩股历史 | 不支持 | 不支持 | 当前未接入 |
 | 板块/F10/基金 | 实盘：行业/概念/指数、F10、基金数据 | 不支持 | 不支持 | 当前未接入 |
 | 开盘集合竞价 | 不支持 | 不支持 | 不支持 | 不支持：完整字段集尚未证明 |
@@ -169,26 +172,42 @@ Tencent 是基础行情补充源。它不读取桌面客户端、Cookie、账户
 公开网页行情端点。Quote 提供可验证的 `YYYYMMDDHHMMSS` 源时间，但网页接口没有
 正式版本合同或 SLA，不能单独承担生产主链路。
 
+同一快照的扩展字段已标准化为 `MarketStatistics`：股票、指数和 ETF 的换手率、
+动态/静态 PE、PB、总/流通市值、涨跌停价和量比。市值从源端“亿元”转换为 CNY 元；
+空字段保持 `None`，指数 `-1` 涨跌停占位不会冒充价格。
+
 2026-07-23 的真实上限短压测为 100 请求、8 并发、100/100 成功、3,700 条记录、
 56.49 req/s、P50 100.077 ms、P95 219.676 ms、最大 251.169 ms。这只是短时诊断，
 不是允许调用频率或厂商性能承诺。
+
+新增统计专项短压测为 12 请求/3 并发、12/12 成功、36 条记录、28.76 req/s、
+P50 66.801 ms、P95 181.955 ms、最大 192.500 ms。
 
 市场、周期、单位、盘后分钟点和端点边界见
 [Tencent 接入合同](docs/integrations/tencent-web.md)。
 
 ### Sina
 
-Sina 是第二个公共网页基础行情补充源，只访问 `hq.sinajs.cn` 和
-`quotes.sina.cn`。快照按 GB18030 严格解码，K 线按 JSON 严格校验。源端数量是
-“股”，适配边界统一除以 100 输出“手”；日线官方响应没有成交额时保持 `None`。
+Sina 是第二个公共网页补充源，只访问 `hq.sinajs.cn`、`quotes.sina.cn` 和
+`stock.finance.sina.com.cn`。快照按 GB18030 严格解码，K 线和财务响应按 JSON
+严格校验。源端数量是“股”，适配边界统一除以 100 输出“手”；日线官方响应没有
+成交额时保持 `None`。
 
 2026-07-23 的真实 probe 覆盖华电辽能、平安银行和太湖远大，验证了三市场 Quote、
 五档、1/5/15/30/60 分钟线、日线、北京 5 分钟/日线和最新交易日分时。华电辽能
 涨停时卖侧真实为空，盘口正确标记部分不可用。
 
+同一完整 probe 还取得华电辽能资产负债表、利润表和现金流量表各最近 8 期，并打印
+每个稳定英文源字段、中文标签、值、币种、报告期和公告日。ETF 期权实盘发现 510050
+全部可用月份和认购/认沽合约，并取得两个合约的最优买卖一档 T 型报价、
+Delta/Gamma/Theta/Vega、IV 和理论价格；`rho` 因源端不提供保持 `None`。
+
 最终复测的默认 20 请求/4 并发 mixed 短压测 20/20 成功，共 1,477 条记录、
 11.69 req/s、P50 207.786 ms、P95 645.489 ms、最大 788.549 ms。这不是 SLA 或
 推荐调用频率。
+
+财务专项 6 请求/2 并发为 6/6 成功、48 个报告期、18.19 req/s；期权专项 6 请求/
+2 并发为 6/6 成功、24 条报价/Greeks 记录、22.30 req/s。它们同样只是有界诊断。
 
 字段、单位、最新分时推导、显式不支持和部署边界见
 [Sina 接入合同](docs/integrations/sina-web.md)。
@@ -276,6 +295,7 @@ cargo run -p magic-tdx-rs --example live_probe --release
 
 ```bash
 MAGIC_TENCENT_CODES=600396.SH,000001.SZ,920118.BJ \
+MAGIC_TENCENT_STATISTICS_CODES=600396.SH:EQUITY,000001.SH:INDEX,510050.SH:ETF \
 MAGIC_TENCENT_HISTORY_DATE=2026-07-22 \
 cargo run -p magic-tencent-rs --example live_probe --release --locked --offline
 ```
@@ -292,19 +312,23 @@ MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
 cargo run -p magic-tencent-rs --example load_probe --release --locked --offline
 ```
 
-`MAGIC_TENCENT_LOAD_OPERATION` 可选 `quotes`、`bars`、`minute`、`trades` 或
-`mixed`。程序在联网前强制最多 100 请求、8 个线程，防止把诊断工具误用成无限压测。
+`MAGIC_TENCENT_LOAD_OPERATION` 可选 `quotes`、`bars`、`minute`、`trades`、
+`statistics` 或 `mixed`。程序在联网前强制最多 100 请求、8 个线程，防止把诊断
+工具误用成无限压测。
 
 ### Sina 功能 probe
 
 ```bash
 MAGIC_SINA_CODES=600396.SH,000001.SZ,920118.BJ \
+MAGIC_SINA_OPTION_UNDERLYING=510050 \
+MAGIC_SINA_OPTION_SAMPLE_CONTRACTS=2 \
 cargo run -p magic-sina-rs --example live_probe --release --locked --offline
 ```
 
 默认超时 10 秒，可由 `MAGIC_SINA_TIMEOUT_SECS` 调整。probe 打印三市场 Quote、
 全部五档、部分元数据、六个支持 K 线周期、北京 5 分钟/日线和每个证券的最新交易日
-分时；日线成交额缺失和涨跌停盘口空侧保持真实缺失。
+分时、沪深财务三表、ETF 期权合约、T 型报价和 Greeks/IV；日线成交额缺失、
+涨跌停盘口空侧和源端未提供的 rho 保持真实缺失。
 
 ### Sina 有界并发 probe
 
@@ -315,8 +339,10 @@ MAGIC_SINA_LOAD_CONCURRENCY=4 \
 cargo run -p magic-sina-rs --example load_probe --release --locked --offline
 ```
 
-operation 可选 `quotes`、`bars`、`minute` 或 `mixed`。程序在联网前强制最多
-40 请求、4 个线程。
+operation 可选 `quotes`、`bars`、`minute`、`financial`、`options` 或 `mixed`。
+`options` 默认在同次运行开始时发现当前合约并选择
+`MAGIC_SINA_OPTION_SAMPLE_CONTRACTS` 个样本；也可用
+`MAGIC_SINA_OPTION_CONTRACTS` 显式覆盖。程序在联网前强制最多 40 请求、4 个线程。
 
 ### TDX→Tencent 路由 probe
 
@@ -476,7 +502,7 @@ Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架�
 | Core / Router | macOS、Linux、Windows | 无 |
 | TDX | macOS、Linux、Windows | 行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` |
 | Tencent | macOS、Linux、Windows | `qt.gtimg.cn`、`web.ifzq.gtimg.cn`、`ifzq.gtimg.cn`、`stock.gtimg.cn` 的 HTTPS |
-| Sina | macOS、Linux、Windows | `hq.sinajs.cn`、`quotes.sina.cn` 的 HTTPS |
+| Sina | macOS、Linux、Windows | `hq.sinajs.cn`、`quotes.sina.cn`、`stock.finance.sina.com.cn` 的 HTTPS |
 | 当前 EMQuant bridge | x86_64 macOS | 厂商加密服务器列表定义的目标；本机官方 SDK |
 
 TDX SmartClient 需要服务账号拥有独立可写目录来保存服务器健康缓存。TDX 财务包
@@ -525,10 +551,10 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | --- | --- | --- |
 | Rust 1.83 全工作区门禁 | 通过 | check、全部测试、严格 Clippy、rustdoc/doctest、链接和合规 |
 | TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
-| Tencent live probe | 通过 | 沪深京 Quote/五档、已声明 K 线和分时边界、沪深当日逐笔 |
-| Tencent load probe | 通过 | 100 请求/8 并发，100/100 成功；仅为有界短样本 |
-| Sina live probe | 通过 | 沪深京 Quote/五档、六类 K 线、最新交易日分时和部分元数据 |
-| Sina load probe | 通过 | 20 请求/4 并发，20/20 成功；仅为有界短样本 |
+| Tencent live probe | 通过 | 沪深京基础行情；股票/指数/ETF 行情统计；沪深当日逐笔 |
+| Tencent load probe | 通过 | mixed 100/8 为 100/100；统计 12/3 为 12/12 |
+| Sina live probe | 通过 | 基础行情、三类财务报表各 8 期、510050 合约/T 型报价/Greeks/IV |
+| Sina load probe | 通过 | mixed 20/4、财务 6/2、510050 期权 6/2 均零失败 |
 | Router live probe | 通过 | TDX 质量拒绝被保留，Tencent 合格 Quote 被选中 |
 | EMQuant live probe | 部分通过 | 登录成功；真实日线、日级资金流通过；Quote/盘口/分钟返回 `10001012`，完整 probe 按设计退出非零 |
 | Release package | 每个提交独立构建 | 七个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
@@ -542,8 +568,8 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | --- | --- |
 | [部署手册](docs/DEPLOYMENT.md) | 可重复构建、平台、网络、EMQuant runtime、健康检查、回滚与升级 |
 | [TDX 能力矩阵](docs/TDX_CAPABILITIES.md) | 全数据族、北京市场、证据和显式不支持边界 |
-| [Tencent 接入合同](docs/integrations/tencent-web.md) | 端点、字段、单位、市场/周期边界与负载结果 |
-| [Sina 接入合同](docs/integrations/sina-web.md) | 端点、GB18030 字段、股/手单位、周期、分时与负载结果 |
+| [Tencent 接入合同](docs/integrations/tencent-web.md) | 端点、统计字段/单位、市场/周期边界与负载结果 |
+| [Sina 接入合同](docs/integrations/sina-web.md) | 基础行情、财务三表、ETF 期权、字段与负载结果 |
 | [Choice/EMQuant 接入](docs/integrations/eastmoney-emquant.md) | SDK bridge、激活、能力映射和当前权限状态 |
 | [多数据源路由](docs/MULTI_PROVIDER_ROUTING.md) | 错误分类、接受政策、attempt trace 和真实切源 |
 | [性能结果](docs/PERFORMANCE_RESULTS.md) | 可复现性能证据及适用范围 |

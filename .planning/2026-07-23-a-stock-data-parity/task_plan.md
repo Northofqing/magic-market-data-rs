@@ -61,6 +61,10 @@ Phase 4
 - Reuse current clients only where source semantics genuinely match.
 - Execute
   `docs/superpowers/plans/2026-07-23-tencent-sina-intelligence.md` as Slice B.
+- Slice B Task 1 (Core option-contract widening) is complete.
+- Slice B Task 2 (Tencent market statistics) is complete.
+- Slice B Task 3 (Sina financial statements) is complete.
+- Slice B Task 4 (Sina ETF options) is complete.
 - Then implement Eastmoney broad intelligence families, CNInfo/Tonghuashun,
   CLS/Baidu/Iwencai and exchange announcement sources in separate reviewed
   slices.

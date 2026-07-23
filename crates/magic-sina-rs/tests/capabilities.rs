@@ -1,5 +1,6 @@
 use magic_market_core::{
-    HistoricalBars, MinuteData, OrderBooks, RealtimeQuotes, SecurityMetadataProvider,
+    FinancialStatements, HistoricalBars, MinuteData, OptionData, OrderBooks, RealtimeQuotes,
+    SecurityMetadataProvider,
 };
 use magic_sina_rs::{SinaClient, SinaError};
 
@@ -10,7 +11,9 @@ fn public_client_implements_every_advertised_contract() {
             + HistoricalBars<Error = SinaError>
             + MinuteData<Error = SinaError>
             + OrderBooks<Error = SinaError>
-            + SecurityMetadataProvider<Error = SinaError>,
+            + SecurityMetadataProvider<Error = SinaError>
+            + FinancialStatements<Error = SinaError>
+            + OptionData<Error = SinaError>,
     >() {
     }
 
@@ -22,10 +25,16 @@ fn public_client_implements_every_advertised_contract() {
             && capabilities.minute
             && capabilities.order_book
             && capabilities.security_metadata
+            && capabilities.fundamentals
+    );
+    let option_capabilities = SinaClient::option_capabilities();
+    assert!(
+        option_capabilities.contract_discovery
+            && option_capabilities.quotes
+            && option_capabilities.greeks
     );
     assert!(
         !capabilities.trades
-            && !capabilities.fundamentals
             && !capabilities.corporate_actions
             && !capabilities.blocks
             && !capabilities.money_flow

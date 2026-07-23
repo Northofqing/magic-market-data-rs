@@ -21,6 +21,7 @@
 | `MinuteData` | 当日与按日期历史 | 当日及历史端点已验证 | 累计量；累计额缺失时保持 `None` |
 | `Trades` | 仅当日、自动翻页 | 不支持 | 最多 2,000 条；源端无已验证日期选择器 |
 | `SecurityMetadataProvider` | 部分 | 部分 | 名称/ST 来自快照，板块派生；上市日和涨跌停规则缺失 |
+| `MarketStatisticsProvider` | 股票/指数/ETF 实盘 | 仅股票身份可请求 | 换手、PE/PB、市值、涨跌停价、量比；需完整 53 字段 |
 | 财务、除权、板块 | 不支持 | 不支持 | 当前端点没有可审计合同 |
 | 资金流、集合竞价 | 不支持 | 不支持 | 不从 Quote、盘口或逐笔推测 |
 
@@ -60,6 +61,11 @@ Quote 源响应是 GBK 编码、`~` 分隔的 JavaScript 赋值行。已验证�
 | 30 | `YYYYMMDDHHMMSS` | ISO 8601 中国市场时间（`+08:00`） |
 | 32/33/34 | 涨跌幅、最高、最低 | 百分比 / CNY |
 | 35 | `price/volume/amount` | 第三项按 CNY 元输出 |
+| 38/39 | 换手率/动态 PE | 百分比 / 有限数；空值保持 `None` |
+| 44/45 | 总市值/流通市值 | 源端亿元乘 `100,000,000` 输出 CNY 元 |
+| 46 | PB | 有限数；源端显式零保留为零 |
+| 47/48 | 涨停价/跌停价 | 正 CNY 价格；指数 `-1` 和源端 `0` 占位转 `None` |
+| 49/52 | 量比/静态 PE | 有限数；空值保持 `None` |
 
 `Quantity` 本身不携带单位，所以 Quote、盘口、K 线、分时和逐笔的数量均按源端
 “手”解释；逐笔响应的成交额只用于校验 `price × lots × 100`，不伪造 Core 中没有
@@ -83,8 +89,9 @@ Quote 源响应是 GBK 编码、`~` 分隔的 JavaScript 赋值行。已验证�
 cargo test -p magic-tencent-rs --all-targets --locked --offline
 ```
 
-真实探针默认查询三市场样本，打印 Quote、五档、元数据、各周期 K 线、当前/历史
-分时和当前逐笔的全部标准化字段：
+真实探针默认查询三市场基础行情，并查询华电辽能、上证指数和 510050 ETF 的行情
+统计，打印 Quote、五档、元数据、统计、各周期 K 线、当前/历史分时和当前逐笔的
+全部标准化字段：
 
 ```bash
 cargo run -p magic-tencent-rs --example live_probe --release --locked --offline
@@ -92,11 +99,13 @@ cargo run -p magic-tencent-rs --example live_probe --release --locked --offline
 
 ```text
 MAGIC_TENCENT_CODES=600396.SH,000001.SZ,920118.BJ
+MAGIC_TENCENT_STATISTICS_CODES=600396.SH:EQUITY,000001.SH:INDEX,510050.SH:ETF
 MAGIC_TENCENT_HISTORY_DATE=2026-07-22
 MAGIC_TENCENT_TIMEOUT_SECS=10
 ```
 
-并发探针支持 `quotes`、`bars`、`minute`、`trades` 和轮转四类请求的 `mixed`：
+并发探针支持 `quotes`、`bars`、`minute`、`trades`、`statistics` 和轮转五类请求
+的 `mixed`：
 
 ```bash
 cargo run -p magic-tencent-rs --example load_probe --release --locked --offline
@@ -112,6 +121,9 @@ MAGIC_TENCENT_LOAD_CONCURRENCY=4
 真实 `mixed` 上限探针为 100 请求/8 并发，100/100 成功、3,700 条记录、56.49
 req/s、P50 100.077 ms、P95 219.676 ms、最大 251.169 ms。这个短样本不是厂商
 SLA，也不是可持续频率建议；生产调用必须有自己的限频、熔断和授权策略。
+
+同日 `statistics` 专项探针为 12 请求/3 并发，12/12 成功、36 条记录、28.76
+req/s、P50 66.801 ms、P95 181.955 ms、最大 192.500 ms。
 
 盘前当前价为零时，统一 Quote 无法构造正价格，命令会显式失败；涨跌停、停牌等
 导致盘口一侧缺失时，记录保留已有档位并标为 `Unavailable`。上层切源时必须保留
