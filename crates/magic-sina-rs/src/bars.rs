@@ -52,6 +52,18 @@ fn bar_source(interval: BarInterval) -> Result<BarSource, SinaError> {
     })
 }
 
+pub(crate) fn kline_url(
+    symbol: &str,
+    interval: BarInterval,
+    limit: u16,
+) -> Result<String, SinaError> {
+    let source = bar_source(interval)?;
+    Ok(format!(
+        "{KLINE_ENDPOINT}?symbol={symbol}&scale={}&ma=no&datalen={limit}",
+        source.scale
+    ))
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SourceBar {
     pub(crate) bar_time: String,
@@ -173,13 +185,22 @@ pub(crate) fn parse_source_rows(
             }
             None => None,
         };
+        let open = positive_number(value_text(object, "open")?, "open")?;
+        let high = positive_number(value_text(object, "high")?, "high")?;
+        let low = positive_number(value_text(object, "low")?, "low")?;
+        let close = positive_number(value_text(object, "close")?, "close")?;
+        if low > open.min(close) || high < open.max(close) || low > high {
+            return Err(SinaError::Protocol(
+                "bar OHLC values have an inconsistent range".into(),
+            ));
+        }
         parsed.push(SourceBar {
             bar_time: bar_time.clone(),
             source_at,
-            open: positive_number(value_text(object, "open")?, "open")?,
-            high: positive_number(value_text(object, "high")?, "high")?,
-            low: positive_number(value_text(object, "low")?, "low")?,
-            close: positive_number(value_text(object, "close")?, "close")?,
+            open,
+            high,
+            low,
+            close,
             volume_shares: nonnegative_number(value_text(object, "volume")?, "volume")?,
             amount_yuan,
         });
@@ -246,12 +267,7 @@ impl HistoricalBars for SinaClient {
         let symbol = validate_instruments(std::slice::from_ref(request.instrument()))?
             .pop()
             .ok_or_else(|| SinaError::InvalidRequest("bar instrument is missing".into()))?;
-        let source = bar_source(request.interval())?;
-        let url = format!(
-            "{KLINE_ENDPOINT}?symbol={symbol}&scale={}&ma=no&datalen={}",
-            source.scale,
-            request.limit()
-        );
+        let url = kline_url(&symbol, request.interval(), request.limit())?;
         let bytes = self.transport.get(&url)?;
         let observed_at = now()?;
         parse_bars_response(

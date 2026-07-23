@@ -33,3 +33,7 @@
   periods, with 800-row limits, order/duplicate/time/OHLC checks, CNY amounts,
   share-to-lot conversion and explicit unsupported range/week/month/year
   requests. All 16 current crate/contract tests pass.
+- Implemented current `MinuteData` by selecting the latest date from a bounded
+  300-row one-minute window and accumulating source volume/amount with overflow
+  checks. Historical dates fail before transport. All 19 crate/contract tests
+  pass on Rust 1.83.

@@ -6,13 +6,13 @@
 //! deterministic parsers and real probes.
 
 mod bars;
+mod minute;
 
 use encoding_rs::GB18030;
 use magic_market_core::{
     AssetClass, Board, BookLevel, Capabilities, DataBatch, DataStatus, Exchange, InstrumentId,
-    MinuteData, MinuteDataRequest, MinutePoint, Money, OrderBook, OrderBooks, Price,
-    PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
-    SecurityMetadata, SecurityMetadataProvider,
+    Money, OrderBook, OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio,
+    RatioUnit, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider,
 };
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -555,10 +555,6 @@ fn batch_provenance(
     Ok(provenance)
 }
 
-fn pending() -> SinaError {
-    SinaError::Unsupported("implementation is not yet connected".into())
-}
-
 impl RealtimeQuotes for SinaClient {
     type Quote = Quote;
     type Error = SinaError;
@@ -799,17 +795,6 @@ impl SecurityMetadataProvider for SinaClient {
         }
         let provenance = batch_provenance("security-metadata", &observed_at, &snapshots)?;
         Ok(DataBatch::best_effort(records, provenance, issues)?)
-    }
-}
-
-impl MinuteData for SinaClient {
-    type Error = SinaError;
-
-    fn minute_data(
-        &self,
-        _request: &MinuteDataRequest,
-    ) -> Result<DataBatch<MinutePoint>, Self::Error> {
-        Err(pending())
     }
 }
 
