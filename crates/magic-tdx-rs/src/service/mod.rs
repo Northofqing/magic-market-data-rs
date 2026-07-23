@@ -3,6 +3,7 @@ pub mod blocks;
 pub mod finance;
 pub mod funds;
 pub mod profile;
+use crate::adapter::{order_book_pairs, ordered_order_book_quotes};
 use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
 use crate::{AsyncTdxHqClient, SecurityBar, SecurityQuote, TdxError, TdxSmartClient};
 pub use blocks::BlockService;
@@ -26,13 +27,13 @@ fn market(id: &InstrumentId) -> Result<u8, TdxError> {
     }
 }
 
-fn fetched_epoch() -> String {
+fn fetched_epoch() -> Result<String, TdxError> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or_else(
-            |_| "unknown".to_owned(),
-            |value| value.as_secs().to_string(),
-        )
+        .map(|value| value.as_secs().to_string())
+        .map_err(|error| {
+            TdxError::InvalidData(format!("system clock is before UNIX epoch: {error}"))
+        })
 }
 
 /// High-level TDX service using SmartClient failover semantics.
@@ -81,32 +82,27 @@ impl AsyncTdxService {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<OrderBook>, TdxError> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
+        let pairs = order_book_pairs(instruments, "TDX async")?;
         let quotes = self.client.get_security_quotes(&pairs).await?;
-        if quotes.len() != instruments.len() {
-            return Err(TdxError::InvalidData(
-                "TDX async order-book cardinality mismatch".into(),
-            ));
-        }
+        let ordered = ordered_order_book_quotes(instruments, quotes, "TDX async")?;
         let level = |price: f64, quantity: f64| -> Result<BookLevel, TdxError> {
-            let price = if price > 0.0 {
-                Some(Price::new(price).map_err(|e| TdxError::InvalidData(e.to_string()))?)
-            } else {
-                None
-            };
-            let quantity = if quantity >= 0.0 {
-                Some(Quantity::new(quantity).map_err(|e| TdxError::InvalidData(e.to_string()))?)
-            } else {
-                None
-            };
-            Ok(BookLevel { price, quantity })
+            match (price, quantity) {
+                (price, quantity) if !price.is_finite() || !quantity.is_finite() => Err(
+                    TdxError::InvalidData("TDX order-book level must be finite".into()),
+                ),
+                (price, quantity) if price < 0.0 || quantity < 0.0 => Err(TdxError::InvalidData(
+                    "TDX order-book level must be non-negative".into(),
+                )),
+                (0.0, _) => Ok(BookLevel::unavailable()),
+                (price, quantity) => Ok(BookLevel::new(
+                    Some(Price::new(price)?),
+                    Some(Quantity::new(quantity)?),
+                )?),
+            }
         };
         let depth = |levels: &[BookLevel; 5]| -> Result<Option<Quantity>, TdxError> {
             let mut found = false;
-            let total = levels.iter().filter_map(|level| level.quantity).fold(
+            let total = levels.iter().filter_map(|level| level.quantity()).fold(
                 0.0,
                 |accumulator, quantity| {
                     found = true;
@@ -121,14 +117,11 @@ impl AsyncTdxService {
                 Ok(None)
             }
         };
-        let batch_source_at = quotes
-            .iter()
-            .find(|quote| !quote.servertime.is_empty())
-            .map(|quote| quote.servertime.clone());
-        let observed_at = fetched_epoch();
+        let observed_at = fetched_epoch()?;
         let batch_id = format!("tdx-async:{observed_at}:order-book");
-        let mut books = Vec::with_capacity(quotes.len());
-        for (id, quote) in instruments.iter().zip(quotes) {
+        let mut books = Vec::with_capacity(ordered.len());
+        let mut issues = Vec::new();
+        for (id, quote) in ordered {
             let bids = [
                 level(quote.bid1, quote.bid_vol1)?,
                 level(quote.bid2, quote.bid_vol2)?,
@@ -145,25 +138,36 @@ impl AsyncTdxService {
             ];
             let total_bid_quantity = depth(&bids)?;
             let total_ask_quantity = depth(&asks)?;
-            books.push(OrderBook {
-                instrument: id.clone(),
+            let levels_complete = bids
+                .iter()
+                .chain(&asks)
+                .all(|level| level.price().is_some());
+            if !levels_complete {
+                issues.push(format!(
+                    "{}: one or more normalized order-book fields unavailable",
+                    id.code()
+                ));
+            }
+            issues.push(format!(
+                "{}: TDX order-book source timestamp format is unverified",
+                id.code()
+            ));
+            books.push(OrderBook::new(
+                id.clone(),
                 bids,
                 asks,
                 total_bid_quantity,
                 total_ask_quantity,
-                status: DataStatus::Available,
-                source_at: (!quote.servertime.is_empty()).then_some(quote.servertime),
-                observed_at: observed_at.clone(),
-                provider: magic_market_core::ProviderId::Tdx,
-                batch_id: batch_id.clone(),
-            });
+                DataStatus::Unavailable,
+                None,
+                observed_at.clone(),
+                magic_market_core::ProviderId::Tdx,
+                batch_id.clone(),
+            )?);
         }
-        let mut provenance =
-            magic_market_core::Provenance::new("tdx-async", observed_at).with_batch_id(batch_id);
-        if let Some(source_at) = batch_source_at {
-            provenance = provenance.with_source_at(source_at);
-        }
-        Ok(DataBatch::strict(books, provenance))
+        let provenance = magic_market_core::Provenance::new("tdx-async", observed_at)?
+            .with_batch_id(batch_id)?;
+        Ok(DataBatch::best_effort(books, provenance, issues)?)
     }
     /// Fetches the server-declared number of securities.
     pub async fn security_count(&self, market: u8) -> Result<u16, TdxError> {

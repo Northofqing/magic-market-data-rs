@@ -35,6 +35,8 @@ pub enum EmQuantError {
     InvalidResponse(String),
     #[error("unsupported EMQuant capability: {0}")]
     Unsupported(String),
+    #[error("Core contract error: {0}")]
+    Core(#[from] magic_market_core::CoreError),
 }
 
 #[derive(Debug, Deserialize)]
@@ -320,27 +322,73 @@ fn net_money(
     }
 }
 
-fn source_timestamp(record: &BridgeRecord) -> Option<String> {
-    let time = record.values.get("TIME").and_then(|value| match value {
-        Value::String(value) => Some(value.clone()),
-        Value::Number(value) => Some(value.to_string()),
-        _ => None,
-    });
-    match (record.date.is_empty(), time) {
-        (false, Some(time)) => Some(format!("{} {}", record.date, time)),
-        (false, None) => Some(record.date.clone()),
-        (true, Some(time)) => Some(time),
-        (true, None) => None,
+fn valid_iso_date(value: &str) -> bool {
+    if value.len() != 10
+        || value.as_bytes()[4] != b'-'
+        || value.as_bytes()[7] != b'-'
+        || !value
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+    {
+        return false;
     }
+    let year: u16 = value[0..4].parse().unwrap_or(0);
+    let month: u8 = value[5..7].parse().unwrap_or(0);
+    let day: u8 = value[8..10].parse().unwrap_or(0);
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => 0,
+    };
+    year >= 1900 && day >= 1 && day <= max_day
 }
 
-fn observed_epoch() -> String {
+fn valid_clock_time(value: &str) -> bool {
+    if value.len() != 8
+        || value.as_bytes()[2] != b':'
+        || value.as_bytes()[5] != b':'
+        || !value
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| index == 2 || index == 5 || byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let hour: u8 = value[0..2].parse().unwrap_or(24);
+    let minute: u8 = value[3..5].parse().unwrap_or(60);
+    let second: u8 = value[6..8].parse().unwrap_or(60);
+    hour < 24 && minute < 60 && second < 60
+}
+
+fn source_date(record: &BridgeRecord) -> Option<String> {
+    let raw_date = record.date.split_whitespace().next()?;
+    let date = normalize_date(raw_date);
+    valid_iso_date(&date).then_some(date)
+}
+
+fn realtime_source_timestamp(record: &BridgeRecord) -> Option<String> {
+    let date = source_date(record)?;
+    let time = value_text(&record.values, "TIME")
+        .or_else(|| record.date.split_whitespace().nth(1).map(str::to_owned))
+        .map(|value| normalize_time(&value))?;
+    valid_clock_time(&time).then(|| format!("{date} {time}"))
+}
+
+fn daily_source_timestamp(record: &BridgeRecord) -> Option<String> {
+    source_date(record)
+}
+
+fn observed_epoch() -> Result<String, EmQuantError> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or_else(
-            |_| "unknown".to_owned(),
-            |value| value.as_secs().to_string(),
-        )
+        .map(|value| value.as_secs().to_string())
+        .map_err(|error| {
+            EmQuantError::InvalidResponse(format!("system clock is before UNIX epoch: {error}"))
+        })
 }
 
 fn daily_period(interval: BarInterval) -> Option<u8> {
@@ -384,8 +432,8 @@ fn date_from_epoch_days(days: i64) -> String {
 }
 
 fn default_date_range(request: &BarsRequest) -> Result<(String, String), EmQuantError> {
-    match (&request.start, &request.end) {
-        (Some(start), Some(end)) => return Ok((start.clone(), end.clone())),
+    match (request.start(), request.end()) {
+        (Some(start), Some(end)) => return Ok((start.to_owned(), end.to_owned())),
         (Some(_), None) | (None, Some(_)) => {
             return Err(EmQuantError::InvalidRequest(
                 "bar start and end must be supplied together".into(),
@@ -398,8 +446,8 @@ fn default_date_range(request: &BarsRequest) -> Result<(String, String), EmQuant
         .map_err(|error| EmQuantError::InvalidRequest(error.to_string()))?
         .as_secs()
         / 86_400;
-    let count = i64::from(request.limit);
-    let lookback_days = match request.interval {
+    let count = i64::from(request.limit());
+    let lookback_days = match request.interval() {
         BarInterval::Day => count * 2 + 30,
         BarInterval::Week => count * 8 + 30,
         BarInterval::Month => count * 32 + 31,
@@ -519,50 +567,41 @@ fn aggregate_group(
     let last = group.last().expect("non-empty group");
     let high = group
         .iter()
-        .map(|bar| bar.high.get())
+        .map(|bar| bar.high().get())
         .fold(f64::NEG_INFINITY, f64::max);
     let low = group
         .iter()
-        .map(|bar| bar.low.get())
+        .map(|bar| bar.low().get())
         .fold(f64::INFINITY, f64::min);
-    let volume = group.iter().map(|bar| bar.volume.get()).sum();
-    let amount = if group.iter().all(|bar| bar.amount.is_some()) {
+    let volume = group.iter().map(|bar| bar.volume().get()).sum();
+    let amount = if group.iter().all(|bar| bar.amount().is_some()) {
         Some(
-            Money::new(
-                group
-                    .iter()
-                    .filter_map(|bar| bar.amount)
-                    .map(Money::get)
-                    .sum(),
-            )
-            .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
+            Money::new(group.iter().filter_map(Bar::amount).map(Money::get).sum())
+                .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
         )
     } else {
         None
     };
-    Bar::new(
-        first.instrument.clone(),
+    let mut bar = Bar::new(
+        first.instrument().clone(),
         interval,
-        first.bar_start.clone(),
-        last.bar_end.clone(),
-        first.open,
+        first.bar_start().to_owned(),
+        last.bar_end().to_owned(),
+        first.open(),
         Price::new(high).map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
         Price::new(low).map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
-        last.close,
+        last.close(),
         Quantity::new(volume).map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?,
         amount,
         Adjustment::Unadjusted,
         ProviderId::Eastmoney,
         batch_id,
     )
-    .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))
-    .map(|bar| {
-        if let Some(source_at) = &last.source_at {
-            bar.with_source_at(source_at.clone())
-        } else {
-            bar
-        }
-    })
+    .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
+    if let Some(source_at) = last.source_at() {
+        bar = bar.with_source_at(source_at)?;
+    }
+    Ok(bar)
 }
 
 fn aggregate_minute_bars(
@@ -579,7 +618,7 @@ fn aggregate_minute_bars(
     let mut group_key = None;
     let mut previous_minute = None;
     for bar in bars {
-        let (key, minute) = minute_bucket(&bar.bar_start, width)?;
+        let (key, minute) = minute_bucket(bar.bar_start(), width)?;
         if group_key.as_ref().is_some_and(|current| current != &key) {
             result.push(aggregate_group(&group, interval, batch_id)?);
             group.clear();
@@ -588,7 +627,7 @@ fn aggregate_minute_bars(
         if previous_minute.is_some_and(|previous| minute != previous + 1) {
             return Err(EmQuantError::InvalidResponse(format!(
                 "minute gap inside aggregation bucket at {}",
-                bar.bar_start
+                bar.bar_start()
             )));
         }
         group_key = Some(key);
@@ -617,7 +656,7 @@ fn book_level(
         .map(Quantity::new)
         .transpose()
         .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
-    Ok(BookLevel { price, quantity })
+    Ok(BookLevel::new(price, quantity)?)
 }
 
 fn book_depth(levels: &[BookLevel; 5]) -> Result<Option<Quantity>, EmQuantError> {
@@ -625,7 +664,7 @@ fn book_depth(levels: &[BookLevel; 5]) -> Result<Option<Quantity>, EmQuantError>
     let total =
         levels
             .iter()
-            .filter_map(|level| level.quantity)
+            .filter_map(|level| level.quantity())
             .fold(0.0, |accumulator, quantity| {
                 found = true;
                 accumulator + quantity.get()
@@ -676,7 +715,7 @@ impl RealtimeQuotes for EmQuantClient {
             .into_iter()
             .map(|record| (record.code.clone(), record))
             .collect();
-        let observed_at = observed_epoch();
+        let observed_at = observed_epoch()?;
         let batch_id = format!("eastmoney:{observed_at}:quote");
         let mut quotes = Vec::with_capacity(instruments.len());
         let mut issues = Vec::new();
@@ -685,7 +724,7 @@ impl RealtimeQuotes for EmQuantClient {
             let record = by_code.remove(&code).ok_or_else(|| {
                 EmQuantError::InvalidResponse(format!("missing requested code {code}"))
             })?;
-            let record_source_at = source_timestamp(&record);
+            let record_source_at = realtime_source_timestamp(&record);
             if source_at.is_none() {
                 source_at.clone_from(&record_source_at);
             }
@@ -716,8 +755,8 @@ impl RealtimeQuotes for EmQuantClient {
                     "{code}: one or more normalized quote fields unavailable"
                 ));
             }
-            quotes.push(Quote {
-                instrument: instrument.clone(),
+            quotes.push(Quote::from_parts(
+                instrument.clone(),
                 name,
                 price,
                 previous_close,
@@ -727,28 +766,28 @@ impl RealtimeQuotes for EmQuantClient {
                 change_percent,
                 volume,
                 amount,
-                status: if complete {
+                if complete {
                     DataStatus::Available
                 } else {
                     DataStatus::Unavailable
                 },
-                source_at: record_source_at,
-                observed_at: observed_at.clone(),
-                provider: ProviderId::Eastmoney,
-                batch_id: batch_id.clone(),
-            });
+                record_source_at,
+                observed_at.clone(),
+                ProviderId::Eastmoney,
+                batch_id.clone(),
+            )?);
         }
         if !by_code.is_empty() {
             return Err(EmQuantError::InvalidResponse(
                 "response contained unexpected security codes".into(),
             ));
         }
-        let mut provenance = magic_market_core::Provenance::new("eastmoney-emquant", observed_at)
-            .with_batch_id(batch_id);
+        let mut provenance = magic_market_core::Provenance::new("eastmoney-emquant", observed_at)?
+            .with_batch_id(batch_id)?;
         if let Some(value) = source_at {
-            provenance = provenance.with_source_at(value);
+            provenance = provenance.with_source_at(value)?;
         }
-        Ok(DataBatch::best_effort(quotes, provenance, issues))
+        Ok(DataBatch::best_effort(quotes, provenance, issues)?)
     }
 }
 
@@ -758,9 +797,9 @@ impl HistoricalBars for EmQuantClient {
 
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Bar>, Self::Error> {
         let (start, end) = default_date_range(request)?;
-        let code = source_code(&request.instrument)?;
-        let minute = minute_width(request.interval);
-        let (method, indicators, options) = if let Some(period) = daily_period(request.interval) {
+        let code = source_code(request.instrument())?;
+        let minute = minute_width(request.interval());
+        let (method, indicators, options) = if let Some(period) = daily_period(request.interval()) {
             (
                 "csd",
                 "OPEN,HIGH,LOW,CLOSE,VOLUME,AMOUNT",
@@ -783,7 +822,7 @@ impl HistoricalBars for EmQuantClient {
                 "history response contained no bars".into(),
             ));
         }
-        let observed_at = observed_epoch();
+        let observed_at = observed_epoch()?;
         let batch_id = format!("eastmoney:{observed_at}:bars");
         let mut bars = Vec::with_capacity(response.records.len());
         let mut previous_at: Option<String> = None;
@@ -815,11 +854,11 @@ impl HistoricalBars for EmQuantClient {
                 .transpose()
                 .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?;
             let bar = Bar::new(
-                request.instrument.clone(),
+                request.instrument().clone(),
                 if minute.is_some() {
                     BarInterval::Minute1
                 } else {
-                    request.interval
+                    request.interval()
                 },
                 bar_at.clone(),
                 bar_at.clone(),
@@ -834,22 +873,24 @@ impl HistoricalBars for EmQuantClient {
                 batch_id.clone(),
             )
             .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?
-            .with_source_at(bar_at);
+            .with_source_at(bar_at)?;
             bars.push(bar);
         }
         if let Some(width) = minute {
-            bars = aggregate_minute_bars(bars, request.interval, width, &batch_id)?;
+            bars = aggregate_minute_bars(bars, request.interval(), width, &batch_id)?;
         }
-        let keep = usize::from(request.limit);
+        let keep = usize::from(request.limit());
         if bars.len() > keep {
             bars = bars.split_off(bars.len() - keep);
         }
-        let source_at = bars.last().and_then(|bar| bar.source_at.clone());
+        let source_at = bars
+            .last()
+            .and_then(|bar| bar.source_at().map(str::to_owned));
         let mut provenance =
-            magic_market_core::Provenance::new(format!("eastmoney-emquant-{method}"), observed_at)
-                .with_batch_id(batch_id);
+            magic_market_core::Provenance::new(format!("eastmoney-emquant-{method}"), observed_at)?
+                .with_batch_id(batch_id)?;
         if let Some(source_at) = source_at {
-            provenance = provenance.with_source_at(source_at);
+            provenance = provenance.with_source_at(source_at)?;
         }
         Ok(DataBatch::strict(bars, provenance))
     }
@@ -895,7 +936,7 @@ impl MoneyFlows for EmQuantClient {
                 )));
             }
         }
-        let observed_at = observed_epoch();
+        let observed_at = observed_epoch()?;
         let batch_id = format!("eastmoney:{observed_at}:money-flow");
         let mut flows = Vec::with_capacity(instruments.len());
         let mut issues = Vec::new();
@@ -904,7 +945,7 @@ impl MoneyFlows for EmQuantClient {
             let record = by_code.remove(&code).ok_or_else(|| {
                 EmQuantError::InvalidResponse(format!("missing requested code {code}"))
             })?;
-            let source_at = source_timestamp(&record);
+            let source_at = daily_source_timestamp(&record);
             if batch_source_at.is_none() {
                 batch_source_at.clone_from(&source_at);
             }
@@ -919,29 +960,30 @@ impl MoneyFlows for EmQuantClient {
                 ),
                 _ => None,
             };
-            let available = [main_net, super_large_net, large_net, medium_net, small_net]
+            let complete = [main_net, super_large_net, large_net, medium_net, small_net]
                 .iter()
-                .all(Option::is_some);
-            if !available {
+                .all(Option::is_some)
+                && source_at.is_some();
+            if !complete {
                 issues.push(format!("{code}: one or more money-flow fields unavailable"));
             }
-            flows.push(MoneyFlow {
-                instrument: instrument.clone(),
+            flows.push(MoneyFlow::new(
+                instrument.clone(),
                 main_net,
                 super_large_net,
                 large_net,
                 medium_net,
                 small_net,
-                status: if available {
+                if complete {
                     DataStatus::Available
                 } else {
                     DataStatus::Unavailable
                 },
                 source_at,
-                observed_at: observed_at.clone(),
-                provider: ProviderId::Eastmoney,
-                batch_id: batch_id.clone(),
-            });
+                observed_at.clone(),
+                ProviderId::Eastmoney,
+                batch_id.clone(),
+            )?);
         }
         if !by_code.is_empty() {
             return Err(EmQuantError::InvalidResponse(
@@ -949,12 +991,12 @@ impl MoneyFlows for EmQuantClient {
             ));
         }
         let mut provenance =
-            magic_market_core::Provenance::new("eastmoney-emquant-css-money-flow", observed_at)
-                .with_batch_id(batch_id);
+            magic_market_core::Provenance::new("eastmoney-emquant-css-money-flow", observed_at)?
+                .with_batch_id(batch_id)?;
         if let Some(source_at) = batch_source_at {
-            provenance = provenance.with_source_at(source_at);
+            provenance = provenance.with_source_at(source_at)?;
         }
-        Ok(DataBatch::best_effort(flows, provenance, issues))
+        Ok(DataBatch::best_effort(flows, provenance, issues)?)
     }
 }
 
@@ -1030,9 +1072,10 @@ impl OrderBooks for EmQuantClient {
             .into_iter()
             .map(|record| (record.code.clone(), record))
             .collect();
-        let observed_at = observed_epoch();
+        let observed_at = observed_epoch()?;
         let batch_id = format!("eastmoney:{observed_at}:order-book");
         let mut books = Vec::with_capacity(instruments.len());
+        let mut issues = Vec::new();
         let mut batch_source_at = None;
         for (instrument, code) in instruments.iter().zip(codes) {
             let record = by_code.remove(&code).ok_or_else(|| {
@@ -1052,41 +1095,49 @@ impl OrderBooks for EmQuantClient {
                 book_level(&record.values, "SELL", 4)?,
                 book_level(&record.values, "SELL", 5)?,
             ];
-            let available = bids.iter().chain(&asks).any(|level| level.price.is_some());
+            let available = bids
+                .iter()
+                .chain(&asks)
+                .all(|level| level.price().is_some());
             let total_bid_quantity = book_depth(&bids)?;
             let total_ask_quantity = book_depth(&asks)?;
-            let source_at = source_timestamp(&record);
+            let source_at = realtime_source_timestamp(&record);
             if batch_source_at.is_none() {
                 batch_source_at.clone_from(&source_at);
             }
-            books.push(OrderBook {
-                instrument: instrument.clone(),
+            if !available || source_at.is_none() {
+                issues.push(format!(
+                    "{code}: one or more normalized order-book fields unavailable"
+                ));
+            }
+            books.push(OrderBook::new(
+                instrument.clone(),
                 bids,
                 asks,
                 total_bid_quantity,
                 total_ask_quantity,
-                status: if available {
+                if available && source_at.is_some() {
                     DataStatus::Available
                 } else {
                     DataStatus::Unavailable
                 },
                 source_at,
-                observed_at: observed_at.clone(),
-                provider: ProviderId::Eastmoney,
-                batch_id: batch_id.clone(),
-            });
+                observed_at.clone(),
+                ProviderId::Eastmoney,
+                batch_id.clone(),
+            )?);
         }
         if !by_code.is_empty() {
             return Err(EmQuantError::InvalidResponse(
                 "response contained unexpected security codes".into(),
             ));
         }
-        let mut provenance = magic_market_core::Provenance::new("eastmoney-emquant", observed_at)
-            .with_batch_id(batch_id);
+        let mut provenance = magic_market_core::Provenance::new("eastmoney-emquant", observed_at)?
+            .with_batch_id(batch_id)?;
         if let Some(value) = batch_source_at {
-            provenance = provenance.with_source_at(value);
+            provenance = provenance.with_source_at(value)?;
         }
-        Ok(DataBatch::strict(books, provenance))
+        Ok(DataBatch::best_effort(books, provenance, issues)?)
     }
 }
 
@@ -1106,8 +1157,43 @@ mod tests {
             1300.0
         );
         assert_eq!(
-            source_timestamp(&response.records[0]).as_deref(),
+            realtime_source_timestamp(&response.records[0]).as_deref(),
             Some("2026-07-22 10:00:00")
+        );
+    }
+
+    #[test]
+    fn source_evidence_requires_valid_family_specific_timestamps() {
+        let record = |date: &str, time: Option<Value>| BridgeRecord {
+            date: date.into(),
+            code: "600519.SH".into(),
+            values: time
+                .map(|value| HashMap::from([("TIME".into(), value)]))
+                .unwrap_or_default(),
+        };
+
+        assert_eq!(
+            realtime_source_timestamp(&record("20260722", Some(Value::String("100001".into()))))
+                .as_deref(),
+            Some("2026-07-22 10:00:01")
+        );
+        assert!(realtime_source_timestamp(&record("2026-07-22", None)).is_none());
+        assert!(realtime_source_timestamp(&record(
+            "2026-02-30",
+            Some(Value::String("10:00:00".into()))
+        ))
+        .is_none());
+        assert!(realtime_source_timestamp(&record(
+            "2026-07-22",
+            Some(Value::String("25:00:00".into()))
+        ))
+        .is_none());
+        assert_eq!(
+            daily_source_timestamp(&record("2026/07/22", None)).as_deref(),
+            Some("2026-07-22")
+        );
+        assert!(
+            daily_source_timestamp(&record("", Some(Value::String("10:00:00".into())))).is_none()
         );
     }
 
@@ -1119,10 +1205,10 @@ mod tests {
         .unwrap();
         let bid = book_level(&values, "BUY", 1).unwrap();
         let ask = book_level(&values, "SELL", 1).unwrap();
-        assert_eq!(bid.price.map(Price::get), Some(1300.0));
-        assert_eq!(bid.quantity.map(Quantity::get), Some(12.0));
-        assert!(ask.price.is_none());
-        assert!(ask.quantity.is_none());
+        assert_eq!(bid.price().map(Price::get), Some(1300.0));
+        assert_eq!(bid.quantity().map(Quantity::get), Some(12.0));
+        assert!(ask.price().is_none());
+        assert!(ask.quantity().is_none());
     }
 
     #[test]

@@ -129,3 +129,43 @@
 - Final verification passed: workspace all-target tests, strict Clippy, rustdoc,
   doctests (11 passed, 3 explicitly ignored), Rust 1.83 all-target check,
   documentation links, compliance, runtime packaging, and diff hygiene.
+- Started Phase 10 after the user requested that all `magic-market-core`
+  anomalies be resolved. Restored the active file-based plan and began a
+  Core-only root-cause audit under the existing approved contract.
+- Core baseline passed all existing gates. Completed the first invariant audit
+  and identified serde-validation, request-bypass, empty-evidence, and metadata
+  validation gaps that existing tests did not exercise.
+- Added RED regression coverage for normalized-batch serde, constructor-bypass
+  attempts, contradictory quality state, empty evidence, request accessors,
+  and year-zero dates. The expected compile failures confirm the missing APIs.
+- Implemented checked serde for value types, instruments, provenance, quality,
+  normalized records, bars, price-limit rules, and validated requests. Updated
+  both provider adapters to propagate Core validation failures. Workspace
+  all-target `cargo check` is green again after the API migration.
+- Added calendar/clock validation for normalized bar timestamps and expanded
+  serde regression coverage for requests, listing dates, OHLC, and price-limit
+  rules. Stabilized the scheduler-sensitive async limiter test found by the
+  workspace run.
+- Final static gates passed: strict workspace Clippy, Rust 1.83 all-target
+  check, warning-free rustdoc, doctests, link checking, and compliance.
+- Re-ran the release TDX live probe against 华电辽能 `600396`: quote 14.92,
+  all 12 stock K-line categories, index K-line, 240-point current/historical
+  minute series, current/history trades including cross-page 1,820/2,001
+  requests, finance/XDXR, funds, blocks, F10, 5,526 batch-financial records,
+  and 45 named financial indicators all returned successfully.
+- Closed both probes' fake-green paths: every supported EMQuant family now runs
+  and accumulates failures/count mismatches, while every TDX family asserts its
+  required cardinality and missing financial fixtures are fatal.
+- Removed the unverified TDX quote-time conversion from normalized evidence;
+  live order books now truthfully report `source_at=None` and `Unavailable`
+  while preserving real five-level values and explicit quality issues.
+- Fixed China-local weekday and lunch-break trading-phase boundaries, and made
+  current-minute availability independent from latest-session history proof.
+- Final TDX release probe passed during pre-open with one explicitly classified
+  `available_preopen` minute record, 240 records for completed session
+  `20260722`, five completed index bars selected from a six-bar request, and
+  current auction-window trades restricted to 09:15-09:29. Historical trade
+  paging and all remaining live families succeeded.
+- Final EMQuant release probe ran quotes, order book, money flow, daily bars,
+  and minute bars; every SDK login truthfully returned the external entitlement
+  blocker `10001003/EQERR_NO_ACCESS`, while unsupported auction remained explicit.

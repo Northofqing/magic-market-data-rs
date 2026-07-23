@@ -101,34 +101,31 @@ fn executes_bridge_and_normalizes_quotes_in_request_order() {
     assert!(client.capabilities().quotes);
     assert!(client.capabilities().order_book);
     assert_eq!(batch.records().len(), 2);
-    assert_eq!(batch.records()[0].instrument.code(), "600519");
-    assert_eq!(batch.records()[0].price, Price::new(1300.0).unwrap());
-    assert_eq!(batch.records()[0].name.as_deref(), Some("贵州茅台"));
+    assert_eq!(batch.records()[0].instrument().code(), "600519");
+    assert_eq!(batch.records()[0].price(), Price::new(1300.0).unwrap());
+    assert_eq!(batch.records()[0].name(), Some("贵州茅台"));
     assert_eq!(
-        batch.records()[0].previous_close,
+        batch.records()[0].previous_close(),
         Some(Price::new(1290.0).unwrap())
     );
-    assert_eq!(batch.records()[0].open, Some(Price::new(1295.0).unwrap()));
-    assert_eq!(batch.records()[0].high, Some(Price::new(1305.0).unwrap()));
-    assert_eq!(batch.records()[0].low, Some(Price::new(1288.0).unwrap()));
-    assert_eq!(batch.records()[0].status, DataStatus::Available);
-    assert_eq!(batch.records()[0].volume, Quantity::new(100.0).unwrap());
+    assert_eq!(batch.records()[0].open(), Some(Price::new(1295.0).unwrap()));
+    assert_eq!(batch.records()[0].high(), Some(Price::new(1305.0).unwrap()));
+    assert_eq!(batch.records()[0].low(), Some(Price::new(1288.0).unwrap()));
+    assert_eq!(batch.records()[0].status(), DataStatus::Available);
+    assert_eq!(batch.records()[0].volume(), Quantity::new(100.0).unwrap());
     assert_eq!(
-        batch.records()[0].amount,
+        batch.records()[0].amount(),
         Some(Money::new(130_000.0).unwrap())
     );
+    assert_eq!(batch.records()[0].source_at(), Some("2026-07-22 10:00:00"));
+    assert_eq!(batch.records()[1].instrument().code(), "000001");
+    assert_eq!(batch.provenance().source(), "eastmoney-emquant");
+    assert!(batch.records()[0].batch_id().ends_with(":quote"));
     assert_eq!(
-        batch.records()[0].source_at.as_deref(),
-        Some("2026-07-22 10:00:00")
+        batch.records()[0].batch_id(),
+        batch.provenance().batch_id().unwrap()
     );
-    assert_eq!(batch.records()[1].instrument.code(), "000001");
-    assert_eq!(batch.provenance().source, "eastmoney-emquant");
-    assert!(batch.records()[0].batch_id.ends_with(":quote"));
-    assert_eq!(
-        batch.records()[0].batch_id,
-        batch.provenance().batch_id.as_deref().unwrap()
-    );
-    assert!(batch.quality().complete);
+    assert!(batch.quality().is_complete());
 }
 
 #[test]
@@ -138,22 +135,19 @@ fn executes_bridge_and_preserves_missing_order_book_levels() {
 
     assert_eq!(batch.records().len(), 2);
     let first = &batch.records()[0];
-    assert_eq!(first.instrument.code(), "600519");
-    assert_eq!(first.status, DataStatus::Available);
-    assert_eq!(first.bids[0].price.map(Price::get), Some(1299.0));
-    assert_eq!(first.asks[1].quantity.map(Quantity::get), Some(13.0));
-    assert!(first.bids[2].price.is_none());
-    assert!(first.bids[2].quantity.is_none());
-    assert_eq!(first.total_bid_quantity.map(Quantity::get), Some(22.0));
-    assert_eq!(first.total_ask_quantity.map(Quantity::get), Some(24.0));
-    assert_eq!(first.source_at.as_deref(), Some("2026-07-22 10:00:00"));
-    assert_eq!(first.provider, magic_market_core::ProviderId::Eastmoney);
-    assert!(first.batch_id.ends_with(":order-book"));
-    assert_eq!(
-        first.batch_id,
-        batch.provenance().batch_id.as_deref().unwrap()
-    );
-    assert!(batch.quality().complete);
+    assert_eq!(first.instrument().code(), "600519");
+    assert_eq!(first.status(), DataStatus::Unavailable);
+    assert_eq!(first.bids()[0].price().map(Price::get), Some(1299.0));
+    assert_eq!(first.asks()[1].quantity().map(Quantity::get), Some(13.0));
+    assert!(first.bids()[2].price().is_none());
+    assert!(first.bids()[2].quantity().is_none());
+    assert_eq!(first.total_bid_quantity().map(Quantity::get), Some(22.0));
+    assert_eq!(first.total_ask_quantity().map(Quantity::get), Some(24.0));
+    assert_eq!(first.source_at(), Some("2026-07-22 10:00:00"));
+    assert_eq!(first.provider(), magic_market_core::ProviderId::Eastmoney);
+    assert!(first.batch_id().ends_with(":order-book"));
+    assert_eq!(first.batch_id(), batch.provenance().batch_id().unwrap());
+    assert!(!batch.quality().is_complete());
 }
 
 #[test]
@@ -168,12 +162,12 @@ fn executes_csd_and_returns_bounded_normalized_bars() {
     assert!(client.capabilities().bars);
     assert!(client.capabilities().minute);
     assert_eq!(batch.records().len(), 2);
-    assert_eq!(batch.records()[0].bar_start, "2026-07-21");
-    assert_eq!(batch.records()[0].open, Price::new(1300.0).unwrap());
-    assert_eq!(batch.records()[1].close, Price::new(1320.0).unwrap());
-    assert_eq!(batch.records()[1].adjustment, Adjustment::Unadjusted);
-    assert_eq!(batch.provenance().source_at.as_deref(), Some("2026-07-22"));
-    assert!(batch.quality().complete);
+    assert_eq!(batch.records()[0].bar_start(), "2026-07-21");
+    assert_eq!(batch.records()[0].open(), Price::new(1300.0).unwrap());
+    assert_eq!(batch.records()[1].close(), Price::new(1320.0).unwrap());
+    assert_eq!(batch.records()[1].adjustment(), Adjustment::Unadjusted);
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-22"));
+    assert!(batch.quality().is_complete());
 }
 
 #[test]
@@ -187,19 +181,16 @@ fn executes_chmc_and_aggregates_five_minute_bars() {
 
     assert_eq!(batch.records().len(), 1);
     let bar = &batch.records()[0];
-    assert_eq!(bar.interval, BarInterval::Minute5);
-    assert_eq!(bar.bar_start, "2026-07-22 09:30:00");
-    assert_eq!(bar.bar_end, "2026-07-22 09:34:00");
-    assert_eq!(bar.open, Price::new(1300.0).unwrap());
-    assert_eq!(bar.high, Price::new(1306.0).unwrap());
-    assert_eq!(bar.low, Price::new(1299.0).unwrap());
-    assert_eq!(bar.close, Price::new(1305.0).unwrap());
-    assert_eq!(bar.volume, Quantity::new(60.0).unwrap());
-    assert_eq!(bar.amount, Some(Money::new(78_190.0).unwrap()));
-    assert_eq!(
-        batch.provenance().source_at.as_deref(),
-        Some("2026-07-22 09:34:00")
-    );
+    assert_eq!(bar.interval(), BarInterval::Minute5);
+    assert_eq!(bar.bar_start(), "2026-07-22 09:30:00");
+    assert_eq!(bar.bar_end(), "2026-07-22 09:34:00");
+    assert_eq!(bar.open(), Price::new(1300.0).unwrap());
+    assert_eq!(bar.high(), Price::new(1306.0).unwrap());
+    assert_eq!(bar.low(), Price::new(1299.0).unwrap());
+    assert_eq!(bar.close(), Price::new(1305.0).unwrap());
+    assert_eq!(bar.volume(), Quantity::new(60.0).unwrap());
+    assert_eq!(bar.amount(), Some(Money::new(78_190.0).unwrap()));
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-22 09:34:00"));
 }
 
 #[test]
@@ -210,15 +201,15 @@ fn executes_css_and_normalizes_daily_money_flow() {
     assert!(client.capabilities().money_flow);
     assert_eq!(batch.records().len(), 2);
     let first = &batch.records()[0];
-    assert_eq!(first.instrument.code(), "600519");
-    assert_eq!(first.main_net, Some(Money::new(110.0).unwrap()));
-    assert_eq!(first.super_large_net, Some(Money::new(60.0).unwrap()));
-    assert_eq!(first.large_net, Some(Money::new(50.0).unwrap()));
-    assert_eq!(first.medium_net, Some(Money::new(-5.0).unwrap()));
-    assert_eq!(first.small_net, Some(Money::new(-10.0).unwrap()));
-    assert_eq!(first.status, DataStatus::Available);
-    assert_eq!(first.source_at.as_deref(), Some("2026-07-22"));
-    assert!(batch.quality().complete);
+    assert_eq!(first.instrument().code(), "600519");
+    assert_eq!(first.main_net(), Some(Money::new(110.0).unwrap()));
+    assert_eq!(first.super_large_net(), Some(Money::new(60.0).unwrap()));
+    assert_eq!(first.large_net(), Some(Money::new(50.0).unwrap()));
+    assert_eq!(first.medium_net(), Some(Money::new(-5.0).unwrap()));
+    assert_eq!(first.small_net(), Some(Money::new(-10.0).unwrap()));
+    assert_eq!(first.status(), DataStatus::Available);
+    assert_eq!(first.source_at(), Some("2026-07-22"));
+    assert!(batch.quality().is_complete());
 }
 
 #[test]

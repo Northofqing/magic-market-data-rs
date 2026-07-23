@@ -1,7 +1,37 @@
-use crate::{DataBatch, InstrumentId};
+use crate::{provenance::checked_text, DataBatch, InstrumentId};
+use serde::{de, Deserialize, Deserializer, Serialize};
+
+fn ensure_status_consistent(
+    status: DataStatus,
+    complete: bool,
+    record: &'static str,
+) -> Result<(), crate::CoreError> {
+    if status == DataStatus::Available && !complete {
+        return Err(crate::CoreError::InvalidRequest(format!(
+            "available {record} is missing required normalized fields"
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_nonnegative_money(
+    field: &'static str,
+    value: Option<crate::Money>,
+) -> Result<(), crate::CoreError> {
+    if let Some(money) = value {
+        if money.get() < 0.0 {
+            return Err(crate::CoreError::InvalidValue {
+                field,
+                value: money.get().to_string(),
+                reason: "must be non-negative",
+            });
+        }
+    }
+    Ok(())
+}
 
 /// Provider identity used in provenance and capability reporting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ProviderId {
     Tdx,
     Tencent,
@@ -14,26 +44,27 @@ pub enum ProviderId {
 }
 
 /// Normalized realtime quote contract for cross-provider consumers.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "QuoteWire")]
 pub struct Quote {
-    pub instrument: InstrumentId,
-    pub name: Option<String>,
-    pub price: crate::Price,
-    pub previous_close: Option<crate::Price>,
-    pub open: Option<crate::Price>,
-    pub high: Option<crate::Price>,
-    pub low: Option<crate::Price>,
-    pub change_percent: Option<crate::Ratio>,
-    pub volume: crate::Quantity,
-    pub amount: Option<crate::Money>,
+    instrument: InstrumentId,
+    name: Option<String>,
+    price: crate::Price,
+    previous_close: Option<crate::Price>,
+    open: Option<crate::Price>,
+    high: Option<crate::Price>,
+    low: Option<crate::Price>,
+    change_percent: Option<crate::Ratio>,
+    volume: crate::Quantity,
+    amount: Option<crate::Money>,
     /// Overall completeness of the normalized quote fields.
-    pub status: DataStatus,
+    status: DataStatus,
     /// Timestamp supplied by the source, when the packet proves one.
-    pub source_at: Option<String>,
+    source_at: Option<String>,
     /// Local observation timestamp, kept separate from `source_at`.
-    pub observed_at: String,
-    pub provider: ProviderId,
-    pub batch_id: String,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
 }
 impl Quote {
     /// Creates a quote with explicit observation evidence.
@@ -45,33 +76,174 @@ impl Quote {
         observed_at: impl Into<String>,
         provider: ProviderId,
         batch_id: impl Into<String>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, crate::CoreError> {
+        Self::from_parts(
             instrument,
-            name: None,
+            None,
             price,
-            previous_close: None,
-            open: None,
-            high: None,
-            low: None,
-            change_percent: None,
+            None,
+            None,
+            None,
+            None,
+            None,
             volume,
             amount,
-            status: DataStatus::Unavailable,
-            source_at: None,
-            observed_at: observed_at.into(),
+            DataStatus::Unavailable,
+            None,
+            observed_at,
             provider,
-            batch_id: batch_id.into(),
-        }
+            batch_id,
+        )
     }
-    pub fn with_source_at(mut self, source_at: impl Into<String>) -> Self {
-        self.source_at = Some(source_at.into());
-        self
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        instrument: InstrumentId,
+        name: Option<String>,
+        price: crate::Price,
+        previous_close: Option<crate::Price>,
+        open: Option<crate::Price>,
+        high: Option<crate::Price>,
+        low: Option<crate::Price>,
+        change_percent: Option<crate::Ratio>,
+        volume: crate::Quantity,
+        amount: Option<crate::Money>,
+        status: DataStatus,
+        source_at: Option<String>,
+        observed_at: impl Into<String>,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        let name = name
+            .map(|value| checked_text("quote_name", value))
+            .transpose()?;
+        let source_at = source_at
+            .map(|value| checked_text("source_at", value))
+            .transpose()?;
+        ensure_nonnegative_money("quote_amount", amount)?;
+        let complete = name.is_some()
+            && previous_close.is_some()
+            && open.is_some()
+            && high.is_some()
+            && low.is_some()
+            && change_percent.is_some()
+            && amount.is_some()
+            && source_at.is_some();
+        ensure_status_consistent(status, complete, "quote")?;
+        Ok(Self {
+            instrument,
+            name,
+            price,
+            previous_close,
+            open,
+            high,
+            low,
+            change_percent,
+            volume,
+            amount,
+            status,
+            source_at,
+            observed_at: checked_text("observed_at", observed_at)?,
+            provider,
+            batch_id: checked_text("batch_id", batch_id)?,
+        })
+    }
+    pub fn with_source_at(
+        mut self,
+        source_at: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        self.source_at = Some(checked_text("source_at", source_at)?);
+        Ok(self)
+    }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+    pub fn price(&self) -> crate::Price {
+        self.price
+    }
+    pub fn previous_close(&self) -> Option<crate::Price> {
+        self.previous_close
+    }
+    pub fn open(&self) -> Option<crate::Price> {
+        self.open
+    }
+    pub fn high(&self) -> Option<crate::Price> {
+        self.high
+    }
+    pub fn low(&self) -> Option<crate::Price> {
+        self.low
+    }
+    pub fn change_percent(&self) -> Option<crate::Ratio> {
+        self.change_percent
+    }
+    pub fn volume(&self) -> crate::Quantity {
+        self.volume
+    }
+    pub fn amount(&self) -> Option<crate::Money> {
+        self.amount
+    }
+    pub fn status(&self) -> DataStatus {
+        self.status
+    }
+    pub fn source_at(&self) -> Option<&str> {
+        self.source_at.as_deref()
+    }
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+    pub fn provider(&self) -> ProviderId {
+        self.provider
+    }
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+}
+
+#[derive(Deserialize)]
+struct QuoteWire {
+    instrument: InstrumentId,
+    name: Option<String>,
+    price: crate::Price,
+    previous_close: Option<crate::Price>,
+    open: Option<crate::Price>,
+    high: Option<crate::Price>,
+    low: Option<crate::Price>,
+    change_percent: Option<crate::Ratio>,
+    volume: crate::Quantity,
+    amount: Option<crate::Money>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl TryFrom<QuoteWire> for Quote {
+    type Error = crate::CoreError;
+    fn try_from(value: QuoteWire) -> Result<Self, Self::Error> {
+        Self::from_parts(
+            value.instrument,
+            value.name,
+            value.price,
+            value.previous_close,
+            value.open,
+            value.high,
+            value.low,
+            value.change_percent,
+            value.volume,
+            value.amount,
+            value.status,
+            value.source_at,
+            value.observed_at,
+            value.provider,
+            value.batch_id,
+        )
     }
 }
 
 /// Availability state for optional source fields; absence is never encoded as zero.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataStatus {
     Available,
     Unavailable,
@@ -81,67 +253,477 @@ pub enum DataStatus {
 }
 
 /// Normalized money-flow snapshot.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "MoneyFlowWire")]
 pub struct MoneyFlow {
-    pub instrument: InstrumentId,
-    pub main_net: Option<crate::Money>,
-    pub super_large_net: Option<crate::Money>,
-    pub large_net: Option<crate::Money>,
-    pub medium_net: Option<crate::Money>,
-    pub small_net: Option<crate::Money>,
-    pub status: DataStatus,
-    pub source_at: Option<String>,
-    pub observed_at: String,
-    pub provider: ProviderId,
-    pub batch_id: String,
+    instrument: InstrumentId,
+    main_net: Option<crate::Money>,
+    super_large_net: Option<crate::Money>,
+    large_net: Option<crate::Money>,
+    medium_net: Option<crate::Money>,
+    small_net: Option<crate::Money>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl MoneyFlow {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentId,
+        main_net: Option<crate::Money>,
+        super_large_net: Option<crate::Money>,
+        large_net: Option<crate::Money>,
+        medium_net: Option<crate::Money>,
+        small_net: Option<crate::Money>,
+        status: DataStatus,
+        source_at: Option<String>,
+        observed_at: impl Into<String>,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        let source_at = source_at
+            .map(|value| checked_text("source_at", value))
+            .transpose()?;
+        let complete = [main_net, super_large_net, large_net, medium_net, small_net]
+            .iter()
+            .all(Option::is_some)
+            && source_at.is_some();
+        ensure_status_consistent(status, complete, "money flow")?;
+        Ok(Self {
+            instrument,
+            main_net,
+            super_large_net,
+            large_net,
+            medium_net,
+            small_net,
+            status,
+            source_at,
+            observed_at: checked_text("observed_at", observed_at)?,
+            provider,
+            batch_id: checked_text("batch_id", batch_id)?,
+        })
+    }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn main_net(&self) -> Option<crate::Money> {
+        self.main_net
+    }
+    pub fn super_large_net(&self) -> Option<crate::Money> {
+        self.super_large_net
+    }
+    pub fn large_net(&self) -> Option<crate::Money> {
+        self.large_net
+    }
+    pub fn medium_net(&self) -> Option<crate::Money> {
+        self.medium_net
+    }
+    pub fn small_net(&self) -> Option<crate::Money> {
+        self.small_net
+    }
+    pub fn status(&self) -> DataStatus {
+        self.status
+    }
+    pub fn source_at(&self) -> Option<&str> {
+        self.source_at.as_deref()
+    }
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+    pub fn provider(&self) -> ProviderId {
+        self.provider
+    }
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+}
+
+#[derive(Deserialize)]
+struct MoneyFlowWire {
+    instrument: InstrumentId,
+    main_net: Option<crate::Money>,
+    super_large_net: Option<crate::Money>,
+    large_net: Option<crate::Money>,
+    medium_net: Option<crate::Money>,
+    small_net: Option<crate::Money>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl TryFrom<MoneyFlowWire> for MoneyFlow {
+    type Error = crate::CoreError;
+    fn try_from(value: MoneyFlowWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.instrument,
+            value.main_net,
+            value.super_large_net,
+            value.large_net,
+            value.medium_net,
+            value.small_net,
+            value.status,
+            value.source_at,
+            value.observed_at,
+            value.provider,
+            value.batch_id,
+        )
+    }
 }
 
 /// One level of a normalized five-level order book.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "BookLevelWire")]
 pub struct BookLevel {
-    pub price: Option<crate::Price>,
-    pub quantity: Option<crate::Quantity>,
+    price: Option<crate::Price>,
+    quantity: Option<crate::Quantity>,
+}
+impl BookLevel {
+    pub fn new(
+        price: Option<crate::Price>,
+        quantity: Option<crate::Quantity>,
+    ) -> Result<Self, crate::CoreError> {
+        if price.is_some() != quantity.is_some() {
+            return Err(crate::CoreError::InvalidRequest(
+                "order-book price and quantity must be present together".into(),
+            ));
+        }
+        Ok(Self { price, quantity })
+    }
+    pub const fn unavailable() -> Self {
+        Self {
+            price: None,
+            quantity: None,
+        }
+    }
+    pub fn price(self) -> Option<crate::Price> {
+        self.price
+    }
+    pub fn quantity(self) -> Option<crate::Quantity> {
+        self.quantity
+    }
+}
+
+#[derive(Deserialize)]
+struct BookLevelWire {
+    price: Option<crate::Price>,
+    quantity: Option<crate::Quantity>,
+}
+impl TryFrom<BookLevelWire> for BookLevel {
+    type Error = crate::CoreError;
+    fn try_from(value: BookLevelWire) -> Result<Self, Self::Error> {
+        Self::new(value.price, value.quantity)
+    }
 }
 
 /// Normalized order-book snapshot.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "OrderBookWire")]
 pub struct OrderBook {
-    pub instrument: InstrumentId,
-    pub bids: [BookLevel; 5],
-    pub asks: [BookLevel; 5],
+    instrument: InstrumentId,
+    bids: [BookLevel; 5],
+    asks: [BookLevel; 5],
     /// Sum of the quantities exposed by the returned bid levels.
-    pub total_bid_quantity: Option<crate::Quantity>,
+    total_bid_quantity: Option<crate::Quantity>,
     /// Sum of the quantities exposed by the returned ask levels.
-    pub total_ask_quantity: Option<crate::Quantity>,
-    pub status: DataStatus,
-    pub source_at: Option<String>,
-    pub observed_at: String,
-    pub provider: ProviderId,
-    pub batch_id: String,
+    total_ask_quantity: Option<crate::Quantity>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl OrderBook {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentId,
+        bids: [BookLevel; 5],
+        asks: [BookLevel; 5],
+        total_bid_quantity: Option<crate::Quantity>,
+        total_ask_quantity: Option<crate::Quantity>,
+        status: DataStatus,
+        source_at: Option<String>,
+        observed_at: impl Into<String>,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        validate_book_total("total_bid_quantity", &bids, total_bid_quantity)?;
+        validate_book_total("total_ask_quantity", &asks, total_ask_quantity)?;
+        let source_at = source_at
+            .map(|value| checked_text("source_at", value))
+            .transpose()?;
+        let complete = bids.iter().chain(&asks).all(|level| level.price.is_some())
+            && total_bid_quantity.is_some()
+            && total_ask_quantity.is_some()
+            && source_at.is_some();
+        ensure_status_consistent(status, complete, "order book")?;
+        Ok(Self {
+            instrument,
+            bids,
+            asks,
+            total_bid_quantity,
+            total_ask_quantity,
+            status,
+            source_at,
+            observed_at: checked_text("observed_at", observed_at)?,
+            provider,
+            batch_id: checked_text("batch_id", batch_id)?,
+        })
+    }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn bids(&self) -> &[BookLevel; 5] {
+        &self.bids
+    }
+    pub fn asks(&self) -> &[BookLevel; 5] {
+        &self.asks
+    }
+    pub fn total_bid_quantity(&self) -> Option<crate::Quantity> {
+        self.total_bid_quantity
+    }
+    pub fn total_ask_quantity(&self) -> Option<crate::Quantity> {
+        self.total_ask_quantity
+    }
+    pub fn status(&self) -> DataStatus {
+        self.status
+    }
+    pub fn source_at(&self) -> Option<&str> {
+        self.source_at.as_deref()
+    }
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+    pub fn provider(&self) -> ProviderId {
+        self.provider
+    }
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+}
+
+fn validate_book_total(
+    field: &'static str,
+    levels: &[BookLevel; 5],
+    total: Option<crate::Quantity>,
+) -> Result<(), crate::CoreError> {
+    let quantities: Vec<_> = levels.iter().filter_map(|level| level.quantity).collect();
+    if quantities.is_empty() != total.is_none() {
+        return Err(crate::CoreError::InvalidRequest(format!(
+            "{field} presence contradicts order-book levels"
+        )));
+    }
+    if let Some(total) = total {
+        let sum: f64 = quantities.iter().copied().map(crate::Quantity::get).sum();
+        if (sum - total.get()).abs() > f64::EPSILON * sum.abs().max(1.0) * 8.0 {
+            return Err(crate::CoreError::InvalidValue {
+                field,
+                value: total.get().to_string(),
+                reason: "must equal the sum of returned levels",
+            });
+        }
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct OrderBookWire {
+    instrument: InstrumentId,
+    bids: [BookLevel; 5],
+    asks: [BookLevel; 5],
+    total_bid_quantity: Option<crate::Quantity>,
+    total_ask_quantity: Option<crate::Quantity>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl TryFrom<OrderBookWire> for OrderBook {
+    type Error = crate::CoreError;
+    fn try_from(value: OrderBookWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.instrument,
+            value.bids,
+            value.asks,
+            value.total_bid_quantity,
+            value.total_ask_quantity,
+            value.status,
+            value.source_at,
+            value.observed_at,
+            value.provider,
+            value.batch_id,
+        )
+    }
 }
 
 /// Normalized call-auction snapshot.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "AuctionSnapshotWire")]
 pub struct AuctionSnapshot {
-    pub instrument: InstrumentId,
-    pub name: Option<String>,
-    pub matched_price: Option<crate::Price>,
-    pub previous_close: Option<crate::Price>,
-    pub change_percent: Option<crate::Ratio>,
-    pub matched_quantity: Option<crate::Quantity>,
-    pub matched_amount: Option<crate::Money>,
-    pub unmatched_bid_quantity: Option<crate::Quantity>,
-    pub unmatched_ask_quantity: Option<crate::Quantity>,
-    pub volume_ratio: Option<crate::Ratio>,
-    pub status: DataStatus,
-    pub source_at: Option<String>,
-    pub observed_at: String,
-    pub provider: ProviderId,
-    pub batch_id: String,
+    instrument: InstrumentId,
+    name: Option<String>,
+    matched_price: Option<crate::Price>,
+    previous_close: Option<crate::Price>,
+    change_percent: Option<crate::Ratio>,
+    matched_quantity: Option<crate::Quantity>,
+    matched_amount: Option<crate::Money>,
+    unmatched_bid_quantity: Option<crate::Quantity>,
+    unmatched_ask_quantity: Option<crate::Quantity>,
+    volume_ratio: Option<crate::Ratio>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl AuctionSnapshot {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentId,
+        name: Option<String>,
+        matched_price: Option<crate::Price>,
+        previous_close: Option<crate::Price>,
+        change_percent: Option<crate::Ratio>,
+        matched_quantity: Option<crate::Quantity>,
+        matched_amount: Option<crate::Money>,
+        unmatched_bid_quantity: Option<crate::Quantity>,
+        unmatched_ask_quantity: Option<crate::Quantity>,
+        volume_ratio: Option<crate::Ratio>,
+        status: DataStatus,
+        source_at: Option<String>,
+        observed_at: impl Into<String>,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        let name = name
+            .map(|value| checked_text("auction_name", value))
+            .transpose()?;
+        let source_at = source_at
+            .map(|value| checked_text("source_at", value))
+            .transpose()?;
+        ensure_nonnegative_money("auction_matched_amount", matched_amount)?;
+        let complete = name.is_some()
+            && matched_price.is_some()
+            && previous_close.is_some()
+            && change_percent.is_some()
+            && matched_quantity.is_some()
+            && matched_amount.is_some()
+            && unmatched_bid_quantity.is_some()
+            && unmatched_ask_quantity.is_some()
+            && volume_ratio.is_some()
+            && source_at.is_some();
+        ensure_status_consistent(status, complete, "auction snapshot")?;
+        Ok(Self {
+            instrument,
+            name,
+            matched_price,
+            previous_close,
+            change_percent,
+            matched_quantity,
+            matched_amount,
+            unmatched_bid_quantity,
+            unmatched_ask_quantity,
+            volume_ratio,
+            status,
+            source_at,
+            observed_at: checked_text("observed_at", observed_at)?,
+            provider,
+            batch_id: checked_text("batch_id", batch_id)?,
+        })
+    }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+    pub fn matched_price(&self) -> Option<crate::Price> {
+        self.matched_price
+    }
+    pub fn previous_close(&self) -> Option<crate::Price> {
+        self.previous_close
+    }
+    pub fn change_percent(&self) -> Option<crate::Ratio> {
+        self.change_percent
+    }
+    pub fn matched_quantity(&self) -> Option<crate::Quantity> {
+        self.matched_quantity
+    }
+    pub fn matched_amount(&self) -> Option<crate::Money> {
+        self.matched_amount
+    }
+    pub fn unmatched_bid_quantity(&self) -> Option<crate::Quantity> {
+        self.unmatched_bid_quantity
+    }
+    pub fn unmatched_ask_quantity(&self) -> Option<crate::Quantity> {
+        self.unmatched_ask_quantity
+    }
+    pub fn volume_ratio(&self) -> Option<crate::Ratio> {
+        self.volume_ratio
+    }
+    pub fn status(&self) -> DataStatus {
+        self.status
+    }
+    pub fn source_at(&self) -> Option<&str> {
+        self.source_at.as_deref()
+    }
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+    pub fn provider(&self) -> ProviderId {
+        self.provider
+    }
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+}
+
+#[derive(Deserialize)]
+struct AuctionSnapshotWire {
+    instrument: InstrumentId,
+    name: Option<String>,
+    matched_price: Option<crate::Price>,
+    previous_close: Option<crate::Price>,
+    change_percent: Option<crate::Ratio>,
+    matched_quantity: Option<crate::Quantity>,
+    matched_amount: Option<crate::Money>,
+    unmatched_bid_quantity: Option<crate::Quantity>,
+    unmatched_ask_quantity: Option<crate::Quantity>,
+    volume_ratio: Option<crate::Ratio>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl TryFrom<AuctionSnapshotWire> for AuctionSnapshot {
+    type Error = crate::CoreError;
+    fn try_from(value: AuctionSnapshotWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.instrument,
+            value.name,
+            value.matched_price,
+            value.previous_close,
+            value.change_percent,
+            value.matched_quantity,
+            value.matched_amount,
+            value.unmatched_bid_quantity,
+            value.unmatched_ask_quantity,
+            value.volume_ratio,
+            value.status,
+            value.source_at,
+            value.observed_at,
+            value.provider,
+            value.batch_id,
+        )
+    }
 }
 
 /// Aggressor side reported for an executed trade.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TradeSide {
     Buy,
     Sell,
@@ -151,26 +733,136 @@ pub enum TradeSide {
 }
 
 /// Provider-neutral executed-trade record with source evidence.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "TradeWire")]
 pub struct Trade {
-    pub instrument: InstrumentId,
+    instrument: InstrumentId,
     /// Source trade time. Historical requests include the requested ISO date.
-    pub trade_at: String,
-    pub price: crate::Price,
-    pub quantity: crate::Quantity,
+    trade_at: String,
+    price: crate::Price,
+    quantity: crate::Quantity,
     /// Number of source executions aggregated into this row, when supplied.
-    pub trade_count: Option<u32>,
-    pub side: TradeSide,
-    pub status: DataStatus,
-    pub source_at: Option<String>,
-    pub observed_at: String,
-    pub provider: ProviderId,
-    pub batch_id: String,
+    trade_count: Option<u32>,
+    side: TradeSide,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl Trade {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentId,
+        trade_at: impl Into<String>,
+        price: crate::Price,
+        quantity: crate::Quantity,
+        trade_count: Option<u32>,
+        side: TradeSide,
+        status: DataStatus,
+        source_at: Option<String>,
+        observed_at: impl Into<String>,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        if trade_count == Some(0) {
+            return Err(crate::CoreError::InvalidValue {
+                field: "trade_count",
+                value: "0".into(),
+                reason: "must be positive when present",
+            });
+        }
+        let trade_at = checked_text("trade_at", trade_at)?;
+        let source_at = source_at
+            .map(|value| checked_text("source_at", value))
+            .transpose()?;
+        let complete = !matches!(side, TradeSide::Unknown(_)) && source_at.is_some();
+        ensure_status_consistent(status, complete, "trade")?;
+        Ok(Self {
+            instrument,
+            trade_at,
+            price,
+            quantity,
+            trade_count,
+            side,
+            status,
+            source_at,
+            observed_at: checked_text("observed_at", observed_at)?,
+            provider,
+            batch_id: checked_text("batch_id", batch_id)?,
+        })
+    }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn trade_at(&self) -> &str {
+        &self.trade_at
+    }
+    pub fn price(&self) -> crate::Price {
+        self.price
+    }
+    pub fn quantity(&self) -> crate::Quantity {
+        self.quantity
+    }
+    pub fn trade_count(&self) -> Option<u32> {
+        self.trade_count
+    }
+    pub fn side(&self) -> TradeSide {
+        self.side
+    }
+    pub fn status(&self) -> DataStatus {
+        self.status
+    }
+    pub fn source_at(&self) -> Option<&str> {
+        self.source_at.as_deref()
+    }
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+    pub fn provider(&self) -> ProviderId {
+        self.provider
+    }
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+}
+
+#[derive(Deserialize)]
+struct TradeWire {
+    instrument: InstrumentId,
+    trade_at: String,
+    price: crate::Price,
+    quantity: crate::Quantity,
+    trade_count: Option<u32>,
+    side: TradeSide,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl TryFrom<TradeWire> for Trade {
+    type Error = crate::CoreError;
+    fn try_from(value: TradeWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.instrument,
+            value.trade_at,
+            value.price,
+            value.quantity,
+            value.trade_count,
+            value.side,
+            value.status,
+            value.source_at,
+            value.observed_at,
+            value.provider,
+            value.batch_id,
+        )
+    }
 }
 
 /// Normalized listing board. `Unknown` preserves a source value that cannot be
 /// mapped without guessing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Board {
     Main,
     ChiNext,
@@ -181,31 +873,190 @@ pub enum Board {
 
 /// Source-backed daily price-limit rule. Missing values remain `None`; callers
 /// must not infer a current rule from an instrument code alone.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PriceLimitRule {
-    pub percent: Option<crate::Ratio>,
-    pub version: Option<String>,
+    percent: Option<crate::Ratio>,
+    version: Option<String>,
+}
+impl PriceLimitRule {
+    pub fn new(
+        percent: Option<crate::Ratio>,
+        version: Option<String>,
+    ) -> Result<Self, crate::CoreError> {
+        if let Some(percent) = percent {
+            if percent.unit() != crate::RatioUnit::Percent || percent.get() <= 0.0 {
+                return Err(crate::CoreError::InvalidValue {
+                    field: "price_limit_percent",
+                    value: percent.get().to_string(),
+                    reason: "must be a positive percentage",
+                });
+            }
+        }
+        let version = version
+            .map(|value| checked_text("price_limit_version", value))
+            .transpose()?;
+        Ok(Self { percent, version })
+    }
+    pub fn percent(&self) -> Option<crate::Ratio> {
+        self.percent
+    }
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
+    }
+}
+impl<'de> Deserialize<'de> for PriceLimitRule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Repr {
+            percent: Option<crate::Ratio>,
+            version: Option<String>,
+        }
+        let repr = Repr::deserialize(deserializer)?;
+        Self::new(repr.percent, repr.version).map_err(de::Error::custom)
+    }
 }
 
 /// Provider-neutral security master record with field-level availability.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "SecurityMetadataWire")]
 pub struct SecurityMetadata {
-    pub instrument: InstrumentId,
-    pub name: Option<String>,
-    pub board: Option<Board>,
-    pub is_st: Option<bool>,
+    instrument: InstrumentId,
+    name: Option<String>,
+    board: Option<Board>,
+    is_st: Option<bool>,
     /// Source listing date in `YYYY-MM-DD` form, when supplied.
-    pub listed_on: Option<String>,
-    pub price_limit: PriceLimitRule,
-    pub status: DataStatus,
-    pub source_at: Option<String>,
-    pub observed_at: String,
-    pub provider: ProviderId,
-    pub batch_id: String,
+    listed_on: Option<String>,
+    price_limit: PriceLimitRule,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl SecurityMetadata {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentId,
+        name: Option<String>,
+        board: Option<Board>,
+        is_st: Option<bool>,
+        listed_on: Option<String>,
+        price_limit: PriceLimitRule,
+        status: DataStatus,
+        source_at: Option<String>,
+        observed_at: impl Into<String>,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        let name = name
+            .map(|value| checked_text("security_name", value))
+            .transpose()?;
+        if listed_on
+            .as_deref()
+            .is_some_and(|date| !valid_iso_date(date))
+        {
+            return Err(crate::CoreError::InvalidRequest(
+                "invalid security listing date".into(),
+            ));
+        }
+        let source_at = source_at
+            .map(|value| checked_text("source_at", value))
+            .transpose()?;
+        let complete = name.is_some()
+            && board.is_some()
+            && is_st.is_some()
+            && listed_on.is_some()
+            && price_limit.percent.is_some()
+            && price_limit.version.is_some()
+            && source_at.is_some();
+        ensure_status_consistent(status, complete, "security metadata")?;
+        Ok(Self {
+            instrument,
+            name,
+            board,
+            is_st,
+            listed_on,
+            price_limit,
+            status,
+            source_at,
+            observed_at: checked_text("observed_at", observed_at)?,
+            provider,
+            batch_id: checked_text("batch_id", batch_id)?,
+        })
+    }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+    pub fn board(&self) -> Option<Board> {
+        self.board
+    }
+    pub fn is_st(&self) -> Option<bool> {
+        self.is_st
+    }
+    pub fn listed_on(&self) -> Option<&str> {
+        self.listed_on.as_deref()
+    }
+    pub fn price_limit(&self) -> &PriceLimitRule {
+        &self.price_limit
+    }
+    pub fn status(&self) -> DataStatus {
+        self.status
+    }
+    pub fn source_at(&self) -> Option<&str> {
+        self.source_at.as_deref()
+    }
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+    pub fn provider(&self) -> ProviderId {
+        self.provider
+    }
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+}
+
+#[derive(Deserialize)]
+struct SecurityMetadataWire {
+    instrument: InstrumentId,
+    name: Option<String>,
+    board: Option<Board>,
+    is_st: Option<bool>,
+    listed_on: Option<String>,
+    price_limit: PriceLimitRule,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+impl TryFrom<SecurityMetadataWire> for SecurityMetadata {
+    type Error = crate::CoreError;
+    fn try_from(value: SecurityMetadataWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.instrument,
+            value.name,
+            value.board,
+            value.is_st,
+            value.listed_on,
+            value.price_limit,
+            value.status,
+            value.source_at,
+            value.observed_at,
+            value.provider,
+            value.batch_id,
+        )
+    }
 }
 
 /// Declares which data families a provider implements.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capabilities {
     pub quotes: bool,
     pub bars: bool,
@@ -243,7 +1094,7 @@ impl Default for Capabilities {
 }
 
 /// Standard bar interval shared by market-data providers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BarInterval {
     Minute1,
     Minute5,
@@ -257,7 +1108,7 @@ pub enum BarInterval {
 }
 
 /// Price adjustment applied by the source to a historical bar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Adjustment {
     Unadjusted,
     Forward,
@@ -286,26 +1137,61 @@ fn valid_iso_date(value: &str) -> bool {
         2 => 28,
         _ => 0,
     };
-    max_day != 0 && day >= 1 && day <= max_day
+    year >= 1900 && max_day != 0 && day >= 1 && day <= max_day
+}
+
+fn valid_clock_time(value: &str) -> bool {
+    if value.len() != 8
+        || value.as_bytes()[2] != b':'
+        || value.as_bytes()[5] != b':'
+        || !value
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| index == 2 || index == 5 || byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let hour: u8 = value[0..2].parse().unwrap_or(24);
+    let minute: u8 = value[3..5].parse().unwrap_or(60);
+    let second: u8 = value[6..8].parse().unwrap_or(60);
+    hour < 24 && minute < 60 && second < 60
+}
+
+fn valid_bar_time(value: &str, interval: BarInterval) -> bool {
+    match interval {
+        BarInterval::Minute1
+        | BarInterval::Minute5
+        | BarInterval::Minute15
+        | BarInterval::Minute30
+        | BarInterval::Hour1 => {
+            value.len() == 19
+                && matches!(value.as_bytes()[10], b' ' | b'T')
+                && valid_iso_date(&value[..10])
+                && valid_clock_time(&value[11..])
+        }
+        BarInterval::Day | BarInterval::Week | BarInterval::Month | BarInterval::Year => {
+            valid_iso_date(value)
+        }
+    }
 }
 
 /// Provider-neutral OHLCV bar with record-level source evidence.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Bar {
-    pub instrument: InstrumentId,
-    pub interval: BarInterval,
-    pub bar_start: String,
-    pub bar_end: String,
-    pub open: crate::Price,
-    pub high: crate::Price,
-    pub low: crate::Price,
-    pub close: crate::Price,
-    pub volume: crate::Quantity,
-    pub amount: Option<crate::Money>,
-    pub adjustment: Adjustment,
-    pub source_at: Option<String>,
-    pub provider: ProviderId,
-    pub batch_id: String,
+    instrument: InstrumentId,
+    interval: BarInterval,
+    bar_start: String,
+    bar_end: String,
+    open: crate::Price,
+    high: crate::Price,
+    low: crate::Price,
+    close: crate::Price,
+    volume: crate::Quantity,
+    amount: Option<crate::Money>,
+    adjustment: Adjustment,
+    source_at: Option<String>,
+    provider: ProviderId,
+    batch_id: String,
 }
 impl Bar {
     /// Builds a bar and rejects inconsistent OHLC ranges.
@@ -325,9 +1211,13 @@ impl Bar {
         provider: ProviderId,
         batch_id: impl Into<String>,
     ) -> Result<Self, crate::CoreError> {
-        let bar_start = bar_start.into();
-        let bar_end = bar_end.into();
-        if bar_start.is_empty() || bar_end.is_empty() || bar_start > bar_end {
+        let bar_start = checked_text("bar_start", bar_start)?;
+        let bar_end = checked_text("bar_end", bar_end)?;
+        if !valid_bar_time(&bar_start, interval)
+            || !valid_bar_time(&bar_end, interval)
+            || bar_start.as_bytes().get(10) != bar_end.as_bytes().get(10)
+            || bar_start > bar_end
+        {
             return Err(crate::CoreError::InvalidRequest(
                 "invalid bar time range".into(),
             ));
@@ -340,6 +1230,7 @@ impl Bar {
                 "inconsistent OHLC range".into(),
             ));
         }
+        ensure_nonnegative_money("bar_amount", amount)?;
         Ok(Self {
             instrument,
             interval,
@@ -354,24 +1245,115 @@ impl Bar {
             adjustment,
             source_at: None,
             provider,
-            batch_id: batch_id.into(),
+            batch_id: checked_text("batch_id", batch_id)?,
         })
     }
 
-    pub fn with_source_at(mut self, source_at: impl Into<String>) -> Self {
-        self.source_at = Some(source_at.into());
-        self
+    pub fn with_source_at(
+        mut self,
+        source_at: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        self.source_at = Some(checked_text("source_at", source_at)?);
+        Ok(self)
+    }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn interval(&self) -> BarInterval {
+        self.interval
+    }
+    pub fn bar_start(&self) -> &str {
+        &self.bar_start
+    }
+    pub fn bar_end(&self) -> &str {
+        &self.bar_end
+    }
+    pub fn open(&self) -> crate::Price {
+        self.open
+    }
+    pub fn high(&self) -> crate::Price {
+        self.high
+    }
+    pub fn low(&self) -> crate::Price {
+        self.low
+    }
+    pub fn close(&self) -> crate::Price {
+        self.close
+    }
+    pub fn volume(&self) -> crate::Quantity {
+        self.volume
+    }
+    pub fn amount(&self) -> Option<crate::Money> {
+        self.amount
+    }
+    pub fn adjustment(&self) -> Adjustment {
+        self.adjustment
+    }
+    pub fn source_at(&self) -> Option<&str> {
+        self.source_at.as_deref()
+    }
+    pub fn provider(&self) -> ProviderId {
+        self.provider
+    }
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+}
+
+impl<'de> Deserialize<'de> for Bar {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Repr {
+            instrument: InstrumentId,
+            interval: BarInterval,
+            bar_start: String,
+            bar_end: String,
+            open: crate::Price,
+            high: crate::Price,
+            low: crate::Price,
+            close: crate::Price,
+            volume: crate::Quantity,
+            amount: Option<crate::Money>,
+            adjustment: Adjustment,
+            source_at: Option<String>,
+            provider: ProviderId,
+            batch_id: String,
+        }
+        let repr = Repr::deserialize(deserializer)?;
+        let mut bar = Self::new(
+            repr.instrument,
+            repr.interval,
+            repr.bar_start,
+            repr.bar_end,
+            repr.open,
+            repr.high,
+            repr.low,
+            repr.close,
+            repr.volume,
+            repr.amount,
+            repr.adjustment,
+            repr.provider,
+            repr.batch_id,
+        )
+        .map_err(de::Error::custom)?;
+        if let Some(source_at) = repr.source_at {
+            bar = bar.with_source_at(source_at).map_err(de::Error::custom)?;
+        }
+        Ok(bar)
     }
 }
 
 /// Validated historical-bar request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BarsRequest {
-    pub instrument: InstrumentId,
-    pub interval: BarInterval,
-    pub start: Option<String>,
-    pub end: Option<String>,
-    pub limit: u16,
+    instrument: InstrumentId,
+    interval: BarInterval,
+    start: Option<String>,
+    end: Option<String>,
+    limit: u16,
 }
 impl BarsRequest {
     /// Creates a bounded request.
@@ -412,16 +1394,57 @@ impl BarsRequest {
         self.end = Some(end);
         Ok(self)
     }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn interval(&self) -> BarInterval {
+        self.interval
+    }
+    pub fn start(&self) -> Option<&str> {
+        self.start.as_deref()
+    }
+    pub fn end(&self) -> Option<&str> {
+        self.end.as_deref()
+    }
+    pub fn limit(&self) -> u16 {
+        self.limit
+    }
+}
+
+impl<'de> Deserialize<'de> for BarsRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Repr {
+            instrument: InstrumentId,
+            interval: BarInterval,
+            start: Option<String>,
+            end: Option<String>,
+            limit: u16,
+        }
+        let repr = Repr::deserialize(deserializer)?;
+        let request =
+            Self::new(repr.instrument, repr.interval, repr.limit).map_err(de::Error::custom)?;
+        match (repr.start, repr.end) {
+            (None, None) => Ok(request),
+            (Some(start), Some(end)) => request.with_range(start, end).map_err(de::Error::custom),
+            _ => Err(de::Error::custom(
+                "bar date range requires both start and end",
+            )),
+        }
+    }
 }
 
 /// Validated current or single-day historical trade request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TradesRequest {
-    pub instrument: InstrumentId,
+    instrument: InstrumentId,
     /// `None` requests the current session; `Some` requests one historical day.
-    pub date: Option<String>,
+    date: Option<String>,
     /// Maximum number of records. Providers automatically paginate up to it.
-    pub limit: u16,
+    limit: u16,
 }
 impl TradesRequest {
     pub fn new(instrument: InstrumentId, limit: u16) -> Result<Self, crate::CoreError> {
@@ -449,6 +1472,35 @@ impl TradesRequest {
         }
         self.date = Some(date);
         Ok(self)
+    }
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn date(&self) -> Option<&str> {
+        self.date.as_deref()
+    }
+    pub fn limit(&self) -> u16 {
+        self.limit
+    }
+}
+
+impl<'de> Deserialize<'de> for TradesRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Repr {
+            instrument: InstrumentId,
+            date: Option<String>,
+            limit: u16,
+        }
+        let repr = Repr::deserialize(deserializer)?;
+        let request = Self::new(repr.instrument, repr.limit).map_err(de::Error::custom)?;
+        match repr.date {
+            Some(date) => request.with_date(date).map_err(de::Error::custom),
+            None => Ok(request),
+        }
     }
 }
 

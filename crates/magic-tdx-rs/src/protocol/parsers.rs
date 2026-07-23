@@ -703,20 +703,9 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
         let active2 = read_u16(body, pos);
         pos += 2;
 
-        // format servertime from reversed_bytes0
-        let ts = reversed_bytes0 as u64;
-        let servertime = if ts == 0 {
-            format!("reversed_bytes0:{}", ts)
-        } else {
-            let ts_str = format!("{}", ts);
-            if ts_str.len() >= 8 {
-                let hhmm = &ts_str[..ts_str.len() - 6];
-                let mm_ss = &ts_str[ts_str.len() - 6..];
-                format!("{}:{}:{}", hhmm, &mm_ss[..2], &mm_ss[2..])
-            } else {
-                format!("{}", ts)
-            }
-        };
+        // `reversed_bytes0` is correlated with server time, but its wire format is not
+        // verified. Preserve the raw value below and do not fabricate source evidence.
+        let servertime = String::new();
 
         let price = (price_raw as f64) * coefficient;
         let last_close = ((price_raw + last_close_diff) as f64) * coefficient;

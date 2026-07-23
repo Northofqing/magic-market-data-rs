@@ -37,6 +37,9 @@ pub enum TdxError {
     #[error("Unsupported capability: {0}")]
     Unsupported(String),
 
+    #[error("Core contract error: {0}")]
+    Core(#[from] magic_market_core::CoreError),
+
     #[error("{0}")]
     Coded(CodedError),
 }

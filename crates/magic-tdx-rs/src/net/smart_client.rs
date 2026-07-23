@@ -119,6 +119,7 @@ impl ServerCache {
     }
 
     /// 保存缓存
+    #[cfg(not(test))]
     fn save(&self) {
         let path = Self::cache_path();
         if let Some(parent) = path.parent() {
@@ -135,6 +136,9 @@ impl ServerCache {
             }
         }
     }
+
+    #[cfg(test)]
+    fn save(&self) {}
 
     /// 检查服务器是否在黑名单中
     fn is_blacklisted(&self, ip: &str, port: u16) -> bool {

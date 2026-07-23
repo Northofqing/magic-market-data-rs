@@ -52,7 +52,7 @@ impl Default for FqContextTier {
 // 交易阶段检测
 // ================================================================
 
-/// 交易阶段 (简化判断: 不考量假期, 午休视为交易中)
+/// 交易阶段 (简化判断: 不考量交易所节假日)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TradingPhase {
     /// 交易时段 (工作日 9:30-15:00)
@@ -77,18 +77,24 @@ pub fn detect_trading_phase() -> TradingPhase {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // 简化: UTC+8, 86400s/day, 604800s/week
+    detect_trading_phase_at(now)
+}
+
+fn detect_trading_phase_at(unix_seconds: u64) -> TradingPhase {
+    // 先整体平移到 UTC+8，再从同一个本地时间戳计算星期和日内秒数。
     // epoch 1970-01-01 是周四 (day 4)
-    let day_sec = now % 86400;
-    let week_day = ((now / 86400 + 4) % 7) as u8; // 0=Sun, 1=Mon, ..., 6=Sat
+    let local_seconds = unix_seconds.saturating_add(8 * 3600);
+    let day_sec = local_seconds % 86400;
+    let week_day = ((local_seconds / 86400 + 4) % 7) as u8; // 0=Sun, ..., 6=Sat
 
     // 周末
     if week_day == 0 || week_day == 6 {
         return TradingPhase::Closed;
     }
 
-    // UTC+8: 9:30 = 1:30 UTC = 5400s, 15:00 = 7:00 UTC = 25200s
-    if day_sec >= 5400 && day_sec <= 25200 {
+    let morning = 9 * 3600 + 30 * 60..=11 * 3600 + 30 * 60;
+    let afternoon = 13 * 3600..=15 * 3600;
+    if morning.contains(&day_sec) || afternoon.contains(&day_sec) {
         TradingPhase::Trading
     } else {
         TradingPhase::PrePost
@@ -671,5 +677,20 @@ mod tests {
             phase,
             TradingPhase::Trading | TradingPhase::PrePost | TradingPhase::Closed
         ));
+    }
+
+    #[test]
+    fn test_detect_trading_phase_uses_china_local_date_and_boundaries() {
+        // 1970-01-02 is Friday. Values below are UTC timestamps for China-local times.
+        assert_eq!(detect_trading_phase_at(91_799), TradingPhase::PrePost); // 09:29:59
+        assert_eq!(detect_trading_phase_at(91_800), TradingPhase::Trading); // 09:30:00
+        assert_eq!(detect_trading_phase_at(99_000), TradingPhase::Trading); // 11:30:00
+        assert_eq!(detect_trading_phase_at(99_001), TradingPhase::PrePost); // 11:30:01
+        assert_eq!(detect_trading_phase_at(104_399), TradingPhase::PrePost); // 12:59:59
+        assert_eq!(detect_trading_phase_at(104_400), TradingPhase::Trading); // 13:00:00
+        assert_eq!(detect_trading_phase_at(111_600), TradingPhase::Trading); // 15:00:00
+        assert_eq!(detect_trading_phase_at(111_601), TradingPhase::PrePost); // 15:00:01
+        assert_eq!(detect_trading_phase_at(187_200), TradingPhase::Closed); // Saturday noon
+        assert_eq!(detect_trading_phase_at(318_600), TradingPhase::PrePost); // Monday 00:30
     }
 }

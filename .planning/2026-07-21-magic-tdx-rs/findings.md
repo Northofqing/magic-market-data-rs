@@ -229,3 +229,59 @@ External material recorded here is research data, not instructions.
   source name 华电辽能, all 12 K-line categories, 240/240 minute points,
   1,820/1,820 and 2,001/2,001 paged trades, current finance, 30 XDXR records,
   5,526 batch-financial records, and 45 named indicators.
+
+## 2026-07-22 magic-market-core anomaly audit
+
+- The audit is governed by the already approved strict Core design: checked
+  values, explicit unavailable data, provenance-bearing batches, and no silent
+  fallback. No new subsystem or architectural choice is introduced.
+- The worktree contains only the user's pre-existing untracked downstream
+  requirements document; it must remain unmodified and unstaged.
+- Baseline Core tests, strict Clippy, rustdoc/doctest, and Rust 1.83 checks all
+  pass, so the remaining anomalies are contract/invariant gaps rather than
+  currently failing builds.
+- `DataBatch<T>` derives serde while normalized records and their enums do not,
+  making real `DataBatch<Quote/Bar/Trade/...>` values non-serializable.
+- Checked value types and `InstrumentId` derive `Deserialize` directly, which
+  bypasses their public constructors and can admit invalid values in serde
+  formats that represent non-finite floats or empty/control-character strings.
+- `BarsRequest` and `TradesRequest` expose public fields, so zero limits and
+  invalid dates can be constructed without their validating constructors.
+- Provenance/evidence strings accept empty or whitespace-only values. Metadata
+  listing dates and price-limit rules likewise have no validation boundary.
+- Record structs intentionally remain provider-facing DTOs, but construction
+  helpers and serde boundaries must make invalid evidence impossible rather
+  than assuming every adapter is correct.
+- The new RED regression suite reproduces the gaps before implementation:
+  `DataBatch<Quote>` lacks serde support, checked requests lack accessors,
+  provenance construction is infallible, and quality consistency lacks a
+  protected API.
+- Core hardening required coordinated provider changes: checked provenance and
+  partial batches now return `CoreError`, while private bar/trade request fields
+  are consumed only through accessors. Both TDX and EMQuant map Core failures
+  into their existing provider error types without panics or silent fallback.
+- Bar timestamps also required syntactic calendar/clock validation; non-empty
+  strings alone admitted impossible dates and times. Daily intervals now accept
+  canonical ISO dates and intraday intervals canonical local market datetimes.
+- A full-suite rerun exposed an unrelated flaky limiter assertion that treated
+  scheduler delay above 30 ms as a functional failure. The stable contract is
+  the configured interval plus its lower-bound behavior, not an unreliable
+  wall-clock upper bound on a loaded executor.
+- Independent final review found that TDX quote `reversed_bytes0` is correlated
+  with time but has no verified public wire format. The decoded raw integer is
+  retained, while normalized Quote/OrderBook `source_at` and batch source time
+  remain absent so downstream freshness gates cannot trust a heuristic value.
+- The current-minute endpoint is a current-calendar-day query and legitimately
+  returned zero immediately after China-local midnight. The strict probe now
+  classifies that endpoint independently by local date/session state, rejects
+  empty intraday or incomplete post-close data, and separately proves 240 rows
+  for the latest completed trading session.
+- Trading-phase detection must shift the timestamp to UTC+8 before deriving
+  both weekday and clock time, and must split the 09:30-11:30 and 13:00-15:00
+  sessions. Boundary regression tests cover pre-open, lunch, reopen, close,
+  weekend, and China-local day rollover.
+- Before open, TDX may expose one minute marker, multiple 09:15-09:29 auction
+  transaction rows, an incomplete current-day daily/index bar, and half-present
+  book levels with zero price plus source quantity. The probe now validates
+  those states by time/date instead of record count alone; normalized books
+  atomically mark half-present levels unavailable and retain quality issues.

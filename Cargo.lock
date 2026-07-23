@@ -71,7 +71,7 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "magic-emquant-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magic-market-core",
  "serde",
@@ -81,15 +81,16 @@ dependencies = [
 
 [[package]]
 name = "magic-market-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
 [[package]]
 name = "magic-tdx-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crc32fast",
  "encoding_rs",

@@ -97,6 +97,31 @@ Status: complete
   validation. EMQuant live records remain externally blocked by account
   entitlement `10001003/EQERR_NO_ACCESS`, not unfinished repository code.
 
+### Phase 10: magic-market-core anomaly audit
+
+Status: complete
+
+- Reproduce all Core test, strict Clippy, rustdoc/doctest, MSRV, and serialization
+  failures independently from provider/network code.
+- Audit every public Core constructor and record contract for invalid values,
+  impossible states, silent defaults, incomplete evidence, calendar/date bugs,
+  duplicate/cardinality ambiguity, and inconsistent serde support.
+- Add minimal failing regression tests before each implementation fix.
+- Verify all workspace consumers, documentation, SemVer surface, and final gates;
+  commit and push only Core-scoped fixes plus required downstream adaptations.
+
+Completion evidence:
+
+- Checked serde, private invariant-bearing fields, request validation, evidence
+  validation, calendar/clock validation, response cardinality/order checks, and
+  explicit partial-quality semantics are implemented across Core and consumers.
+- TDX raw quote time bytes remain auditable but are not promoted to normalized
+  source timestamps because their wire format is unverified.
+- Workspace tests, strict Clippy, Rust 1.83 and stable checks, rustdoc, doctests,
+  documentation links, compliance, and the strict TDX live probe pass.
+- The EMQuant probe exercises every supported family and truthfully reports the
+  external account entitlement error `10001003/EQERR_NO_ACCESS` for each one.
+
 ## Decisions
 
 - No implementation edits before design approval.

@@ -1,54 +1,429 @@
 use magic_market_core::{
-    AssetClass, Exchange, InstrumentId, SecurityMetadataProvider, Trades, TradesRequest,
+    AssetClass, Exchange, InstrumentId, OrderBooks, SecurityMetadataProvider, Trades, TradesRequest,
 };
-use magic_tdx_rs::TdxSmartClient;
+use magic_tdx_rs::{
+    net::utils::today_yyyymmdd,
+    protocol::constants::{KLINE_DAILY, PRIMARY_SERVERS},
+    TdxDirectClient, TdxError, TdxSmartClient,
+};
+
+fn record_error(errors: &mut Vec<String>, label: &str, error: impl std::fmt::Display) {
+    let message = format!("{label}: {error}");
+    println!("{label}=error error={error}");
+    errors.push(message);
+}
+
+fn require_count(errors: &mut Vec<String>, label: &str, actual: usize, expected: usize) {
+    if actual != expected {
+        errors.push(format!(
+            "{label}: expected {expected} records, received {actual}"
+        ));
+    }
+}
+
+fn require_nonempty(errors: &mut Vec<String>, label: &str, actual: usize) {
+    if actual == 0 {
+        errors.push(format!("{label}: expected at least one record, received 0"));
+    }
+}
+
+struct MinuteProbe {
+    current_count: usize,
+    latest_session_count: usize,
+    latest_session_date: u32,
+    current_status: &'static str,
+    server: String,
+}
+
+#[derive(Clone, Copy)]
+enum CurrentSession {
+    Weekend,
+    PreOpen,
+    Intraday,
+    Complete,
+}
+
+impl CurrentSession {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Weekend => "expected_unavailable_weekend",
+            Self::PreOpen => "expected_unavailable_before_open",
+            Self::Intraday => "available_intraday",
+            Self::Complete => "available_complete_after_close",
+        }
+    }
+}
+
+fn is_preopen_trade_time(value: &str) -> bool {
+    value.len() >= 5 && ("09:15".."09:30").contains(&&value[..5])
+}
+
+fn validate_current_trades(
+    errors: &mut Vec<String>,
+    label: &str,
+    times: &[&str],
+    request_limit: usize,
+    session: CurrentSession,
+) {
+    let actual = times.len();
+    if actual > request_limit {
+        errors.push(format!(
+            "{label}: received {actual} records for request limit {request_limit}"
+        ));
+        return;
+    }
+    match session {
+        CurrentSession::Weekend if actual == 0 => {
+            println!("{label}_status={}", session.label());
+        }
+        CurrentSession::Weekend => errors.push(format!(
+            "{label}: received {actual} records during {}",
+            session.label()
+        )),
+        CurrentSession::PreOpen if actual == 0 => {
+            println!("{label}_status={}", session.label());
+        }
+        CurrentSession::PreOpen if times.iter().all(|time| is_preopen_trade_time(time)) => {
+            println!("{label}_status=available_preopen count={actual}");
+        }
+        CurrentSession::PreOpen => errors.push(format!(
+            "{label}: one or more pre-open records have a time outside 09:15-09:29"
+        )),
+        CurrentSession::Intraday => require_nonempty(errors, label, actual),
+        CurrentSession::Complete => require_count(errors, label, actual, request_limit),
+    }
+}
+
+fn record_current_error(
+    errors: &mut Vec<String>,
+    label: &str,
+    error: TdxError,
+    session: CurrentSession,
+) {
+    let expected_empty = matches!(
+        &error,
+        TdxError::InvalidData(message) if message == "TDX returned an empty successful response"
+    );
+    match (session, expected_empty) {
+        (CurrentSession::Weekend | CurrentSession::PreOpen, true) => {
+            println!("{label}_status={} expected_error={error}", session.label());
+        }
+        _ => {
+            record_error(errors, label, error);
+        }
+    }
+}
+
+fn compact_date(value: &str) -> Option<u32> {
+    let digits = value
+        .bytes()
+        .filter(u8::is_ascii_digit)
+        .take(8)
+        .collect::<Vec<_>>();
+    if digits.len() != 8 {
+        return None;
+    }
+    std::str::from_utf8(&digits).ok()?.parse().ok()
+}
+
+fn china_clock() -> Result<(u8, u64), String> {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("system clock is before UNIX epoch: {error}"))?
+        .as_secs()
+        .saturating_add(8 * 3600);
+    let weekday = ((seconds / 86_400 + 4) % 7) as u8;
+    Ok((weekday, seconds % 86_400))
+}
+
+fn current_session(china_weekday: u8, china_day_seconds: u64) -> CurrentSession {
+    if china_weekday == 0 || china_weekday == 6 {
+        CurrentSession::Weekend
+    } else if china_day_seconds < 9 * 3600 + 30 * 60 {
+        CurrentSession::PreOpen
+    } else if china_day_seconds >= 15 * 3600 {
+        CurrentSession::Complete
+    } else {
+        CurrentSession::Intraday
+    }
+}
+
+fn completed_session_date(dates: &[u32], today: u32, session: CurrentSession) -> Option<u32> {
+    dates
+        .iter()
+        .rev()
+        .copied()
+        .find(|date| session_date_is_complete(*date, today, session))
+}
+
+fn session_date_is_complete(date: u32, today: u32, session: CurrentSession) -> bool {
+    match session {
+        CurrentSession::PreOpen | CurrentSession::Intraday => date < today,
+        CurrentSession::Weekend | CurrentSession::Complete => date <= today,
+    }
+}
+
+fn classify_current_minute(
+    latest_session_date: u32,
+    today: u32,
+    china_weekday: u8,
+    china_day_seconds: u64,
+    current_count: usize,
+) -> Result<&'static str, String> {
+    if latest_session_date > today {
+        return Err(format!(
+            "latest session date {latest_session_date} is after local date {today}"
+        ));
+    }
+    if current_count > 240 {
+        return Err(format!(
+            "current endpoint returned {current_count} records, maximum is 240"
+        ));
+    }
+    let session = current_session(china_weekday, china_day_seconds);
+    match session {
+        CurrentSession::Weekend if current_count == 0 => Ok(session.label()),
+        CurrentSession::Weekend => Err(format!(
+            "current endpoint returned {current_count} records on a weekend"
+        )),
+        CurrentSession::PreOpen if current_count == 0 => Ok(session.label()),
+        CurrentSession::PreOpen if current_count == 1 => Ok("available_preopen"),
+        CurrentSession::PreOpen => Err(format!(
+            "current endpoint returned {current_count} pre-open records, maximum is 1"
+        )),
+        CurrentSession::Intraday if current_count > 0 => Ok(session.label()),
+        CurrentSession::Intraday => {
+            Err("current endpoint returned no records after the market opened".to_string())
+        }
+        CurrentSession::Complete if current_count == 240 => Ok(session.label()),
+        CurrentSession::Complete => Err(format!(
+            "current endpoint returned {current_count} records after close, expected 240"
+        )),
+    }
+}
+
+fn probe_index_bars(
+    market: u8,
+    code: &str,
+    requested: u16,
+    minimum: usize,
+) -> Result<(usize, String, String), String> {
+    let mut failures = Vec::new();
+    let today = today_yyyymmdd();
+    let (weekday, day_seconds) = china_clock()?;
+    let session = current_session(weekday, day_seconds);
+    for (name, ip, port) in PRIMARY_SERVERS {
+        let client = TdxDirectClient::new(ip, *port, 3.0);
+        match client.get_index_bars(KLINE_DAILY, market, code, 0, requested, 0) {
+            Ok(items) => {
+                let completed = items
+                    .iter()
+                    .map(|item| compact_date(&item.datetime).map(|date| (date, item)))
+                    .collect::<Option<Vec<_>>>();
+                let Some(completed) = completed else {
+                    failures.push(format!(
+                        "{name}({ip}:{port}) returned an index bar without YYYYMMDD"
+                    ));
+                    continue;
+                };
+                let completed = completed
+                    .into_iter()
+                    .filter(|(date, _)| session_date_is_complete(*date, today, session))
+                    .collect::<Vec<_>>();
+                if completed.len() >= minimum {
+                    let first = completed
+                        .first()
+                        .map_or_else(|| "none".to_string(), |(_, item)| item.datetime.clone());
+                    return Ok((completed.len(), first, format!("{name}({ip}:{port})")));
+                }
+                failures.push(format!(
+                    "{name}({ip}:{port}) returned {} total but only {} completed index bars, required {minimum}",
+                    items.len(),
+                    completed.len()
+                ));
+            }
+            Err(error) => failures.push(format!("{name}({ip}:{port}) failed: {error}")),
+        }
+    }
+    Err(format!(
+        "no primary server returned at least {minimum} of {requested} requested index bars: {}",
+        failures.join("; ")
+    ))
+}
+
+fn probe_minute_data(market: u8, code: &str) -> Result<MinuteProbe, String> {
+    let mut failures = Vec::new();
+    let today = today_yyyymmdd();
+    let (china_weekday, china_day_seconds) = china_clock()?;
+    let session = current_session(china_weekday, china_day_seconds);
+    for (name, ip, port) in PRIMARY_SERVERS {
+        let client = TdxDirectClient::new(ip, *port, 3.0);
+        let current_count = match client.get_minute_time_data(market, code) {
+            Ok(items) => items.len(),
+            Err(error) => {
+                failures.push(format!("{name}({ip}:{port}) current failed: {error}"));
+                continue;
+            }
+        };
+        let daily_dates = match client.get_security_bars(KLINE_DAILY, market, code, 0, 2, 0) {
+            Ok(items) => items
+                .iter()
+                .map(|item| {
+                    compact_date(&item.datetime)
+                        .ok_or_else(|| "daily bar has no YYYYMMDD date".to_string())
+                })
+                .collect::<Result<Vec<_>, _>>(),
+            Err(error) => Err(format!("latest daily bar failed: {error}")),
+        };
+        let daily_dates = match daily_dates {
+            Ok(value) => value,
+            Err(error) => {
+                failures.push(format!("{name}({ip}:{port}) {error}"));
+                continue;
+            }
+        };
+        let latest_source_date = match daily_dates.last().copied() {
+            Some(value) => value,
+            None => {
+                failures.push(format!("{name}({ip}:{port}) returned no daily bars"));
+                continue;
+            }
+        };
+        let completed_date = match completed_session_date(&daily_dates, today, session) {
+            Some(value) => value,
+            None => {
+                failures.push(format!(
+                    "{name}({ip}:{port}) has no completed session in {:?}",
+                    daily_dates
+                ));
+                continue;
+            }
+        };
+        let current_status = match classify_current_minute(
+            latest_source_date,
+            today,
+            china_weekday,
+            china_day_seconds,
+            current_count,
+        ) {
+            Ok(status) => status,
+            Err(error) => {
+                failures.push(format!("{name}({ip}:{port}) current invalid: {error}"));
+                continue;
+            }
+        };
+        match client.get_history_minute_time_data(market, code, completed_date) {
+            Ok(items) if items.len() == 240 => {
+                return Ok(MinuteProbe {
+                    current_count,
+                    latest_session_count: items.len(),
+                    latest_session_date: completed_date,
+                    current_status,
+                    server: format!("{name}({ip}:{port})"),
+                });
+            }
+            Ok(items) => failures.push(format!(
+                "{name}({ip}:{port}) date={completed_date} current={current_count} latest={}",
+                items.len()
+            )),
+            Err(error) => failures.push(format!(
+                "{name}({ip}:{port}) date={completed_date} history failed: {error}"
+            )),
+        }
+    }
+    Err(format!(
+        "no primary server returned 240 records for its latest daily-bar date: {}",
+        failures.join("; ")
+    ))
+}
+
 fn main() {
+    let mut errors = Vec::new();
+    let session = match china_clock() {
+        Ok((weekday, seconds)) => Some(current_session(weekday, seconds)),
+        Err(error) => {
+            record_error(&mut errors, "china_clock", error);
+            None
+        }
+    };
     let client = TdxSmartClient::new();
+    client.clear_cache();
     match client.connect_to_any(Some(3.0)) {
         Ok(true) => {
             println!("connected=true");
+            println!("connected_server={:?}", client.inner().connected_server());
             match client.get_security_quotes(&[(1, "600396")]) {
-                Ok(quotes) => println!(
-                    "quotes={} first_price={}",
-                    quotes.len(),
-                    quotes.first().map_or(0.0, |q| q.price)
-                ),
-                Err(error) => println!("quotes=error error={error}"),
+                Ok(quotes) => {
+                    println!(
+                        "quotes={} first_price={}",
+                        quotes.len(),
+                        quotes.first().map_or(0.0, |q| q.price)
+                    );
+                    require_count(&mut errors, "quotes", quotes.len(), 1);
+                }
+                Err(error) => record_error(&mut errors, "quotes", error),
             }
             match client.get_security_bars(4, 1, "600396", 0, 5, 0) {
-                Ok(bars) => println!(
-                    "bars={} first_datetime={}",
-                    bars.len(),
-                    bars.first().map_or("none", |b| b.datetime.as_str())
-                ),
-                Err(error) => println!("bars=error error={error}"),
+                Ok(bars) => {
+                    println!(
+                        "bars={} first_datetime={}",
+                        bars.len(),
+                        bars.first().map_or("none", |b| b.datetime.as_str())
+                    );
+                    require_count(&mut errors, "bars", bars.len(), 5);
+                }
+                Err(error) => record_error(&mut errors, "bars", error),
             }
             let inner = client.inner();
+            match inner.connect("180.153.18.170", 7709, Some(3.0)) {
+                Ok(true) => println!("full_probe_server=180.153.18.170:7709"),
+                Ok(false) => record_error(&mut errors, "full_probe_connect", "returned false"),
+                Err(error) => record_error(&mut errors, "full_probe_connect", error),
+            }
             for category in 0_u8..=11 {
                 match inner.get_security_bars(category, 1, "600396", 0, 1, 0) {
-                    Ok(items) => println!("stock_kline category={category} count={}", items.len()),
-                    Err(error) => println!("stock_kline category={category} error={error}"),
+                    Ok(items) => {
+                        println!("stock_kline category={category} count={}", items.len());
+                        require_count(
+                            &mut errors,
+                            &format!("stock_kline_category_{category}"),
+                            items.len(),
+                            1,
+                        );
+                    }
+                    Err(error) => record_error(
+                        &mut errors,
+                        &format!("stock_kline_category_{category}"),
+                        error,
+                    ),
                 }
             }
-            match inner.get_index_bars(4, 1, "000001", 0, 5, 0) {
-                Ok(items) => println!(
-                    "index_kline count={} first_datetime={}",
-                    items.len(),
-                    items.first().map_or("none", |v| v.datetime.as_str())
-                ),
-                Err(error) => println!("index_kline=error error={error}"),
+            match probe_index_bars(1, "000001", 6, 5) {
+                Ok((count, first_datetime, server)) => {
+                    println!(
+                        "index_kline count={count} first_datetime={first_datetime} server={server}"
+                    );
+                    require_nonempty(&mut errors, "index_kline", count);
+                }
+                Err(error) => record_error(&mut errors, "index_kline", error),
             }
             match inner.get_security_count(1) {
-                Ok(value) => println!("security_count_sh={value}"),
-                Err(error) => println!("security_count=error error={error}"),
+                Ok(value) => {
+                    println!("security_count_sh={value}");
+                    require_nonempty(&mut errors, "security_count", usize::from(value));
+                }
+                Err(error) => record_error(&mut errors, "security_count", error),
             }
             match inner.get_security_list(1, 0) {
-                Ok(items) => println!(
-                    "security_list_sh={} first_code={}",
-                    items.len(),
-                    items.first().map_or("none", |v| v.code.as_str())
-                ),
-                Err(error) => println!("security_list=error error={error}"),
+                Ok(items) => {
+                    println!(
+                        "security_list_sh={} first_code={}",
+                        items.len(),
+                        items.first().map_or("none", |v| v.code.as_str())
+                    );
+                    require_nonempty(&mut errors, "security_list", items.len());
+                }
+                Err(error) => record_error(&mut errors, "security_list", error),
             }
             let metadata_instruments = [
                 InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
@@ -67,39 +442,116 @@ fn main() {
                     for record in batch.records() {
                         println!(
                             "security code={} exchange={:?} name={:?} board={:?} is_st={:?} listed_on={:?} price_limit_percent={:?} price_limit_version={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
-                            record.instrument.code(),
-                            record.instrument.exchange(),
-                            record.name,
-                            record.board,
-                            record.is_st,
-                            record.listed_on,
-                            record.price_limit.percent,
-                            record.price_limit.version,
-                            record.status,
-                            record.source_at,
-                            record.observed_at,
-                            record.provider,
-                            record.batch_id
+                            record.instrument().code(),
+                            record.instrument().exchange(),
+                            record.name(),
+                            record.board(),
+                            record.is_st(),
+                            record.listed_on(),
+                            record.price_limit().percent(),
+                            record.price_limit().version(),
+                            record.status(),
+                            record.source_at(),
+                            record.observed_at(),
+                            record.provider(),
+                            record.batch_id()
                         );
                     }
+                    require_count(&mut errors, "security_metadata", batch.records().len(), 2);
                 }
-                Err(error) => println!("security_metadata=error error={error}"),
+                Err(error) => record_error(&mut errors, "security_metadata", error),
             }
-            match inner.get_minute_time_data(1, "600396") {
-                Ok(items) => println!("minute_data={} ", items.len()),
-                Err(error) => println!("minute_data=error error={error}"),
+            let book_instrument =
+                InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
+                    .expect("valid order-book instrument");
+            match client.order_books(&[book_instrument]) {
+                Ok(batch) => {
+                    println!(
+                        "order_books={} provenance={:?} quality={:?}",
+                        batch.records().len(),
+                        batch.provenance(),
+                        batch.quality()
+                    );
+                    require_count(&mut errors, "order_books", batch.records().len(), 1);
+                    for book in batch.records() {
+                        println!(
+                            "order_book code={} status={:?} total_bid={:?} total_ask={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                            book.instrument().code(),
+                            book.status(),
+                            book.total_bid_quantity().map(|value| value.get()),
+                            book.total_ask_quantity().map(|value| value.get()),
+                            book.source_at(),
+                            book.observed_at(),
+                            book.provider(),
+                            book.batch_id()
+                        );
+                        for (index, (bid, ask)) in book.bids().iter().zip(book.asks()).enumerate() {
+                            println!(
+                                "order_book_level={} bid_price={:?} bid_quantity={:?} ask_price={:?} ask_quantity={:?}",
+                                index + 1,
+                                bid.price().map(|value| value.get()),
+                                bid.quantity().map(|value| value.get()),
+                                ask.price().map(|value| value.get()),
+                                ask.quantity().map(|value| value.get())
+                            );
+                        }
+                    }
+                }
+                Err(error) => record_error(&mut errors, "order_books", error),
             }
-            match inner.get_history_minute_time_data(1, "600396", 20260721) {
-                Ok(items) => println!("minute_history date=20260721 count={}", items.len()),
-                Err(error) => println!("minute_history=error error={error}"),
+            let mut verified_minute_date = None;
+            match probe_minute_data(1, "600396") {
+                Ok(probe) => {
+                    println!(
+                        "minute_data_current={} current_status={} minute_data_latest_session={} latest_session_date={} server={}",
+                        probe.current_count,
+                        probe.current_status,
+                        probe.latest_session_count,
+                        probe.latest_session_date,
+                        probe.server
+                    );
+                    verified_minute_date = Some(probe.latest_session_date);
+                    require_count(
+                        &mut errors,
+                        "minute_data_latest_session",
+                        probe.latest_session_count,
+                        240,
+                    );
+                }
+                Err(error) => record_error(&mut errors, "minute_data", error),
+            }
+            if let Some(date) = verified_minute_date {
+                match inner.get_history_minute_time_data(1, "600396", date) {
+                    Ok(items) => {
+                        println!("minute_history date={date} count={}", items.len());
+                        require_count(&mut errors, "minute_history", items.len(), 240);
+                    }
+                    Err(error) => record_error(&mut errors, "minute_history", error),
+                }
             }
             match inner.get_transaction_data(1, "600396", 0, 20) {
-                Ok(items) => println!("transactions={} ", items.len()),
-                Err(error) => println!("transactions=error error={error}"),
+                Ok(items) => {
+                    println!("transactions={} ", items.len());
+                    if let Some(session) = session {
+                        let times = items
+                            .iter()
+                            .map(|item| item.time.as_str())
+                            .collect::<Vec<_>>();
+                        validate_current_trades(&mut errors, "transactions", &times, 20, session);
+                    }
+                }
+                Err(error) => {
+                    if let Some(session) = session {
+                        record_current_error(&mut errors, "transactions", error, session);
+                    }
+                }
             }
             match inner.get_history_transaction_data(1, "600396", 0, 20, 20260721) {
-                Ok(items) => println!("transactions_history date=20260721 count={}", items.len()),
-                Err(error) => println!("transactions_history=error error={error}"),
+                Ok(items) => {
+                    println!("transactions_history date=20260721 count={}", items.len());
+                    require_count(&mut errors, "transactions_history", items.len(), 20);
+                }
+                Err(error) => record_error(&mut errors, "transactions_history", error),
             }
             let instrument = InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
                 .expect("valid probe instrument");
@@ -116,20 +568,43 @@ fn main() {
                     for trade in batch.records() {
                         println!(
                             "trade current time={} price={} quantity={} count={:?} side={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
-                            trade.trade_at,
-                            trade.price.get(),
-                            trade.quantity.get(),
-                            trade.trade_count,
-                            trade.side,
-                            trade.status,
-                            trade.source_at,
-                            trade.observed_at,
-                            trade.provider,
-                            trade.batch_id
+                            trade.trade_at(),
+                            trade.price().get(),
+                            trade.quantity().get(),
+                            trade.trade_count(),
+                            trade.side(),
+                            trade.status(),
+                            trade.source_at(),
+                            trade.observed_at(),
+                            trade.provider(),
+                            trade.batch_id()
+                        );
+                    }
+                    if let Some(session) = session {
+                        let times = batch
+                            .records()
+                            .iter()
+                            .map(|trade| trade.trade_at())
+                            .collect::<Vec<_>>();
+                        validate_current_trades(
+                            &mut errors,
+                            "normalized_trades_current",
+                            &times,
+                            20,
+                            session,
                         );
                     }
                 }
-                Err(error) => println!("normalized_trades_current=error error={error}"),
+                Err(error) => {
+                    if let Some(session) = session {
+                        record_current_error(
+                            &mut errors,
+                            "normalized_trades_current",
+                            error,
+                            session,
+                        );
+                    }
+                }
             }
             let historical_request = TradesRequest::new(instrument.clone(), 20)
                 .and_then(|request| request.with_date("2026-07-21"))
@@ -145,102 +620,169 @@ fn main() {
                     for trade in batch.records() {
                         println!(
                             "trade history time={} price={} quantity={} count={:?} side={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
-                            trade.trade_at,
-                            trade.price.get(),
-                            trade.quantity.get(),
-                            trade.trade_count,
-                            trade.side,
-                            trade.status,
-                            trade.source_at,
-                            trade.observed_at,
-                            trade.provider,
-                            trade.batch_id
+                            trade.trade_at(),
+                            trade.price().get(),
+                            trade.quantity().get(),
+                            trade.trade_count(),
+                            trade.side(),
+                            trade.status(),
+                            trade.source_at(),
+                            trade.observed_at(),
+                            trade.provider(),
+                            trade.batch_id()
                         );
                     }
+                    require_count(
+                        &mut errors,
+                        "normalized_trades_history",
+                        batch.records().len(),
+                        20,
+                    );
                 }
-                Err(error) => println!("normalized_trades_history=error error={error}"),
+                Err(error) => record_error(&mut errors, "normalized_trades_history", error),
             }
             let current_paged =
                 TradesRequest::new(instrument.clone(), 1_820).expect("valid paging probe");
             match client.trades(&current_paged) {
-                Ok(batch) => println!(
-                    "trade_pagination_current requested=1820 received={} crossed_page={} first_time={} last_time={} quality_complete={}",
-                    batch.records().len(),
-                    batch.records().len() > 1_800,
-                    batch.records().first().map_or("none", |trade| trade.trade_at.as_str()),
-                    batch.records().last().map_or("none", |trade| trade.trade_at.as_str()),
-                    batch.quality().complete
-                ),
-                Err(error) => println!("trade_pagination_current=error error={error}"),
+                Ok(batch) => {
+                    println!(
+                        "trade_pagination_current requested=1820 received={} crossed_page={} first_time={} last_time={} quality_complete={}",
+                        batch.records().len(),
+                        batch.records().len() > 1_800,
+                        batch.records().first().map_or("none", |trade| trade.trade_at()),
+                        batch.records().last().map_or("none", |trade| trade.trade_at()),
+                        batch.quality().is_complete()
+                    );
+                    if let Some(session) = session {
+                        let times = batch
+                            .records()
+                            .iter()
+                            .map(|trade| trade.trade_at())
+                            .collect::<Vec<_>>();
+                        validate_current_trades(
+                            &mut errors,
+                            "trade_pagination_current",
+                            &times,
+                            1_820,
+                            session,
+                        );
+                    }
+                }
+                Err(error) => {
+                    if let Some(session) = session {
+                        record_current_error(
+                            &mut errors,
+                            "trade_pagination_current",
+                            error,
+                            session,
+                        );
+                    }
+                }
             }
             let historical_paged = TradesRequest::new(instrument, 2_001)
                 .and_then(|request| request.with_date("2026-07-21"))
                 .expect("valid historical paging probe");
             match client.trades(&historical_paged) {
-                Ok(batch) => println!(
-                    "trade_pagination_history requested=2001 received={} crossed_page={} first_time={} last_time={} quality_complete={}",
-                    batch.records().len(),
-                    batch.records().len() > 2_000,
-                    batch.records().first().map_or("none", |trade| trade.trade_at.as_str()),
-                    batch.records().last().map_or("none", |trade| trade.trade_at.as_str()),
-                    batch.quality().complete
-                ),
-                Err(error) => println!("trade_pagination_history=error error={error}"),
+                Ok(batch) => {
+                    println!(
+                        "trade_pagination_history requested=2001 received={} crossed_page={} first_time={} last_time={} quality_complete={}",
+                        batch.records().len(),
+                        batch.records().len() > 2_000,
+                        batch.records().first().map_or("none", |trade| trade.trade_at()),
+                        batch.records().last().map_or("none", |trade| trade.trade_at()),
+                        batch.quality().is_complete()
+                    );
+                    require_count(
+                        &mut errors,
+                        "trade_pagination_history",
+                        batch.records().len(),
+                        2_001,
+                    );
+                }
+                Err(error) => record_error(&mut errors, "trade_pagination_history", error),
             }
             match inner.get_finance_info(1, "600396") {
                 Ok(_) => println!("finance_info=ok"),
-                Err(error) => println!("finance_info=error error={error}"),
+                Err(error) => record_error(&mut errors, "finance_info", error),
             }
             match inner.get_xdxr_info(1, "600396") {
-                Ok(items) => println!("xdxr={} ", items.len()),
-                Err(error) => println!("xdxr=error error={error}"),
+                Ok(items) => {
+                    println!("xdxr={} ", items.len());
+                    require_nonempty(&mut errors, "xdxr", items.len());
+                }
+                Err(error) => record_error(&mut errors, "xdxr", error),
             }
             match client.get_security_quotes(&[(1, "510300")]) {
-                Ok(items) => println!("fund_quotes_via_smart={} ", items.len()),
-                Err(error) => println!("fund_quotes_via_smart=error error={error}"),
+                Ok(items) => {
+                    println!("fund_quotes_via_smart={} ", items.len());
+                    require_count(&mut errors, "fund_quotes_via_smart", items.len(), 1);
+                }
+                Err(error) => record_error(&mut errors, "fund_quotes_via_smart", error),
             }
             let blocks = magic_tdx_rs::TdxBlockClient::with_default("180.153.18.170");
             match blocks.get_industry_blocks() {
-                Ok(items) => println!("blocks_industry={}", items.len()),
-                Err(error) => println!("blocks_industry=error error={error}"),
+                Ok(items) => {
+                    println!("blocks_industry={}", items.len());
+                    require_nonempty(&mut errors, "blocks_industry", items.len());
+                }
+                Err(error) => record_error(&mut errors, "blocks_industry", error),
             }
             match blocks.get_concept_blocks() {
-                Ok(items) => println!("blocks_concept={}", items.len()),
-                Err(error) => println!("blocks_concept=error error={error}"),
+                Ok(items) => {
+                    println!("blocks_concept={}", items.len());
+                    require_nonempty(&mut errors, "blocks_concept", items.len());
+                }
+                Err(error) => record_error(&mut errors, "blocks_concept", error),
             }
             match blocks.get_index_blocks() {
-                Ok(items) => println!("blocks_index={}", items.len()),
-                Err(error) => println!("blocks_index=error error={error}"),
+                Ok(items) => {
+                    println!("blocks_index={}", items.len());
+                    require_nonempty(&mut errors, "blocks_index", items.len());
+                }
+                Err(error) => record_error(&mut errors, "blocks_index", error),
             }
             let funds = magic_tdx_rs::TdxHqFundClient::new();
             match funds.connect_to_any(Some(3.0)) {
                 Ok(true) => {
                     match funds.get_fund_quotes(&[(1, "510300")]) {
-                        Ok(items) => println!("fund_quotes={} ", items.len()),
-                        Err(error) => println!("fund_quotes=error error={error}"),
+                        Ok(items) => {
+                            println!("fund_quotes={} ", items.len());
+                            require_count(&mut errors, "fund_quotes", items.len(), 1);
+                        }
+                        Err(error) => record_error(&mut errors, "fund_quotes", error),
                     }
                     match funds.get_fund_bars(4, 1, "510300", 0, 5) {
-                        Ok(items) => println!("fund_bars={} ", items.len()),
-                        Err(error) => println!("fund_bars=error error={error}"),
+                        Ok(items) => {
+                            println!("fund_bars={} ", items.len());
+                            require_count(&mut errors, "fund_bars", items.len(), 5);
+                        }
+                        Err(error) => record_error(&mut errors, "fund_bars", error),
                     }
                     match funds.get_fund_xdxr_info(1, "510300") {
-                        Ok(items) => println!("fund_xdxr={} ", items.len()),
-                        Err(error) => println!("fund_xdxr=error error={error}"),
+                        Ok(items) => {
+                            println!("fund_xdxr={} ", items.len());
+                            require_nonempty(&mut errors, "fund_xdxr", items.len());
+                        }
+                        Err(error) => record_error(&mut errors, "fund_xdxr", error),
                     }
                 }
-                Ok(false) => println!("fund_connect=false"),
-                Err(error) => println!("fund_connect=error error={error}"),
+                Ok(false) => record_error(&mut errors, "fund_connect", "returned false"),
+                Err(error) => record_error(&mut errors, "fund_connect", error),
             }
             let f10 =
                 magic_tdx_rs::net::f10_client::TdxF10Client::new("180.153.18.170", 7709, Some(3.0));
             match f10.get_category_auto("600396") {
-                Ok(items) => println!("f10_categories={} ", items.len()),
-                Err(error) => println!("f10_categories=error error={error}"),
+                Ok(items) => {
+                    println!("f10_categories={} ", items.len());
+                    require_nonempty(&mut errors, "f10_categories", items.len());
+                }
+                Err(error) => record_error(&mut errors, "f10_categories", error),
             }
             let finance = magic_tdx_rs::TdxFinanceClient::new("180.153.18.170", 7709, Some(3.0));
             match finance.get_financial_list() {
                 Ok(files) => {
                     println!("financial_files={}", files.len());
+                    require_nonempty(&mut errors, "financial_files", files.len());
                     for file in files.iter().take(3) {
                         println!(
                             "financial_file name={} size={} hash={}",
@@ -255,27 +797,136 @@ fn main() {
                                     file.filename,
                                     records.len()
                                 );
+                                require_nonempty(&mut errors, "financial_records", records.len());
                                 match records.iter().find(|record| record.code == "600396") {
-                                    Some(record) => println!(
-                                        "finance_indicators={}",
-                                        magic_tdx_rs::protocol::finance_fields::extract_indicators(
+                                    Some(record) => {
+                                        let indicators = magic_tdx_rs::protocol::finance_fields::extract_indicators(
                                             &record.fields
-                                        )
-                                        .len()
-                                    ),
-                                    None => {
-                                        println!("finance_indicators=error error=600396 missing")
+                                        );
+                                        println!("finance_indicators={}", indicators.len());
+                                        require_count(
+                                            &mut errors,
+                                            "finance_indicators",
+                                            indicators.len(),
+                                            45,
+                                        );
                                     }
+                                    None => record_error(
+                                        &mut errors,
+                                        "finance_indicators",
+                                        "600396 missing",
+                                    ),
                                 }
                             }
-                            Err(error) => println!("finance_indicators=error error={error}"),
+                            Err(error) => record_error(&mut errors, "finance_indicators", error),
                         }
+                    } else {
+                        record_error(
+                            &mut errors,
+                            "financial_records",
+                            "no financial file met the minimum validated size",
+                        );
                     }
                 }
-                Err(error) => println!("financial_files=error error={error}"),
+                Err(error) => record_error(&mut errors, "financial_files", error),
             }
         }
-        Ok(false) => println!("connected=false"),
-        Err(error) => println!("connected=error error={error}"),
+        Ok(false) => record_error(&mut errors, "connected", "returned false"),
+        Err(error) => record_error(&mut errors, "connected", error),
+    }
+    if errors.is_empty() {
+        println!("live_probe_status=passed");
+    } else {
+        eprintln!("live_probe_status=failed failures={}", errors.join(" | "));
+        std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        classify_current_minute, completed_session_date, record_current_error,
+        session_date_is_complete, validate_current_trades, CurrentSession,
+    };
+    use magic_tdx_rs::TdxError;
+
+    #[test]
+    fn current_minute_is_classified_independently_from_history() {
+        assert_eq!(
+            classify_current_minute(20260722, 20260723, 4, 30 * 60, 0).unwrap(),
+            "expected_unavailable_before_open"
+        );
+        assert_eq!(
+            classify_current_minute(20260722, 20260723, 4, 9 * 3600, 1).unwrap(),
+            "available_preopen"
+        );
+        assert!(classify_current_minute(20260722, 20260723, 4, 9 * 3600, 2).is_err());
+        assert!(classify_current_minute(20260722, 20260723, 4, 9 * 3600, 240).is_err());
+        assert!(classify_current_minute(20260722, 20260723, 4, 10 * 3600, 0).is_err());
+        assert_eq!(
+            classify_current_minute(20260723, 20260723, 4, 12 * 3600, 120).unwrap(),
+            "available_intraday"
+        );
+        assert!(classify_current_minute(20260722, 20260723, 4, 15 * 3600, 239).is_err());
+        assert_eq!(
+            classify_current_minute(20260723, 20260723, 4, 15 * 3600, 240).unwrap(),
+            "available_complete_after_close"
+        );
+        assert_eq!(
+            classify_current_minute(20260725, 20260725, 6, 10 * 3600, 0).unwrap(),
+            "expected_unavailable_weekend"
+        );
+        assert!(classify_current_minute(20260725, 20260725, 6, 10 * 3600, 1).is_err());
+        let dates = [20260722, 20260723];
+        assert_eq!(
+            completed_session_date(&dates, 20260723, CurrentSession::PreOpen),
+            Some(20260722)
+        );
+        assert_eq!(
+            completed_session_date(&dates, 20260723, CurrentSession::Complete),
+            Some(20260723)
+        );
+        assert!(!session_date_is_complete(
+            20260723,
+            20260723,
+            CurrentSession::Intraday
+        ));
+    }
+
+    #[test]
+    fn pre_open_current_contracts_reject_excess_records_and_transport_errors() {
+        let mut errors = Vec::new();
+        validate_current_trades(
+            &mut errors,
+            "trades",
+            &["09:15", "09:29"],
+            20,
+            CurrentSession::PreOpen,
+        );
+        assert!(errors.is_empty());
+        validate_current_trades(
+            &mut errors,
+            "trades",
+            &["09:15", "15:00"],
+            20,
+            CurrentSession::PreOpen,
+        );
+        assert_eq!(errors.len(), 1);
+
+        let mut errors = Vec::new();
+        record_current_error(
+            &mut errors,
+            "trades",
+            TdxError::InvalidData("TDX returned an empty successful response".to_string()),
+            CurrentSession::PreOpen,
+        );
+        assert!(errors.is_empty());
+        record_current_error(
+            &mut errors,
+            "trades",
+            TdxError::Connection("network down".to_string()),
+            CurrentSession::PreOpen,
+        );
+        assert_eq!(errors.len(), 1);
     }
 }

@@ -11,26 +11,24 @@ fn beijing_is_a_first_class_exchange() {
 
 #[test]
 fn security_metadata_preserves_unavailable_source_fields() {
-    let metadata = SecurityMetadata {
-        instrument: InstrumentId::new(Exchange::Shanghai, "688001", AssetClass::Equity).unwrap(),
-        name: Some("示例证券".into()),
-        board: Some(Board::Star),
-        is_st: Some(false),
-        listed_on: None,
-        price_limit: PriceLimitRule {
-            percent: None,
-            version: None,
-        },
-        status: DataStatus::Unavailable,
-        source_at: None,
-        observed_at: "observed".into(),
-        provider: ProviderId::Tdx,
-        batch_id: "batch-1".into(),
-    };
+    let metadata = SecurityMetadata::new(
+        InstrumentId::new(Exchange::Shanghai, "688001", AssetClass::Equity).unwrap(),
+        Some("示例证券".into()),
+        Some(Board::Star),
+        Some(false),
+        None,
+        PriceLimitRule::new(None, None).unwrap(),
+        DataStatus::Unavailable,
+        None,
+        "observed",
+        ProviderId::Tdx,
+        "batch-1",
+    )
+    .unwrap();
 
-    assert_eq!(metadata.board, Some(Board::Star));
-    assert!(metadata.listed_on.is_none());
-    assert!(metadata.price_limit.percent.is_none());
-    assert!(metadata.price_limit.version.is_none());
-    assert_eq!(metadata.status, DataStatus::Unavailable);
+    assert_eq!(metadata.board(), Some(Board::Star));
+    assert!(metadata.listed_on().is_none());
+    assert!(metadata.price_limit().percent().is_none());
+    assert!(metadata.price_limit().version().is_none());
+    assert_eq!(metadata.status(), DataStatus::Unavailable);
 }

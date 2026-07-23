@@ -54,7 +54,10 @@ fn async_tdx_client_implements_core_contracts() {
 
 #[test]
 fn batch_provenance_distinguishes_source_and_fetch_time() {
-    let p = magic_market_core::Provenance::new("tdx", "1700000000").with_source_at("2026-07-15");
-    assert_eq!(p.source_at.as_deref(), Some("2026-07-15"));
-    assert_eq!(p.fetched_at, "1700000000");
+    let p = magic_market_core::Provenance::new("tdx", "1700000000")
+        .unwrap()
+        .with_source_at("2026-07-15")
+        .unwrap();
+    assert_eq!(p.source_at(), Some("2026-07-15"));
+    assert_eq!(p.fetched_at(), "1700000000");
 }

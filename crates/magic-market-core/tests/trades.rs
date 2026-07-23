@@ -15,6 +15,6 @@ fn trade_request_validates_limit_and_calendar_date() {
         .unwrap()
         .with_date("2024-02-29")
         .unwrap();
-    assert_eq!(request.date.as_deref(), Some("2024-02-29"));
-    assert_eq!(request.limit, 2_000);
+    assert_eq!(request.date(), Some("2024-02-29"));
+    assert_eq!(request.limit(), 2_000);
 }

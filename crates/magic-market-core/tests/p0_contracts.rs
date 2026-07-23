@@ -6,29 +6,27 @@ use magic_market_core::{
 #[test]
 fn unavailable_fields_are_explicit() {
     assert_eq!(DataStatus::Unavailable, DataStatus::Unavailable);
-    let level = BookLevel {
-        price: None,
-        quantity: None,
-    };
-    assert!(level.price.is_none());
-    let _flow = MoneyFlow {
-        instrument: magic_market_core::InstrumentId::new(
+    let level = BookLevel::unavailable();
+    assert!(level.price().is_none());
+    let _flow = MoneyFlow::new(
+        magic_market_core::InstrumentId::new(
             magic_market_core::Exchange::Shanghai,
             "600519",
             magic_market_core::AssetClass::Equity,
         )
         .unwrap(),
-        main_net: None,
-        super_large_net: None,
-        large_net: None,
-        medium_net: None,
-        small_net: None,
-        status: DataStatus::Unavailable,
-        source_at: None,
-        observed_at: "observed".into(),
-        provider: ProviderId::Eastmoney,
-        batch_id: "batch-1".into(),
-    };
+        None,
+        None,
+        None,
+        None,
+        None,
+        DataStatus::Unavailable,
+        None,
+        "observed",
+        ProviderId::Eastmoney,
+        "batch-1",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -58,32 +56,60 @@ fn normalized_bar_rejects_inconsistent_ohlc() {
 }
 
 #[test]
-fn order_book_has_fixed_five_level_shape() {
-    let level = BookLevel {
-        price: None,
-        quantity: None,
+fn normalized_bar_rejects_unparseable_market_times() {
+    let instrument = magic_market_core::InstrumentId::new(
+        magic_market_core::Exchange::Shanghai,
+        "600519",
+        magic_market_core::AssetClass::Equity,
+    )
+    .unwrap();
+    let make = |start: &str, end: &str| {
+        Bar::new(
+            instrument.clone(),
+            BarInterval::Minute1,
+            start,
+            end,
+            Price::new(100.0).unwrap(),
+            Price::new(101.0).unwrap(),
+            Price::new(99.0).unwrap(),
+            Price::new(100.0).unwrap(),
+            Quantity::new(1.0).unwrap(),
+            None,
+            Adjustment::Unadjusted,
+            ProviderId::Eastmoney,
+            "batch-1",
+        )
     };
-    let book = OrderBook {
-        instrument: magic_market_core::InstrumentId::new(
+
+    assert!(make("2026-02-30 09:30:00", "2026-02-30 09:31:00").is_err());
+    assert!(make("2026-07-22 25:00:00", "2026-07-22 25:01:00").is_err());
+}
+
+#[test]
+fn order_book_has_fixed_five_level_shape() {
+    let level = BookLevel::unavailable();
+    let book = OrderBook::new(
+        magic_market_core::InstrumentId::new(
             magic_market_core::Exchange::Shenzhen,
             "000001",
             magic_market_core::AssetClass::Equity,
         )
         .unwrap(),
-        bids: [level; 5],
-        asks: [level; 5],
-        total_bid_quantity: None,
-        total_ask_quantity: None,
-        status: DataStatus::Unsupported,
-        source_at: None,
-        observed_at: "observed".into(),
-        provider: ProviderId::Tdx,
-        batch_id: "batch-1".into(),
-    };
-    assert_eq!(book.bids.len(), 5);
-    assert_eq!(book.asks.len(), 5);
-    assert_eq!(book.observed_at, "observed");
-    assert_eq!(book.batch_id, "batch-1");
+        [level; 5],
+        [level; 5],
+        None,
+        None,
+        DataStatus::Unsupported,
+        None,
+        "observed",
+        ProviderId::Tdx,
+        "batch-1",
+    )
+    .unwrap();
+    assert_eq!(book.bids().len(), 5);
+    assert_eq!(book.asks().len(), 5);
+    assert_eq!(book.observed_at(), "observed");
+    assert_eq!(book.batch_id(), "batch-1");
 }
 
 #[test]
@@ -103,37 +129,40 @@ fn quote_keeps_source_and_observation_times_separate() {
         ProviderId::Tdx,
         "batch-1",
     )
-    .with_source_at("source");
-    assert_eq!(quote.source_at.as_deref(), Some("source"));
-    assert_eq!(quote.observed_at, "observed");
-    assert_eq!(quote.batch_id, "batch-1");
+    .unwrap()
+    .with_source_at("source")
+    .unwrap();
+    assert_eq!(quote.source_at(), Some("source"));
+    assert_eq!(quote.observed_at(), "observed");
+    assert_eq!(quote.batch_id(), "batch-1");
 }
 
 #[test]
 fn auction_contract_preserves_missing_fields_and_evidence() {
-    let snapshot = AuctionSnapshot {
-        instrument: magic_market_core::InstrumentId::new(
+    let snapshot = AuctionSnapshot::new(
+        magic_market_core::InstrumentId::new(
             magic_market_core::Exchange::Shanghai,
             "600519",
             magic_market_core::AssetClass::Equity,
         )
         .unwrap(),
-        name: None,
-        matched_price: None,
-        previous_close: None,
-        change_percent: None,
-        matched_quantity: None,
-        matched_amount: None,
-        unmatched_bid_quantity: None,
-        unmatched_ask_quantity: None,
-        volume_ratio: None,
-        status: DataStatus::Unavailable,
-        source_at: None,
-        observed_at: "observed".into(),
-        provider: ProviderId::Eastmoney,
-        batch_id: "batch-1".into(),
-    };
-    assert_eq!(snapshot.status, DataStatus::Unavailable);
-    assert!(snapshot.unmatched_bid_quantity.is_none());
-    assert_eq!(snapshot.batch_id, "batch-1");
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        DataStatus::Unavailable,
+        None,
+        "observed",
+        ProviderId::Eastmoney,
+        "batch-1",
+    )
+    .unwrap();
+    assert_eq!(snapshot.status(), DataStatus::Unavailable);
+    assert!(snapshot.unmatched_bid_quantity().is_none());
+    assert_eq!(snapshot.batch_id(), "batch-1");
 }

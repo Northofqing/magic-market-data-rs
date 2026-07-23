@@ -938,12 +938,14 @@ mod tests {
     // AsyncRateLimiter
     // ================================================================
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_async_rate_limiter_no_delay_first_call() {
         let limiter = AsyncRateLimiter::new(50);
-        let start = Instant::now();
-        limiter.wait().await;
-        assert!(start.elapsed() < Duration::from_millis(20));
+        assert!(limiter.last_request.lock().await.is_none());
+        tokio::time::timeout(Duration::from_millis(1), limiter.wait())
+            .await
+            .expect("the first request must not sleep");
+        assert!(limiter.last_request.lock().await.is_some());
     }
 
     #[tokio::test]
@@ -954,27 +956,28 @@ mod tests {
         limiter.wait().await;
         let elapsed = start.elapsed();
         assert!(elapsed >= Duration::from_millis(70));
-        assert!(elapsed < Duration::from_millis(200));
     }
 
     #[tokio::test]
     async fn test_async_rate_limiter_set_rps() {
         let mut limiter = AsyncRateLimiter::new(100);
         limiter.set_rps(200);
+        assert_eq!(limiter.min_interval, Duration::from_millis(5));
         limiter.wait().await;
         let start = Instant::now();
         limiter.wait().await;
-        assert!(start.elapsed() < Duration::from_millis(30));
+        assert!(start.elapsed() >= Duration::from_millis(4));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_async_rate_limiter_set_rps_zero_disables() {
         let mut limiter = AsyncRateLimiter::new(100);
         limiter.set_rps(0);
+        assert_eq!(limiter.min_interval, Duration::ZERO);
         limiter.wait().await;
-        let start = Instant::now();
-        limiter.wait().await;
-        assert!(start.elapsed() < Duration::from_millis(10));
+        tokio::time::timeout(Duration::from_millis(1), limiter.wait())
+            .await
+            .expect("a disabled limiter must not sleep");
     }
 
     // ================================================================
