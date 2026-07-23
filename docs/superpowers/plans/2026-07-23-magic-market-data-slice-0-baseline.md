@@ -261,7 +261,7 @@ No downstream consumer may deduplicate by display name.
 Run:
 
 ```bash
-rg -n '^## BR-00(9|10|11) ' docs/business_rules.md
+rg -n '^## BR-(009|010|011) ' docs/business_rules.md
 git diff --check docs/business_rules.md
 ```
 
