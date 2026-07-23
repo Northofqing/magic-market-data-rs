@@ -9,3 +9,18 @@
 - Completed pre-flight; Gate A supplement is required before P0 code changes.
 - Added the Gate A admission-state/shared-verifier design and registered
   BR-012 before implementation.
+- Added external Core RED tests, then implemented the shared batch/verified
+  empty verifier and stable machine states; 5 focused tests pass.
+- Moved THS inline test bodies to a path-based private test module and changed
+  no-consensus behavior from an incomplete pseudo-record to typed
+  `VerifiedEmpty`.
+- THS live probe now applies the common verifier to consensus, strong reasons,
+  upper-limit pool, and popularity and emits stable admission states.
+- Core tests plus THS all-target tests pass after adding the atomic
+  mixed-consensus failure test. Strict Clippy remains blocked by an unchanged
+  Rust 1.95 lint in `magic-market-core/src/provider.rs:1147`.
+- The same scoped Clippy run passes with only that pre-existing
+  `manual_is_multiple_of` lint allowed; the new THS typed-empty error is boxed
+  to keep provider results small.
+- Added a regression proving malformed fractional UNIX timestamps do not pass
+  admission by silently discarding a non-numeric suffix.

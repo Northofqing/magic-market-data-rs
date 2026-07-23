@@ -47,3 +47,6 @@ provider-local explicit failure checks.
 | Initial worktree creation could not write the main repository ref under sandboxing | Used the approved scoped `git worktree add`; exact base remains `45c75be` |
 | First oversized patch was interrupted | Verified the tree was unchanged and split work into small patches |
 | `tools/compliance/lib/check_business_rules.sh` does not exist in this repository | Use the repository-level `tools/compliance/check.sh` at the final scoped gate; retain `git diff --check` for the docs-only commit |
+| First Core RED test build aborted with `No space left on device` before compiling the new test | Remove only this worktree's generated `target/` and reuse the existing provider worktree target cache; do not install tools |
+| A path-based test body placed directly under `tests/` was also auto-discovered by Cargo as an integration crate | Move it to nested `tests/unit/` and keep the private `#[path]` module from `src/lib.rs` |
+| Scoped strict Clippy is blocked by pre-existing `magic-market-core/src/provider.rs:1147` under Rust 1.95 (`manual_is_multiple_of`) | Record as baseline debt; do not modify unrelated provider calendar logic in Task 8. Tests/checks still run, and final handoff must not claim Clippy pass |

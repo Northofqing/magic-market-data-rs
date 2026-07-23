@@ -10,6 +10,7 @@ mod evidence;
 mod instrument;
 mod limit_pool;
 mod options;
+mod probe;
 mod provenance;
 mod provider;
 mod research;
@@ -43,6 +44,10 @@ pub use limit_pool::{
 pub use options::{
     ContractMonth, OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind,
     OptionQuote,
+};
+pub use probe::{
+    verify_admitted_batch, verify_verified_empty, ProbeAdmissionError, ProbeAdmissionPolicy,
+    ProbeStatus, VerifiedEmpty,
 };
 pub use provenance::Provenance;
 pub use provider::{

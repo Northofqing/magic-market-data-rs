@@ -41,7 +41,8 @@ dq.10jqka.com.cn
 - 涨停池每次最多 200 条；
 - 热榜每次最多 100 条；
 - strict 请求若没有目标证券或返回空池/空榜，会返回 typed `Incomplete`，不会返回
-  空成功；
+  空成功；一致预期页明确写出“暂无机构做出业绩预测”时返回带请求身份、源日期、
+  观测时间和批次号的 typed `VerifiedEmpty`，不会构造空 estimates 伪记录；
 - HTML/JSON 结构、日期、URL、非有限数或数量上限不满足时显式失败。
 
 ## 探针
@@ -55,9 +56,16 @@ MAGIC_THS_LOAD_PACING_MS=1000 \
 cargo run -p magic-ths-rs --example load_probe --release --locked --offline
 ```
 
-live probe 默认验证贵州茅台 `600519.SH` 一致预期、奥特佳 `000815.SZ` 强势原因、
-指定交易日涨停池和当前热榜，并打印全部 provenance、quality 与记录。load probe
-只对热榜做最多五次的串行、有间隔诊断；结果不是端点 SLA 或允许调用频率。
+live probe 默认验证贵州茅台 `600519.SH` 一致预期、美利云 `000815.SZ` 强势原因、
+指定交易日涨停池和当前热榜。每个非空 family 必须通过公共 admission verifier，
+并打印 `family=<name> status=admitted`；源明确为空的一致预期打印
+`status=verified_empty`。普通空批次、incomplete quality、issues、批次/记录证据不
+一致、未来源时间或重复业务身份都会非零退出。最终成功标记固定为
+`live_probe_status=admitted`。
+
+load probe 当前只对热榜做最多五次的串行、有间隔诊断；结果不是端点 SLA 或允许
+调用频率。其他 advertised family 的独立 load case 属于 Task 8 后续切片，在完成前
+不能用 popularity-only 结果声称全能力 load admission。
 
 ## 生产边界
 

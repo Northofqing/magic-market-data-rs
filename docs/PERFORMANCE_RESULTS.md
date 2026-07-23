@@ -197,6 +197,11 @@ and enforce at least one second between request starts. These runs verify
 current connectivity, non-empty parsing and pacing only; they are not endpoint
 SLAs or permission for sustained traffic.
 
+This historical Tonghuashun run predates the Task 8 machine admission gate. It
+must not be relabelled as current live admission. The current probe additionally
+requires `status=admitted` or source-evidenced `status=verified_empty`; a
+quality-incomplete empty-estimate pseudo-record now fails construction.
+
 ## Eastmoney public-web probe status
 
 The current live probe obtained real instrument/industry reports, industry,
