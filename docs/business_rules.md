@@ -40,3 +40,11 @@ as protocol failures. The only admitted exception is semantic-search output:
 rows with the same normalized security identity are collapsed to the
 source-supplied highest score, with deterministic first-seen tie breaking.
 No downstream consumer may deduplicate by display name.
+
+## BR-012 Public-provider probe admission states
+An advertised public-provider family satisfies a probe only as `admitted` or
+source-evidenced `verified_empty`. Ordinary empty batches, incomplete quality,
+issues, provenance mismatch, future or stale source time, duplicate identity,
+unit inconsistency, and cross-field inconsistency fail explicitly.
+`diagnostic_complete_unadmitted`, `skipped_missing_secret`, and `failed` never
+promote or satisfy a capability.
