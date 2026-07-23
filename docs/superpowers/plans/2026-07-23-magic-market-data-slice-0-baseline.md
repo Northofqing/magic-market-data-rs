@@ -472,7 +472,10 @@ Run:
 
 ```bash
 rg -n 'post_close_flow.*false|fund_flow_series.*false|semantic_search.*false|Unsupported|Authentication' \
-  README.md docs crates/magic-{eastmoney,iwencai,cls}-rs/tests
+  README.md docs \
+  crates/magic-eastmoney-rs/src \
+  crates/magic-iwencai-rs/src crates/magic-iwencai-rs/tests \
+  crates/magic-cls-rs/src crates/magic-cls-rs/tests
 ```
 
 Expected: the docs and capability tests explicitly describe unadmitted or
