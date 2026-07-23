@@ -59,6 +59,11 @@ Phase 4
 - Implement provider modules in dependency order with deterministic fixtures.
 - Add bounded live/load probes and explicit unsupported/authentication errors.
 - Reuse current clients only where source semantics genuinely match.
+- Execute
+  `docs/superpowers/plans/2026-07-23-tencent-sina-intelligence.md` as Slice B.
+- Then implement Eastmoney broad intelligence families, CNInfo/Tonghuashun,
+  CLS/Baidu/Iwencai and exchange announcement sources in separate reviewed
+  slices.
 
 ### Phase 5: Integration and acceptance
 
@@ -86,3 +91,4 @@ Phase 4
 | Tuple Router closures needed explicit request types; first mechanical patch matched the first four generic closures | 2 | Inspected exact matches, restored the four baseline closures, annotated only the four tuple adapters, and passed the full Router suite. |
 | New analysis workspace member required a local Cargo.lock package entry | 1 | Ran Cargo once with `--offline` but without `--locked`; it updated only the lock metadata and produced the expected missing-API RED result. |
 | Limit-pool duplicate detection required a hashable pool kind | 1 | Added `Hash` to the pure enum and reran the analysis tests successfully. |
+| Staged diff check found one blank line at EOF in the new analysis manifest | 1 | Removed the reproducible formatting defect, restaged only the manifest and passed the staged diff check. |

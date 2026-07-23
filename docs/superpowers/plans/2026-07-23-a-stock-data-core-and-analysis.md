@@ -168,5 +168,5 @@ Router crates; no network dependency in this slice.
   --locked`.
 - [x] Run `cargo test --workspace --all-targets --locked --offline`.
 - [x] Run strict workspace Clippy and rustdoc.
-- [ ] Review `git diff --check`, verify the user's requirements file is
+- [x] Review `git diff --check`, verify the user's requirements file is
   unstaged, commit Slice A and push `main`.

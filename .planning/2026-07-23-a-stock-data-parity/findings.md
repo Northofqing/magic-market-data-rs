@@ -250,6 +250,56 @@
   limit with unchecked derived deserialization.
 - The review scan found no TODO/TBD placeholders, insecure-TLS switches or new
   plaintext endpoint use in the Slice A production code.
+- Tencent already parses one strict `~`-delimited snapshot per requested symbol
+  and retains the full response through a shared bounded HTTPS transport.
+  Market statistics can extend the private `Snapshot` without a second call.
+- The current Tencent validator accepts only six-digit equities. Reference
+  parity also requires index and ETF symbols, so Slice B must add an explicit
+  exchange/asset/code table and exact returned-symbol validation rather than
+  prefix guessing.
+- Sina already has the required bounded HTTPS transport, GB18030 decoding and
+  Referer support. Financial statements and options can be isolated modules
+  using the same injected transport.
+- Reference option behavior confirms one Sina family for contract discovery,
+  one T-quote response and one Greeks/IV response. Greeks contain three empty
+  positional slots that must be skipped only after exact shape validation.
+- Tencent enrichment fields are positions 38/39/44/45/46/47/48/49/52.
+  Turnover is percent; market caps are source `亿元` and must be multiplied by
+  100,000,000 for Core CNY money; PE/PB/volume ratio are finite scalars; zero or
+  blank source values need field-specific absent semantics.
+- Reference Tencent code documents only an informal Shanghai-index whitelist.
+  Core's explicit `Exchange` and `AssetClass` remove that ambiguity: the
+  provider can require the caller to distinguish Shanghai index `000001` from
+  Shenzhen equity `000001`.
+- Sina option discovery uses the JSON `StockOptionService.getStockName`
+  endpoint for contract months, then `OP_UP_/OP_DOWN_` list variables for codes,
+  `CON_OP_` for T-quotes and `CON_SO_` for Greeks/IV.
+- Sina option T-quotes require at least 43 fields; Greeks require at least 16,
+  with raw positions 1..3 exactly empty before mapping raw 4 onward.
+- The reference's Sina financial fix confirms the live JSON nesting is
+  `result.data.report_list`, keyed by report period, with each period's `data`
+  containing line items. Static top-level `lrb/fzb/llb` lookup is known wrong.
+- Tencent's existing short quote fixtures stop at field 37, so base quote
+  parsing must remain backward-compatible while market-statistics parsing
+  separately requires the enrichment fields through index 52.
+- Tencent's current shared snapshot path and validator are equity-only. Market
+  statistics need a dedicated validation path for explicit `Equity`, `Index`
+  and `Fund` identities rather than weakening quote/order-book validation.
+- Core's initial option records preserve only a normalized subset and require
+  exact expiry/strike during discovery. Sina exposes the contract month before
+  exact expiry/strike and later exposes full T-quote/Greeks depth, so Slice B
+  must widen the new, unreleased option contracts without fabricating values.
+- Tencent and Sina both use bounded injected transports, exact cardinality
+  checks and per-source provenance helpers. Slice B can preserve those safety
+  properties by adding source-family modules and reusing the client transport,
+  rather than introducing an unrelated HTTP stack.
+- Sina's production transport currently fixes the Referer to
+  `finance.sina.com.cn`. The option endpoints require the stock-finance
+  origin, so the transport contract needs a defaulted per-request Referer
+  method that keeps existing fixture transports source-compatible.
+- Existing live probes already print every normalized base field. Slice B
+  probes should extend these executables instead of introducing hidden
+  one-off verification binaries.
 
 ## Technical decisions
 
@@ -270,3 +320,4 @@
 | Issue | Resolution |
 | --- | --- |
 | A combined audit command tried to read reference `SKILL.md` from the local workspace and stopped before the release-script reads | Logged the path mix-up and split subsequent reads by their correct working directories. |
+| The first Slice B planning append targeted a heading that does not exist | Inspected the actual planning tail and patched the existing audit section without losing prior findings. |

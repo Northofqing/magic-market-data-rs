@@ -106,6 +106,8 @@
 - The clean-target release preflight passes after review fixes: format, Rust
   1.83 check, all targets, strict Clippy, rustdoc/doctest, links, compliance and
   diff checks are all green.
+- Slice A committed as `17ebc9e` and pushed to `origin/main`.
+- The user's untracked requirements document remained unstaged.
 
 ### Phase 3: Core domain expansion
 
@@ -118,6 +120,20 @@
 **Status:** in_progress
 
 - Next slice is Tencent market statistics plus Sina statements/options.
+- Audited current Tencent/Sina client, transport, parser and capability
+  boundaries and mapped the reference's Tencent enrichment and Sina option
+  families onto existing injected transports.
+- Captured exact Tencent enrichment indices/units, Sina option routes and
+  positional shapes, and the corrected Sina financial statement JSON nesting.
+- Confirmed the existing Tencent fixtures intentionally contain only base
+  fields; Slice B will add an independent enrichment parser instead of making
+  base quotes stricter.
+- Confirmed Core option records must be widened before Sina implementation so
+  source month/optional discovery fields and complete quote/Greeks depth can
+  be represented honestly.
+- Audited the complete Tencent/Sina client and probe structure. The Slice B
+  implementation will reuse injected bounded transports, keep base quote
+  validation unchanged, and add all new output to the existing live probes.
 
 ## Test results
 
@@ -136,3 +152,5 @@
 | Intelligence test expected `Quality` for a provider mismatch | 1 | Existing Router contract classifies identity/batch mismatches as `Evidence`; corrected the test. |
 | `--locked` rejected the new analysis workspace member | 1 | Updated the lockfile offline, then returned to locked commands. |
 | `LimitPoolKind` lacked `Hash` for an exact duplicate key | 1 | Derived `Hash` on the pure value enum; focused analysis tests passed. |
+| Staged diff check reported a blank line at EOF in the analysis manifest | 1 | Removed it, restaged the single file and passed the staged diff check. |
+| Planning append expected a nonexistent `Slice B provider audit` heading | 1 | Read the actual file tail and applied the findings under the current audit section. |
