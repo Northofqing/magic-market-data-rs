@@ -23,15 +23,31 @@ absolute POSIX and Windows paths are normalized to the same repository-relative
 identity. A duplicate normalized production filename invalidates the report.
 
 The critical globs are defined in `CRITICAL_GLOBS` in the checker. They cover
-Core validation/evidence, Router failover, TDX codec/protocol/adapter/service
-entry points and every public-intelligence Provider introduced by Slice 0.
+Core validation/evidence, Router failover, the live TDX response header,
+decompression/packet utilities, protocol/adapter/service entry points and every
+public-intelligence Provider introduced by Slice 0.
 `magic-tdx-rs/src/protocol/{adjuster,fq_service}.rs` are the real adjustment
 paths; there is no `adjustment/` directory. `service/mod.rs` is the common
 service entry; there is no `service/common.rs`.
 
-Large `#[cfg(test)]` modules must not be used to inflate production coverage.
-Move them to `tests/` or load them from a file outside `src/` with `#[path]`
-before accepting the corresponding source-file percentage as release evidence.
+The former `magic-tdx-rs/src/codec/` foundation was never declared by
+`src/lib.rs` or referenced by production code after the live driver replaced
+the placeholder. It was deleted rather than wired in solely to satisfy
+coverage. The compiled equivalents are `net/packet.rs`, `net/utils.rs` and the
+parsers under `protocol/`.
+
+The checker scans every configured critical source and rejects inline
+`#[cfg(test)] mod ... {}` bodies and inline `#[test]` functions. Move tests
+outside `src/` and retain private-module access with:
+
+```rust
+#[cfg(test)]
+#[path = "../tests/module_tests.rs"]
+mod tests;
+```
+
+This makes llvm-cov attribute test-body lines to an excluded `tests/` path
+instead of inflating production coverage.
 
 ## Invalid evidence
 

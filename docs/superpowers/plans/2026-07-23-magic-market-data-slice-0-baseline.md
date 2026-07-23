@@ -814,7 +814,8 @@ percentage string. The minimum configured critical globs are:
 ```text
 crates/magic-market-core/src/*.rs
 crates/magic-market-router/src/*.rs
-crates/magic-tdx-rs/src/codec/*.rs
+crates/magic-tdx-rs/src/net/packet.rs
+crates/magic-tdx-rs/src/net/utils.rs
 crates/magic-tdx-rs/src/protocol/*.rs
 crates/magic-tdx-rs/src/adapter.rs
 crates/magic-tdx-rs/src/service/mod.rs
@@ -831,6 +832,12 @@ paths; the obsolete planned `adjustment/` directory does not exist.
 `service/mod.rs` is the actual common service entry; the obsolete planned
 `service/common.rs` does not exist.
 
+The old `magic-tdx-rs/src/codec/` foundation is rejected and deleted: after the
+live driver replaced its placeholder, `src/lib.rs` no longer declared it and
+no compiled module referenced its passthrough decompressor or cursor. It must
+not be reconnected merely to satisfy coverage. The admitted production ingress
+is `net/packet.rs` plus `net/utils.rs`, followed by `protocol/`.
+
 The checker must print overall and critical covered/total/percent/required
 values, reject each unmatched glob, require overall at least `80%` and require
 the combined critical aggregate at least `95%`.
@@ -840,9 +847,9 @@ the combined critical aggregate at least `95%`.
 `tools/coverage/README.md` must describe the production-file boundary,
 exclusions, critical globs, both thresholds, invalid-report behavior, the real
 command and the prohibition on lowering/excluding coverage to make a release
-pass. Large `#[cfg(test)]` modules embedded in `src/*.rs` must be moved through
-`#[path = "../tests/..."]` or to integration tests before their lines may be
-accepted as production coverage evidence.
+pass. The checker must reject inline test bodies in critical `src/*.rs`.
+Critical tests must move through `#[path = "../tests/..."]` or to integration
+tests before their lines may be accepted as production coverage evidence.
 
 - [ ] **Step 6: Make coverage a PR and release gate**
 

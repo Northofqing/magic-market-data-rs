@@ -28,7 +28,8 @@ class CoverageTests(unittest.TestCase):
         self.critical_paths = [
             "crates/magic-market-core/src/batch.rs",
             "crates/magic-market-router/src/router.rs",
-            "crates/magic-tdx-rs/src/codec/cursor.rs",
+            "crates/magic-tdx-rs/src/net/packet.rs",
+            "crates/magic-tdx-rs/src/net/utils.rs",
             "crates/magic-tdx-rs/src/protocol/parsers.rs",
             "crates/magic-tdx-rs/src/adapter.rs",
             "crates/magic-tdx-rs/src/service/mod.rs",
@@ -68,7 +69,8 @@ class CoverageTests(unittest.TestCase):
             (
                 "crates/magic-market-core/src/*.rs",
                 "crates/magic-market-router/src/*.rs",
-                "crates/magic-tdx-rs/src/codec/*.rs",
+                "crates/magic-tdx-rs/src/net/packet.rs",
+                "crates/magic-tdx-rs/src/net/utils.rs",
                 "crates/magic-tdx-rs/src/protocol/*.rs",
                 "crates/magic-tdx-rs/src/adapter.rs",
                 "crates/magic-tdx-rs/src/service/mod.rs",
@@ -83,12 +85,12 @@ class CoverageTests(unittest.TestCase):
 
     def test_exact_overall_and_critical_boundaries_pass(self) -> None:
         files = self.passing_critical()
-        files.append(coverage_file(self.noncritical_path, 6_860, 8_800))
+        files.append(coverage_file(self.noncritical_path, 6_765, 8_700))
         self.assert_report_status(files, 0)
 
     def test_overall_79_99_percent_fails(self) -> None:
         files = self.passing_critical()
-        files.append(coverage_file(self.noncritical_path, 6_859, 8_800))
+        files.append(coverage_file(self.noncritical_path, 6_764, 8_700))
         self.assert_report_status(files, 1)
 
     def test_critical_94_99_percent_fails(self) -> None:
@@ -146,6 +148,22 @@ class CoverageTests(unittest.TestCase):
         files = self.passing_critical()
         files[0] = coverage_file(self.critical_paths[0], 0, 0)
         self.assert_report_status(files, 2)
+
+    def test_inline_critical_test_bodies_are_invalid_evidence(self) -> None:
+        source = self.root / self.critical_paths[0]
+        source.write_text(
+            "#[cfg(test)]\nmod tests {\n#[test]\nfn inflates() {}\n}\n",
+            encoding="utf-8",
+        )
+        self.assert_report_status(self.passing_critical(), 2)
+
+    def test_path_based_external_critical_tests_are_allowed(self) -> None:
+        source = self.root / self.critical_paths[0]
+        source.write_text(
+            '#[cfg(test)]\n#[path = "../../../tests/batch.rs"]\nmod tests;\n',
+            encoding="utf-8",
+        )
+        self.assert_report_status(self.passing_critical(), 0)
 
     def test_duplicate_normalized_production_filename_is_invalid(self) -> None:
         files = self.passing_critical()

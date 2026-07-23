@@ -15,7 +15,8 @@ CRITICAL_REQUIRED = 95
 CRITICAL_GLOBS = (
     "crates/magic-market-core/src/*.rs",
     "crates/magic-market-router/src/*.rs",
-    "crates/magic-tdx-rs/src/codec/*.rs",
+    "crates/magic-tdx-rs/src/net/packet.rs",
+    "crates/magic-tdx-rs/src/net/utils.rs",
     "crates/magic-tdx-rs/src/protocol/*.rs",
     "crates/magic-tdx-rs/src/adapter.rs",
     "crates/magic-tdx-rs/src/service/mod.rs",
@@ -29,6 +30,13 @@ CRITICAL_GLOBS = (
 
 _EXCLUDED_COMPONENTS = {"tests", "examples", "benches", "fuzz", "target"}
 _WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:/")
+_INLINE_TEST_MODULE = re.compile(
+    r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]"
+    r"(?:\s*#\s*\[[^\]]+\]\s*)*"
+    r"\s*mod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{",
+    re.MULTILINE,
+)
+_INLINE_TEST_FUNCTION = re.compile(r"#\s*\[\s*test\s*\]")
 
 
 class CoverageReportError(ValueError):
@@ -156,12 +164,26 @@ def _report_files(payload: Any) -> list[dict[str, Any]]:
     return files
 
 
+def _reject_inline_critical_tests(repo_root: Path) -> None:
+    for pattern in CRITICAL_GLOBS:
+        for source in sorted(repo_root.glob(pattern)):
+            text = source.read_text(encoding="utf-8")
+            if _INLINE_TEST_MODULE.search(text) or _INLINE_TEST_FUNCTION.search(text):
+                relative = source.relative_to(repo_root).as_posix()
+                raise CoverageReportError(
+                    "critical source contains inline test bodies; move them "
+                    f"to a path-based external test module: {relative}"
+                )
+
+
 def evaluate(path: str | Path, repo_root: str | Path | None = None) -> CoverageResult:
     root = (
         Path(repo_root)
         if repo_root is not None
         else Path(__file__).resolve().parents[2]
     )
+    root = root.resolve()
+    _reject_inline_critical_tests(root)
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     files = _report_files(payload)
 
