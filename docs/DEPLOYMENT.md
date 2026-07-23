@@ -12,6 +12,12 @@
 - `magic-tencent-load-probe`：有界短时并发探针；
 - `magic-sina-live-probe`：新浪 Quote/五档/K线/最新分时/财务三表/ETF 期权探针；
 - `magic-sina-load-probe`：最多 40 请求/4 线程的有界短时并发探针；
+- `magic-eastmoney-{live,load}-probe`：东财公开研究、资金、信号、资本、打板和未准入诊断；
+- `magic-cninfo-{live,load}-probe`：巨潮公告/PDF metadata 和互动易；
+- `magic-ths-{live,load}-probe`：同花顺一致预期、强势原因、涨停池和热榜；
+- `magic-cls-{live,load}-probe`：财联社签名全球电报；
+- `magic-baidu-{live,load}-probe`：百度未复权日 K 和源端 MA；
+- `magic-iwencai-{live,load}-probe`：需要授权 API Key 的语义搜索；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建
@@ -30,19 +36,31 @@ bash tools/release/package.sh
 
 预检在每次新建的隔离 target 目录中，以离线模式运行格式、Rust 1.83 全目标编译、
 全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff 空白检查，避免
-本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建七个 release
+本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建十九个 release
 探针，复制为不冲突的文件名，并生成 SHA-256 清单：
 
 ```text
 target/dist/GIT_SHA/
 ├── bin/
+│   ├── magic-baidu-live-probe[.exe]
+│   ├── magic-baidu-load-probe[.exe]
+│   ├── magic-cls-live-probe[.exe]
+│   ├── magic-cls-load-probe[.exe]
+│   ├── magic-cninfo-live-probe[.exe]
+│   ├── magic-cninfo-load-probe[.exe]
 │   ├── magic-emquant-live-probe[.exe]
+│   ├── magic-eastmoney-live-probe[.exe]
+│   ├── magic-eastmoney-load-probe[.exe]
+│   ├── magic-iwencai-live-probe[.exe]
+│   ├── magic-iwencai-load-probe[.exe]
 │   ├── magic-router-live-probe[.exe]
 │   ├── magic-sina-live-probe[.exe]
 │   ├── magic-sina-load-probe[.exe]
 │   ├── magic-tdx-live-probe[.exe]
 │   ├── magic-tencent-live-probe[.exe]
-│   └── magic-tencent-load-probe[.exe]
+│   ├── magic-tencent-load-probe[.exe]
+│   ├── magic-ths-live-probe[.exe]
+│   └── magic-ths-load-probe[.exe]
 ├── docs/
 ├── licenses/
 ├── Cargo.lock
@@ -78,6 +96,8 @@ shasum -a 256 -c SHA256SUMS
 | TDX | 支持 | 支持 | 支持 | 需要出站 TCP/HTTP 与可写缓存目录 |
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
+| Eastmoney/CNInfo/THS/CLS/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源 |
+| iWencai | 支持 | 支持 | 支持 | Rustls HTTPS；需要获授权 API Key |
 | EMQuant Rust 层 | 支持 | 可编译 | 可编译 | 运行还取决于厂商 SDK |
 | 当前 EMQuant C++ bridge | x86_64 macOS | 未适配 | 未适配 | 使用 `.dylib`、`dlopen` 和 POSIX API |
 
@@ -93,6 +113,12 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | TDX | 已配置行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` | `~/.tdxrs/server_cache.json`；调用方指定的财务缓存 |
 | Tencent | `qt.gtimg.cn:443`、`web.ifzq.gtimg.cn:443`、`ifzq.gtimg.cn:443`、`stock.gtimg.cn:443`，HTTPS | 无持久缓存 |
 | Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`、`stock.finance.sina.com.cn:443`，HTTPS | 无持久缓存 |
+| Eastmoney Web | 集成文档白名单中的 `eastmoney.com`/`dfcfw.com` 主机，HTTPS 443 | 无持久缓存 |
+| CNInfo | `www.cninfo.com.cn:443`、`irm.cninfo.com.cn:443`、`static.cninfo.com.cn:443` | 仅 24 小时进程内 org 映射缓存 |
+| THS | `basic`、`zx`、`data`、`dq.10jqka.com.cn:443` | 无持久缓存 |
+| CLS | `www.cls.cn:443` | 无持久缓存 |
+| Baidu | `finance.pae.baidu.com:443` | 无持久缓存 |
+| iWencai | `openapi.iwencai.com:443` | API Key 仅由环境/秘密挂载提供，不落盘 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
 
 防火墙应只开放所需出站目标。TDX 财务下载当前是厂商 HTTP 分发端点，代码通过响应
@@ -162,6 +188,11 @@ market_release_dir=target/dist/$(git rev-parse HEAD)
 "$market_release_dir/bin/magic-sina-live-probe"
 "$market_release_dir/bin/magic-tdx-live-probe"
 "$market_release_dir/bin/magic-router-live-probe"
+"$market_release_dir/bin/magic-eastmoney-live-probe"
+"$market_release_dir/bin/magic-cninfo-live-probe"
+"$market_release_dir/bin/magic-ths-live-probe"
+"$market_release_dir/bin/magic-cls-live-probe"
+"$market_release_dir/bin/magic-baidu-live-probe"
 MAGIC_TENCENT_LOAD_OPERATION=mixed MAGIC_TENCENT_LOAD_REQUESTS=20 \
   MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
   "$market_release_dir/bin/magic-tencent-load-probe"
@@ -181,6 +212,20 @@ MAGIC_SINA_LOAD_OPERATION=options MAGIC_SINA_LOAD_REQUESTS=6 \
   "$market_release_dir/bin/magic-sina-load-probe"
 MAGIC_EMQUANT_BRIDGE=/opt/magic-market-data/libexec/emquant/emquant-snapshot \
   "$market_release_dir/bin/magic-emquant-live-probe"
+
+MAGIC_EASTMONEY_LOAD_REQUESTS=6 MAGIC_EASTMONEY_LOAD_CONCURRENCY=1 \
+  "$market_release_dir/bin/magic-eastmoney-load-probe"
+MAGIC_CNINFO_LOAD_REQUESTS=3 MAGIC_CNINFO_LOAD_CONCURRENCY=1 \
+  "$market_release_dir/bin/magic-cninfo-load-probe"
+MAGIC_THS_LOAD_REQUESTS=3 MAGIC_THS_LOAD_CONCURRENCY=1 \
+  "$market_release_dir/bin/magic-ths-load-probe"
+MAGIC_CLS_LOAD_REQUESTS=2 MAGIC_CLS_LOAD_CONCURRENCY=1 \
+  "$market_release_dir/bin/magic-cls-load-probe"
+MAGIC_BAIDU_LOAD_REQUESTS=2 MAGIC_BAIDU_LOAD_CONCURRENCY=1 \
+  "$market_release_dir/bin/magic-baidu-load-probe"
+# 只有已配置授权 Key 的环境才运行：
+MAGIC_IWENCAI_API_KEY=... \
+  "$market_release_dir/bin/magic-iwencai-live-probe"
 ```
 
 期权 load probe 默认在同次运行开始时自动发现当前合约，发现步骤不计入负载耗时。
@@ -195,7 +240,11 @@ Tencent 的选中状态和真实 Quote；EMQuant 当前会打印真实日线和�
 Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打印六类 K 线、
 三市场五档、最新交易日分时、三张财务报表，以及已实测 510050 的 ETF 期权合约、
 最优买卖一档 T 型报价和希腊字母；日线成交额和涨跌停空侧保持缺失。路由探针没有
-缓存或跨源拼接，两个来源都失败时退出非零。
+缓存或跨源拼接，两个来源都失败时退出非零。公共研究/内容 Provider 同样要求非空
+严格批次；Eastmoney 已声明能力的完整 live/mixed probe 必须为零退出，两个未声明
+资金流端点若继续返回 empty reply 则单独打印预期失败诊断，不能登记为资金流实盘
+通过；关键词新闻同样因无结构化证券身份保持未准入。iWencai 无授权 Key 时预期
+返回脱敏鉴权错误，不能把这次运行登记为语义搜索实盘通过。
 
 上线门至少保存以下证据，但不要保存账号、令牌或原始登录包：
 
@@ -226,8 +275,9 @@ Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打�
 [`MULTI_PROVIDER_ROUTING.md`](MULTI_PROVIDER_ROUTING.md) 显式分类各 Provider
 错误，并根据业务数据族选择完整性和来源时间门。
 
-容器可运行 Core、TDX、Tencent 和 Sina，但必须允许上述出站网络并给 TDX 一个可写
-HOME。Sina 财务和期权仍是无账号的只读 HTTPS 请求，不需要复制桌面客户端文件。
+容器可运行 Core、Router 和全部纯 Rust Provider，但必须允许上述出站网络并给 TDX
+一个可写 HOME。公开网页 Provider 不需要复制桌面客户端文件；iWencai Key 必须通过
+只读 secret 注入，禁止写入镜像、命令历史或 probe 日志。
 EMQuant 只有在厂商许可证允许、架构匹配、SDK 能在容器中激活且运行时文件通过秘密
 挂载提供时才可容器化；默认发布包不包含这些文件。
 

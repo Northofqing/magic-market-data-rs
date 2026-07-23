@@ -266,3 +266,77 @@
 - Main owns shared manifests, lockfile, Core and Router. Eastmoney,
   CNInfo/Tonghuashun and CLS/Baidu/iWencai will run as isolated parallel lanes
   after the shared gate passes.
+- Shared Core widening is implemented for all audited source fields. Core,
+  Router and analysis deterministic tests pass on Rust 1.83, as do format and
+  focused strict Clippy.
+- News is not yet falsely advertised as implemented: Core already has
+  `NewsItem`/`NewsProvider`, while real Eastmoney instrument-news and CLS
+  telegraph/global-news adapters remain work in the provider lanes.
+- Added the missing provider-neutral `PostCloseFlow` Top10 record, bounded
+  request, capability, trait and Router adapter from the user's P0 handoff.
+  It retains rank, close/change, main net flow, source-backed board/limit
+  metadata and record evidence; no Provider advertises it without verified
+  15:35 semantics. Focused tests are pending while provider manifests appear.
+- Refreshed `Cargo.lock` for all six Provider crates. The first broad resolver
+  update selected Rust 1.86 ICU/zeroize versions; main restored every prior
+  dependency version and retained only the six local packages plus the
+  Rust-1.83-compatible `sha1`/`md-5` dependency graph.
+- Downloaded the new locked crypto sources, then passed all Core, Router and
+  analysis tests on Rust 1.83. The new PostClose record/request and Router
+  adapter are covered in those passing suites.
+- Added integration contracts for CLS global news, Baidu unadjusted
+  MA5/10/20 daily bars and authenticated iWencai semantic search. Each records
+  host allowlists, byte/request limits, units, authentication handling,
+  probes and production boundaries; docs links/compliance/diff checks pass.
+- Parallel lane real evidence: CLS live returned five complete telegraph items;
+  its serial load run passed 2/2 with 20 records, p50 181,588 µs and max
+  271,345 µs. Baidu live returned five unadjusted 华电辽能 daily bars with
+  MA5/10/20; its serial load run passed 2/2 with 40 records, p50 266,888 µs and
+  max 365,595 µs.
+- iWencai's deterministic authenticated search is implemented, while the real
+  probe without a configured key returns the expected typed Authentication
+  error. No live-success claim or throughput number is recorded without an
+  authorized key.
+## 2026-07-23 parallel public-provider implementation
+
+- Core and Router contracts were widened for the public-provider domains, including an explicit `PostCloseFlow` contract that remains unsupported until a source with verified 15:35 semantics is available.
+- Six provider crates are being implemented in three parallel lanes: Eastmoney; CNInfo plus THS; CLS plus Baidu plus iWencai.
+- CLS/Baidu/iWencai implementation is complete and its focused Rust 1.83 test, Clippy, rustdoc, doctest, compliance, live, and load gates have passed.
+- CNInfo/THS focused tests, Clippy, live, and load probes passed initially; final audit fixes for strict-empty behavior and THS limit-pool field semantics are in progress.
+- Eastmoney final audit fixes for strict-empty behavior, shared transport serialization, and timestamp error handling are in progress.
+- Remaining integration work after the implementation lanes close: cross-review, root-level real probes and load probes, comprehensive integration/deployment/performance documentation, full-workspace quality gates, commit, and push.
+
+## 2026-07-23 CNInfo / THS lane completion
+
+- CNInfo and THS audit blockers are closed: strict empty responses now return typed `Incomplete`,
+  THS limit-pool semantics are corrected, and CNInfo canonical announcement URLs were verified.
+- Focused Rust 1.83 all-target testing passed 17/17; strict Clippy, rustdoc, formatting,
+  compliance, and link checks passed in the lane.
+- CNInfo live returned three announcements and three investor Q&A records; its serial load run
+  completed 3/3 with a 1002 ms minimum request-start gap.
+- THS live returned consensus, strong-stock, upper-limit-pool, and popularity data; its serial load
+  run completed 3/3 with a 1000 ms minimum request-start gap.
+- Added complete integration contracts for Eastmoney public web, CNInfo, and THS under
+  `docs/integrations/`; root-level reruns and exact latency capture remain before release.
+
+## 2026-07-23 cross-review remediation
+
+- Independent review reproduced and closed CNInfo multi-page overlap, CNInfo/THS exchange identity
+  corruption, and premature batch observation timestamps.
+- Independent Core/Router review closed checked-construction, legacy-serde and mandatory
+  PostClose source-time gaps, then the root reran 1.83 Core/Router/analysis/Eastmoney tests and
+  strict Clippy successfully.
+- Root-level live/load reruns are complete for Eastmoney, CNInfo, THS, CLS and Baidu; iWencai
+  correctly exits with a typed missing-key authentication error.
+- CLS/Baidu/iWencai remediation is complete and the final root live/load reruns pass; iWencai
+  correctly remains unadvertised without a licensed key.
+- Eastmoney advertised live and the final 3/3 high-level-attempt load run pass, but release is
+  held for three independent-review P1 classes now being fixed in parallel.
+- Remaining before this checkpoint can be committed: Eastmoney P1 closure and re-review,
+  full workspace gates, release package, precise staging and push.
+- Final CNInfo/THS/CLS/Baidu identity/schema remediation passed 45 Rust 1.83 tests and strict
+  Clippy. Independent re-review reports no P0/P1; its sole Baidu documentation P2 was corrected.
+- Eastmoney's final source-evidence remediation now requires response `qdate` for all limit-pool
+  rows, validates seal clocks, and keeps keyword news unadvertised/unsupported because the rows
+  lack source instrument identity. Focused gates pass (53 library + 3 load-helper tests), real
+  advertised live/load pass, and both news/fund-flow remain explicit diagnostics.

@@ -31,10 +31,10 @@ inference, no production claim without a successful real probe.
 - Modify: `crates/magic-market-analysis/tests/analysis.rs`
 - Modify: `crates/magic-market-router/tests/intelligence_routing.rs`
 
-- [ ] Add optional source-semantic fields without guessing missing values.
-- [ ] Preserve checked deserialization invariants for coupled optional fields.
-- [ ] Cover serde bypass attempts and Router evidence/forwarding behavior.
-- [ ] Pass Core, Router and analysis tests plus strict Clippy on Rust 1.83.
+- [x] Add optional source-semantic fields without guessing missing values.
+- [x] Preserve checked deserialization invariants for coupled optional fields.
+- [x] Cover serde bypass attempts and Router evidence/forwarding behavior.
+- [x] Pass Core, Router and analysis tests plus strict Clippy on Rust 1.83.
 
 Required field additions:
 
@@ -125,7 +125,7 @@ Required field additions:
 
 - [ ] CLS: implement the currently verified signed telegraph/global-news
   request, validate response errno and retain publisher/source time.
-- [ ] Baidu: implement verified forward-adjusted historical K-line and
+- [ ] Baidu: implement verified unadjusted historical K-line and
   MA5/10/20 mapping, capped at one request and 2,001 rows.
 - [ ] iWencai: accept an explicit API key, cap results at 50 and return a typed
   authentication error when absent/rejected.

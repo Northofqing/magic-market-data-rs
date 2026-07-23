@@ -71,10 +71,9 @@ Phase 4
   `docs/superpowers/plans/2026-07-23-public-intelligence-providers.md` as
   Slices C and D. Shared Core/Router/workspace files are a main-thread barrier;
   isolated Provider crates may be implemented in parallel after it passes.
-- Then implement Eastmoney broad intelligence families, CNInfo/Tonghuashun,
-  CLS/Baidu/Iwencai and exchange announcement sources in separate reviewed
-  slices.
-
+- Public-intelligence Tasks 1-5 are implemented and live-probed; final
+  Eastmoney P1 remediation and independent review are in progress before the
+  checkpoint release.
 ### Phase 5: Integration and acceptance
 
 **Status:** pending

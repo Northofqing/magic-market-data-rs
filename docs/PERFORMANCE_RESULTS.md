@@ -122,3 +122,110 @@ requests_per_second=18.32
 latency_us_p50=54445 latency_us_p95=54445 latency_us_max=54551
 load_probe_status=passed
 ```
+
+## CLS and Baidu bounded public-web probes
+
+On 2026-07-23 the current CLS release probe returned five real global
+telegraph/news records from the signed `www.cls.cn` endpoint and completed with
+`live_probe_status=passed`. The intentionally serial two-request load run
+observed:
+
+```text
+requests=2 concurrency=1 min_interval_ms=1000 successes=2 failures=0 records=20
+elapsed_seconds=1.126 requests_per_second=1.777
+latency_us_p50=252611 latency_us_p95=873075 latency_us_p99=873075
+latency_us_max=873075
+load_probe_status=passed
+```
+
+The current Baidu release probe returned five real unadjusted daily bars
+for 华电辽能 `600396.SH`, including source MA5/MA10/MA20, and completed with
+`live_probe_status=passed`. Its serial two-request load run fetched 20 bars per
+request:
+
+```text
+requests=2 concurrency=1 min_interval_ms=1000 successes=2 failures=0 records=40
+elapsed_seconds=1.268 requests_per_second=1.577
+latency_us_p50=294120 latency_us_p95=973862 latency_us_p99=973862
+latency_us_max=973862
+load_probe_status=passed
+```
+
+Both clients share their serial gate across clones, enforce at least one second
+between request starts, hold the gate through the complete response read, and
+cap a load run at three requests. The probes report every error and fail the
+process if any request fails. The numbers demonstrate current connectivity and
+parser behavior, not endpoint SLA or permission for sustained traffic.
+
+## iWencai authenticated probe status
+
+The iWencai deterministic authentication/search suite passes on Rust 1.83.
+Without `MAGIC_IWENCAI_API_KEY`, the real probe exits non-zero with the typed
+`Authentication` error as designed; it does not import a browser session or
+print simulated documents. `semantic_search` consequently remains false in the
+advertised capability set even though the typed method and fixture parser are
+implemented. Real throughput remains unmeasured until an authorized API key is
+configured.
+
+## CNInfo and Tonghuashun bounded public-web probes
+
+The 2026-07-23 CNInfo live probe returned three 华电辽能 announcements and three
+比亚迪 investor Q&A records. Canonical announcement detail URLs were checked
+independently and returned HTTP 200. The serial announcement load probe
+completed:
+
+```text
+requests=3 concurrency=1 successes=3 failures=0
+elapsed_ms=3158 throughput_requests_per_second=0.9498
+latency_min_ms=772 latency_p50_ms=795 latency_p95_ms=1381 latency_max_ms=1381
+minimum_attempt_start_gap_ms=1004
+```
+
+The Tonghuashun live probe returned non-empty consensus, strong-stock reasons,
+upper-limit-pool records and popularity records. Its serial popularity load
+probe completed:
+
+```text
+requests=3 concurrency=1 successes=3 failures=0
+elapsed_ms=2099 throughput_requests_per_second=1.4288
+latency_min_ms=93 latency_p50_ms=106 latency_p95_ms=167 latency_max_ms=167
+minimum_attempt_start_gap_ms=1002
+```
+
+Both providers hold a shared request gate through the complete response read
+and enforce at least one second between request starts. These runs verify
+current connectivity, non-empty parsing and pacing only; they are not endpoint
+SLAs or permission for sustained traffic.
+
+## Eastmoney public-web probe status
+
+The current live probe obtained real instrument/industry reports, industry,
+concept and region board flows, dragon-tiger entries and seats, margin data,
+block trades, holder counts, lockups, dividends, all four limit-pool families,
+and popularity with separate quote evidence.
+
+Both current fund-flow hosts closed the development network connection before
+an HTTP response; an independent reference request reproduced the same empty
+reply. Deterministic fund-flow fixtures and mapping tests pass, but the
+capability remains unadvertised and this document does not claim real fund-flow
+acceptance. The live probe records those calls as expected-failure diagnostics
+and passes only after every advertised family has returned a strict, non-empty
+batch. The final three-operation serial advertised-capability load run was:
+
+```text
+high_level_attempts=3 concurrency=1
+admitted_successful_attempts=3 admitted_failed_attempts=0
+diagnostic_complete_unadmitted_attempts=0 diagnostic_failed_attempts=0
+total_elapsed_ms=2045 attempts_per_second=1.4664
+attempt_latency_p50_ms=40 attempt_latency_p95_ms=45
+attempt_latency_p99_ms=45 attempt_latency_max_ms=45 limiter_wait_total_ms=1930
+minimum_attempt_start_gap_ms=1002
+load_probe_status=passed
+```
+
+Reports, board flow and upper-limit pool all returned real non-empty batches.
+An operator can still request the fund-flow diagnostic explicitly; that
+diagnostic is expected to fail until a live host is independently accepted.
+Keyword-news search is also an unadmitted diagnostic because the response does
+not carry a structured source instrument identity; it is not counted as
+instrument-news acceptance.
