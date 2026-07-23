@@ -4,9 +4,10 @@
 Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源证据的多 Provider
 顺序切源能力。
 
-当前代码固定使用 Rust 1.83.0，生产 Rust 路径禁止 `unsafe`。确定性测试默认不访问
-公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值冒充
-实盘成功。
+当前代码不固定具体 Rust 版本：开发者使用本机默认工具链，CI 使用当前 stable，
+发布制品记录实际 `rustc`/Cargo 版本。生产 Rust 路径禁止 `unsafe`。确定性测试默认
+不访问公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值
+冒充实盘成功。
 
 > 当前状态（2026-07-23）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS 和 Baidu 已通过真实网络验收；Eastmoney 已声明能力的
@@ -256,23 +257,21 @@ SDK 安装、签名、激活和错误码说明见
 ### 环境要求
 
 - Git；
-- Rust/Cargo 1.83.0；
+- 当前 stable Rust/Cargo，并提供 rustfmt 和 Clippy；
 - Bash 和常用 Unix 工具（发布脚本）；
 - 首次获取依赖时允许访问 crates.io；
 - 运行真实 probe 时允许对应 Provider 的出站网络。
 
-安装固定工具链并获取锁定依赖：
+准备 stable 工具链并获取锁定依赖：
 
 ```bash
 git clone https://github.com/Northofqing/magic-market-data-rs.git
 cd magic-market-data-rs
-rustup toolchain install 1.83.0 --profile minimal \
-  --component rustfmt --component clippy
 cargo fetch --locked
 ```
 
-`Cargo.lock` 固定了与 Cargo 1.83 兼容的 URL/IDNA/zeroize 依赖链。不要删除锁文件
-后直接升级，否则可能重新解析到需要 edition 2024 的包。
+仓库不通过脚本安装或切换工具链。`Cargo.lock` 固定依赖解析结果；不要删除锁文件后
+直接升级，否则可能改变编译器要求和传递依赖。
 
 ### 确定性验证
 
@@ -285,8 +284,8 @@ cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo doc --workspace --no-deps --locked --offline
 ```
 
-完整发布门一次执行格式、Rust 1.83 全目标编译、全部测试、严格 Clippy、rustdoc、
-doctest、链接、合规和 diff 检查：
+完整发布门使用当前默认工具链，一次执行格式、全目标编译、全部测试、严格 Clippy、
+rustdoc、doctest、链接、合规和 diff 检查：
 
 ```bash
 bash tools/release/preflight.sh
@@ -612,7 +611,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 
 | 项目 | 结果 | 证据摘要 |
 | --- | --- | --- |
-| Rust 1.83 全工作区门禁 | 通过 | check、全部测试、严格 Clippy、rustdoc/doctest、链接和合规 |
+| 默认工具链全工作区门禁 | 通过 | 实际版本由 preflight 输出；check、全部测试、严格 Clippy、rustdoc/doctest、链接和合规 |
 | TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
 | Tencent live probe | 通过 | 沪深京基础行情；股票/指数/ETF 行情统计；沪深当日逐笔 |
 | Tencent load probe | 通过 | mixed 100/8 为 100/100；统计 12/3 为 12/12 |

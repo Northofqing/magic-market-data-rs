@@ -13,7 +13,7 @@ while IFS= read -r candidate; do
   untracked_build_input=$candidate
   break
 done < <(git ls-files --others --exclude-standard -- \
-  .cargo Cargo.toml Cargo.lock rust-toolchain.toml crates tools/release)
+  .cargo Cargo.toml Cargo.lock rust-toolchain rust-toolchain.toml crates tools/release)
 if [[ -n "$untracked_build_input" ]]; then
   printf 'release packaging rejects untracked build input: %s\n' "$untracked_build_input" >&2
   exit 1
@@ -93,7 +93,7 @@ done < <(git ls-files -z docs)
 mkdir -p "$dist_dir/licenses"
 install -m 0644 LICENSE-MIT LICENSE-APACHE "$dist_dir/licenses/"
 install -m 0644 LICENSES/tdxrs-MIT.txt "$dist_dir/licenses/"
-install -m 0644 README.md Cargo.lock rust-toolchain.toml "$dist_dir/"
+install -m 0644 README.md Cargo.lock "$dist_dir/"
 printf '%s\n' "$revision" > "$dist_dir/RELEASE_REVISION"
 printf '%s\n' "$host_triple" > "$dist_dir/TARGET_TRIPLE"
 rustc -vV > "$dist_dir/RUSTC_VERSION"
@@ -105,7 +105,7 @@ if command -v shasum >/dev/null 2>&1; then
       shasum -a 256 "$packaged_file"
     done < <(find bin docs licenses -type f -print | LC_ALL=C sort)
     shasum -a 256 Cargo.lock CARGO_VERSION README.md RELEASE_REVISION \
-      RUSTC_VERSION TARGET_TRIPLE rust-toolchain.toml
+      RUSTC_VERSION TARGET_TRIPLE
   ) > "$dist_dir/SHA256SUMS"
 elif command -v sha256sum >/dev/null 2>&1; then
   (
@@ -114,7 +114,7 @@ elif command -v sha256sum >/dev/null 2>&1; then
       sha256sum "$packaged_file"
     done < <(find bin docs licenses -type f -print | LC_ALL=C sort)
     sha256sum Cargo.lock CARGO_VERSION README.md RELEASE_REVISION \
-      RUSTC_VERSION TARGET_TRIPLE rust-toolchain.toml
+      RUSTC_VERSION TARGET_TRIPLE
   ) > "$dist_dir/SHA256SUMS"
 else
   printf 'neither shasum nor sha256sum is installed\n' >&2

@@ -13,19 +13,21 @@ cleanup_preflight() {
 }
 trap cleanup_preflight EXIT
 
-RUSTUP_TOOLCHAIN=1.83.0 cargo fmt --all -- --check
+rustc -vV
+cargo -V
+cargo fmt --all -- --check
 bash -n tools/compliance/check.sh tools/release/preflight.sh tools/release/package.sh
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo check --workspace --all-targets --all-features --locked --offline
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo test --workspace --all-targets --all-features --locked --offline \
   -- --test-threads=1
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo clippy --workspace --all-targets --all-features --locked --offline \
   -- -D warnings
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTDOCFLAGS='-D warnings' RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" RUSTDOCFLAGS='-D warnings' \
   cargo doc --workspace --all-features --no-deps --locked --offline
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo test --workspace --all-features --doc --locked --offline \
   -- --test-threads=1
 bash tools/docs/check_links.sh

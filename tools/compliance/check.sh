@@ -38,6 +38,28 @@ for required_file in "${required[@]}"; do
   }
 done
 
+for toolchain_file in rust-toolchain rust-toolchain.toml; do
+  if [[ -e "$toolchain_file" ]]; then
+    printf 'fixed repository toolchain selector is not allowed: %s\n' \
+      "$toolchain_file" >&2
+    exit 1
+  fi
+done
+if rg -n '^[[:space:]]*rust-version[[:space:]]*=' \
+  Cargo.toml crates/*/Cargo.toml; then
+  echo "Cargo manifests must not declare a fixed Rust version" >&2
+  exit 1
+fi
+if rg -n 'dtolnay/rust-toolchain@[0-9]+([.][0-9]+)*' .github/workflows; then
+  echo "active workflows must use the stable Rust toolchain" >&2
+  exit 1
+fi
+if rg -n 'RUSTUP_TOOLCHAIN=[0-9]+([.][0-9]+)*|cargo[[:space:]]+[+][0-9]+([.][0-9]+)*' \
+  .github/workflows tools; then
+  echo "active build and release tooling must not select a numeric Rust version" >&2
+  exit 1
+fi
+
 workspace_members=(
   crates/magic-market-core
   crates/magic-market-router

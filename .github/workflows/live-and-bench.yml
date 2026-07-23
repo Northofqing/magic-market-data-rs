@@ -38,7 +38,7 @@ jobs:
           - baidu
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - uses: dtolnay/rust-toolchain@1.83.0
+      - uses: dtolnay/rust-toolchain@stable
       - name: Run unauthenticated public-web probes
         run: |
           set -o pipefail
@@ -57,7 +57,7 @@ jobs:
       MAGIC_IWENCAI_API_KEY: ${{ secrets.MAGIC_IWENCAI_API_KEY }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - uses: dtolnay/rust-toolchain@1.83.0
+      - uses: dtolnay/rust-toolchain@stable
       - name: Run authenticated iWencai probes
         if: ${{ env.MAGIC_IWENCAI_API_KEY != '' }}
         run: |

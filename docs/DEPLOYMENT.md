@@ -22,22 +22,21 @@
 
 ## 可重复构建
 
-仓库固定 Rust/Cargo 1.83.0，`Cargo.lock` 也固定 HTTPS 依赖的
-URL/IDNA/zeroize 链，避免 Cargo 1.83 解析到 edition-2024 清单。发布构建必须使用
-`--locked`，不能删除锁文件后直接升级补丁版本。
+仓库不固定具体 Rust/Cargo 版本。开发与发布使用运行主机的默认工具链，CI 使用当前
+stable；发布包会保存实际 `rustc -vV` 与 `cargo -V` 输出。`Cargo.lock` 固定依赖
+解析结果，发布构建必须使用 `--locked`，不能删除锁文件后直接升级依赖。
 
 ```bash
-rustup toolchain install 1.83.0 --profile minimal --component rustfmt --component clippy
 cargo fetch --locked
 bash tools/release/preflight.sh
 git commit
 bash tools/release/package.sh
 ```
 
-预检在每次新建的隔离 target 目录中，以离线模式运行格式、Rust 1.83 全目标编译、
-全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff 空白检查，避免
-本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建十九个 release
-探针，复制为不冲突的文件名，并生成 SHA-256 清单：
+预检先打印当前工具链版本，再在每次新建的隔离 target 目录中，以离线模式运行格式、
+全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
+空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
+构建十九个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单：
 
 ```text
 target/dist/GIT_SHA/
@@ -290,8 +289,8 @@ EMQuant 只有在厂商许可证允许、架构匹配、SDK 能在容器中激�
 升级依赖时必须：
 
 1. 在单独提交中更新 `Cargo.lock`；
-2. 用 Cargo 1.83.0 运行全工作区 `--locked --offline` 检查；
-3. 扫描选中依赖清单，避免再次引入 edition 2024；
+2. 用当前默认 Cargo 运行全工作区 `--locked --offline` 检查并记录版本；
+3. 扫描选中依赖清单，确认其编译器要求符合当前 stable；
 4. 运行确定性测试、真实探针和小规模负载探针；
 5. 比较能力、字段单位、源时间、错误率和延迟后再放量。
 

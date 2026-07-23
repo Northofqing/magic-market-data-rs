@@ -7,6 +7,9 @@ immutable records.
 
 Breaking migrations:
 
+- Removed the repository Rust version selector and MSRV declaration. Local and
+  release gates use the active default toolchain, CI uses current stable, and
+  packaged artifacts record the actual `rustc` and Cargo versions.
 - `Provenance::new`, `with_source_at`, and `with_batch_id` now return
   `Result`; empty evidence is rejected.
 - `DataBatch::best_effort` now returns `Result`; blank quality issues are
