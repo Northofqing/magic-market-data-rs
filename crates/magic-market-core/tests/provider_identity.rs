@@ -1,7 +1,24 @@
-use magic_market_core::{Capabilities, ProviderId};
+use magic_market_core::{AssetClass, Capabilities, ProviderId};
 #[test]
 fn provider_capabilities_are_explicit() {
     assert_eq!(ProviderId::Tdx, ProviderId::Tdx);
     assert_ne!(ProviderId::LocalTerminal, ProviderId::Tdx);
     assert!(!Capabilities::new().quotes);
+}
+
+#[test]
+fn intelligence_sources_have_first_class_identities() {
+    let providers = [
+        ProviderId::Baidu,
+        ProviderId::Tonghuashun,
+        ProviderId::Iwencai,
+        ProviderId::Cninfo,
+        ProviderId::Cailianpress,
+        ProviderId::Sse,
+        ProviderId::Szse,
+        ProviderId::Hkex,
+        ProviderId::LocalAnalysis,
+    ];
+    assert_eq!(providers.len(), 9);
+    assert_eq!(AssetClass::Option, AssetClass::Option);
 }

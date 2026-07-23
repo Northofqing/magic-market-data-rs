@@ -76,6 +76,20 @@ Breaking migrations:
   manual covering workspace boundaries, normalized evidence, exact Provider
   capabilities, deterministic setup, real/load probes, failover routing,
   release packaging, deployment constraints and security navigation.
+- Added checked primitives and record-level `SourceEvidence` for the
+  intelligence expansion, plus first-class Baidu, Tonghuashun, iwencai,
+  CNInfo, CLS, SSE, SZSE, HKEX and local-analysis provider identities.
+- Added provider-neutral contracts, conservative capabilities and traits for
+  market statistics/technical bars, research/consensus/semantic search,
+  signals/boards/dragon-tiger/popularity, historical fund flow/capital data,
+  news/announcements/interaction, company statements, four limit pools and ETF
+  options.
+- Expanded `magic-market-router` with thin provider-neutral adapters for every
+  new normalized family; all records continue through the existing
+  provider/batch evidence rejection and ordered attempt trace.
+- Added `magic-market-analysis`, a network-free crate for checked SMA, forward
+  PE, PEG, configurable PE-digestion scenarios, limit-pool sentiment and
+  cross-source freshness/value diagnostics with retained input evidence.
 
 Serde input now passes through the same constructors used by Rust callers, so
 invalid numeric values, identifiers, evidence, dates, OHLC ranges, order-book

@@ -9,7 +9,7 @@ and explicit unsupported boundaries.
 
 ## Current phase
 
-Phase 3
+Phase 4
 
 ## Constraints
 
@@ -46,7 +46,7 @@ Phase 3
 
 ### Phase 3: Core domain expansion
 
-**Status:** in_progress
+**Status:** complete
 
 - Add normalized contracts for the approved non-market-data domains.
 - Add checked construction, serde validation and common source evidence.
@@ -54,7 +54,7 @@ Phase 3
 
 ### Phase 4: Provider implementation
 
-**Status:** pending
+**Status:** in_progress
 
 - Implement provider modules in dependency order with deterministic fixtures.
 - Add bounded live/load probes and explicit unsupported/authentication errors.
@@ -81,3 +81,8 @@ Phase 3
 | Error | Attempt | Resolution |
 | --- | ---: | --- |
 | Reference/local combined read used the wrong working directory for `SKILL.md` | 1 | Split subsequent reference and local reads by explicit working directory. |
+| Core audit used `magic-market-core/...` instead of workspace member path `crates/magic-market-core/...` | 1 | Correct all subsequent crate reads to use the `crates/` prefix. |
+| Core test could not write a fingerprint because the data volume had only 123 MiB free | 1 | Diagnosed `target/debug` at 547 MiB, removed only that reproducible cache, then reran the identical test successfully with 669 MiB free. |
+| Tuple Router closures needed explicit request types; first mechanical patch matched the first four generic closures | 2 | Inspected exact matches, restored the four baseline closures, annotated only the four tuple adapters, and passed the full Router suite. |
+| New analysis workspace member required a local Cargo.lock package entry | 1 | Ran Cargo once with `--offline` but without `--locked`; it updated only the lock metadata and produced the expected missing-API RED result. |
+| Limit-pool duplicate detection required a hashable pool kind | 1 | Added `Hash` to the pure enum and reran the analysis tests successfully. |

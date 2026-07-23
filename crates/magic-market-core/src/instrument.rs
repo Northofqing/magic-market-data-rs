@@ -14,6 +14,7 @@ pub enum AssetClass {
     Index,
     Fund,
     Bond,
+    Option,
 }
 /// Validated exchange instrument identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]

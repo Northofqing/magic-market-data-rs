@@ -284,6 +284,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-market-analysis"
+version = "0.1.0"
+dependencies = [
+ "magic-market-core",
+ "thiserror",
+]
+
+[[package]]
 name = "magic-market-core"
 version = "0.2.0"
 dependencies = [

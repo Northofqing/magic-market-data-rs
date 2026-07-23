@@ -207,6 +207,49 @@
 - The current working tree still contains only parity planning/specification
   changes plus the user's preserved untracked requirements document; no
   pre-existing code change was overwritten.
+- Workspace crates live under `crates/`; the first audit path without that
+  prefix was corrected before any source edit.
+- Core already has a reusable `SourcedRecord` contract requiring provider and
+  batch identity, while the router is generic over any such record. New domain
+  records can therefore use a shared checked evidence object and avoid changes
+  to the failover engine itself.
+- `InstrumentId` and `Provenance` already use constructor-validated custom
+  deserialization. New identities/evidence should follow this style.
+- Existing `Capabilities` remains market-data-specific. New domain capability
+  structs can be placed beside new traits without breaking current providers.
+- Router `adapters.rs` is intentionally thin: each normalized trait maps to a
+  `SourceFn` plus one router alias. New families should preserve this pattern.
+- Existing value wrappers (`Price`, `Quantity`, `Money`, `Ratio`) validate
+  deserialization themselves. Slice A will extend this pattern with reusable
+  checked text/date/URL/finite/rank/evidence primitives so dozens of domain
+  records do not each need fragile handwritten serde wire mirrors.
+- Core currently has only `serde` and `thiserror`; the foundation can remain
+  dependency-light. URL/date validation should be deliberately strict and
+  structural without introducing a network or wall-clock dependency.
+- Existing implementation plans use checkbox tasks with exact files, commands
+  and acceptance assertions. The new Slice A plan will follow the same format.
+- `Bar` exposes validated interval/start/end/close and batch/provider evidence,
+  which is sufficient for a network-free moving-average implementation without
+  reaching into provider payloads.
+- `DataBatch` retains provenance and completeness independently from record
+  evidence; analysis results that combine providers should keep the original
+  `SourceEvidence` inputs rather than manufacture one upstream batch.
+- Slice A adds a library-only analysis crate, so the release package needs no
+  new executable yet. It will be included transitively when future aggregate
+  probes are built.
+- Root documentation currently describes only the eight low-level market-data
+  families. It needs a separate normalized intelligence-domain matrix whose
+  status is explicitly “contracts implemented, Provider live connection
+  pending.”
+- The compliance script matches the workspace member line exactly and must add
+  `magic-market-analysis`; otherwise a correct workspace expansion fails the
+  structural gate.
+- Submission review found two important contract issues before commit:
+  `TechnicalBar::new` could pair a source bar with mismatched outer
+  provider/batch evidence, and `FundFlowRequest` exposed an unbounded public
+  limit with unchecked derived deserialization.
+- The review scan found no TODO/TBD placeholders, insecure-TLS switches or new
+  plaintext endpoint use in the Slice A production code.
 
 ## Technical decisions
 

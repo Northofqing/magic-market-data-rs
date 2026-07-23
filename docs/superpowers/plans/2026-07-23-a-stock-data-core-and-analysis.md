@@ -25,15 +25,15 @@ Router crates; no network dependency in this slice.
 - Modify: `crates/magic-market-core/tests/values.rs`
 - Create: `crates/magic-market-core/tests/source_evidence.rs`
 
-- [ ] Require explicit Provider IDs for Baidu, Tonghuashun, Iwencai, CNInfo,
+- [x] Require explicit Provider IDs for Baidu, Tonghuashun, Iwencai, CNInfo,
   CLS, SSE, SZSE, HKEX and local analysis.
-- [ ] Require `AssetClass::Option`.
-- [ ] Require checked `NonEmptyText`, `HttpsUrl`, `IsoDate`, `FiniteNumber`,
+- [x] Require `AssetClass::Option`.
+- [x] Require checked `NonEmptyText`, `HttpsUrl`, `IsoDate`, `FiniteNumber`,
   `PositiveU32` and `SourceEvidence` round trips.
-- [ ] Assert empty/control/oversized text, non-HTTPS URLs, impossible dates,
+- [x] Assert empty/control/oversized text, non-HTTPS URLs, impossible dates,
   non-finite numbers, zero ranks and empty batch evidence are rejected through
   direct construction and serde.
-- [ ] Run the focused tests and record the expected missing-symbol failures.
+- [x] Run the focused tests and record the expected missing-symbol failures.
 
 ### Task 2: Implement shared validated primitives and evidence
 
@@ -45,14 +45,14 @@ Router crates; no network dependency in this slice.
 - Modify: `crates/magic-market-core/src/provider.rs`
 - Modify: `crates/magic-market-core/src/lib.rs`
 
-- [ ] Implement trimmed, bounded, control-free text and HTTPS URL wrappers with
+- [x] Implement trimmed, bounded, control-free text and HTTPS URL wrappers with
   checked deserialization.
-- [ ] Implement real Gregorian `YYYY-MM-DD` validation, finite signed number
+- [x] Implement real Gregorian `YYYY-MM-DD` validation, finite signed number
   and positive-rank wrappers.
-- [ ] Implement `SourceEvidence` with provider, optional source time, observed
+- [x] Implement `SourceEvidence` with provider, optional source time, observed
   time and batch ID; all text is checked and evidence is serde-safe.
-- [ ] Add Provider/asset variants without changing existing enum serialization.
-- [ ] Run Core tests and require all baseline tests to remain green.
+- [x] Add Provider/asset variants without changing existing enum serialization.
+- [x] Run the focused Core tests and require the new contracts to pass.
 
 ### Task 3: Add market enrichment and research contracts
 
@@ -64,14 +64,14 @@ Router crates; no network dependency in this slice.
 - Create: `crates/magic-market-core/tests/research.rs`
 - Modify: `crates/magic-market-core/src/lib.rs`
 
-- [ ] Add `MarketStatistics` and `TechnicalBar` with optional fields and strict
+- [x] Add `MarketStatistics` and `TechnicalBar` with optional fields and strict
   instrument/bar/evidence identity.
-- [ ] Add report scope, report, earnings estimate, consensus snapshot,
+- [x] Add report scope, report, earnings estimate, consensus snapshot,
   semantic channel/document and bounded query request types.
-- [ ] Add `MarketStatisticsProvider`, `TechnicalBarsProvider`,
+- [x] Add `MarketStatisticsProvider`, `TechnicalBarsProvider`,
   `ResearchReports`, `ConsensusData` and `SemanticSearch` traits.
-- [ ] Implement `SourcedRecord` for every routable record.
-- [ ] Assert checked serde, missing-value preservation and no fabricated
+- [x] Implement `SourcedRecord` for every routable record.
+- [x] Assert checked serde, missing-value preservation and no fabricated
   source time.
 
 ### Task 4: Add signals, fund-flow and capital contracts
@@ -84,14 +84,14 @@ Router crates; no network dependency in this slice.
 - Create: `crates/magic-market-core/tests/capital.rs`
 - Modify: `crates/magic-market-core/src/lib.rs`
 
-- [ ] Add board membership/category, strong-stock reason, dragon-tiger
+- [x] Add board membership/category, strong-stock reason, dragon-tiger
   entry/seat, ranking, popularity and concept-hit records.
-- [ ] Add interval-aware `FundFlowPoint`, `BoardFlow`, margin, block trade,
+- [x] Add interval-aware `FundFlowPoint`, `BoardFlow`, margin, block trade,
   holder count, lockup and dividend records.
-- [ ] Represent every source-missing metric as `Option`; assert zero is retained
+- [x] Represent every source-missing metric as `Option`; assert zero is retained
   only when the source explicitly supplied zero.
-- [ ] Add typed requests and traits for instrument/date/market-scoped batches.
-- [ ] Add domain capability structs with conservative all-false defaults.
+- [x] Add typed requests and traits for instrument/date/market-scoped batches.
+- [x] Add domain capability structs with conservative all-false defaults.
 
 ### Task 5: Add content, company, limit-pool and option contracts
 
@@ -107,13 +107,13 @@ Router crates; no network dependency in this slice.
 - Create: `crates/magic-market-core/tests/options.rs`
 - Modify: `crates/magic-market-core/src/lib.rs`
 
-- [ ] Add news, announcement and investor-question records with HTTPS canonical
+- [x] Add news, announcement and investor-question records with HTTPS canonical
   references and optional unanswered state.
-- [ ] Add security profile and three-statement financial records with stable
+- [x] Add security profile and three-statement financial records with stable
   keys plus retained source labels/units.
-- [ ] Add four raw limit-pool kinds and entries.
-- [ ] Add option contract identity, call/put, quote and exact Greeks records.
-- [ ] Add provider traits and conservative capabilities for all four domains.
+- [x] Add four raw limit-pool kinds and entries.
+- [x] Add option contract identity, call/put, quote and exact Greeks records.
+- [x] Add provider traits and conservative capabilities for all four domains.
 
 ### Task 6: Add Router adapters for every normalized family
 
@@ -124,11 +124,11 @@ Router crates; no network dependency in this slice.
 - Modify: `crates/magic-market-router/tests/adapters.rs`
 - Create: `crates/magic-market-router/tests/intelligence_routing.rs`
 
-- [ ] Add router aliases for each routable record/request pair.
-- [ ] Add thin source functions bound only to Core traits.
-- [ ] Prove an intelligence record routes through the generic acceptance engine
+- [x] Add router aliases for each routable record/request pair.
+- [x] Add thin source functions bound only to Core traits.
+- [x] Prove an intelligence record routes through the generic acceptance engine
   with provider/batch mismatch rejection and complete attempt traces.
-- [ ] Keep Router free of all concrete Provider crate dependencies.
+- [x] Keep Router free of all concrete Provider crate dependencies.
 
 ### Task 7: Implement the pure analysis crate test-first
 
@@ -143,14 +143,14 @@ Router crates; no network dependency in this slice.
 - Create: `crates/magic-market-analysis/src/diagnostics.rs`
 - Create: `crates/magic-market-analysis/tests/analysis.rs`
 
-- [ ] Write failing tests for SMA warm-up/ordering, forward PE, PEG, configured
+- [x] Write failing tests for SMA warm-up/ordering, forward PE, PEG, configured
   valuation scenarios, limit sentiment zero denominators and freshness/spread
   diagnostics.
-- [ ] Implement network-free deterministic functions returning typed errors
+- [x] Implement network-free deterministic functions returning typed errors
   for invalid/non-finite/zero-denominator input.
-- [ ] Attribute derived outputs to `ProviderId::LocalAnalysis` and retain input
+- [x] Attribute derived outputs to `ProviderId::LocalAnalysis` and retain input
   evidence for multi-source results.
-- [ ] Run the crate test suite and Clippy with warnings denied.
+- [x] Run the crate test suite and Clippy with warnings denied.
 
 ### Task 8: Slice A compatibility and quality gate
 
@@ -161,12 +161,12 @@ Router crates; no network dependency in this slice.
 - Modify: `.planning/2026-07-23-a-stock-data-parity/task_plan.md`
 - Modify: `.planning/2026-07-23-a-stock-data-parity/progress.md`
 
-- [ ] Document the provider-neutral domains as implemented but not yet
+- [x] Document the provider-neutral domains as implemented but not yet
   live-connected.
-- [ ] Run `cargo fmt --all --check`.
-- [ ] Run `RUSTUP_TOOLCHAIN=1.83.0 cargo check --workspace --all-targets
+- [x] Run `cargo fmt --all --check`.
+- [x] Run `RUSTUP_TOOLCHAIN=1.83.0 cargo check --workspace --all-targets
   --locked`.
-- [ ] Run `cargo test --workspace --all-targets --locked --offline`.
-- [ ] Run strict workspace Clippy and rustdoc.
+- [x] Run `cargo test --workspace --all-targets --locked --offline`.
+- [x] Run strict workspace Clippy and rustdoc.
 - [ ] Review `git diff --check`, verify the user's requirements file is
   unstaged, commit Slice A and push `main`.

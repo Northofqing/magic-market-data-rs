@@ -1,6 +1,11 @@
 use magic_market_core::{
-    AuctionSnapshot, Bar, MinutePoint, MoneyFlow, OrderBook, ProviderId, Quote, SecurityMetadata,
-    SourcedRecord, Trade,
+    Announcement, AuctionSnapshot, Bar, BlockTrade, BoardFlow, BoardMembership, ConceptHit,
+    ConsensusSnapshot, DividendPlan, DragonTigerEntry, DragonTigerSeat, FinancialStatement,
+    FundFlowPoint, HolderCount, InvestorQuestion, LimitPoolEntry, LockupEvent, MarginBalance,
+    MarketRankingEntry, MarketStatistics, MinutePoint, MoneyFlow, NewsItem, OptionContract,
+    OptionGreeks, OptionQuote, OrderBook, PopularityRank, ProviderId, Quote, ResearchReport,
+    SecurityMetadata, SecurityProfile, SemanticSearchDocument, SourcedRecord, StrongStockReason,
+    TechnicalBar, Trade,
 };
 
 fn assert_sourced<T: SourcedRecord>() {}
@@ -15,6 +20,34 @@ fn every_normalized_record_exposes_common_evidence() {
     assert_sourced::<OrderBook>();
     assert_sourced::<AuctionSnapshot>();
     assert_sourced::<SecurityMetadata>();
+    assert_sourced::<MarketStatistics>();
+    assert_sourced::<TechnicalBar>();
+    assert_sourced::<ResearchReport>();
+    assert_sourced::<ConsensusSnapshot>();
+    assert_sourced::<SemanticSearchDocument>();
+    assert_sourced::<BoardMembership>();
+    assert_sourced::<StrongStockReason>();
+    assert_sourced::<DragonTigerEntry>();
+    assert_sourced::<DragonTigerSeat>();
+    assert_sourced::<MarketRankingEntry>();
+    assert_sourced::<PopularityRank>();
+    assert_sourced::<ConceptHit>();
+    assert_sourced::<FundFlowPoint>();
+    assert_sourced::<BoardFlow>();
+    assert_sourced::<MarginBalance>();
+    assert_sourced::<BlockTrade>();
+    assert_sourced::<HolderCount>();
+    assert_sourced::<LockupEvent>();
+    assert_sourced::<DividendPlan>();
+    assert_sourced::<NewsItem>();
+    assert_sourced::<Announcement>();
+    assert_sourced::<InvestorQuestion>();
+    assert_sourced::<SecurityProfile>();
+    assert_sourced::<FinancialStatement>();
+    assert_sourced::<LimitPoolEntry>();
+    assert_sourced::<OptionContract>();
+    assert_sourced::<OptionQuote>();
+    assert_sourced::<OptionGreeks>();
 
     let provider: fn(&Quote) -> ProviderId = SourcedRecord::provider_id;
     let batch: fn(&Quote) -> &str = SourcedRecord::evidence_batch_id;

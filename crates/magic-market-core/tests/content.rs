@@ -1,0 +1,76 @@
+use magic_market_core::{
+    Announcement, AssetClass, Exchange, HttpsUrl, InstrumentId, InvestorQuestion, NewsItem,
+    NonEmptyText, ProviderId, SourceEvidence, SourcedRecord,
+};
+
+fn instrument() -> InstrumentId {
+    InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity).unwrap()
+}
+
+fn evidence(provider: ProviderId) -> SourceEvidence {
+    SourceEvidence::new(provider, "observed", "batch").unwrap()
+}
+
+#[test]
+fn news_and_announcement_urls_are_https_and_sourced() {
+    let news = NewsItem {
+        item_id: NonEmptyText::new("news-1").unwrap(),
+        title: NonEmptyText::new("华电辽能新闻").unwrap(),
+        summary: None,
+        content: None,
+        publisher: NonEmptyText::new("东方财富").unwrap(),
+        canonical_url: HttpsUrl::new("https://example.com/news-1").unwrap(),
+        published_at: NonEmptyText::new("2026-07-23 10:00:00").unwrap(),
+        instruments: vec![instrument()],
+        topics: vec![],
+        language: NonEmptyText::new("zh-CN").unwrap(),
+        evidence: evidence(ProviderId::Eastmoney),
+    };
+    let announcement = Announcement {
+        announcement_id: NonEmptyText::new("ann-1").unwrap(),
+        instrument: instrument(),
+        category: NonEmptyText::new("公司公告").unwrap(),
+        title: NonEmptyText::new("年度报告").unwrap(),
+        published_at: NonEmptyText::new("2026-07-23").unwrap(),
+        canonical_url: HttpsUrl::new("https://example.com/ann-1").unwrap(),
+        pdf_url: None,
+        evidence: evidence(ProviderId::Cninfo),
+    };
+
+    assert_eq!(news.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(announcement.provider_id(), ProviderId::Cninfo);
+    assert!(serde_json::from_str::<NewsItem>(
+        &serde_json::to_string(&news)
+            .unwrap()
+            .replace("https://example.com", "http://example.com")
+    )
+    .is_err());
+}
+
+#[test]
+fn unanswered_investor_question_is_not_fabricated() {
+    let question = InvestorQuestion::new(
+        NonEmptyText::new("q-1").unwrap(),
+        instrument(),
+        NonEmptyText::new("公司").unwrap(),
+        NonEmptyText::new("请问项目进展？").unwrap(),
+        NonEmptyText::new("2026-07-23 09:00:00").unwrap(),
+        None,
+        None,
+        evidence(ProviderId::Cninfo),
+    )
+    .unwrap();
+    assert!(question.answer().is_none());
+
+    assert!(InvestorQuestion::new(
+        NonEmptyText::new("q-2").unwrap(),
+        instrument(),
+        NonEmptyText::new("公司").unwrap(),
+        NonEmptyText::new("问题").unwrap(),
+        NonEmptyText::new("2026-07-23").unwrap(),
+        None,
+        Some(NonEmptyText::new("2026-07-24").unwrap()),
+        evidence(ProviderId::Cninfo),
+    )
+    .is_err());
+}

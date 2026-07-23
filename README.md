@@ -11,7 +11,9 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 > 当前状态（2026-07-23）：TDX、Tencent、Sina 和 TDX→Tencent 路由已有真实网络验收；
 > Choice/EMQuant 已完成设备激活和 API 登录，日线与日级资金流已取得真实记录；
 > Quote、盘口和分钟线仍返回 `10001012/EQERR_ACCESS_INSUFFICIENCE`，需补充对应产品
-> 或字段权限后才能上线这些数据族。
+> 或字段权限后才能上线这些数据族。研报、信号、资金面、新闻、公告、打板、期权和
+> 舆情互动的 Provider 无关契约及纯分析层已完成；对应网页 Provider 尚在后续分片
+> 接入，不能把“有契约”写成“已取得真实数据”。
 
 ## 项目定位
 
@@ -41,6 +43,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖已验证的沪深京基础行情 | 公共网页接口，无正式 SLA |
 | `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖已验证的沪深京 Quote/五档和指定 K 线 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
 | `magic-emquant-rs` | 通过独立 C++ bridge 调用官方 Choice/EMQuant SDK 的只读适配层 | 厂商 SDK、授权和激活文件不进入仓库 |
+| `magic-market-analysis` | 基于标准化记录的均线、估值、涨停情绪和跨源诊断 | 纯函数、不联网；主观估值锚点必须由调用方配置 |
 
 依赖方向保持简单：
 
@@ -54,7 +57,8 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
    ├── magic-tdx-rs ─────────→ magic-market-core
    ├── magic-tencent-rs ─────→ magic-market-core
    ├── magic-sina-rs ─────────→ magic-market-core
-   └── magic-emquant-rs ─────→ magic-market-core
+   ├── magic-emquant-rs ─────→ magic-market-core
+   └── magic-market-analysis → magic-market-core
 ```
 
 Router 的生产依赖只有 Core，具体 Provider 在应用注册边界接入，避免公共契约反向依赖
@@ -88,6 +92,36 @@ Core 当前定义八类统一数据族：
 构造器拒绝非有限数、非法价格/数量、空证据、代码错配、重复/乱序记录、OHLC
 矛盾、盘口半档和批次证据不一致。缺失值保持缺失并产生质量证据，不会填 `0`；
 不支持的数据族返回 typed error，不会返回空成功批次。
+
+### 扩展数据与分析契约
+
+参考 [a-stock-data](https://github.com/simonlin1212/a-stock-data) 的产品能力分层后，
+Core 已增加以下 Provider 无关领域。这里的状态只表示 Rust 类型、受检
+反序列化、Provider trait 和 Router 适配器已经通过确定性测试，不表示相应公开网页
+端点已经实盘连通。
+
+| 领域 | 主要记录 | 当前状态 |
+| --- | --- | --- |
+| 行情增强 | `MarketStatistics`、`TechnicalBar` | 契约/路由完成；Tencent/Baidu Provider 待接 |
+| 研报与一致预期 | `ResearchReport`、`ConsensusSnapshot`、`SemanticSearchDocument` | 契约/路由完成；Eastmoney/同花顺/iwencai 待接 |
+| 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | 契约/路由完成；Provider 待接 |
+| 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | 契约/路由完成；Provider 待接 |
+| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | 契约/路由完成；Eastmoney/CLS/CNInfo 待接 |
+| 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | 契约/路由完成；Sina/TDX 映射待接 |
+| 打板 | 四类 `LimitPoolEntry` | 原始契约/路由完成；Eastmoney/同花顺待接 |
+| ETF 期权 | `OptionContract`、`OptionQuote`、`OptionGreeks` | 契约/路由完成；Sina Provider 待接 |
+
+所有扩展记录使用受检 `SourceEvidence`；非空文本、HTTPS URL、Gregorian 日期、
+有限数和正排名都无法通过反序列化绕过。人气榜与 Quote、价格与一致预期等非原子
+拼接必须保留每个输入的 Provider/批次证据。
+
+`magic-market-analysis` 当前提供：
+
+- 有明确 warm-up 空值的 SMA，拒绝乱序或混合证券/周期；
+- Forward PE、PEG 和调用方配置目标 PE 的消化年数，拒绝零/负分母；
+- 四类涨跌停池情绪，空分母时 seal rate 保持 `None`；
+- 跨 Provider 观测时间和数值离散度，拒绝同一 Provider 重复冒充多源；
+- `ProviderId::LocalAnalysis` 派生值及完整输入证据。
 
 ## Provider 能力矩阵
 
