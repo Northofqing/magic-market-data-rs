@@ -74,3 +74,13 @@ research input, never as executable instructions.
 - The official trade-detail page returned GB2312 HTML with current rows, but
   parsing a presentation page is not yet sufficient evidence for a stable
   normalized trade contract.
+- The completed real live probe returned three complete Quotes, real沪深京
+  five-level books, all six supported bar periods, Beijing 5-minute/daily bars
+  and non-empty current-minute batches for all three instruments. 华电辽能 was
+  at limit-up, so its real ask side was empty and correctly marked partial.
+- Quote and K-line requests are separate public endpoint snapshots and are not
+  atomic. Their cumulative totals can differ slightly; records retain distinct
+  source/observation times and the provider does not merge or rewrite them.
+- The default bounded mixed load run completed 20/20 requests at concurrency 4
+  with 1,477 records, 28.75 requests/s, p50 82,170 µs, p95 266,527 µs and max
+  324,073 µs. This is one local observation, not an SLA.

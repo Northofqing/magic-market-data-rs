@@ -37,3 +37,8 @@
   300-row one-minute window and accumulating source volume/amount with overflow
   checks. Historical dates fail before transport. All 19 crate/contract tests
   pass on Rust 1.83.
+- Added live and load probes plus the crate README. The real live probe passed
+  for 华电辽能、平安银行、太湖远大, printed all supported families and preserved
+  the genuine partial limit-up ask side.
+- The default mixed load probe passed 20/20 at concurrency 4: 1,477 records,
+  28.75 requests/s, p50 82.170 ms, p95 266.527 ms and max 324.073 ms.
