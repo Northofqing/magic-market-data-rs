@@ -41,6 +41,15 @@ Breaking migrations:
   Beijing intraday bars/trades, money flow, and auction remain explicit.
 - Expanded the Tencent bounded load probe with per-family and mixed modes; the
   100-request/8-worker mixed live run completed without failures.
+- Added `magic-sina-rs`, a supplemental HTTPS/GB18030/JSON Provider with strict
+  沪深京 Quote/five-level books, selected intraday/daily bars, current
+  latest-session minute accumulation and partial security metadata.
+- Normalized every Sina source-share quantity to lots at the adapter boundary,
+  retained missing daily amounts and real limit-up book gaps, and kept trades,
+  money flow, auction and unverified periods explicitly unsupported.
+- Added Sina live and bounded load probes. The 2026-07-23 real live run passed
+  all declared families; the 20-request/4-worker mixed run completed without
+  failures and reported 28.75 requests/s with 82.170 ms p50 latency.
 - Added `magic-market-router`, a provider-neutral first-acceptable-batch
   failover chain with explicit failure classification, quality/source-time
   gates, record/batch evidence checks and ordered attempt traces for every Core
@@ -54,6 +63,8 @@ Breaking migrations:
 - Added release preflight/package scripts and an operator deployment runbook
   covering platform artifacts, network access, secrets, EMQuant activation,
   health evidence, observability, rollback, and release verification.
+- Expanded release packaging and deployment health checks from five to seven
+  probes by adding the Sina live/load binaries and integration contract.
 - Recorded the post-approval EMQuant verification boundary: the device
   activation token was refreshed locally, while both normal and forced
   official SDK login still return `10001003` until the account's API product

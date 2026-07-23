@@ -71,6 +71,14 @@ CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-tencent-rs \
   --example load_probe --release --locked --offline --target "$host_triple"
 install -m 0755 "$example_dir/load_probe$executable_suffix" \
   "$bin_dir/magic-tencent-load-probe$executable_suffix"
+CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-sina-rs \
+  --example live_probe --release --locked --offline --target "$host_triple"
+install -m 0755 "$example_dir/live_probe$executable_suffix" \
+  "$bin_dir/magic-sina-live-probe$executable_suffix"
+CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-sina-rs \
+  --example load_probe --release --locked --offline --target "$host_triple"
+install -m 0755 "$example_dir/load_probe$executable_suffix" \
+  "$bin_dir/magic-sina-load-probe$executable_suffix"
 CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-market-router \
   --example live_probe --release --locked --offline --target "$host_triple"
 install -m 0755 "$example_dir/live_probe$executable_suffix" \

@@ -38,7 +38,7 @@ its deployment boundary, package its probes, and deliver the result to Git.
 
 ### Phase 3: Provider implementation
 
-**Status:** in_progress
+**Status:** complete
 
 - Add `magic-sina-rs` with strict parsing, bounded HTTP and capability traits.
 - Add deterministic unit/contract tests and live/load probes.
@@ -46,7 +46,7 @@ its deployment boundary, package its probes, and deliver the result to Git.
 
 ### Phase 4: Verification and delivery
 
-**Status:** pending
+**Status:** in_progress
 
 - Run deterministic, live, load, strict lint, docs and release gates.
 - Review capability claims and security/deployment boundaries.

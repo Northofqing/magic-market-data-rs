@@ -42,3 +42,6 @@
   the genuine partial limit-up ask side.
 - The default mixed load probe passed 20/20 at concurrency 4: 1,477 records,
   28.75 requests/s, p50 82.170 ms, p95 266.527 ms and max 324.073 ms.
+- Added the full Sina integration contract, root capability/command/deployment
+  truth, seven-probe package layout, egress/health-check runbook, changelog and
+  compliance rules. Documentation links, compliance and diff checks pass.

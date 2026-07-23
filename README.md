@@ -1,6 +1,6 @@
 # magic-market-data-rs
 
-面向中国证券市场的 Rust 统一行情工作区。项目把 TDX、腾讯网页行情和东方财富
+面向中国证券市场的 Rust 统一行情工作区。项目把 TDX、腾讯/新浪网页行情和东方财富
 Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源证据的多 Provider
 顺序切源能力。
 
@@ -8,7 +8,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值冒充
 实盘成功。
 
-> 当前状态（2026-07-23）：TDX、Tencent 和 TDX→Tencent 路由已有真实网络验收；
+> 当前状态（2026-07-23）：TDX、Tencent、Sina 和 TDX→Tencent 路由已有真实网络验收；
 > EMQuant 的本机设备激活已经完成，但官方 SDK 登录仍返回
 > `10001003/EQERR_NO_ACCESS`，因此尚不能标记为实盘数据源。
 
@@ -38,6 +38,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | `magic-market-router` | 第一个合格批次的顺序切源、错误分类、质量门、来源时间门和完整 attempt trace | 不缓存、不跨源合并、不维护熔断状态 |
 | `magic-tdx-rs` | 纯 Rust TDX 协议、同步/异步/直连/Smart 客户端、服务门面和本地文件读取器 | MoneyFlow 与集合竞价显式不支持 |
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖已验证的沪深京基础行情 | 公共网页接口，无正式 SLA |
+| `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖已验证的沪深京 Quote/五档和指定 K 线 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
 | `magic-emquant-rs` | 通过独立 C++ bridge 调用官方 Choice/EMQuant SDK 的只读适配层 | 厂商 SDK、授权和激活文件不进入仓库 |
 
 依赖方向保持简单：
@@ -51,6 +52,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
    │
    ├── magic-tdx-rs ─────────→ magic-market-core
    ├── magic-tencent-rs ─────→ magic-market-core
+   ├── magic-sina-rs ─────────→ magic-market-core
    └── magic-emquant-rs ─────→ magic-market-core
 ```
 
@@ -95,19 +97,19 @@ Core 当前定义八类统一数据族：
 - **部分**：只覆盖表中写明的市场、周期或字段；
 - **不支持**：入口显式返回 `Unsupported`。
 
-| 能力 | TDX | Tencent | Choice/EMQuant |
-| --- | --- | --- | --- |
-| Quote | 实盘：沪深京 | 实盘：沪深京 | 已实现/待 API entitlement |
-| K 线 | 实盘：个股/指数，12 类周期（1 分钟至年线） | 部分实盘：沪深 1/5/15/30/60 分钟、日/周/月；北京日线 | 已实现/待权限：分钟、日/周/月/年 |
-| 分时 | 实盘：当日与按日期历史 | 实盘：当日与历史；市场边界见专项文档 | 未接入独立 `MinuteData`；分钟 K 见上一行 |
-| 逐笔 | 实盘：当日与历史，自动翻页 | 部分实盘：沪深当日；历史与北京不支持 | 不支持 |
-| 五档盘口 | 实盘：沪深京 | 实盘：沪深京 | 已实现/待 Level-2 权限 |
-| 资金流 | 不支持 | 不支持 | 已实现/待权限：日级大中小单指标 |
-| 证券列表/元数据 | 沪深全市场列表与部分标准化元数据；北京列表端点不支持 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 未验证，当前 capability 关闭 |
-| 财务数据 | 实盘：实时 34 项、报告包和 45 个命名指标 | 不支持 | 当前未接入统一财务契约 |
-| 除权除息 | 实盘：XDXR 分红/送股/配股/缩股历史 | 不支持 | 当前未接入 |
-| 板块/F10/基金 | 实盘：行业/概念/指数、F10、基金数据 | 不支持 | 当前未接入 |
-| 开盘集合竞价 | 不支持 | 不支持 | 不支持：完整字段集尚未证明 |
+| 能力 | TDX | Tencent | Sina | Choice/EMQuant |
+| --- | --- | --- | --- | --- |
+| Quote | 实盘：沪深京 | 实盘：沪深京 | 实盘：沪深京 | 已实现/待 API entitlement |
+| K 线 | 实盘：个股/指数，12 类周期（1 分钟至年线） | 部分实盘：沪深 1/5/15/30/60 分钟、日/周/月；北京日线 | 部分实盘：1/5/15/30/60 分钟、日线；北京 5 分钟/日线实测 | 已实现/待权限：分钟、日/周/月/年 |
+| 分时 | 实盘：当日与按日期历史 | 实盘：当日与历史；市场边界见专项文档 | 部分实盘：最新交易日，由 1 分钟线累计；历史日期不支持 | 未接入独立 `MinuteData`；分钟 K 见上一行 |
+| 逐笔 | 实盘：当日与历史，自动翻页 | 部分实盘：沪深当日；历史与北京不支持 | 不支持 | 不支持 |
+| 五档盘口 | 实盘：沪深京 | 实盘：沪深京 | 实盘：沪深京；真实空侧标部分不可用 | 已实现/待 Level-2 权限 |
+| 资金流 | 不支持 | 不支持 | 不支持 | 已实现/待权限：日级大中小单指标 |
+| 证券列表/元数据 | 沪深全市场列表与部分标准化元数据；北京列表端点不支持 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 未验证，当前 capability 关闭 |
+| 财务数据 | 实盘：实时 34 项、报告包和 45 个命名指标 | 不支持 | 不支持 | 当前未接入统一财务契约 |
+| 除权除息 | 实盘：XDXR 分红/送股/配股/缩股历史 | 不支持 | 不支持 | 当前未接入 |
+| 板块/F10/基金 | 实盘：行业/概念/指数、F10、基金数据 | 不支持 | 不支持 | 当前未接入 |
+| 开盘集合竞价 | 不支持 | 不支持 | 不支持 | 不支持：完整字段集尚未证明 |
 
 ### TDX
 
@@ -138,6 +140,22 @@ Tencent 是基础行情补充源。它不读取桌面客户端、Cookie、账户
 
 市场、周期、单位、盘后分钟点和端点边界见
 [Tencent 接入合同](docs/integrations/tencent-web.md)。
+
+### Sina
+
+Sina 是第二个公共网页基础行情补充源，只访问 `hq.sinajs.cn` 和
+`quotes.sina.cn`。快照按 GB18030 严格解码，K 线按 JSON 严格校验。源端数量是
+“股”，适配边界统一除以 100 输出“手”；日线官方响应没有成交额时保持 `None`。
+
+2026-07-23 的真实 probe 覆盖华电辽能、平安银行和太湖远大，验证了三市场 Quote、
+五档、1/5/15/30/60 分钟线、日线、北京 5 分钟/日线和最新交易日分时。华电辽能
+涨停时卖侧真实为空，盘口正确标记部分不可用。
+
+默认 20 请求/4 并发 mixed 短压测 20/20 成功，共 1,477 条记录、28.75 req/s、
+P50 82.170 ms、P95 266.527 ms、最大 324.073 ms。这不是 SLA 或推荐调用频率。
+
+字段、单位、最新分时推导、显式不支持和部署边界见
+[Sina 接入合同](docs/integrations/sina-web.md)。
 
 ### Choice/EMQuant
 
@@ -235,6 +253,29 @@ cargo run -p magic-tencent-rs --example load_probe --release --locked --offline
 
 `MAGIC_TENCENT_LOAD_OPERATION` 可选 `quotes`、`bars`、`minute`、`trades` 或
 `mixed`。程序在联网前强制最多 100 请求、8 个线程，防止把诊断工具误用成无限压测。
+
+### Sina 功能 probe
+
+```bash
+MAGIC_SINA_CODES=600396.SH,000001.SZ,920118.BJ \
+cargo run -p magic-sina-rs --example live_probe --release --locked --offline
+```
+
+默认超时 10 秒，可由 `MAGIC_SINA_TIMEOUT_SECS` 调整。probe 打印三市场 Quote、
+全部五档、部分元数据、六个支持 K 线周期、北京 5 分钟/日线和每个证券的最新交易日
+分时；日线成交额缺失和涨跌停盘口空侧保持真实缺失。
+
+### Sina 有界并发 probe
+
+```bash
+MAGIC_SINA_LOAD_OPERATION=mixed \
+MAGIC_SINA_LOAD_REQUESTS=20 \
+MAGIC_SINA_LOAD_CONCURRENCY=4 \
+cargo run -p magic-sina-rs --example load_probe --release --locked --offline
+```
+
+operation 可选 `quotes`、`bars`、`minute` 或 `mixed`。程序在联网前强制最多
+40 请求、4 个线程。
 
 ### TDX→Tencent 路由 probe
 
@@ -361,6 +402,8 @@ target/dist/GIT_SHA/
 ├── bin/
 │   ├── magic-emquant-live-probe
 │   ├── magic-router-live-probe
+│   ├── magic-sina-live-probe
+│   ├── magic-sina-load-probe
 │   ├── magic-tdx-live-probe
 │   ├── magic-tencent-live-probe
 │   └── magic-tencent-load-probe
@@ -392,6 +435,7 @@ Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架�
 | Core / Router | macOS、Linux、Windows | 无 |
 | TDX | macOS、Linux、Windows | 行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` |
 | Tencent | macOS、Linux、Windows | `qt.gtimg.cn`、`web.ifzq.gtimg.cn`、`ifzq.gtimg.cn`、`stock.gtimg.cn` 的 HTTPS |
+| Sina | macOS、Linux、Windows | `hq.sinajs.cn`、`quotes.sina.cn` 的 HTTPS |
 | 当前 EMQuant bridge | x86_64 macOS | 厂商加密服务器列表定义的目标；本机官方 SDK |
 
 TDX SmartClient 需要服务账号拥有独立可写目录来保存服务器健康缓存。TDX 财务包
@@ -425,8 +469,8 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
   源码、fixture、日志、镜像或 release 包。
 - EMQuant 厂商动态库、加密服务器列表和图片资源受厂商许可证约束，只能在获授权
   主机本地准备。
-- Tencent 公共网页端点没有本项目可证明的 SLA 或再分发许可，部署方必须自行确认
-  服务条款。
+- Tencent/Sina 公共网页端点没有本项目可证明的 SLA 或再分发许可，部署方必须自行
+  确认服务条款。
 - 未验证字段必须保持 `None`/`Unavailable` 或返回 `Unsupported`，不得通过猜测、
   跨源填补或模拟记录“修好”。
 - Probe 输出可记录 Provider、证券代码、批次 ID、质量问题、耗时和错误码，但不得
@@ -442,9 +486,11 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
 | Tencent live probe | 通过 | 沪深京 Quote/五档、已声明 K 线和分时边界、沪深当日逐笔 |
 | Tencent load probe | 通过 | 100 请求/8 并发，100/100 成功；仅为有界短样本 |
+| Sina live probe | 通过 | 沪深京 Quote/五档、六类 K 线、最新交易日分时和部分元数据 |
+| Sina load probe | 通过 | 20 请求/4 并发，20/20 成功；仅为有界短样本 |
 | Router live probe | 通过 | TDX 质量拒绝被保留，Tencent 合格 Quote 被选中 |
 | EMQuant live probe | 未通过 | 激活文件已刷新，SDK 仍在查询前返回 `10001003/EQERR_NO_ACCESS` |
-| Release package | 通过 | 五个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
+| Release package | 待最终提交重建 | 七个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 
 任何 Provider 字段、授权、服务器或网页协议发生变化后，都必须重新运行对应的
 确定性测试和真实 probe。旧验收记录不能自动证明新版本仍然可用。
@@ -456,6 +502,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | [部署手册](docs/DEPLOYMENT.md) | 可重复构建、平台、网络、EMQuant runtime、健康检查、回滚与升级 |
 | [TDX 能力矩阵](docs/TDX_CAPABILITIES.md) | 全数据族、北京市场、证据和显式不支持边界 |
 | [Tencent 接入合同](docs/integrations/tencent-web.md) | 端点、字段、单位、市场/周期边界与负载结果 |
+| [Sina 接入合同](docs/integrations/sina-web.md) | 端点、GB18030 字段、股/手单位、周期、分时与负载结果 |
 | [Choice/EMQuant 接入](docs/integrations/eastmoney-emquant.md) | SDK bridge、激活、能力映射和当前权限状态 |
 | [多数据源路由](docs/MULTI_PROVIDER_ROUTING.md) | 错误分类、接受政策、attempt trace 和真实切源 |
 | [性能结果](docs/PERFORMANCE_RESULTS.md) | 可复现性能证据及适用范围 |
@@ -474,5 +521,5 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 在 [LICENSES/tdxrs-MIT.txt](LICENSES/tdxrs-MIT.txt)，详细来源与差异见
 [docs/UPSTREAM.md](docs/UPSTREAM.md)。
 
-Choice/EMQuant 厂商 SDK 不属于仓库开源制品；Tencent/TDX 网络数据的使用、展示和
-再分发仍受各自供应商条款约束。
+Choice/EMQuant 厂商 SDK 不属于仓库开源制品；Tencent/Sina/TDX 网络数据的使用、
+展示和再分发仍受各自供应商条款约束。
