@@ -41,6 +41,14 @@ Breaking migrations:
   Beijing intraday bars/trades, money flow, and auction remain explicit.
 - Expanded the Tencent bounded load probe with per-family and mixed modes; the
   100-request/8-worker mixed live run completed without failures.
+- Added `magic-market-router`, a provider-neutral first-acceptable-batch
+  failover chain with explicit failure classification, quality/source-time
+  gates, record/batch evidence checks and ordered attempt traces for every Core
+  data family.
+- Added a real TDX-to-Tencent routing probe. With complete quality and source
+  time required, it preserved the TDX quality rejection and selected a
+  source-timestamped Tencent Quote without merging or rewriting Provider
+  evidence.
 - Pinned the HTTPS URL/IDNA/zeroize dependency chain in `Cargo.lock` so Cargo
   1.83 can parse and compile it without the transitive edition-2024 failure.
 - Added release preflight/package scripts and an operator deployment runbook

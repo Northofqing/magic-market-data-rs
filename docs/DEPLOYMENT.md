@@ -9,7 +9,8 @@
 - `magic-tdx-live-probe`：TDX 全能力真实探针；
 - `magic-emquant-live-probe`：官方 EMQuant SDK 探针；
 - `magic-tencent-live-probe`：腾讯 Quote/五档/K线/分时/逐笔探针；
-- `magic-tencent-load-probe`：有界短时并发探针。
+- `magic-tencent-load-probe`：有界短时并发探针；
+- `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建
 
@@ -27,13 +28,14 @@ bash tools/release/package.sh
 
 预检在每次新建的隔离 target 目录中，以离线模式运行格式、Rust 1.83 全目标编译、
 全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff 空白检查，避免
-本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建四个 release
+本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建五个 release
 探针，复制为不冲突的文件名，并生成 SHA-256 清单：
 
 ```text
 target/dist/GIT_SHA/
 ├── bin/
 │   ├── magic-emquant-live-probe[.exe]
+│   ├── magic-router-live-probe[.exe]
 │   ├── magic-tdx-live-probe[.exe]
 │   ├── magic-tencent-live-probe[.exe]
 │   └── magic-tencent-load-probe[.exe]
@@ -68,6 +70,7 @@ shasum -a 256 -c SHA256SUMS
 | 组件 | macOS | Linux | Windows | 说明 |
 | --- | --- | --- | --- | --- |
 | `magic-market-core` | 支持 | 支持 | 支持 | 纯 Rust 合同 |
+| `magic-market-router` | 支持 | 支持 | 支持 | 纯 Rust 同步路由与证据检查 |
 | TDX | 支持 | 支持 | 支持 | 需要出站 TCP/HTTP 与可写缓存目录 |
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
 | EMQuant Rust 层 | 支持 | 可编译 | 可编译 | 运行还取决于厂商 SDK |
@@ -149,6 +152,7 @@ EMQuant API 产品权限。这不是部署成功状态。开通权限后必须�
 market_release_dir=target/dist/$(git rev-parse HEAD)
 "$market_release_dir/bin/magic-tencent-live-probe"
 "$market_release_dir/bin/magic-tdx-live-probe"
+"$market_release_dir/bin/magic-router-live-probe"
 MAGIC_TENCENT_LOAD_OPERATION=mixed MAGIC_TENCENT_LOAD_REQUESTS=20 \
   MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
   "$market_release_dir/bin/magic-tencent-load-probe"
@@ -159,8 +163,9 @@ MAGIC_EMQUANT_BRIDGE=/opt/magic-market-data/libexec/emquant/emquant-snapshot \
 所有探针都以退出码表达真假：预期能力缺记录、代码错配、协议异常、无权限或超时会
 退出非零，不会打印模拟记录后成功。TDX 探针理解周末、盘前、午休和盘后差异；
 Tencent 盘前零现价会明确失败，涨跌停缺档会标记质量不完整，load probe 会轮转
-Quote、日线、分时和当日逐笔；EMQuant 必须获得所需 API/Level-2 权限才可通过
-相应数据族。
+Quote、日线、分时和当日逐笔；router probe 必须打印 TDX 的失败/质量拒绝、
+Tencent 的选中状态和真实 Quote；EMQuant 必须获得所需 API/Level-2 权限才可通过
+相应数据族。路由探针没有缓存或跨源拼接，两个来源都失败时退出非零。
 
 上线门至少保存以下证据，但不要保存账号、令牌或原始登录包：
 
@@ -184,6 +189,11 @@ Quote、日线、分时和当日逐笔；EMQuant 必须获得所需 API/Level-2 
 3. 不把旧缓存改写成新源时间，不把缺失值填零；
 4. 按证券和数据族监控延迟、空结果、质量降级及源时间倒退；
 5. 优雅停机时停止新请求，等待在途批次后再关闭进程。
+
+`magic-market-router` 可以实现第 2 项的顺序切源和 attempt trace，但不负责定时
+调度、缓存、持久化或熔断状态机。调用方必须按
+[`MULTI_PROVIDER_ROUTING.md`](MULTI_PROVIDER_ROUTING.md) 显式分类各 Provider
+错误，并根据业务数据族选择完整性和来源时间门。
 
 容器可运行 Core、TDX 和 Tencent，但必须允许上述出站网络并给 TDX 一个可写 HOME。
 EMQuant 只有在厂商许可证允许、架构匹配、SDK 能在容器中激活且运行时文件通过秘密

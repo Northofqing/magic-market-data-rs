@@ -1,8 +1,8 @@
 use magic_market_core::{
     AssetClass, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, DataBatch, Exchange,
     HistoricalBars, InstrumentId, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow,
-    MoneyFlows, OrderBook, OrderBooks, ProviderId, Quote, RealtimeQuotes, SecurityMetadata,
-    SecurityMetadataProvider, Trade, Trades, TradesRequest,
+    MoneyFlows, OrderBook, OrderBooks, Provenance, ProviderId, Quote, RealtimeQuotes,
+    SecurityMetadata, SecurityMetadataProvider, Trade, Trades, TradesRequest,
 };
 use magic_market_router::{
     auction_source, bars_source, minute_source, money_flow_source, order_book_source, quote_source,
@@ -15,15 +15,29 @@ use std::sync::Arc;
 #[error("fixture provider failure")]
 struct FixtureError;
 
-#[derive(Default)]
 struct FixtureProvider {
     calls: AtomicUsize,
+    fail: bool,
 }
 
 impl FixtureProvider {
-    fn fail<T>(&self) -> Result<DataBatch<T>, FixtureError> {
+    fn new(fail: bool) -> Self {
+        Self {
+            calls: AtomicUsize::new(0),
+            fail,
+        }
+    }
+
+    fn result<T>(&self) -> Result<DataBatch<T>, FixtureError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Err(FixtureError)
+        if self.fail {
+            Err(FixtureError)
+        } else {
+            Ok(DataBatch::strict(
+                Vec::new(),
+                Provenance::new("fixture", "observed").unwrap(),
+            ))
+        }
     }
 }
 
@@ -34,7 +48,7 @@ impl RealtimeQuotes for FixtureProvider {
         &self,
         _instruments: &[InstrumentId],
     ) -> Result<DataBatch<Quote>, Self::Error> {
-        self.fail()
+        self.result()
     }
 }
 
@@ -42,7 +56,7 @@ impl HistoricalBars for FixtureProvider {
     type Bar = Bar;
     type Error = FixtureError;
     fn historical_bars(&self, _request: &BarsRequest) -> Result<DataBatch<Bar>, Self::Error> {
-        self.fail()
+        self.result()
     }
 }
 
@@ -52,14 +66,14 @@ impl MinuteData for FixtureProvider {
         &self,
         _request: &MinuteDataRequest,
     ) -> Result<DataBatch<MinutePoint>, Self::Error> {
-        self.fail()
+        self.result()
     }
 }
 
 impl Trades for FixtureProvider {
     type Error = FixtureError;
     fn trades(&self, _request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        self.fail()
+        self.result()
     }
 }
 
@@ -69,7 +83,7 @@ impl MoneyFlows for FixtureProvider {
         &self,
         _instruments: &[InstrumentId],
     ) -> Result<DataBatch<MoneyFlow>, Self::Error> {
-        self.fail()
+        self.result()
     }
 }
 
@@ -79,7 +93,7 @@ impl OrderBooks for FixtureProvider {
         &self,
         _instruments: &[InstrumentId],
     ) -> Result<DataBatch<OrderBook>, Self::Error> {
-        self.fail()
+        self.result()
     }
 }
 
@@ -89,7 +103,7 @@ impl Auctions for FixtureProvider {
         &self,
         _instruments: &[InstrumentId],
     ) -> Result<DataBatch<AuctionSnapshot>, Self::Error> {
-        self.fail()
+        self.result()
     }
 }
 
@@ -99,7 +113,7 @@ impl SecurityMetadataProvider for FixtureProvider {
         &self,
         _instruments: &[InstrumentId],
     ) -> Result<DataBatch<SecurityMetadata>, Self::Error> {
-        self.fail()
+        self.result()
     }
 }
 
@@ -113,7 +127,7 @@ fn classify(_: FixtureError) -> SourceError {
 
 #[test]
 fn every_core_family_has_a_provider_neutral_adapter() {
-    let provider = Arc::new(FixtureProvider::default());
+    let provider = Arc::new(FixtureProvider::new(true));
     let instruments = [instrument()];
     let bars_request = BarsRequest::new(instrument(), BarInterval::Day, 5).unwrap();
     let minute_request = MinuteDataRequest::new(instrument());
@@ -161,5 +175,54 @@ fn every_core_family_has_a_provider_neutral_adapter() {
             .fetch(&instruments)
             .is_err()
     );
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 8);
+}
+
+#[test]
+fn every_adapter_preserves_a_successful_provider_batch() {
+    let provider = Arc::new(FixtureProvider::new(false));
+    let instruments = [instrument()];
+    let bars_request = BarsRequest::new(instrument(), BarInterval::Day, 5).unwrap();
+    let minute_request = MinuteDataRequest::new(instrument());
+    let trades_request = TradesRequest::new(instrument(), 5).unwrap();
+
+    let quote = quote_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&instruments)
+        .unwrap();
+    let bars = bars_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&bars_request)
+        .unwrap();
+    let minute = minute_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&minute_request)
+        .unwrap();
+    let trades = trades_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&trades_request)
+        .unwrap();
+    let flow = money_flow_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&instruments)
+        .unwrap();
+    let book = order_book_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&instruments)
+        .unwrap();
+    let auction = auction_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&instruments)
+        .unwrap();
+    let metadata = security_metadata_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&instruments)
+        .unwrap();
+
+    for provenance in [
+        quote.provenance(),
+        bars.provenance(),
+        minute.provenance(),
+        trades.provenance(),
+        flow.provenance(),
+        book.provenance(),
+        auction.provenance(),
+        metadata.provenance(),
+    ] {
+        assert_eq!(provenance.source(), "fixture");
+        assert_eq!(provenance.fetched_at(), "observed");
+    }
     assert_eq!(provider.calls.load(Ordering::SeqCst), 8);
 }

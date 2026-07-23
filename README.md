@@ -3,6 +3,8 @@
 Standalone Rust market-data workspace containing:
 
 - `magic-market-core`: provider-neutral checked values and batch metadata.
+- `magic-market-router`: provider-neutral, evidence-preserving ordered failover
+  for every normalized data family.
 - `magic-tdx-rs`: pure-Rust TDX protocol, readers, parsers, clients, funds,
   blocks, and F10/profile support extracted from upstream `tdxrs`.
 - `magic-emquant-rs`: read-only Eastmoney/Choice provider using the separately
@@ -27,4 +29,6 @@ Deployment layout, platform constraints, health checks, rollback, and release
 packaging are documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Provider
 details are in [TDX capabilities](docs/TDX_CAPABILITIES.md),
 [Eastmoney EMQuant](docs/integrations/eastmoney-emquant.md), and
-[Tencent web quotes](docs/integrations/tencent-web.md).
+[Tencent web quotes](docs/integrations/tencent-web.md). Routing policy and
+attempt evidence are documented in
+[multi-provider routing](docs/MULTI_PROVIDER_ROUTING.md).

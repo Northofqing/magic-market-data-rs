@@ -297,6 +297,8 @@ name = "magic-market-router"
 version = "0.2.0"
 dependencies = [
  "magic-market-core",
+ "magic-tdx-rs",
+ "magic-tencent-rs",
  "serde_json",
  "thiserror",
 ]

@@ -37,7 +37,7 @@ Status: complete
 
 ### Phase 3: Core evidence contract and router crate
 
-Status: in_progress
+Status: complete
 
 - Add a common sourced-record evidence trait to Core.
 - Add generic source adapters, acceptance policy, failover chain, trace and
@@ -47,7 +47,7 @@ Status: in_progress
 
 ### Phase 4: Real provider wiring and deployment
 
-Status: pending
+Status: complete
 
 - Add a live TDX-to-Tencent source-time/quality fallback probe.
 - Update workspace, compliance, packaging, deployment and capability docs.
@@ -55,7 +55,7 @@ Status: pending
 
 ### Phase 5: Final gates and delivery
 
-Status: pending
+Status: in_progress
 
 - Run formatting, Rust 1.83 workspace check/test/Clippy, rustdoc/doctest, docs,
   compliance and diff checks.
@@ -87,3 +87,6 @@ Status: pending
 | Task 2 red test could not find package `magic-market-router` | 1 | Expected TDD failure; added the workspace member and minimal source/error contracts. |
 | Task 3 red test could not import routing state-machine types | 1 | Expected TDD failure; added acceptance, trace, aggregate error and failover implementations. |
 | Task 4 red test could not import the eight family adapter constructors | 1 | Expected TDD failure; added generic Core-trait adapters and family aliases. |
+| Sandboxed router live probe exhausted both sources because outbound TDX and Tencent DNS were blocked | 1 | Classified both as retryable transport attempts, then reran the identical command with approved network access; the real route passed. |
+| Choice review was approved but the official SDK still returned `10001003/EQERR_NO_ACCESS` with the 2026-07-22 `userInfo` | 1 | Reproduced all supported families, confirmed the activation file was stale, and opened the official activator to refresh the post-approval token. |
+| First post-approval activator launch exited without changing `userInfo`; a second SDK probe still returned `10001003` | 2 | Started `loginactivator_mac` directly from its runtime directory and kept the GUI process alive for the SMS refresh. |
