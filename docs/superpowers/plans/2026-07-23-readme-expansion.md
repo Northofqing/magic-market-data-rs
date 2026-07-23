@@ -20,7 +20,7 @@
 - Reference: `docs/MULTI_PROVIDER_ROUTING.md`
 - Reference: `docs/DEPLOYMENT.md`
 
-- [ ] **Step 1: Confirm the sparse baseline**
+- [x] **Step 1: Confirm the sparse baseline**
 
 Run:
 
@@ -31,7 +31,7 @@ wc -l README.md
 Expected: fewer than 50 lines and no quick-start, capability matrix, live-probe,
 router-use, packaging or security sections.
 
-- [ ] **Step 2: Replace the README with the approved information structure**
+- [x] **Step 2: Replace the README with the approved information structure**
 
 Write these exact top-level sections in this order:
 
@@ -55,7 +55,7 @@ The opening must state that the repository is a Rust library workspace plus
 read-only diagnostics, not a daemon, database, HTTP API, trading client or
 implicit cache/fallback service.
 
-- [ ] **Step 3: Add the exact capability truth**
+- [x] **Step 3: Add the exact capability truth**
 
 The provider matrix must distinguish these facts:
 
@@ -77,7 +77,7 @@ auction and metadata remain unsupported/unverified.
 Explain that every normalized record preserves `ProviderId`, `source_at` when
 proved, `observed_at`, `batch_id`, `DataStatus` and batch quality issues.
 
-- [ ] **Step 4: Add executable setup, probe, router and release commands**
+- [x] **Step 4: Add executable setup, probe, router and release commands**
 
 Include these runnable command families:
 
@@ -102,7 +102,7 @@ probe nonzero-exit semantics, TDX-to-Tencent strict router behavior and release
 SHA verification. Include a compact compiling-style `QuoteRouter` registration
 example copied from the existing router contract.
 
-- [ ] **Step 5: Add deployment, security and documentation navigation**
+- [x] **Step 5: Add deployment, security and documentation navigation**
 
 Summarize platform/network requirements without duplicating full rollback
 instructions. Explicitly prohibit storing or packaging credentials, phone
@@ -117,12 +117,12 @@ Link every canonical document with repository-relative Markdown links.
 - Modify: `.planning/2026-07-23-readme-expansion/progress.md`
 - Test: `README.md`
 
-- [ ] **Step 1: Record the README expansion in the unreleased changelog**
+- [x] **Step 1: Record the README expansion in the unreleased changelog**
 
 Add one bullet stating that the root README now provides capability truth,
 quick start, real probes, routing, release/deployment and security navigation.
 
-- [ ] **Step 2: Verify required headings and claims**
+- [x] **Step 2: Verify required headings and claims**
 
 Run:
 
@@ -133,7 +133,7 @@ rg -n '10001003|source_at|magic-tencent-load-probe|tools/release/package.sh' REA
 
 Expected: all twelve headings and all four operational markers are present.
 
-- [ ] **Step 3: Run documentation and release gates**
+- [x] **Step 3: Run documentation and release gates**
 
 Run:
 
@@ -146,7 +146,7 @@ bash tools/release/preflight.sh
 
 Expected: every command exits zero.
 
-- [ ] **Step 4: Self-review capability claims**
+- [x] **Step 4: Self-review capability claims**
 
 Compare each provider row against its canonical document and confirm:
 
@@ -157,7 +157,7 @@ TDX Quote does not claim verified source time.
 Unsupported fields are not represented as zero or successful empty data.
 ```
 
-- [ ] **Step 5: Commit the implementation**
+- [x] **Step 5: Commit the implementation**
 
 Run:
 
@@ -177,7 +177,7 @@ user's untracked integration requirements document remains untracked.
 - Generate: `target/dist/GIT_SHA/`
 - Verify: `target/dist/GIT_SHA/SHA256SUMS`
 
-- [ ] **Step 1: Generate the clean final package**
+- [x] **Step 1: Generate the clean final package**
 
 Run:
 
@@ -188,7 +188,7 @@ bash tools/release/package.sh
 Expected: five uniquely named probe binaries plus tracked documentation,
 licenses, revision/toolchain metadata and `SHA256SUMS`.
 
-- [ ] **Step 2: Verify the package**
+- [x] **Step 2: Verify the package**
 
 Run inside `target/dist/GIT_SHA`:
 
@@ -199,7 +199,7 @@ shasum -a 256 -c SHA256SUMS
 Expected: every entry prints `OK`; the package contains no `userInfo`, dynamic
 vendor library or `ServerList.json.e`.
 
-- [ ] **Step 3: Push and verify the remote**
+- [x] **Step 3: Push and verify the remote**
 
 Run:
 

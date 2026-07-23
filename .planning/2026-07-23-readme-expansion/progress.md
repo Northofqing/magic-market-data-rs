@@ -24,3 +24,12 @@
   Confirmed that EMQuant is not presented as live-passed, Tencent is not
   presented as an SLA source, TDX Quote source time remains unverified and all
   unsupported boundaries stay explicit.
+- Committed the README implementation as `e204167`.
+- Generated and verified its five-probe release package. Every SHA-256 entry
+  passed, the packaged README contained at least 450 lines and no `userInfo`,
+  vendor dynamic library or encrypted server list was included.
+- Pushed the design, implementation plan and README implementation through
+  `e204167` to `origin/main`.
+- The planning completion helper initially reported `0/4` because it accepts
+  bold or inline status markers rather than the plan's plain markers. Converted
+  all four phases to its documented bold format.
