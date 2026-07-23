@@ -23,6 +23,9 @@
 - Preserve the user's untracked
   `docs/integrations/stock-analysis-market-data-requirements.md`. Do not stage,
   edit or delete it in Slice 0.
+- Preserve the unrelated untracked
+  `docs/superpowers/plans/2026-07-23-official-exchange-providers.md`. It defines
+  a future official-exchange slice and is not an input to this baseline.
 
 ### Upstream debt
 
@@ -85,6 +88,7 @@ Slice 0 evidence is upstream live Provider evidence, not a downstream push:
 
 - Inspect only: entire repository
 - Preserve: `docs/integrations/stock-analysis-market-data-requirements.md`
+- Preserve: `docs/superpowers/plans/2026-07-23-official-exchange-providers.md`
 
 - [ ] **Step 1: Create the implementation branch without discarding changes**
 
@@ -108,8 +112,8 @@ git diff --check
 ```
 
 Expected: modified Core/Router/docs/tooling files plus exactly six new Provider
-crate directories and six new integration guides; `git diff --check` exits
-zero.
+crate directories, six new integration guides, the stock-analysis handoff and
+the unrelated official-exchange plan; `git diff --check` exits zero.
 
 - [ ] **Step 3: Prove the user handoff remains untracked**
 
@@ -632,8 +636,12 @@ Run:
 git status --short
 ```
 
-Expected: only
-`?? docs/integrations/stock-analysis-market-data-requirements.md`.
+Expected: only the following protected unrelated files remain:
+
+```text
+?? docs/integrations/stock-analysis-market-data-requirements.md
+?? docs/superpowers/plans/2026-07-23-official-exchange-providers.md
+```
 
 - [ ] **Step 2: Run the isolated release preflight**
 
@@ -772,8 +780,8 @@ git diff --cached --quiet
 git status --short
 ```
 
-Expected: both diff checks exit zero and status shows only the preserved user
-handoff document.
+Expected: both diff checks exit zero and status shows only the preserved
+stock-analysis handoff and official-exchange plan.
 
 - [ ] **Step 2: Build the package**
 
@@ -963,3 +971,4 @@ the only allowed upstream baseline in the future Slice 1 design; do not point
 - [ ] Draft PR evidence is complete and checks pass.
 - [ ] The merged upstream SHA is recorded for Slice 1.
 - [ ] The user's untracked stock-analysis handoff document remains untouched.
+- [ ] The unrelated untracked official-exchange plan remains untouched.
