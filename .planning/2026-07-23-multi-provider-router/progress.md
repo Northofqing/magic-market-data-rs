@@ -39,3 +39,6 @@
   runtime directory so the post-approval SMS refresh can write `userInfo`.
 - Passed the final post-review isolated Rust 1.83 release preflight, including
   all workspace tests, strict Clippy, rustdoc/doctests, links and compliance.
+- Committed the audited routing integration as `f8ca94e`, generated all five
+  release probes from a clean tracked worktree and verified every packaged file
+  against `SHA256SUMS`.

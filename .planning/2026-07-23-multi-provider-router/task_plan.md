@@ -55,13 +55,22 @@ Status: complete
 
 ### Phase 5: Final gates and delivery
 
-Status: in_progress
+Status: complete
 
 - Run formatting, Rust 1.83 workspace check/test/Clippy, rustdoc/doctest, docs,
   compliance and diff checks.
 - Perform a local self-review because subagent dispatch is prohibited by the
   active developer instruction.
 - Commit, push and verify `origin/main`.
+
+Completion evidence:
+
+- The strict real route preserved the TDX quality rejection and selected a
+  complete Tencent Quote with source time.
+- The final post-review Rust 1.83 preflight passed.
+- The five-probe release package was generated from a clean tracked worktree
+  and every SHA-256 entry passed.
+- Only the user's untracked requirements document remains outside Git.
 
 ## Decisions
 
