@@ -1,0 +1,21 @@
+{
+  "status_code": 0,
+  "data": {
+    "info": [
+      {
+        "code": "300779",
+        "name": "惠城环保",
+        "latest": 69.12,
+        "change_rate": 20.0,
+        "reason_type": "废塑料化学循环+固废处理+稀土永磁",
+        "limit_up_type": "换手板",
+        "limit_up_suc_rate": 1.0,
+        "open_num": 8,
+        "order_amount": 18125752,
+        "high_days": "首板",
+        "first_limit_up_time": "1784686821",
+        "is_again_limit": 1
+      }
+    ]
+  }
+}

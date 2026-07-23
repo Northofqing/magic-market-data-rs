@@ -1,0 +1,27 @@
+{
+  "total": 2,
+  "rows": [
+    {
+      "indexId": "2318950117847711744",
+      "stockCode": "002594",
+      "companyShortName": "比亚迪",
+      "mainContent": "尊敬的董秘您好，请问高速充电桩铺设进展如何？",
+      "attachedContent": null,
+      "attachedAuthor": null,
+      "attachedPubDate": null,
+      "pubDate": 1784697325000,
+      "updateDate": 1784706037000
+    },
+    {
+      "indexId": "2310153346199089152",
+      "stockCode": "002594",
+      "companyShortName": "比亚迪",
+      "mainContent": "建议公司持续关注新型能源技术。",
+      "attachedContent": "尊敬的投资者，您好！感谢您的关注与建议。",
+      "attachedAuthor": "比亚迪",
+      "attachedPubDate": null,
+      "pubDate": 1783673245000,
+      "updateDate": 1784280243000
+    }
+  ]
+}

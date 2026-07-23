@@ -1,0 +1,18 @@
+{
+  "errocode": 0,
+  "errormsg": "",
+  "data": [
+    {
+      "code": "000815",
+      "name": "美利云",
+      "reason": "算力租赁+东数西算+中国诚通旗下",
+      "close": 16.13,
+      "zhangfu": 10.027,
+      "huanshou": 12.97,
+      "chengjiaoe": 144790,
+      "chengjiaoliang": 901929,
+      "ddejingliang": 0,
+      "market": 33
+    }
+  ]
+}
