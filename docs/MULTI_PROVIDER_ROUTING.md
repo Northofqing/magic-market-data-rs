@@ -36,8 +36,9 @@ Provider 的错误必须在注册点映射为 `SourceError`，不能解析错误
 | 权限或其他 Provider 错误 | `Provider` | 由调用方显式选择 |
 
 非法调用请求必须停止。否则同一个错误在后续 Provider “成功”会掩盖调用方缺陷。
-EMQuant `10001003/EQERR_NO_ACCESS` 应保留为 Provider 权限错误；没有开通产品权限
-不能把 capability 注册成已上线。
+EMQuant `10001003/EQERR_NO_ACCESS` 和
+`10001012/EQERR_ACCESS_INSUFFICIENCE` 都应保留为 Provider 权限错误；账号能登录
+或某个数据族查询成功，不代表其他 capability 已经获得上线权限。
 
 ## 接受政策与强制证据门
 

@@ -482,7 +482,19 @@ fn normalize_date(value: &str) -> String {
     if value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit()) {
         format!("{}-{}-{}", &value[0..4], &value[4..6], &value[6..8])
     } else {
-        value.replace('/', "-")
+        let normalized = value.replace('/', "-");
+        let mut fields = normalized.split('-');
+        match (
+            fields.next().and_then(|value| value.parse::<u16>().ok()),
+            fields.next().and_then(|value| value.parse::<u8>().ok()),
+            fields.next().and_then(|value| value.parse::<u8>().ok()),
+            fields.next(),
+        ) {
+            (Some(year), Some(month), Some(day), None) => {
+                format!("{year:04}-{month:02}-{day:02}")
+            }
+            _ => normalized,
+        }
     }
 }
 

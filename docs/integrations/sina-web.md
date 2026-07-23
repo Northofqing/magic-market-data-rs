@@ -181,8 +181,8 @@ operation 可选 `quotes`、`bars`、`minute`、`mixed`。程序在联网前强�
 
 ```text
 requests=20 concurrency=4 successes=20 failures=0 records=1477
-requests_per_second=28.75
-latency_us_p50=82170 latency_us_p95=266527 latency_us_max=324073
+requests_per_second=11.69
+latency_us_p50=207786 latency_us_p95=645489 latency_us_max=788549
 ```
 
 这只是一次有界短样本，不是厂商 SLA 或推荐限频。

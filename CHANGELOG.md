@@ -49,7 +49,8 @@ Breaking migrations:
   money flow, auction and unverified periods explicitly unsupported.
 - Added Sina live and bounded load probes. The 2026-07-23 real live run passed
   all declared families; the 20-request/4-worker mixed run completed without
-  failures and reported 28.75 requests/s with 82.170 ms p50 latency.
+  failures and the final run reported 11.69 requests/s with 207.786 ms p50
+  latency.
 - Added `magic-market-router`, a provider-neutral first-acceptable-batch
   failover chain with explicit failure classification, quality/source-time
   gates, record/batch evidence checks and ordered attempt traces for every Core
@@ -65,10 +66,12 @@ Breaking migrations:
   health evidence, observability, rollback, and release verification.
 - Expanded release packaging and deployment health checks from five to seven
   probes by adding the Sina live/load binaries and integration contract.
-- Recorded the post-approval EMQuant verification boundary: the device
-  activation token was refreshed locally, while both normal and forced
-  official SDK login still return `10001003` until the account's API product
-  entitlement is propagated by Choice.
+- Re-verified EMQuant after Choice entitlement propagation: official SDK login,
+  live daily bars and daily money flow now pass. Quote, order book and minute
+  history remain truthfully gated by
+  `10001012/EQERR_ACCESS_INSUFFICIENCE`.
+- Normalized the SDK's non-zero-padded `YYYY/M/D` daily dates to strict ISO
+  dates and added readable query-time SDK entitlement diagnostics.
 - Expanded the root README into a Chinese-first developer and operator entry
   manual covering workspace boundaries, normalized evidence, exact Provider
   capabilities, deterministic setup, real/load probes, failover routing,

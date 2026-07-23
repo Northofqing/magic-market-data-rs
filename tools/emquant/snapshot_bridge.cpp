@@ -82,7 +82,7 @@ template <typename T> static T symbol(void *handle, const char *name) {
     return reinterpret_cast<T>(raw);
 }
 
-static const char *login_error_hint(EQErr error) {
+static const char *error_hint(EQErr error) {
     switch (error) {
     case EQERR_NO_ACCESS:
         return "EQERR_NO_ACCESS: the account has no EMQuant API entitlement; enable API access in QuantAPI/Choice or contact the account manager";
@@ -94,6 +94,8 @@ static const char *login_error_hint(EQErr error) {
         return "EQERR_LV2_ACCESS_EXPIRE: the account's EMQuant Level-2 entitlement has expired";
     case EQERR_LOGIN_COUNT_LIMIT:
         return "EQERR_LOGIN_COUNT_LIMIT: the account has reached its concurrent API login limit";
+    case EQERR_ACCESS_INSUFFICIENCE:
+        return "EQERR_ACCESS_INSUFFICIENCE: the account is authenticated but lacks entitlement for this data service or field set";
     case EQERR_DIFFRENT_DEVICE:
         return "EQERR_DIFFRENT_DEVICE: userInfo was activated on a different device; activate again on this machine";
     case EQERR_USERINFO_EXPIRED:
@@ -160,7 +162,7 @@ int main(int argc, char **argv) {
         if (login_error == EQERR_NEED_ACTIVATE) {
             std::cerr << " (EQERR_NEED_ACTIVATE: run " << runtime_dir
                       << "/loginactivator_mac and complete API activation)";
-        } else if (const char *hint = login_error_hint(login_error)) {
+        } else if (const char *hint = error_hint(login_error)) {
             std::cerr << " (" << hint << ')';
         }
         std::cerr << '\n';
@@ -180,7 +182,11 @@ int main(int argc, char **argv) {
         query_error = snapshot(argv[1], argv[2], argc == 4 ? argv[3] : "", data);
     }
     if (query_error != EQERR_SUCCESS || !data) {
-        std::cerr << "EMQuant query failed with code " << query_error << '\n';
+        std::cerr << "EMQuant query failed with code " << query_error;
+        if (const char *hint = error_hint(query_error)) {
+            std::cerr << " (" << hint << ')';
+        }
+        std::cerr << '\n';
         if (data) release_data(data);
         stop();
         dlclose(handle);

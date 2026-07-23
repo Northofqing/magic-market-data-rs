@@ -46,7 +46,7 @@ its deployment boundary, package its probes, and deliver the result to Git.
 
 ### Phase 4: Verification and delivery
 
-**Status:** in_progress
+**Status:** complete
 
 - Run deterministic, live, load, strict lint, docs and release gates.
 - Review capability claims and security/deployment boundaries.
@@ -71,3 +71,4 @@ its deployment boundary, package its probes, and deliver the result to Git.
 | Cargo could not find package `magic-sina-rs` | 1 | Expected TDD red state before adding the workspace member and crate scaffold. |
 | Quantity-without-price test was rejected earlier as a top-of-book contradiction | 1 | The fixture changed level-one price but not the redundant best-bid summary. Changed both fields consistently so the intended partial-book path is isolated. |
 | First live probe could not resolve `hq.sinajs.cn` inside the restricted sandbox | 1 | Re-ran the same probe with the approved Sina network permission; all supported families passed. |
+| Activated EMQuant `CSD` returned `invalid bar time range` | 1 | Captured the raw SDK response, reproduced `YYYY/M/D` in the fake bridge and added strict ISO zero-padding. The regression and real five-bar query now pass. |

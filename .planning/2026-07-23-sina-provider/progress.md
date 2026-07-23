@@ -41,7 +41,27 @@
   for 华电辽能、平安银行、太湖远大, printed all supported families and preserved
   the genuine partial limit-up ask side.
 - The default mixed load probe passed 20/20 at concurrency 4: 1,477 records,
-  28.75 requests/s, p50 82.170 ms, p95 266.527 ms and max 324.073 ms.
+  and the final verification run reported 11.69 requests/s, p50 207.786 ms,
+  p95 645.489 ms and max 788.549 ms.
 - Added the full Sina integration contract, root capability/command/deployment
   truth, seven-probe package layout, egress/health-check runbook, changelog and
   compliance rules. Documentation links, compliance and diff checks pass.
+- Ran the full clean release preflight after the Sina changes: formatting,
+  Rust 1.83 all-target checks/tests, strict Clippy, rustdoc/doc tests,
+  documentation links, compliance and diff checks all passed.
+- Re-ran the activated Choice/EMQuant account. Login and live money flow now
+  pass; quote, order book and minute history return the SDK's
+  `EQERR_ACCESS_INSUFFICIENCE` code, while daily history exposes a local date
+  normalization defect.
+- Captured the raw `CSD` response, reproduced its non-zero-padded `YYYY/M/D`
+  format in a regression test, normalized it to strict ISO and re-ran the real
+  probe. Five daily bars and both money-flow records now pass; missing
+  Quote/order-book/minute entitlements remain explicit and make the aggregate
+  probe exit nonzero.
+- Re-ran the complete clean release preflight after the EMQuant fix and
+  documentation update; every Rust, test, strict lint, rustdoc, link,
+  compliance and diff gate passed.
+- Completed the final local review because workspace policy disallowed the
+  review skill's optional subagent. Verified HTTPS/bounds, capability truth,
+  quantity/date normalization, absence handling, package inputs and secret
+  exclusions; no blocking finding remained.

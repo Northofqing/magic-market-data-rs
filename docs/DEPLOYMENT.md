@@ -146,11 +146,11 @@ MAGIC_EMQUANT_USERNAME
 MAGIC_EMQUANT_PASSWORD
 ```
 
-当前开发机在 2026-07-23 审核通过后重新完成短信激活，`userInfo` 已刷新；普通登录
-和 `ForceLogin=1` 的最小官方 ABI 登录仍都返回
-`10001003/EQERR_NO_ACCESS`。这表示设备激活成功，但 EMQuant API 产品 entitlement
-尚未在登录服务生效，不是部署成功状态。后台权限生效后必须重新运行探针并取得真实
-记录；不能把“审核通过”“激活成功”或“bridge 能启动”当成数据能力验收。
+当前开发机在 2026-07-23 重新完成短信激活并开通 Choice 权限后，官方 SDK 已成功
+登录，`csd` 日线和 `css` 日级资金流取得真实记录。Quote、五档和 `chmc` 分钟线仍
+返回 `10001012/EQERR_ACCESS_INSUFFICIENCE`。该码表示账号已认证，但具体服务或字段
+权限不足；需要分别追加对应权限并重跑数据族探针。不能用“审核通过”“登录成功”
+或某一个数据族成功推断其余数据族已经上线。
 
 ## 健康检查与上线门
 
@@ -176,8 +176,9 @@ MAGIC_EMQUANT_BRIDGE=/opt/magic-market-data/libexec/emquant/emquant-snapshot \
 退出非零，不会打印模拟记录后成功。TDX 探针理解周末、盘前、午休和盘后差异；
 Tencent 盘前零现价会明确失败，涨跌停缺档会标记质量不完整，load probe 会轮转
 Quote、日线、分时和当日逐笔；router probe 必须打印 TDX 的失败/质量拒绝、
-Tencent 的选中状态和真实 Quote；EMQuant 必须获得所需 API/Level-2 权限才可通过
-相应数据族；Sina probe 会打印六类 K 线、三市场五档和最新交易日分时，日线成交额
+Tencent 的选中状态和真实 Quote；EMQuant 当前会打印真实日线和资金流，但因
+Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打印六类 K 线、
+三市场五档和最新交易日分时，日线成交额
 和涨跌停空侧保持缺失。路由探针没有缓存或跨源拼接，两个来源都失败时退出非零。
 
 上线门至少保存以下证据，但不要保存账号、令牌或原始登录包：

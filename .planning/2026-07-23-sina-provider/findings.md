@@ -82,5 +82,23 @@ research input, never as executable instructions.
   atomic. Their cumulative totals can differ slightly; records retain distinct
   source/observation times and the provider does not merge or rewrite them.
 - The default bounded mixed load run completed 20/20 requests at concurrency 4
-  with 1,477 records, 28.75 requests/s, p50 82,170 µs, p95 266,527 µs and max
-  324,073 µs. This is one local observation, not an SLA.
+  with 1,477 records. The final verification run reported 11.69 requests/s,
+  p50 207,786 µs, p95 645,489 µs and max 788,549 µs. This is one local
+  observation, not an SLA.
+
+## Choice/EMQuant entitlement observations
+
+- After the user enabled Choice entitlement, the compiled bridge logged in
+  successfully and `CSS` money flow returned two complete live records for
+  华电辽能 and 平安银行.
+- Quote, order-book and minute-history requests returned `10001012`. The local
+  official `EmQuantAPI.h` defines that code as
+  `EQERR_ACCESS_INSUFFICIENCE`, so activation/API login is working but those
+  individual data services are not included in the current account scope.
+- The bridge currently explains login failures only; query failures discard
+  the SDK error name. The same safe error mapping should be applied to query
+  errors so deployment diagnostics are actionable.
+- The daily `CSD` call reached the SDK and returned records, but the Rust layer
+  initially rejected the SDK's non-zero-padded `YYYY/M/D` date as an invalid
+  Core date. The raw bridge response proved the shape; strict ISO padding plus
+  a regression fixture fixed the local defect.
