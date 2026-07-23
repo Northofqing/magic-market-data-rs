@@ -83,6 +83,32 @@ fn complete_non_empty_batch_with_matching_evidence_is_admitted() {
 }
 
 #[test]
+fn millisecond_prefixed_observation_time_is_checked_not_ignored() {
+    let observed = "unix-ms:4102444800000";
+    let source = "2026-07-23";
+    let batch_id = "eastmoney:reports:1";
+    let batch = DataBatch::strict(
+        vec![Record {
+            identity: "AP-1",
+            evidence: evidence(ProviderId::Eastmoney, observed, source, batch_id),
+        }],
+        provenance(observed, source, batch_id),
+    );
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney).require_source_at();
+
+    assert_eq!(
+        verify_admitted_batch(
+            &batch,
+            &policy,
+            |record| &record.evidence,
+            |record| record.identity.to_owned()
+        )
+        .unwrap(),
+        ProbeStatus::Admitted
+    );
+}
+
+#[test]
 fn ordinary_empty_incomplete_and_duplicate_batches_fail() {
     let observed = "2026-07-23T10:00:00+08:00";
     let source = "2026-07-23T09:59:30+08:00";

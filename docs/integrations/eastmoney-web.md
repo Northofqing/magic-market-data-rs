@@ -50,10 +50,17 @@ typed error。
 - `source_at` 只取源端明确日期/时间，网页没有可靠批次时间时保持 `None`；
 - 每条记录及批次均保留 Provider、源时间、观察时间和批次 ID；
 - 人气榜与 Quote 来自两个请求，分别保留 ranking/quote evidence，禁止伪装成原子快照。
+- 龙虎榜买入/卖出总额必须非负；买、卖、净额同时存在时必须满足
+  `净额 = 买入 - 卖出`。同一批次重复的上榜身份或同侧席位身份会显式失败，
+  不由下游按名称去重。
 
 ## 探针
 
-完整 live probe 会打印所有 capability、provenance、quality 和记录字段：
+完整 live probe 会打印所有 capability、provenance、quality 和记录字段。每个已声明
+数据族还必须通过公共 admission verifier：非空、质量完整、记录/批次证据一致、
+源时间不晚于观察时间且业务身份唯一。最终成功标记为
+`live_probe_status=admitted`；未声明诊断只能输出
+`diagnostic_complete_unadmitted` 或 `failed`，不能冒充能力成功：
 
 ```bash
 cargo run -p magic-eastmoney-rs --example live_probe --release --locked --offline

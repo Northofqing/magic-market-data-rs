@@ -1,10 +1,11 @@
 use magic_eastmoney_rs::EastmoneyClient;
 use magic_market_core::{
-    AssetClass, BlockTrades, BoardCategory, BoardFlows, DataBatch, DividendPlans, DragonTigerData,
-    Exchange, FlowInterval, FlowScope, FundFlowRequest, FundFlowSeries, HolderCounts,
-    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate, LimitPoolKind,
-    LimitPoolRequest, LimitPools, LockupEvents, MarginData, NewsProvider, PopularityData,
-    PositiveU32, ReportScope, ResearchReports, ResearchRequest,
+    verify_admitted_batch, AssetClass, BlockTrades, BoardCategory, BoardFlows, DataBatch,
+    DividendPlans, DragonTigerData, Exchange, FlowInterval, FlowScope, FundFlowRequest,
+    FundFlowSeries, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
+    InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents,
+    MarginData, NewsProvider, PopularityData, PositiveU32, ProbeAdmissionPolicy, ProbeStatus,
+    ProviderId, ReportScope, ResearchReports, ResearchRequest, SourceEvidence,
 };
 use std::error::Error;
 use std::fmt::Debug;
@@ -25,6 +26,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         Exchange::Shanghai,
         env("MAGIC_EASTMONEY_REPORT_CODE", "688017"),
     )?;
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney);
+    let source_policy = policy.require_source_at();
+    let single = PositiveU32::new(1)?;
     let small = PositiveU32::new(3)?;
 
     println!("provider=eastmoney-web");
@@ -52,11 +56,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let report = ResearchRequest::new(
         ReportScope::Instrument(report_sample),
         PositiveU32::new(1)?,
-        small,
+        single,
     )?;
     probe_batch(
         "research.instrument",
         client.research_reports(&report),
+        &source_policy,
+        |record| &record.evidence,
+        |record| record.report_id.as_str().to_owned(),
         &mut failures,
     );
     let industry = ResearchRequest::new(
@@ -65,11 +72,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             "*",
         ))?),
         PositiveU32::new(1)?,
-        small,
+        single,
     )?;
     probe_batch(
         "research.industry",
         client.research_reports(&industry),
+        &source_policy,
+        |record| &record.evidence,
+        |record| record.report_id.as_str().to_owned(),
         &mut failures,
     );
 
@@ -92,47 +102,122 @@ fn main() -> Result<(), Box<dyn Error>> {
         probe_batch(
             &format!("board_flow.{category:?}"),
             client.board_flows(category, FlowInterval::Day1, small),
+            &source_policy,
+            |record| &record.evidence,
+            |record| {
+                format!(
+                    "{:?}:{}:{:?}",
+                    record.category, record.board_code, record.interval
+                )
+            },
             &mut failures,
         );
     }
 
-    let signal = InstrumentSignalRequest::new(event_sample.clone(), small)?;
+    let signal = InstrumentSignalRequest::new(event_sample.clone(), single)?;
     probe_batch(
         "dragon_tiger.entries",
         client.dragon_tiger_entries(&signal),
+        &source_policy,
+        |record| &record.evidence,
+        |record| record.entry_id.as_str().to_owned(),
         &mut failures,
     );
     probe_batch(
         "dragon_tiger.seats",
         client.dragon_tiger_seats(&signal),
+        &source_policy,
+        |record| &record.evidence,
+        |record| {
+            format!(
+                "{}:{:?}:{}:{}",
+                record.entry_id,
+                record.side,
+                record.rank.get(),
+                record.seat_name
+            )
+        },
         &mut failures,
     );
 
-    let reference_request = InstrumentDateRangeRequest::new(reference, small)?;
+    let reference_request = InstrumentDateRangeRequest::new(reference, single)?;
     probe_batch(
         "capital.margin",
         client.margin_data(&reference_request),
+        &source_policy,
+        |record| &record.evidence,
+        |record| {
+            format!(
+                "{}:{}",
+                instrument_identity(&record.instrument),
+                record.trading_date
+            )
+        },
         &mut failures,
     );
     probe_batch(
         "capital.block_trades",
         client.block_trades(&reference_request),
+        &source_policy,
+        |record| &record.evidence,
+        |record| {
+            format!(
+                "{}:{}:{:?}:{}:{}:{:?}:{:?}",
+                instrument_identity(&record.instrument),
+                record.trading_date,
+                record.traded_at,
+                record.price.get(),
+                record.volume.get(),
+                record.buyer,
+                record.seller
+            )
+        },
         &mut failures,
     );
     probe_batch(
         "capital.holder_counts",
         client.holder_counts(&reference_request),
+        &source_policy,
+        |record| &record.evidence,
+        |record| {
+            format!(
+                "{}:{}",
+                instrument_identity(&record.instrument),
+                record.report_date
+            )
+        },
         &mut failures,
     );
     probe_batch(
         "capital.dividends",
         client.dividend_plans(&reference_request),
+        &source_policy,
+        |record| &record.evidence,
+        |record| {
+            format!(
+                "{}:{}:{}:{:?}",
+                instrument_identity(&record.instrument),
+                record.report_date,
+                record.state,
+                record.ex_dividend_date
+            )
+        },
         &mut failures,
     );
-    let event_request = InstrumentDateRangeRequest::new(event_sample, small)?;
+    let event_request = InstrumentDateRangeRequest::new(event_sample, single)?;
     probe_batch(
         "capital.lockups",
         client.lockup_events(&event_request),
+        &source_policy,
+        |record| &record.evidence,
+        |record| {
+            format!(
+                "{}:{}:{}",
+                instrument_identity(&record.instrument),
+                record.listing_date,
+                record.share_type
+            )
+        },
         &mut failures,
     );
 
@@ -147,6 +232,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         probe_batch(
             &format!("limit_pool.{kind:?}"),
             client.limit_pool(&request),
+            &source_policy,
+            |record| &record.evidence,
+            |record| {
+                format!(
+                    "{:?}:{}:{}",
+                    record.kind,
+                    instrument_identity(&record.instrument),
+                    record.trading_date
+                )
+            },
             &mut failures,
         );
     }
@@ -154,6 +249,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     probe_batch(
         "popularity",
         client.popularity(PositiveU32::new(5)?),
+        &policy,
+        |record| &record.evidence,
+        |record| instrument_identity(&record.instrument),
         &mut failures,
     );
     let news_request = InstrumentDateRangeRequest::new(primary, PositiveU32::new(5)?)?;
@@ -169,7 +267,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !failures.is_empty() {
         return Err(format!("{} live-probe families failed", failures.len()).into());
     }
-    println!("live_probe_status=passed");
+    println!("live_probe_status={}", ProbeStatus::Admitted);
     Ok(())
 }
 
@@ -181,11 +279,11 @@ fn probe_unadmitted_batch<T: Debug, E: std::fmt::Display>(
     println!("admitted=false");
     match result {
         Ok(batch) => {
-            println!("diagnostic_status=success_not_admitted");
+            println!("status={}", ProbeStatus::DiagnosticCompleteUnadmitted);
             print_batch(label, &batch);
         }
         Err(error) => {
-            println!("diagnostic_status=expected_failure");
+            println!("status={}", ProbeStatus::Failed);
             println!("error={error}");
         }
     }
@@ -197,6 +295,15 @@ fn instrument(exchange: Exchange, code: String) -> Result<InstrumentId, Box<dyn 
 
 fn env(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.to_owned())
+}
+
+fn instrument_identity(instrument: &InstrumentId) -> String {
+    let suffix = match instrument.exchange() {
+        Exchange::Shanghai => "SH",
+        Exchange::Shenzhen => "SZ",
+        Exchange::Beijing => "BJ",
+    };
+    format!("{}.{suffix}", instrument.code())
 }
 
 fn print_batch<T: Debug>(label: &str, batch: &DataBatch<T>) {
@@ -212,13 +319,29 @@ fn print_batch<T: Debug>(label: &str, batch: &DataBatch<T>) {
 fn probe_batch<T: Debug, E: std::fmt::Display>(
     label: &str,
     result: Result<DataBatch<T>, E>,
+    policy: &ProbeAdmissionPolicy,
+    evidence_of: impl Fn(&T) -> &SourceEvidence,
+    identity_of: impl Fn(&T) -> String,
     failures: &mut Vec<String>,
 ) {
     match result {
-        Ok(batch) => print_batch(label, &batch),
+        Ok(batch) => match verify_admitted_batch(&batch, policy, evidence_of, identity_of) {
+            Ok(status) => {
+                println!("family={label} status={status}");
+                print_batch(label, &batch);
+            }
+            Err(error) => {
+                let failure = format!("{label}: admission rejected: {error}");
+                println!("\n=== {label} ===");
+                println!("family={label} status={}", ProbeStatus::Failed);
+                println!("error={error}");
+                failures.push(failure);
+            }
+        },
         Err(error) => {
             let failure = format!("{label}: {error}");
             println!("\n=== {label} ===");
+            println!("family={label} status={}", ProbeStatus::Failed);
             println!("error={error}");
             failures.push(failure);
         }

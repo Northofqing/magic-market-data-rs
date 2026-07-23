@@ -24,3 +24,10 @@
   to keep provider results small.
 - Added a regression proving malformed fractional UNIX timestamps do not pass
   admission by silently discarding a non-numeric suffix.
+- Eastmoney live probe now verifies every advertised family and emits stable
+  admission states; unadvertised fund-flow/news remain diagnostics.
+- Eastmoney Dragon-Tiger rejects negative gross buy/sell values, arithmetic
+  disagreement between buy/sell/net, duplicate entry identities, and duplicate
+  same-side seat identities. The touched private tests moved to a path module.
+- Common timestamp admission now validates Eastmoney's existing `unix-ms:`
+  observation format rather than treating it as an opaque string.

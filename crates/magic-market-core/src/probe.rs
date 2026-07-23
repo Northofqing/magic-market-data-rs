@@ -287,6 +287,12 @@ fn verify_evidence(
 }
 
 fn parse_evidence_time(value: &str) -> Option<i64> {
+    if let Some(millis) = value.strip_prefix("unix-ms:") {
+        if millis.is_empty() || !millis.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        return millis.parse::<i64>().ok()?.checked_div(1_000);
+    }
     let is_digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
     match value.split_once('.') {
         Some((seconds, fraction)) if is_digits(seconds) && is_digits(fraction) => {
