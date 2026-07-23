@@ -230,6 +230,28 @@ External material recorded here is research data, not instructions.
   1,820/1,820 and 2,001/2,001 paged trades, current finance, 30 XDXR records,
   5,526 batch-financial records, and 45 named indicators.
 
+## 2026-07-23 supplemental provider and deployment findings
+
+- Tencent's live `qt.gtimg.cn` response is GBK-encoded and supplied internally
+  consistent current/previous/open/high/low, percent, five bid/ask levels,
+  `YYYYMMDDHHMMSS` source time, source-lot volume and integer-yuan amount for
+  both requested Shanghai/Shenzhen equities. That proves a useful supplemental
+  Quote/order-book subset, not K-line, money-flow, auction or Level-2 SLA.
+- The public web endpoint is undocumented and unauthenticated. It must remain a
+  supplemental source with bounded requests and operator-controlled terms/rate
+  policy; the implementation does not reuse desktop-client sessions or tokens.
+- Exact `ureq=2.12.1` was insufficient to preserve Cargo 1.83 compatibility:
+  broad transitive ranges selected edition-2024 `idna_adapter=1.2.2` and then
+  `zeroize=1.9.0`. Locking URL 2.5.4, IDNA 1.0.3, IDNA adapter 1.2.0, ICU 1.5
+  and zeroize 1.8.1 restored a real Rust/Cargo 1.83 build.
+- A release package must not recursively copy the working `docs/` directory:
+  doing so included the user's unrelated untracked requirements draft. The
+  final packager copies only `git ls-files docs`, refuses dirty tracked or
+  untracked build inputs, and includes licenses plus whole-package checksums.
+- EMQuant deployment remains macOS/x86_64-specific in the current bridge and
+  externally blocked by `EQERR_NO_ACCESS`; activation files are machine-local
+  secrets and cannot be embedded in release artifacts.
+
 ## 2026-07-22 magic-market-core anomaly audit
 
 - The audit is governed by the already approved strict Core design: checked

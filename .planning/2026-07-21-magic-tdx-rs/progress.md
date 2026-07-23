@@ -169,3 +169,29 @@
 - Final EMQuant release probe ran quotes, order book, money flow, daily bars,
   and minute bars; every SDK login truthfully returned the external entitlement
   blocker `10001003/EQERR_NO_ACCESS`, while unsupported auction remained explicit.
+
+## 2026-07-23 deployment and supplemental provider
+
+- Added `magic-tencent-rs` as a deliberately narrow supplemental provider for
+  Shanghai/Shenzhen A-share Quote and five-level order-book contracts only.
+- Added strict GBK parsing, HTTPS-only bounded transport, redirect refusal,
+  exact request/response cardinality and ordering, source calendar validation,
+  quote/composite coherence checks, atomic missing book levels, conservative
+  batch source time, and deterministic transport/protocol failure tests.
+- Pinned the URL/IDNA/zeroize dependency chain after reproducing Cargo 1.83's
+  edition-2024 manifest failure; the final crate and workspace compile with the
+  repository's pinned Rust/Cargo 1.83.0 toolchain.
+- The final real Tencent release probe returned complete Quote and five-level
+  records for 华电辽能 `600396.SH` and 平安银行 `000001.SZ`, including CNY
+  amount, source-lot volume/depth, source time, observation time and batch ID.
+- The final bounded load probe completed 20/20 requests with four workers,
+  40 records, 7.49 requests/s, p50 152.333 ms, p95 1,772.762 ms and maximum
+  2,017.417 ms; this is recorded as a sample rather than an SLA.
+- Added deployment/provider documentation plus release preflight and packaging
+  scripts. Packaging rejects dirty tracked/build inputs, uses locked offline
+  builds, copies only tracked docs and required licenses, separates same-named
+  examples, and hashes the complete distributable.
+- Closed seven release-review findings, including missing-number truthfulness,
+  explicit timezone, hard load caps, local Cargo config, Windows suffixes,
+  SHA-qualified health paths and stale-artifact isolation. The final independent
+  review reported no Critical/Important issue and Ready-to-merge.

@@ -27,6 +27,14 @@ Breaking migrations:
   11:30-13:00 lunch break correctly.
 - TDX half-present pre-open book levels are normalized atomically as unavailable
   with quality evidence; negative and non-finite source levels remain errors.
+- Added `magic-tencent-rs`, a supplemental HTTPS/GBK provider with strict
+  cardinality, verified source timestamps, CNY amounts, source-lot quantities,
+  deterministic fixtures, live probes, and a bounded concurrent load probe.
+- Pinned the HTTPS URL/IDNA/zeroize dependency chain in `Cargo.lock` so Cargo
+  1.83 can parse and compile it without the transitive edition-2024 failure.
+- Added release preflight/package scripts and an operator deployment runbook
+  covering platform artifacts, network access, secrets, EMQuant activation,
+  health evidence, observability, rollback, and release verification.
 
 Serde input now passes through the same constructors used by Rust callers, so
 invalid numeric values, identifiers, evidence, dates, OHLC ranges, order-book

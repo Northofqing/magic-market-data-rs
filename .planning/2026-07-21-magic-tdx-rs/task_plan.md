@@ -122,6 +122,34 @@ Completion evidence:
 - The EMQuant probe exercises every supported family and truthfully reports the
   external account entitlement error `10001003/EQERR_NO_ACCESS` for each one.
 
+### Phase 11: deployment readiness and supplemental provider
+
+Status: complete
+
+- Document reproducible macOS/Linux/Windows builds, artifact/runtime layout,
+  network and secret requirements, EMQuant activation/signing, health checks,
+  observability, rollback, and release verification.
+- Add one independently usable supplemental provider only for source fields and
+  units that can be verified from live protocol evidence; unsupported families
+  remain explicit.
+- Add fixture/parser/contract/failure-path tests, a strict live probe, and a
+  repeatable latency/throughput probe for the new provider.
+- Run all workspace static gates plus live validation, obtain independent code
+  review, then commit and push without staging the user's unrelated document.
+
+Completion evidence:
+
+- `magic-tencent-rs` implements only verified沪深 A-share Quote and five-level
+  order-book contracts, with strict GBK parsing, explicit `+08:00` source time,
+  bounded HTTPS and failure-path coverage; every other family stays false.
+- Real release probes returned complete records for `600396.SH` and
+  `000001.SZ`; the bounded 20-request/four-worker probe completed 20/20.
+- Rust/Cargo 1.83 full preflight, tests, strict Clippy, rustdoc/doctests, link
+  and compliance checks pass; the edition-2024 dependency regression is pinned.
+- Deployment and integration runbooks plus isolated, clean-worktree release
+  packaging are complete. Independent final review found no Critical/Important
+  issue and marked the change Ready to merge.
+
 ## Decisions
 
 - No implementation edits before design approval.

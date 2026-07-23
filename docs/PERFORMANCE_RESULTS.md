@@ -43,3 +43,25 @@ and are not inferred from the parser microbenchmark above.
 
 After a clean build, `RUSTUP_TOOLCHAIN=1.83.0 cargo check --workspace
 --all-targets --offline` passes with the committed lockfile.
+
+## Tencent HTTPS bounded load probe
+
+Command:
+
+```bash
+cargo run -p magic-tencent-rs --example load_probe --release --offline
+```
+
+Observed on the development machine on 2026-07-23, requesting 华电辽能
+`600396.SH` and 平安银行 `000001.SZ` in every request:
+
+```text
+requests=20 concurrency=4 successes=20 failures=0 records=40
+elapsed_seconds=2.669 requests_per_second=7.49
+latency_us_p50=152333 latency_us_p95=1772762 latency_us_max=2017417
+```
+
+This is a short, bounded connectivity/load sample against an undocumented
+public endpoint, not a vendor SLA or a safe sustained request rate. The probe
+defaults deliberately remain small; operators must apply their own rate limit
+and authorization policy.

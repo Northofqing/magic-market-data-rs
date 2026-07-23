@@ -11,6 +11,13 @@ bash tools/compliance/check.sh
 bash tools/docs/check_links.sh
 ```
 
+The same deterministic gates can be run with the pinned minimum toolchain and
+locked dependencies after `cargo fetch --locked`:
+
+```bash
+bash tools/release/preflight.sh
+```
+
 Network diagnostics are read-only and must be reported separately from local
 deterministic tests. Preserve the upstream MIT notice when changing imported
 TDX modules.
