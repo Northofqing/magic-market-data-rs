@@ -6,7 +6,11 @@
 
 **Architecture:** Slice 0 changes only the upstream Provider repository. Core retains provider-neutral contracts, Router retains provider-neutral failover, and six isolated read-only crates own public endpoint protocols. This plan does not create the downstream `stock_analysis::data_gateway`; it produces the exact upstream commit SHA that Slice 1 may consume.
 
-**Tech Stack:** Rust 1.83, Cargo workspace, `magic-market-core`, `magic-market-router`, `reqwest` blocking transports, Bash compliance/release scripts, `cargo-llvm-cov`, Git and GitHub CLI.
+**Tech Stack:** The developer's default Rust toolchain and CI's current stable
+Rust, Cargo workspace, `magic-market-core`, `magic-market-router`, `reqwest`
+blocking transports, Bash compliance/release scripts, an already available
+`cargo-llvm-cov`, Git and GitHub CLI. The workspace declares no MSRV and this
+plan installs no Rust toolchain or rustup component.
 
 ---
 
@@ -77,7 +81,7 @@ Slice 0 evidence is upstream live Provider evidence, not a downstream push:
 | `crates/magic-baidu-rs/` | Baidu unadjusted daily bars and source MA values |
 | `crates/magic-iwencai-rs/` | Authorized semantic search with conservative capability admission |
 | `tools/compliance/check.sh` | Required files, provider neutrality and uniform crate-version checks |
-| `tools/release/preflight.sh` | Clean isolated Rust 1.83 Gate C execution |
+| `tools/release/preflight.sh` | Clean isolated default-toolchain Gate C execution |
 | `tools/release/package.sh` | Reproducible probe and documentation package |
 | `docs/integrations/*.md` | Endpoint, authorization, units, limits and evidence contracts |
 | `docs/PERFORMANCE_RESULTS.md` | Timestamped bounded live/load evidence |
@@ -163,9 +167,9 @@ input. A successful package at this point is a defect.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-core --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-router --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-analysis --all-targets --locked --offline
+cargo test -p magic-market-core --all-targets --locked --offline
+cargo test -p magic-market-router --all-targets --locked --offline
+cargo test -p magic-market-analysis --all-targets --locked --offline
 ```
 
 Expected: all three commands exit zero. Tests must include checked construction,
@@ -176,7 +180,7 @@ legacy deserialization, record evidence and non-empty PostClose routing.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo clippy \
+cargo clippy \
   -p magic-market-core -p magic-market-router -p magic-market-analysis \
   --all-targets --locked --offline -- -D warnings
 ```
@@ -345,7 +349,6 @@ Change the package header in
 name = "magic-market-analysis"
 version = "0.2.0"
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Deterministic provider-neutral analysis for magic market data"
@@ -356,12 +359,12 @@ description = "Deterministic provider-neutral analysis for magic market data"
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-eastmoney-rs --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-cninfo-rs --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-ths-rs --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-cls-rs --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-baidu-rs --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-iwencai-rs --all-targets --locked --offline
+cargo test -p magic-eastmoney-rs --all-targets --locked --offline
+cargo test -p magic-cninfo-rs --all-targets --locked --offline
+cargo test -p magic-ths-rs --all-targets --locked --offline
+cargo test -p magic-cls-rs --all-targets --locked --offline
+cargo test -p magic-baidu-rs --all-targets --locked --offline
+cargo test -p magic-iwencai-rs --all-targets --locked --offline
 ```
 
 Expected: all commands exit zero. The suites must exercise strict empty
@@ -373,11 +376,11 @@ pacing and conservative capability declarations.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo clippy \
+cargo clippy \
   -p magic-eastmoney-rs -p magic-cninfo-rs -p magic-ths-rs \
   -p magic-cls-rs -p magic-baidu-rs -p magic-iwencai-rs \
   --all-targets --locked --offline -- -D warnings
-RUSTDOCFLAGS="-D warnings" RUSTUP_TOOLCHAIN=1.83.0 cargo doc \
+RUSTDOCFLAGS="-D warnings" cargo doc \
   -p magic-eastmoney-rs -p magic-cninfo-rs -p magic-ths-rs \
   -p magic-cls-rs -p magic-baidu-rs -p magic-iwencai-rs \
   --no-deps --locked --offline
@@ -544,17 +547,17 @@ Expected: exit zero because the starting preflight omits `--all-features`.
 In `tools/release/preflight.sh`, replace the five Cargo command bodies with:
 
 ```bash
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo check --workspace --all-targets --all-features --locked --offline
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo test --workspace --all-targets --all-features --locked --offline \
   -- --test-threads=1
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo clippy --workspace --all-targets --all-features --locked --offline \
   -- -D warnings
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTDOCFLAGS='-D warnings' RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" RUSTDOCFLAGS='-D warnings' \
   cargo doc --workspace --all-features --no-deps --locked --offline
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo test --workspace --all-features --doc --locked --offline \
   -- --test-threads=1
 ```
@@ -625,11 +628,132 @@ git commit -m "ci: gate public intelligence release"
 
 Expected: one CI/compliance/release-tooling commit.
 
-## Task 7: Run the deterministic Gate C and coverage Gate D
+## Task 6.5: Remove the fixed Rust toolchain and MSRV declaration
+
+This task is an approved correction to the original execution plan. It changes
+only build/release policy, not Provider behavior or the historical starting
+revision.
 
 **Files:**
 
-- No planned file changes
+- Create: `docs/superpowers/specs/2026-07-23-unpinned-rust-toolchain-design.md`
+- Delete: `rust-toolchain.toml`
+- Modify: `Cargo.toml`
+- Modify: every workspace crate `Cargo.toml`
+- Modify: `.github/workflows/ci.yml`
+- Modify: `.github/workflows/live-and-bench.yml`
+- Modify: `tools/compliance/check.sh`
+- Modify: `tools/release/preflight.sh`
+- Modify: `tools/release/package.sh`
+- Modify: `README.md`
+- Modify: `CHANGELOG.md`
+- Modify: `docs/DEPLOYMENT.md`
+- Modify: current normative Provider/release plans where they still require a
+  fixed Rust release
+
+- [ ] **Step 1: Commit the approved toolchain design before implementation**
+
+Document these exact decisions:
+
+- local commands use the developer's default toolchain;
+- CI validates the current stable toolchain;
+- the workspace declares no MSRV;
+- no task runs `rustup toolchain install`, `rustup component add` or an
+  equivalent installer;
+- release evidence records `rustc -Vv` and `cargo -V`, but never rejects an
+  otherwise valid build because the version differs from a hard-coded value;
+- `Cargo.lock`, `--locked` and `--offline` remain the dependency-reproducibility
+  boundary.
+
+Run:
+
+```bash
+git add docs/superpowers/specs/2026-07-23-unpinned-rust-toolchain-design.md
+git diff --cached --check
+git commit -m "docs: design unpinned Rust toolchain"
+```
+
+Expected: a design-only commit exists before the build-policy change.
+
+- [ ] **Step 2: Remove every active toolchain and MSRV pin**
+
+Delete `rust-toolchain.toml`; remove `rust-version` from
+`[workspace.package]`; remove every `rust-version.workspace = true` from crate
+manifests; remove `RUSTUP_TOOLCHAIN=...` and exact Rust-release selectors from
+active workflows and release scripts. CI jobs use current stable without
+declaring an MSRV job. Do not rewrite historical benchmark records merely
+because they state which compiler produced that old evidence.
+
+- [ ] **Step 3: Keep release packaging truthful without requiring a pin**
+
+Remove `rust-toolchain.toml` from package inputs and manifests. Preserve
+toolchain evidence by writing the complete output of:
+
+```bash
+rustc -Vv
+cargo -V
+```
+
+to the release package. Absence of the deleted file must not make packaging
+fail.
+
+- [ ] **Step 4: Add a compliance regression gate**
+
+Make `tools/compliance/check.sh` fail if:
+
+- `rust-toolchain.toml` is restored;
+- an active workspace manifest declares `rust-version`;
+- a current workflow or release script selects an exact Rust release or runs a
+  rustup installer.
+
+Historical design, changelog and performance evidence are not active build
+configuration and remain readable history.
+
+- [ ] **Step 5: Validate with the already available default toolchain**
+
+Run:
+
+```bash
+rustc -Vv
+cargo -V
+cargo fmt --all -- --check
+cargo check --workspace --all-targets --all-features --locked --offline
+cargo test --workspace --all-targets --all-features --locked --offline -- --test-threads=1
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked --offline
+bash tools/compliance/check.sh
+bash tools/release/preflight.sh
+```
+
+Expected: all commands exit zero without installing a toolchain or component.
+
+- [ ] **Step 6: Commit the independent build-policy correction**
+
+Run:
+
+```bash
+git add -A \
+  rust-toolchain.toml Cargo.toml crates \
+  .github/workflows/ci.yml .github/workflows/live-and-bench.yml \
+  tools/compliance/check.sh tools/release/preflight.sh tools/release/package.sh \
+  README.md CHANGELOG.md docs/DEPLOYMENT.md \
+  docs/superpowers/plans
+git diff --cached --check
+git commit -m "build: use default stable Rust toolchain"
+```
+
+Expected: one independently revertible implementation commit, with no Provider
+data-semantics change.
+
+## Task 7: Implement and enforce the real coverage Gate D
+
+**Files:**
+
+- Modify: `tools/coverage/check_thresholds.py`
+- Modify: `tools/coverage/test_check_thresholds.py`
+- Create: `tools/coverage/README.md`
+- Modify: `.github/workflows/security.yml`
+- Modify: the required PR/release workflow that makes coverage a merge gate
 
 - [ ] **Step 1: Confirm intended tracked work is committed**
 
@@ -656,36 +780,116 @@ bash tools/release/preflight.sh
 
 Expected: exit zero and final line `release preflight: passed`.
 
-- [ ] **Step 3: Produce and enforce the workspace coverage artifact**
+- [ ] **Step 3: Add failing checker boundary and corruption tests**
+
+The synthetic llvm-cov JSON tests must prove all of the following before the
+checker is changed:
+
+- overall `80.00%` passes and `79.99%` fails;
+- critical aggregate `95.00%` passes and `94.99%` fails;
+- every configured critical glob must match at least one measured file;
+- POSIX, Windows and absolute workspace paths normalize identically;
+- only `crates/*/src/**/*.rs` contributes to production coverage;
+- `tests`, `examples`, `benches`, `fuzz`, `target`, generated and repository
+  external files cannot inflate either percentage;
+- malformed JSON, missing arrays/fields, non-integer or negative counts,
+  `covered > count`, zero production lines and duplicate filenames all fail
+  explicitly.
 
 Run:
 
 ```bash
+python3 -m unittest discover -s tools/coverage -p 'test_*.py' -v
+```
+
+Expected: new threshold, missing-critical and corruption cases fail against the
+old checker, demonstrating RED.
+
+- [ ] **Step 4: Implement deterministic overall and critical aggregation**
+
+Use line `covered` and `count` integers from llvm-cov JSON and integer
+cross-multiplication for the thresholds. Do not trust llvm-cov's rounded
+percentage string. The minimum configured critical globs are:
+
+```text
+crates/magic-market-core/src/*.rs
+crates/magic-market-router/src/*.rs
+crates/magic-tdx-rs/src/codec/*.rs
+crates/magic-tdx-rs/src/protocol/*.rs
+crates/magic-tdx-rs/src/adapter.rs
+crates/magic-tdx-rs/src/service/mod.rs
+crates/magic-eastmoney-rs/src/*.rs
+crates/magic-cninfo-rs/src/*.rs
+crates/magic-ths-rs/src/*.rs
+crates/magic-cls-rs/src/*.rs
+crates/magic-baidu-rs/src/*.rs
+crates/magic-iwencai-rs/src/*.rs
+```
+
+`protocol/adjuster.rs` and `protocol/fq_service.rs` are the actual adjustment
+paths; the obsolete planned `adjustment/` directory does not exist.
+`service/mod.rs` is the actual common service entry; the obsolete planned
+`service/common.rs` does not exist.
+
+The checker must print overall and critical covered/total/percent/required
+values, reject each unmatched glob, require overall at least `80%` and require
+the combined critical aggregate at least `95%`.
+
+- [ ] **Step 5: Document the coverage contract**
+
+`tools/coverage/README.md` must describe the production-file boundary,
+exclusions, critical globs, both thresholds, invalid-report behavior, the real
+command and the prohibition on lowering/excluding coverage to make a release
+pass. Large `#[cfg(test)]` modules embedded in `src/*.rs` must be moved through
+`#[path = "../tests/..."]` or to integration tests before their lines may be
+accepted as production coverage evidence.
+
+- [ ] **Step 6: Make coverage a PR and release gate**
+
+The coverage workflow must run for pull requests and release candidates, invoke
+the same checker, and upload `coverage.json` with `if: always()` so a failed
+threshold still leaves auditable evidence. It must use current stable/default
+Rust, declare no MSRV, and contain no toolchain/component installation command.
+It first runs `cargo llvm-cov --version`; absence is an explicit infrastructure
+failure rather than permission to skip or install a tool ad hoc.
+
+- [ ] **Step 7: Verify and commit the coverage policy**
+
+Run:
+
+```bash
+python3 -m unittest discover -s tools/coverage -p 'test_*.py' -v
+bash -n tools/release/preflight.sh tools/release/package.sh
+git diff --check
+git add tools/coverage .github/workflows/security.yml
+git diff --cached --check
+git commit -m "test: enforce overall and critical coverage"
+```
+
+Expected: every checker boundary test passes and the policy is committed before
+the real report is generated.
+
+- [ ] **Step 8: Produce and enforce the real workspace artifact**
+
+Do not install a toolchain, rustup component or coverage tool in this task.
+First prove the already provisioned command exists, then run:
+
+```bash
+cargo llvm-cov --version
+cargo llvm-cov clean --workspace
 mkdir -p target/coverage
-RUSTUP_TOOLCHAIN=1.83.0 cargo llvm-cov \
-  --workspace --all-targets --all-features --locked --offline \
+CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=1 cargo llvm-cov \
+  --workspace --all-features --locked --offline \
   --json --output-path target/coverage/coverage.json \
   -- --test-threads=1
 python3 tools/coverage/check_thresholds.py target/coverage/coverage.json
 ```
 
-Expected: both commands exit zero; the JSON artifact contains production
-coverage and the checker prints workspace line coverage at least 80%.
-
-- [ ] **Step 4: Enforce Core and Router line coverage**
-
-Run:
-
-```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo llvm-cov \
-  -p magic-market-core -p magic-market-router \
-  --all-targets --all-features --locked --offline \
-  --fail-under-lines 95 -- --test-threads=1
-```
-
-Expected: exit zero with the provider-neutral data contracts and routing at
-least 95% line coverage. If this gate fails, stop Slice 0 and return to Gate B;
-do not lower the threshold.
+Expected: tests and checker exit zero; output reports overall at least `80%`,
+critical aggregate at least `95%`, and every critical glob present. If the
+command is unavailable or either threshold fails, Slice 0 remains blocked at
+Gate D. Add focused behavior/failure tests and rerun; never install a hidden
+tool, exclude production code or lower a threshold to create a pass.
 
 ## Task 8: Run bounded real live and load probes
 
@@ -890,13 +1094,15 @@ this exact content:
 - No capability is promoted by fallback, inference or a failed probe.
 
 ### Validation
-- Rust 1.83 release preflight: PASS
+- default local/current stable CI toolchain release preflight: PASS
+- no `rust-toolchain.toml`, MSRV declaration or fixed Rust selector: PASS
 - `cargo fmt --check`: PASS
 - strict workspace Clippy: PASS
 - workspace tests and rustdoc: PASS
 - compliance and docs links: PASS
-- workspace line coverage >= 80%: PASS
-- Core/Router line coverage >= 95%: PASS
+- production workspace line coverage >= 80%: PASS
+- configured critical data-chain aggregate coverage >= 95%: PASS
+- every configured critical coverage glob present: PASS
 - admitted live and bounded load probes: PASS; terminal evidence attached
 - unauthenticated iWencai negative probe: typed `Authentication`
 - release package identity and SHA256 manifest: PASS
@@ -969,7 +1175,10 @@ the only allowed upstream baseline in the future Slice 1 design; do not point
 - [ ] Core and Router remain provider-neutral.
 - [ ] Every advertised family has deterministic and real evidence.
 - [ ] Unverified capabilities remain false or explicitly unsupported.
-- [ ] Rust 1.83 preflight, compliance, docs, coverage and packaging pass.
+- [ ] Default local/current stable CI preflight, compliance, docs, coverage and
+      packaging pass without declaring an MSRV or installing a toolchain.
+- [ ] Production workspace coverage is at least 80%, the configured critical
+      aggregate is at least 95%, and every critical glob is present.
 - [ ] Independent review has no unresolved Critical or Important finding.
 - [ ] Draft PR evidence is complete and checks pass.
 - [ ] The merged upstream SHA is recorded for Slice 1.
