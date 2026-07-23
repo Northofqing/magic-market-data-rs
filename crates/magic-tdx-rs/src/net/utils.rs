@@ -115,21 +115,22 @@ pub fn today_yyyymmdd() -> u32 {
     let ts = now + 8 * 3600;
     let days = ts / 86400;
     // 从 epoch 天数计算年月日 (简化算法)
-    let mut y = 1970;
+    let mut y: u64 = 1970;
     let mut remaining = days;
     loop {
-        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
-            366
-        } else {
-            365
-        };
+        let days_in_year =
+            if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) {
+                366
+            } else {
+                365
+            };
         if remaining < days_in_year {
             break;
         }
         remaining -= days_in_year;
         y += 1;
     }
-    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
     let month_days: [u64; 12] = [
         31,
         if leap { 29 } else { 28 },

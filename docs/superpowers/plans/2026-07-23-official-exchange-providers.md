@@ -7,6 +7,9 @@
 **Goal:** Add official SSE, SZSE and HKEX read-only data sources behind the
 existing provider-neutral Core and Router contracts.
 
+**Status:** Tasks 1–8 complete. Deterministic, real live/load, full workspace
+preflight, packaging and release verification gates pass.
+
 **Architecture:** A new `magic-exchange-rs` crate owns three separately
 configured clients (`SseClient`, `SzseClient`, `HkexClient`) but shares bounded
 HTTP response, pacing, date-validation and JSON/JSONP helpers. Each client has
@@ -15,7 +18,7 @@ silently redirect or fail over to another. Official records retain their
 exchange provider identity and source timestamp; no public-web record is
 relabeled as official.
 
-**Constraints:** Rust 1.83.0, `#![forbid(unsafe_code)]`, HTTPS only, no account
+**Constraints:** stable Rust without a fixed MSRV, `#![forbid(unsafe_code)]`, HTTPS only, no account
 or Cookie discovery, no fixture fallback in live probes, strict non-empty
 complete batches, fixed remote page size plus local truncation, bounded
 response size, zero redirects and at least one second between production
@@ -41,7 +44,7 @@ request starts.
    production transport.
 3. Add SSE/SZSE/HKEX provider identities to capability output without
    advertising any family.
-4. Run crate tests and strict Clippy with Rust 1.83.
+4. Run crate tests and strict Clippy with stable Rust.
 
 ## Task 2: SSE official announcements
 
@@ -130,7 +133,8 @@ request starts.
 **Steps:**
 
 1. Map the verified `getTimeData` response to Core Quote/OrderBook contracts.
-2. Convert source lots to shares exactly once and test the factor.
+2. Preserve source quantities in lots; Core `Quantity` has no unit tag, so
+   forbid an unprovable multiplication by 100 and lock the behavior in tests.
 3. Require source market time, instrument identity, ordered book levels and
    non-crossed prices.
 4. Keep SSE Quote unsupported while its public host requires obsolete TLS.
@@ -156,7 +160,7 @@ request starts.
 ## Task 8: Release gate
 
 1. Run format, workspace check/test, strict Clippy, rustdoc/doctest, docs links,
-   compliance and shell syntax with Rust 1.83 and `--locked --offline`.
+   compliance and shell syntax with stable Rust and `--locked --offline`.
 2. Run every new real probe and save bounded performance evidence.
 3. Run isolated release preflight/package verification.
 4. Commit only tracked project inputs, leave unrelated user files unstaged,

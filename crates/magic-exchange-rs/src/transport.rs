@@ -232,10 +232,20 @@ pub(crate) fn validate_response(
         .as_deref()
         .ok_or_else(|| ExchangeError::Schema("Content-Type is missing".into()))?
         .to_ascii_lowercase();
-    if !allowed_content_types
-        .iter()
-        .any(|allowed| content_type.contains(allowed))
-    {
+    let media_type = content_type
+        .split(';')
+        .next()
+        .map(str::trim)
+        .unwrap_or_default();
+    let accepted = allowed_content_types.iter().any(|allowed| match *allowed {
+        "json" => media_type == "application/json" || media_type.ends_with("+json"),
+        "javascript" => matches!(
+            media_type,
+            "application/javascript" | "text/javascript" | "application/x-javascript"
+        ),
+        exact => media_type == exact,
+    });
+    if !accepted {
         return Err(ExchangeError::Schema(format!(
             "unexpected Content-Type {content_type:?}"
         )));
@@ -295,6 +305,9 @@ mod tests {
         let mut html = valid.clone();
         html.content_type = Some("text/html".into());
         assert!(validate_response(&request, &html, &["json"]).is_err());
+        let mut fake_javascript = valid.clone();
+        fake_javascript.content_type = Some("text/notjavascript".into());
+        assert!(validate_response(&request, &fake_javascript, &["javascript"]).is_err());
         let mut oversized = valid;
         oversized.body = vec![0; MAX_RESPONSE_BYTES + 1];
         assert!(validate_response(&request, &oversized, &["json"]).is_err());

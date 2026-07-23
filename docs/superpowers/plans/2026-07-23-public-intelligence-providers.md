@@ -12,7 +12,7 @@ sources: HTTPS only, hostname allowlists, no redirects, bounded responses,
 bounded page sizes, conservative request pacing, explicit authentication errors
 and no reuse of desktop login state, Cookies or account data.
 
-**Constraints:** Rust 1.83, `unsafe_code = "forbid"`, no simulated success, no
+**Constraints:** Rust stable, `unsafe_code = "forbid"`, no simulated success, no
 credential logging, record-level `SourceEvidence`, no undocumented field
 inference, no production claim without a successful real probe.
 
@@ -34,7 +34,7 @@ inference, no production claim without a successful real probe.
 - [x] Add optional source-semantic fields without guessing missing values.
 - [x] Preserve checked deserialization invariants for coupled optional fields.
 - [x] Cover serde bypass attempts and Router evidence/forwarding behavior.
-- [x] Pass Core, Router and analysis tests plus strict Clippy on Rust 1.83.
+- [x] Pass Core, Router and analysis tests plus strict Clippy on Rust stable.
 
 Required field additions:
 
@@ -164,7 +164,7 @@ Required field additions:
 
 - [ ] Document endpoint class, authorization assumptions, host allowlists,
   response limits, pacing, source times, live evidence and residual gaps.
-- [ ] Run format, Rust 1.83 locked all-target check and workspace tests.
+- [ ] Run format, Rust stable locked all-target check and workspace tests.
 - [ ] Run strict workspace Clippy, rustdoc, doctests, documentation links,
   compliance and release preflight.
 - [ ] Complete independent code review and close every P0/P1.

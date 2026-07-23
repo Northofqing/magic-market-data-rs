@@ -43,10 +43,11 @@ This is a connectivity and non-empty-result probe, not a latency or sustained
 throughput benchmark. Live latency and throughput remain environment-dependent
 and are not inferred from the parser microbenchmark above.
 
-## MSRV verification
+## Stable toolchain verification
 
-After a clean build, `RUSTUP_TOOLCHAIN=1.83.0 cargo check --workspace
---all-targets --offline` passes with the committed lockfile.
+After a clean build, `cargo check --workspace --all-targets --locked --offline`
+passes with the repository's rolling stable toolchain. The project does not
+declare a fixed MSRV.
 
 ## Tencent HTTPS bounded load probe
 
@@ -159,7 +160,7 @@ parser behavior, not endpoint SLA or permission for sustained traffic.
 
 ## iWencai authenticated probe status
 
-The iWencai deterministic authentication/search suite passes on Rust 1.83.
+The iWencai deterministic authentication/search suite passes on stable Rust.
 Without `MAGIC_IWENCAI_API_KEY`, the real probe exits non-zero with the typed
 `Authentication` error as designed; it does not import a browser session or
 print simulated documents. `semantic_search` consequently remains false in the
@@ -197,34 +198,39 @@ and enforce at least one second between request starts. These runs verify
 current connectivity, non-empty parsing and pacing only; they are not endpoint
 SLAs or permission for sustained traffic.
 
-## SSE/SZSE official announcement probes
+## SSE/SZSE/HKEX official mixed probes
 
-On 2026-07-23 the combined release live probe returned three real official
-announcements for 华电辽能 `600396.SH` from SSE and three for 五粮液
-`000858.SZ` from SZSE. Every record printed the source security, publication
-date, canonical/PDF URL and SSE/SZSE evidence, and the process ended with
-`live_probe_status=passed`.
+On 2026-07-23 the production-trait live probe passed all admitted official
+families: SSE/SZSE announcements, SSE/SZSE dragon-tiger entries and one
+complete buy-five/sell-five seat group per venue, SZSE Quote/five-level book,
+and HKEX DailyStat for both northbound channels. SSE returned three
+dragon-tiger entries for `600396 / 2026-07-22`; SZSE returned two for
+`000603 / 2026-07-23`. HKEX returned one strict record and ten ranked
+turnover securities for each channel.
 
-The final alternating, serial load run recorded:
+The final alternating serial mixed run exercised eight high-level operations:
 
 ```text
-attempts=4 successes=4 failures=0
-measurement_elapsed_ms_excluding_output=4304
-operation_elapsed_total_ms=2458 pacing_wait_total_ms=1845
-attempt_throughput_per_second=0.9294
-attempt_latency_p50_ms=1082
-attempt_latency_p95_ms=1214
-attempt_latency_p99_ms=1214
-attempt_latency_max_ms=1214
-minimum_attempt_start_gap_ms=1003
+attempts=8 successes=8 failures=0
+measurement_elapsed_ms_excluding_output=7510
+wall_elapsed_ms_including_attempt_output=7511
+operation_elapsed_total_ms=2771 pacing_wait_total_ms=4738
+attempt_throughput_per_second=1.0652
+attempt_latency_min_ms=36
+attempt_latency_p50_ms=120
+attempt_latency_p95_ms=1201
+attempt_latency_p99_ms=1201
+attempt_latency_max_ms=1201
+minimum_attempt_start_gap_ms=1000
 load_probe_status=passed
 ```
 
-These are high-level announcement-attempt metrics sampled before batch output,
-not HTTP request throughput; pagination can issue multiple requests inside one attempt. SZSE's
-sampled detail page returned HTTP 200 and its sampled PDF returned
-`application/pdf`. SSE supplied official PDF URLs, but a sampled HEAD request
-was answered with CDN bot HTML, so no SSE PDF-download success is claimed.
+The eight operations were SSE/SZSE announcements, SZSE Quote/order book,
+SSE/SZSE dragon-tiger entries and both HKEX northbound channels. These are
+high-level attempt metrics sampled before batch output, not HTTP throughput:
+pagination and seat detail retrieval can issue multiple internally paced
+requests. The run verifies current connectivity, parsing, evidence and pacing
+only; it is not an exchange SLA or sustained-traffic permission.
 
 ## Eastmoney public-web probe status
 

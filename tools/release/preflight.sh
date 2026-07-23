@@ -15,15 +15,15 @@ trap cleanup_preflight EXIT
 
 cargo fmt --all -- --check
 bash -n tools/release/preflight.sh tools/release/package.sh
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo check --workspace --all-targets --locked --offline
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo test --workspace --all-targets --locked --offline
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo clippy --workspace --all-targets --locked --offline -- -D warnings
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTDOCFLAGS='-D warnings' RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" RUSTDOCFLAGS='-D warnings' \
   cargo doc --workspace --no-deps --locked --offline
-CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo test --workspace --doc --locked --offline
 bash tools/docs/check_links.sh
 bash tools/compliance/check.sh

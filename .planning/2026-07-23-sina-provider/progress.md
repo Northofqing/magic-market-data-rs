@@ -22,7 +22,7 @@
   deterministic/live/load gates, documentation, packaging, delivery and the
   post-Sina EMQuant entitlement check.
 - Proved the initial missing-package red state, added the sixth workspace crate
-  and passed the public capability/trait compile contract on Rust 1.83.
+  and passed the public capability/trait compile contract on Rust stable.
 - Added strict HTTPS transport and GB18030 snapshot parsing with exact
   cardinality/order, redundant top-of-book checks, calendar source time,
   OHLC validation and uniform source-share-to-lot normalization.
@@ -36,7 +36,7 @@
 - Implemented current `MinuteData` by selecting the latest date from a bounded
   300-row one-minute window and accumulating source volume/amount with overflow
   checks. Historical dates fail before transport. All 19 crate/contract tests
-  pass on Rust 1.83.
+  pass on Rust stable.
 - Added live and load probes plus the crate README. The real live probe passed
   for 华电辽能、平安银行、太湖远大, printed all supported families and preserved
   the genuine partial limit-up ask side.
@@ -47,7 +47,7 @@
   truth, seven-probe package layout, egress/health-check runbook, changelog and
   compliance rules. Documentation links, compliance and diff checks pass.
 - Ran the full clean release preflight after the Sina changes: formatting,
-  Rust 1.83 all-target checks/tests, strict Clippy, rustdoc/doc tests,
+  Rust stable all-target checks/tests, strict Clippy, rustdoc/doc tests,
   documentation links, compliance and diff checks all passed.
 - Re-ran the activated Choice/EMQuant account. Login and live money flow now
   pass; quote, order book and minute history return the SDK's

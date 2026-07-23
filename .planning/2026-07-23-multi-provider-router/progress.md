@@ -30,14 +30,14 @@
 - After Choice review approval, reran the official EMQuant probe. The SDK still
   returned `10001003` for every supported family with yesterday's activation
   token, so the official activator was opened for a post-approval token refresh.
-- Passed the isolated Rust 1.83 full-workspace release preflight.
+- Passed the isolated Rust stable full-workspace release preflight.
 - Local review corrected Tencent `Core` errors from terminal caller failures to
   retryable protocol failures and added successful-batch passthrough coverage
   for every Core family adapter.
 - The first activator launch did not refresh the token and a second SDK probe
   still returned `10001003`; the activator is now running directly from its
   runtime directory so the post-approval SMS refresh can write `userInfo`.
-- Passed the final post-review isolated Rust 1.83 release preflight, including
+- Passed the final post-review isolated Rust stable release preflight, including
   all workspace tests, strict Clippy, rustdoc/doctests, links and compliance.
 - Committed the audited routing integration as `f8ca94e`, generated all five
   release probes from a clean tracked worktree and verified every packaged file

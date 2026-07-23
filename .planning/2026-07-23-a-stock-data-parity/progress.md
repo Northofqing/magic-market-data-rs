@@ -49,7 +49,7 @@
 - Task 1 RED test failed exactly on the missing new Provider/asset variants,
   validated primitives and `SourceEvidence`.
 - Tasks 1-2 are GREEN: all seven focused identity/value/evidence tests pass on
-  Rust 1.83 with the locked offline dependency set.
+  Rust stable with the locked offline dependency set.
 - The first Task 3 run was blocked by `ENOSPC`; systematic diagnosis found only
   123 MiB free and a 547 MiB reproducible `target/debug` cache. Removing that
   cache restored 669 MiB without touching release/runtime/source artifacts.
@@ -80,14 +80,14 @@
 - Task 7 focused tests are GREEN: four tests cover warm-up/order, unit and zero
   semantics, empty seal-rate denominator, duplicate provider rejection and
   retained multi-source evidence.
-- Task 7 strict Clippy passes on Rust 1.83 with warnings denied.
+- Task 7 strict Clippy passes on Rust stable with warnings denied.
 - Audited the root README, changelog, compliance and release scripts for Slice
   A. The analysis crate is library-only; documentation and the exact workspace
   compliance allowlist require updates, while the seven existing binary probes
   remain unchanged.
 - Updated README/CHANGELOG with an explicit “contracts implemented, Providers
   pending” intelligence matrix and updated the compliance workspace allowlist.
-- Slice A formatting, `git diff --check` and Rust 1.83 locked/offline
+- Slice A formatting, `git diff --check` and Rust stable locked/offline
   all-target workspace check pass.
 - Slice A full locked/offline all-target workspace test suite passes, including
   228 TDX unit tests and every existing Provider regression.
@@ -104,7 +104,7 @@
 - Focused review regressions and strict full-workspace Clippy pass after the
   fixes.
 - The clean-target release preflight passes after review fixes: format, Rust
-  1.83 check, all targets, strict Clippy, rustdoc/doctest, links, compliance and
+  then-current toolchain check, all targets, strict Clippy, rustdoc/doctest, links, compliance and
   diff checks are all green.
 - Slice A committed as `17ebc9e` and pushed to `origin/main`.
 - The user's untracked requirements document remained unstaged.
@@ -231,8 +231,8 @@
 - Pending in this slice: Sina integration guide, performance evidence, deployment guide, changelog, full workspace gates, independent review, commit, and push.
 - Completed the Sina integration guide, performance evidence, deployment guide, and changelog updates.
 - Format, documentation-link, and diff-whitespace checks pass.
-- First full Rust 1.83 check overlapped the final shared Core option write and observed an inconsistent intermediate tree; Core now exposes the expected widened contract and the gate is being rerun.
-- Confirmed the default target failure was stale incremental metadata: a fresh isolated Rust 1.83 target passes full workspace check.
+- First full Rust stable check overlapped the final shared Core option write and observed an inconsistent intermediate tree; Core now exposes the expected widened contract and the gate is being rerun.
+- Confirmed the default target failure was stale incremental metadata: a fresh isolated Rust stable target passes full workspace check.
 - Full isolated `cargo test --workspace --all-targets` passes, including 29 Sina tests, 24 Tencent tests, 228 TDX tests, Core/Router/analysis and probes.
 - Strict workspace Clippy, rustdoc with warnings denied, compliance, format, documentation links, and diff-whitespace checks pass.
 - Remaining Slice B gates: doctests, independent review findings, final diff audit, release preflight, commit, and push.
@@ -267,7 +267,7 @@
   CNInfo/Tonghuashun and CLS/Baidu/iWencai will run as isolated parallel lanes
   after the shared gate passes.
 - Shared Core widening is implemented for all audited source fields. Core,
-  Router and analysis deterministic tests pass on Rust 1.83, as do format and
+  Router and analysis deterministic tests pass on Rust stable, as do format and
   focused strict Clippy.
 - News is not yet falsely advertised as implemented: Core already has
   `NewsItem`/`NewsProvider`, while real Eastmoney instrument-news and CLS
@@ -280,9 +280,9 @@
 - Refreshed `Cargo.lock` for all six Provider crates. The first broad resolver
   update selected Rust 1.86 ICU/zeroize versions; main restored every prior
   dependency version and retained only the six local packages plus the
-  Rust-1.83-compatible `sha1`/`md-5` dependency graph.
+  then-compatible `sha1`/`md-5` dependency graph.
 - Downloaded the new locked crypto sources, then passed all Core, Router and
-  analysis tests on Rust 1.83. The new PostClose record/request and Router
+  analysis tests on Rust stable. The new PostClose record/request and Router
   adapter are covered in those passing suites.
 - Added integration contracts for CLS global news, Baidu unadjusted
   MA5/10/20 daily bars and authenticated iWencai semantic search. Each records
@@ -301,7 +301,7 @@
 
 - Core and Router contracts were widened for the public-provider domains, including an explicit `PostCloseFlow` contract that remains unsupported until a source with verified 15:35 semantics is available.
 - Six provider crates are being implemented in three parallel lanes: Eastmoney; CNInfo plus THS; CLS plus Baidu plus iWencai.
-- CLS/Baidu/iWencai implementation is complete and its focused Rust 1.83 test, Clippy, rustdoc, doctest, compliance, live, and load gates have passed.
+- CLS/Baidu/iWencai implementation is complete and its focused Rust stable test, Clippy, rustdoc, doctest, compliance, live, and load gates have passed.
 - CNInfo/THS focused tests, Clippy, live, and load probes passed initially; final audit fixes for strict-empty behavior and THS limit-pool field semantics are in progress.
 - Eastmoney final audit fixes for strict-empty behavior, shared transport serialization, and timestamp error handling are in progress.
 - Remaining integration work after the implementation lanes close: cross-review, root-level real probes and load probes, comprehensive integration/deployment/performance documentation, full-workspace quality gates, commit, and push.
@@ -310,7 +310,7 @@
 
 - CNInfo and THS audit blockers are closed: strict empty responses now return typed `Incomplete`,
   THS limit-pool semantics are corrected, and CNInfo canonical announcement URLs were verified.
-- Focused Rust 1.83 all-target testing passed 17/17; strict Clippy, rustdoc, formatting,
+- Focused Rust stable all-target testing passed 17/17; strict Clippy, rustdoc, formatting,
   compliance, and link checks passed in the lane.
 - CNInfo live returned three announcements and three investor Q&A records; its serial load run
   completed 3/3 with a 1002 ms minimum request-start gap.
@@ -319,12 +319,79 @@
 - Added complete integration contracts for Eastmoney public web, CNInfo, and THS under
   `docs/integrations/`; root-level reruns and exact latency capture remain before release.
 
+## 2026-07-23 official exchange completion
+
+- Parallel work is active for implementation review and documentation/toolchain
+  audits while the main lane completes production wiring.
+- Removed the fixed Rust stable manifest/workflow/preflight baseline in favor of
+  the rolling stable toolchain; historical documentation cleanup and stable
+  gates remain.
+- HKEX northbound daily statistics and SZSE official Quote/order book have
+  deterministic and real-success evidence.
+- Official SSE/SZSE dragon-tiger parsers have deterministic and real-success
+  evidence; production trait wiring, pagination/atomic seat handling, probes,
+  documentation and release gates remain.
+- Completed production `DragonTigerData` wiring for SSE/SZSE. SZSE reads all
+  declared pages, rejects cross-page duplicates and returns only atomic
+  buy-five/sell-five groups.
+- Router adapters now enforce requested instrument/date/limit, entry-ID
+  uniqueness, seat side/rank uniqueness and complete seat groups.
+- Official exchange deterministic gates pass: 37 Provider tests plus two
+  explicitly ignored direct-network tests, 9 Router intelligence tests, format
+  and strict Clippy.
+- Final production-trait live probe passed announcements, SSE/SZSE
+  dragon-tiger entries/seats, SZSE Quote/order book and both HKEX northbound
+  channels. The final serial mixed load run passed 8/8 attempts with zero
+  failures, 1.0652 attempts/s, p50 120 ms, p95/max 1201 ms and a 1000 ms
+  minimum start gap.
+- Removed fixed toolchain versions from manifests, CI, preflight and tracked
+  documentation; the repository now follows rolling stable with no fixed
+  MSRV.
+- Closed the final Core review finding by making `DragonTigerEntry` and
+  `DragonTigerSeat` immutable checked contracts. Constructors and Serde now
+  reject missing/mismatched source dates, ranks above five, negative gross
+  amounts, inconsistent net amounts and side/amount contradictions.
+- Final focused Core/Router/Eastmoney/Exchange tests, strict Clippy, all-target
+  workspace check, documentation/compliance checks, official live probe and
+  8/8 serial mixed load probe all pass after that contract hardening.
+- Final re-review tightened the fixed currency tolerance to one cent and added
+  a `1e15` malicious-input regression, preventing large-value relative
+  tolerance bypasses.
+- Eastmoney seat retrieval now rejects `limit < 10`, fetches a sixth sentinel
+  row per side and rejects anything other than one atomic ten-record group.
+  Focused tests cover limits 9/10/100 and incomplete/oversized groups; the
+  final unrestricted real Eastmoney probe passed every advertised family with
+  `failures=0` and `live_probe_status=passed`.
+- Updated every remaining calendar helper to the current rolling-stable
+  `is_multiple_of` API after the latest Clippy enabled that lint; focused
+  Core/TDX/Tencent/Sina/EMQuant tests and strict workspace Clippy pass.
+- The final isolated release preflight passes in full: format, all-target
+  workspace check/test, strict Clippy, rustdoc, doctests, documentation links,
+  compliance and whitespace gates.
+- Two independent final reviews report P0=0 and P1=0. Non-blocking future test
+  enhancements are an HKEX Shanghai-channel positive offline fixture and a
+  dedicated seat-detail load sample; both paths already have real live
+  success evidence.
+- The formal release review then found two additional P1s: production seat
+  truncation could hide a sixth Eastmoney row, and official probes accepted
+  incomplete batches. Both are closed with sentinel retrieval, strict
+  completeness/cardinality gates and regressions. Post-fix real probes pass:
+  Eastmoney reports zero failures, official live reports passed, and the
+  quality-gated official load run reports 8/8 successes with zero failures.
+- The final remediation review requested one production-path regression rather
+  than accepting mapper-only coverage. A scripted transport now proves 5/5
+  seats succeed and both 6/5 and 5/6 fail through
+  `EastmoneyClient::dragon_tiger_seats -> fetch_rows`; raw cardinality is
+  checked before mapping. The independent release reviewer now reports P0=0,
+  P1=0 and Ready=Yes, and the post-test real Eastmoney probe still passes with
+  zero failures.
+
 ## 2026-07-23 cross-review remediation
 
 - Independent review reproduced and closed CNInfo multi-page overlap, CNInfo/THS exchange identity
   corruption, and premature batch observation timestamps.
 - Independent Core/Router review closed checked-construction, legacy-serde and mandatory
-  PostClose source-time gaps, then the root reran 1.83 Core/Router/analysis/Eastmoney tests and
+  PostClose source-time gaps, then the root reran Core/Router/analysis/Eastmoney tests and
   strict Clippy successfully.
 - Root-level live/load reruns are complete for Eastmoney, CNInfo, THS, CLS and Baidu; iWencai
   correctly exits with a typed missing-key authentication error.
@@ -337,7 +404,7 @@
 - Remaining before this checkpoint can be committed: Eastmoney P1 closure and re-review,
   exchange announcement integration/live gates, full workspace gates, release package, precise
   staging and push.
-- Final CNInfo/THS/CLS/Baidu identity/schema remediation passed 45 Rust 1.83 tests and strict
+- Final CNInfo/THS/CLS/Baidu identity/schema remediation passed 45 Rust stable tests and strict
   Clippy. Independent re-review reports no P0/P1; its sole Baidu documentation P2 was corrected.
 - Eastmoney's final source-evidence remediation now requires response `qdate` for all limit-pool
   rows, validates seal clocks, and keeps keyword news unadvertised/unsupported because the rows

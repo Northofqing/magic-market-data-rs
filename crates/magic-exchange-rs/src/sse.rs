@@ -5,8 +5,9 @@ use crate::transport::{
 };
 use crate::{ExchangeError, ProviderCapabilities};
 use magic_market_core::{
-    Announcement, Announcements, AssetClass, ContentCapabilities, DataBatch, Exchange, HttpsUrl,
-    InstrumentDateRangeRequest, InstrumentId, NonEmptyText, Provenance, ProviderId, SourceEvidence,
+    Announcement, Announcements, AssetClass, Capabilities, CapitalCapabilities,
+    ContentCapabilities, DataBatch, Exchange, HttpsUrl, InstrumentDateRangeRequest, InstrumentId,
+    NonEmptyText, Provenance, ProviderId, SignalCapabilities, SourceEvidence,
 };
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -17,6 +18,7 @@ use url::Url;
 const ENDPOINT: &str = "https://query.sse.com.cn/security/stock/queryCompanyBulletin.do";
 const HOST: &str = "query.sse.com.cn";
 const PATH: &str = "/security/stock/queryCompanyBulletin.do";
+const DRAGON_TIGER_PATH: &str = "/infodisplay/showTradePublicFile.do";
 const CALLBACK: &str = "magicExchange";
 const PAGE_SIZE: u32 = 50;
 const MAX_RECORDS: u32 = 500;
@@ -109,17 +111,47 @@ impl SseClient {
     pub const fn capabilities() -> ProviderCapabilities {
         ProviderCapabilities {
             provider: ProviderId::Sse,
+            market: Capabilities::new(),
             content: ContentCapabilities {
                 instrument_news: false,
                 global_news: false,
                 announcements: true,
                 investor_questions: false,
             },
+            capital: CapitalCapabilities {
+                fund_flow_series: false,
+                board_flow: false,
+                margin: false,
+                block_trades: false,
+                holder_count: false,
+                lockups: false,
+                dividends: false,
+                post_close_flow: false,
+                northbound_daily_statistics: false,
+            },
+            signals: SignalCapabilities {
+                board_memberships: false,
+                strong_stock_reasons: false,
+                dragon_tiger: true,
+                market_rankings: false,
+                popularity: false,
+                concept_hits: false,
+            },
         }
     }
 
     fn execute(&self, request: HttpRequest) -> Result<HttpResponse, ExchangeError> {
         validate_request(&request, HttpMethod::Get, HOST, PATH)?;
+        let response = self.gate.execute(|| self.transport.execute(&request))?;
+        validate_response(&request, &response, &["json", "javascript"])?;
+        Ok(response)
+    }
+
+    pub(crate) fn execute_dragon_tiger(
+        &self,
+        request: HttpRequest,
+    ) -> Result<HttpResponse, ExchangeError> {
+        validate_request(&request, HttpMethod::Get, HOST, DRAGON_TIGER_PATH)?;
         let response = self.gate.execute(|| self.transport.execute(&request))?;
         validate_response(&request, &response, &["json", "javascript"])?;
         Ok(response)

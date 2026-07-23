@@ -142,5 +142,5 @@ Unsupported 边界。
 p50/p95/max 延迟，不包含自动重试。发布包新增 Sina live/load 两个探针，继续使用
 干净隔离 target 和 SHA-256 清单。
 
-最终通过 Rust 1.83 workspace check/test、strict Clippy、rustdoc/doctest、文档链接、
+最终通过 Rust stable workspace check/test、strict Clippy、rustdoc/doctest、文档链接、
 合规、真实 probe、有界并发和发布包校验后，才允许把能力写入 README。

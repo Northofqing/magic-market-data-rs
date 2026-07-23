@@ -17,7 +17,7 @@ sessions, credentials, portfolios, or order data.
 | Instrument and industry reports | `ResearchReports` | `reportapi.eastmoney.com` | title, institution, author, rating, industry, publication time, EPS forecasts, PDF URL |
 | Instrument fund flow | `FundFlowSeries` | `push2.eastmoney.com`, `push2his.eastmoney.com` | minute and daily parsers/mapping implemented, but `fund_flow_series=false` until a successful live admission probe |
 | Board fund flow | `BoardFlows` | `push2.eastmoney.com` | industry/concept/region; 1/5/10-day ranking, return, main flow, daily tiers, leader when supplied |
-| Dragon-tiger list | `DragonTigerData` | `datacenter-web.eastmoney.com` | entries plus buy/sell seats, amounts, reason, turnover and independent side ranks |
+| Dragon-tiger list | `DragonTigerData` | `datacenter-web.eastmoney.com` | entries plus one atomic buy-five/sell-five seat group, amounts, reason, turnover and independent side ranks; seat limit must be at least 10 |
 | Margin | `MarginData` | `datacenter-web.eastmoney.com` | financing and securities-lending balances, buys, repayments and quantities |
 | Block trades | `BlockTrades` | `datacenter-web.eastmoney.com` | price, close, premium, volume, amount, buyer and seller |
 | Holder counts | `HolderCounts` | `datacenter-web.eastmoney.com` | holders, change, ratio and average free shares |
@@ -110,17 +110,17 @@ let batch = client.fund_flow_series(&request)?;
 Deterministic gates:
 
 ```text
-RUSTUP_TOOLCHAIN=1.83.0 cargo fmt -p magic-eastmoney-rs -- --check
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-eastmoney-rs --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo clippy -p magic-eastmoney-rs --all-targets --locked --offline -- -D warnings
-RUSTDOCFLAGS="-D warnings" RUSTUP_TOOLCHAIN=1.83.0 cargo doc -p magic-eastmoney-rs --no-deps --locked --offline
+cargo fmt -p magic-eastmoney-rs -- --check
+cargo test -p magic-eastmoney-rs --all-targets --locked --offline
+cargo clippy -p magic-eastmoney-rs --all-targets --locked --offline -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc -p magic-eastmoney-rs --no-deps --locked --offline
 ```
 
 The bounded live probe prints capabilities, every normalized field, provenance,
 quality, and every record for every admitted family:
 
 ```text
-RUSTUP_TOOLCHAIN=1.83.0 cargo run -p magic-eastmoney-rs --example live_probe --release --locked
+cargo run -p magic-eastmoney-rs --example live_probe --release --locked
 ```
 
 Fund-flow and keyword-only instrument news are still called as unadmitted
@@ -149,7 +149,7 @@ MAGIC_EASTMONEY_LOAD_REQUESTS=6 \
 MAGIC_EASTMONEY_LOAD_CONCURRENCY=1 \
 MAGIC_EASTMONEY_LOAD_PACING_MS=1000 \
 MAGIC_EASTMONEY_LOAD_OPERATION=mixed \
-RUSTUP_TOOLCHAIN=1.83.0 cargo run -p magic-eastmoney-rs --example load_probe --release --locked
+cargo run -p magic-eastmoney-rs --example load_probe --release --locked
 ```
 
 `MAGIC_EASTMONEY_LOAD_OPERATION` accepts `mixed`, `research`, `fund-flow`,

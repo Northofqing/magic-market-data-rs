@@ -16,7 +16,7 @@ its deployment boundary, package its probes, and deliver the result to Git.
   strictly validated.
 - Unsupported or unverified families must return explicit errors.
 - Keep bounded timeouts, response sizes, request counts and concurrency.
-- Remain compatible with Rust/Cargo 1.83.0 and `unsafe_code = "forbid"`.
+- Remain compatible with rolling stable Rust/Cargo and `unsafe_code = "forbid"`.
 
 ## Phases
 

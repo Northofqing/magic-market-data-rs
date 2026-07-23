@@ -6,7 +6,7 @@
 
 **Architecture:** Repository scripts are the evidence interface. Deterministic gates run on every pull request; expensive differential/coverage/security jobs run in CI; fixed-host A/B and live diagnostics are explicit manual workflows whose raw JSON is preserved and whose absence blocks release readiness rather than becoming a skip-success.
 
-**Tech Stack:** Rust 1.83/stable, GitHub Actions, actions/checkout v6.0.2 pinned at `de0fac2e4500dabe0009e67214ff5f5447ce83dd`, cargo-llvm-cov, cargo-semver-checks, cargo-deny, cargo-audit, Criterion JSON, Python 3 standard library evidence checkers.
+**Tech Stack:** Rust stable, GitHub Actions, actions/checkout v6.0.2 pinned at `de0fac2e4500dabe0009e67214ff5f5447ce83dd`, cargo-llvm-cov, cargo-semver-checks, cargo-deny, cargo-audit, Criterion JSON, Python 3 standard library evidence checkers.
 
 ---
 
@@ -299,9 +299,12 @@ Every workflow sets `permissions: contents: read`, pins checkout to `de0fac2e450
 
 `ci.yml` runs fmt/strict Clippy/tests/doctests/docs/examples/compliance/docs checks on `ubuntu-24.04` x64, `ubuntu-24.04-arm` Arm64, `macos-15-intel` x64, `macos-15` Arm64, and `windows-2025` x64. Add `cargo check --target aarch64-pc-windows-msvc` on Windows and fail the job if the target cannot build. Arm64 hosted-preview unavailability blocks the required check; it is not `continue-on-error`.
 
-- [ ] **Step 3: Implement explicit Rust 1.83 MSRV**
+- [ ] **Step 3: Implement rolling stable toolchain validation**
 
-`msrv.yml` installs exactly `1.83.0`, prints `rustc -Vv`, and runs `cargo +1.83.0 check --workspace --all-targets --locked` plus core/TDX deterministic tests. Dependency updates must keep this job green or be rejected.
+CI installs the current stable toolchain, prints `rustc -Vv`, and runs
+`cargo check --workspace --all-targets --locked` plus core/TDX deterministic
+tests. No fixed MSRV job is maintained; dependency updates must keep stable
+green or be rejected.
 
 - [ ] **Step 4: Implement coverage, SemVer, dependency, and provenance jobs**
 
@@ -382,7 +385,7 @@ cargo doc --workspace --all-features --no-deps
 bash tools/compliance/check.sh
 bash tools/docs/check_links.sh
 python3 tools/docs/check_docs.py
-cargo +1.83.0 check --workspace --all-targets --locked
+cargo check --workspace --all-targets --locked
 ```
 
 Expected: every command exits `0` at the exact release-candidate commit.

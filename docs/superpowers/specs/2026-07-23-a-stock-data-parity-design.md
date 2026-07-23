@@ -37,7 +37,7 @@ commercial SLA.
 
 ## 2. Non-negotiable rules
 
-- Rust 1.83 remains the minimum supported toolchain.
+- Rust stable remains the minimum supported toolchain.
 - Workspace libraries keep `#![forbid(unsafe_code)]`.
 - Core never depends on a concrete Provider.
 - Every accepted record carries provider, source timestamp when supplied,
@@ -490,7 +490,7 @@ The release package contains:
 No API key, cookie, activation state, downloaded PDF, source fixture containing
 personal data or desktop-client artifact is packaged.
 
-Preflight expands to cover every workspace member on Rust 1.83:
+Preflight expands to cover every workspace member on Rust stable:
 
 - format
 - locked build/check

@@ -14,7 +14,7 @@ artifact without modifying the external `stock_analysis` repository.
 - Never merge records from different providers into one successful batch.
 - Never add cache, daemon, database, HTTP or downstream application policy to
   the first router release.
-- Keep Rust 1.83 compatibility and the existing strict release gates.
+- Keep Rust stable compatibility and the existing strict release gates.
 - Preserve the user's untracked
   `docs/integrations/stock-analysis-market-data-requirements.md`.
 
@@ -57,7 +57,7 @@ Status: complete
 
 Status: complete
 
-- Run formatting, Rust 1.83 workspace check/test/Clippy, rustdoc/doctest, docs,
+- Run formatting, Rust stable workspace check/test/Clippy, rustdoc/doctest, docs,
   compliance and diff checks.
 - Perform a local self-review because subagent dispatch is prohibited by the
   active developer instruction.
@@ -67,7 +67,7 @@ Completion evidence:
 
 - The strict real route preserved the TDX quality rejection and selected a
   complete Tencent Quote with source time.
-- The final post-review Rust 1.83 preflight passed.
+- The final post-review Rust stable preflight passed.
 - The five-probe release package was generated from a clean tracked worktree
   and every SHA-256 entry passed.
 - Only the user's untracked requirements document remains outside Git.

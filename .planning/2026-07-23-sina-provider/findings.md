@@ -7,7 +7,7 @@
   `docs/integrations/stock-analysis-market-data-requirements.md` must remain
   untouched and uncommitted.
 - The workspace currently contains Core, Router, TDX, EMQuant and Tencent
-  crates and pins Rust 1.83.0.
+  crates and pins Rust stable.
 - Tencent is the closest reference provider: it uses a cloneable pooled
   `ureq` agent, HTTPS-only transport, positive timeouts, redirect refusal,
   a 1 MiB response limit and a 50-symbol batch limit.

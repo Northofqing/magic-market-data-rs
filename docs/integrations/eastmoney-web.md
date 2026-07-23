@@ -11,7 +11,7 @@
 | 研报 | `ResearchReports` | 个股、行业研报，作者、评级、行业、盈利预测和 PDF URL |
 | 个股资金流 | `FundFlowSeries` | 分钟与日级主力/超大/大/中/小单净流入 |
 | 板块资金流 | `BoardFlows` | 行业、概念、地域的涨跌、分档净流入和领涨股 |
-| 龙虎榜 | `DragonTigerData` | 个股上榜明细与营业部买卖净额 |
+| 龙虎榜 | `DragonTigerData` | 个股上榜明细；席位保守返回一个完整买五/卖五原子组，席位请求 `limit >= 10` |
 | 资本数据 | `MarginData`、`BlockTrades`、`HolderCounts`、`LockupEvents`、`DividendPlans` | 融资融券、大宗交易、股东户数、限售解禁、分红送转 |
 | 打板 | `LimitPools` | 涨停、炸板、跌停、昨日涨停 |
 | 热度 | `PopularityData` | 当前人气排名，并保留榜单与行情的两份证据 |

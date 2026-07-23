@@ -56,7 +56,7 @@ SLA. TDX Quote source time must not be represented as verified.
 
 ## Commands and examples
 
-Commands will use the pinned Rust 1.83.0 toolchain, `--locked` and offline mode
+Commands will use the pinned Rust stable toolchain, `--locked` and offline mode
 where the existing workflow supports it. The README will include:
 
 - toolchain installation and dependency fetch;

@@ -1,0 +1,45 @@
+[{
+  "metadata": {
+    "catalogid": "1842_xxpl_after",
+    "tabkey": "tab1",
+    "pagesize": 10,
+    "pageno": 1,
+    "pagecount": 1,
+    "recordcount": 2,
+    "conditions": [
+      {"name":"txtDMorJC","defaultValue":"000603"},
+      {"name":"txtStart","defaultValue":"2026-07-23"},
+      {"name":"txtEnd","defaultValue":"2026-07-23"}
+    ],
+    "cols": {
+      "dqrq":"公告日期",
+      "zqdm":"证券代码",
+      "zqjc":"证券简称",
+      "cjje":"成交金额<br>(亿元)",
+      "cjsl":"成交量<br>(万股/万份)",
+      "plyy":"披露原因",
+      "bz":"备注"
+    }
+  },
+  "data": [
+    {
+      "dqrq":"2026-07-23",
+      "zqdm":"000603",
+      "zqjc":"盛达资源",
+      "cjje":"16.56",
+      "cjsl":"6,917.03",
+      "plyy":"日价格涨幅偏离值达到9.07%",
+      "bz":"<a href='javascript:void(0);' a-back=1 a-param='/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1842_detal&TABKEY=tab1,tab2&DQRQ=2026-07-23&ZQDM=000603&ZBDM=0901'>查看详情</a>"
+    },
+    {
+      "dqrq":"2026-07-23",
+      "zqdm":"000603",
+      "zqjc":"盛达资源",
+      "cjje":"25.76",
+      "cjsl":"11,100.38",
+      "plyy":"异常期间价格涨幅偏离值累计达到21.19%",
+      "bz":"<a href='javascript:void(0);' a-back=1 a-param='/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1842_detal&TABKEY=tab1,tab2&DQRQ=2026-07-23&ZQDM=000603&ZBDM=1001'>查看详情</a>"
+    }
+  ],
+  "error": null
+}]

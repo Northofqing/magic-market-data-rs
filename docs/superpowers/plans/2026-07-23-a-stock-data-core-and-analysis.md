@@ -12,7 +12,7 @@ values and generic failover router. Add validated reusable primitives first,
 then domain records/traits in isolated Core modules, then a network-free
 analysis crate. Provider crates consume these APIs in later plans.
 
-**Tech stack:** Rust 2021, MSRV 1.83, `serde`, `thiserror`, existing Core and
+**Tech stack:** Rust 2021, no fixed MSRV, `serde`, `thiserror`, existing Core and
 Router crates; no network dependency in this slice.
 
 ---
@@ -164,7 +164,7 @@ Router crates; no network dependency in this slice.
 - [x] Document the provider-neutral domains as implemented but not yet
   live-connected.
 - [x] Run `cargo fmt --all --check`.
-- [x] Run `RUSTUP_TOOLCHAIN=1.83.0 cargo check --workspace --all-targets
+- [x] Run `cargo check --workspace --all-targets
   --locked`.
 - [x] Run `cargo test --workspace --all-targets --locked --offline`.
 - [x] Run strict workspace Clippy and rustdoc.

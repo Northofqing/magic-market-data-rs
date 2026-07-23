@@ -1,15 +1,26 @@
 #![forbid(unsafe_code)]
 //! Bounded read-only adapters for official exchange data.
 
+mod dragon_tiger;
+mod hkex;
 mod sse;
 mod szse;
+mod szse_quote;
 mod transport;
 
+pub use dragon_tiger::{
+    parse_sse_response, parse_szse_detail_response, parse_szse_list_response,
+    DragonTigerParseError, OfficialDragonTigerRequest, ParsedDragonTiger, SzseDragonTigerDetailKey,
+    SzseDragonTigerListItem, SzseDragonTigerListPage, MAX_DRAGON_TIGER_RESPONSE_BYTES,
+};
+pub use hkex::{HkexClient, HkexConfig};
 pub use sse::{SseClient, SseConfig};
 pub use szse::{SzseClient, SzseConfig};
 pub use transport::{ExchangeTransport, HttpMethod, HttpRequest, HttpResponse, MAX_RESPONSE_BYTES};
 
-use magic_market_core::{ContentCapabilities, ProviderId};
+use magic_market_core::{
+    Capabilities, CapitalCapabilities, ContentCapabilities, ProviderId, SignalCapabilities,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -39,26 +50,8 @@ pub enum ExchangeError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderCapabilities {
     pub provider: ProviderId,
+    pub market: Capabilities,
     pub content: ContentCapabilities,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct HkexClient;
-
-impl HkexClient {
-    pub const fn provider_id() -> ProviderId {
-        ProviderId::Hkex
-    }
-
-    pub const fn capabilities() -> ProviderCapabilities {
-        ProviderCapabilities {
-            provider: ProviderId::Hkex,
-            content: ContentCapabilities {
-                instrument_news: false,
-                global_news: false,
-                announcements: false,
-                investor_questions: false,
-            },
-        }
-    }
+    pub capital: CapitalCapabilities,
+    pub signals: SignalCapabilities,
 }

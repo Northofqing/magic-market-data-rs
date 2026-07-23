@@ -6,7 +6,7 @@
 
 **Architecture:** The root is a non-publishable virtual workspace. `magic-market-core` owns provider-neutral checked values, models, provenance, quality contracts, and capability traits; `magic-tdx-rs` owns TDX source records, codec, transport, four explicit client strategies, services, local readers, and the core adapter. `stock_analysis` remains an external downstream repository and is never read or modified by these plans.
 
-**Tech Stack:** Rust 1.83, Cargo resolver 2, Serde, thiserror, Tokio, flate2, encoding_rs, regex, tracing, Criterion, proptest, cargo-fuzz, cargo-llvm-cov, cargo-semver-checks, cargo-deny, shell compliance scripts, GitHub Actions.
+**Tech Stack:** Rust stable, Cargo resolver 2, Serde, thiserror, Tokio, flate2, encoding_rs, regex, tracing, Criterion, proptest, cargo-fuzz, cargo-llvm-cov, cargo-semver-checks, cargo-deny, shell compliance scripts, GitHub Actions.
 
 ---
 
@@ -108,7 +108,7 @@ Expected: every command exits `0`; Clippy emits no warnings; default tests make 
 The release phase additionally runs:
 
 ```bash
-cargo +1.83.0 check --workspace --all-targets
+cargo check --workspace --all-targets
 cargo llvm-cov --workspace --all-features --json --output-path target/coverage/coverage.json -- --test-threads=1
 python3 tools/coverage/check_thresholds.py target/coverage/coverage.json
 cargo semver-checks check-release -p magic-market-core
@@ -116,7 +116,7 @@ cargo semver-checks check-release -p magic-tdx-rs
 cargo deny check
 ```
 
-Expected: MSRV build passes; overall line coverage is at least 80%; configured core files are at least 95%; SemVer, license, advisory, ban, and source checks pass.
+Expected: stable build passes; overall line coverage is at least 80%; configured core files are at least 95%; SemVer, license, advisory, ban, and source checks pass.
 
 ## Execution checkpoints
 

@@ -336,7 +336,7 @@ fn valid_iso_date(value: &str) -> bool {
     let year: u16 = value[0..4].parse().unwrap_or(0);
     let month: u8 = value[5..7].parse().unwrap_or(0);
     let day: u8 = value[8..10].parse().unwrap_or(0);
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
     let max_day = match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,

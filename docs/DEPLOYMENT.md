@@ -18,24 +18,24 @@
 - `magic-cls-{live,load}-probe`：财联社签名全球电报；
 - `magic-baidu-{live,load}-probe`：百度未复权日 K 和源端 MA；
 - `magic-iwencai-{live,load}-probe`：需要授权 API Key 的语义搜索；
-- `magic-exchange-{live,load}-probe`：SSE/SZSE 官方公告；
+- `magic-exchange-{live,load}-probe`：SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、
+  HKEX 北向日统计；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建
 
-仓库固定 Rust/Cargo 1.83.0，`Cargo.lock` 也固定 HTTPS 依赖的
-URL/IDNA/zeroize 链，避免 Cargo 1.83 解析到 edition-2024 清单。发布构建必须使用
-`--locked`，不能删除锁文件后直接升级补丁版本。
+仓库跟随 Rust stable，不声明固定 MSRV。`Cargo.lock` 固定已验证的完整依赖图；
+发布构建必须使用 `--locked`，不能删除锁文件后直接升级依赖。
 
 ```bash
-rustup toolchain install 1.83.0 --profile minimal --component rustfmt --component clippy
+rustup toolchain install stable --profile minimal --component rustfmt --component clippy
 cargo fetch --locked
 bash tools/release/preflight.sh
 git commit
 bash tools/release/package.sh
 ```
 
-预检在每次新建的隔离 target 目录中，以离线模式运行格式、Rust 1.83 全目标编译、
+预检在每次新建的隔离 target 目录中，以离线模式运行格式、stable Rust 全目标编译、
 全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff 空白检查，避免
 本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建二十一个 release
 探针，复制为不冲突的文件名，并生成 SHA-256 清单：
@@ -71,6 +71,7 @@ target/dist/GIT_SHA/
 ├── README.md
 ├── RELEASE_REVISION
 ├── RUSTC_VERSION
+├── rust-toolchain.toml
 ├── TARGET_TRIPLE
 └── SHA256SUMS
 ```
@@ -100,7 +101,7 @@ shasum -a 256 -c SHA256SUMS
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
 | Eastmoney/CNInfo/THS/CLS/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源 |
-| SSE/SZSE official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公告 |
+| SSE/SZSE/HKEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
 | iWencai | 支持 | 支持 | 支持 | Rustls HTTPS；需要获授权 API Key |
 | EMQuant Rust 层 | 支持 | 可编译 | 可编译 | 运行还取决于厂商 SDK |
 | 当前 EMQuant C++ bridge | x86_64 macOS | 未适配 | 未适配 | 使用 `.dylib`、`dlopen` 和 POSIX API |
@@ -122,7 +123,7 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | THS | `basic`、`zx`、`data`、`dq.10jqka.com.cn:443` | 无持久缓存 |
 | CLS | `www.cls.cn:443` | 无持久缓存 |
 | Baidu | `finance.pae.baidu.com:443` | 无持久缓存 |
-| SSE/SZSE official | `query.sse.com.cn:443`、`www.szse.cn:443` | 无持久缓存 |
+| SSE/SZSE/HKEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443` | 无持久缓存 |
 | iWencai | `openapi.iwencai.com:443` | API Key 仅由环境/秘密挂载提供，不落盘 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
 
@@ -229,7 +230,7 @@ MAGIC_CLS_LOAD_REQUESTS=2 MAGIC_CLS_LOAD_CONCURRENCY=1 \
   "$market_release_dir/bin/magic-cls-load-probe"
 MAGIC_BAIDU_LOAD_REQUESTS=2 MAGIC_BAIDU_LOAD_CONCURRENCY=1 \
   "$market_release_dir/bin/magic-baidu-load-probe"
-MAGIC_EXCHANGE_LOAD_REQUESTS=4 MAGIC_EXCHANGE_LOAD_CONCURRENCY=1 \
+MAGIC_EXCHANGE_LOAD_REQUESTS=8 MAGIC_EXCHANGE_LOAD_CONCURRENCY=1 \
   "$market_release_dir/bin/magic-exchange-load-probe"
 
 # 只有已配置授权 Key 的环境才运行：
@@ -252,8 +253,9 @@ Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打�
 缓存或跨源拼接，两个来源都失败时退出非零。公共研究/内容 Provider 同样要求非空
 严格批次；Eastmoney 已声明能力的完整 live/mixed probe 必须为零退出，两个未声明
 资金流端点若继续返回 empty reply 则单独打印预期失败诊断，不能登记为资金流实盘
-通过；关键词新闻同样因无结构化证券身份保持未准入。SSE/SZSE 官方公告 probe
-要求每条源证券/发布日期及分页证据匹配，任一来源失败时整体非零。iWencai 无授权 Key 时预期
+通过；关键词新闻同样因无结构化证券身份保持未准入。交易所官方 probe 要求公告
+证券/日期及分页匹配、龙虎榜证券/交易日和完整买五卖五匹配、SZSE Quote/盘口身份及
+源时间匹配、HKEX 两通道与 Top10 完整；任一来源失败时整体非零。iWencai 无授权 Key 时预期
 返回脱敏鉴权错误，不能把这次运行登记为语义搜索实盘通过。
 
 上线门至少保存以下证据，但不要保存账号、令牌或原始登录包：
@@ -300,8 +302,8 @@ EMQuant 只有在厂商许可证允许、架构匹配、SDK 能在容器中激�
 升级依赖时必须：
 
 1. 在单独提交中更新 `Cargo.lock`；
-2. 用 Cargo 1.83.0 运行全工作区 `--locked --offline` 检查；
-3. 扫描选中依赖清单，避免再次引入 edition 2024；
+2. 用当前 stable Cargo 运行全工作区 `--locked --offline` 检查；
+3. 扫描选中依赖清单和安全公告；
 4. 运行确定性测试、真实探针和小规模负载探针；
 5. 比较能力、字段单位、源时间、错误率和延迟后再放量。
 

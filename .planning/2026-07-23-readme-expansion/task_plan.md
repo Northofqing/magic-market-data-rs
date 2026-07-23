@@ -14,7 +14,7 @@ developers and operators without duplicating the detailed provider manuals.
 - Keep EMQuant device activation separate from API product entitlement.
 - Keep provider terms, credentials, activation tokens and vendor binaries out
   of the repository and release package.
-- Keep commands compatible with the pinned Rust 1.83.0 toolchain.
+- Keep commands compatible with the pinned Rust stable toolchain.
 
 ## Phases
 
@@ -54,7 +54,7 @@ Completion evidence:
 
 - The README grew from 34 to 477 lines and contains all twelve required
   top-level sections.
-- The isolated Rust 1.83 release preflight passed.
+- The isolated Rust stable release preflight passed.
 - The package for implementation commit `e204167` contained five probes and
   the expanded README; every SHA-256 entry passed and no vendor secret/runtime
   file was present.

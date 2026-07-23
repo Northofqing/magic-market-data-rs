@@ -6,7 +6,7 @@
 
 **Architecture:** The repository root is a two-member virtual Cargo workspace with no root package. `magic-market-core` contains no TDX names, endpoints, networking, Tokio, or downstream application types; it exposes small checked value objects and capability-specific synchronous traits whose results always carry provenance.
 
-**Tech Stack:** Rust 1.83, Cargo resolver 2, Serde, thiserror, uuid, proptest, shell compliance checks.
+**Tech Stack:** Rust stable, Cargo resolver 2, Serde, thiserror, uuid, proptest, shell compliance checks.
 
 ---
 
@@ -118,7 +118,6 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.83"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Northofqing/magic-market-data-rs"
 
@@ -136,7 +135,7 @@ all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 ```
 
-Set `rust-toolchain.toml` to channel `1.83.0` with `rustfmt` and `clippy`. Both crate manifests inherit workspace package fields and lints; `magic-tdx-rs` depends on `magic-market-core = { path = "../magic-market-core", version = "=0.1.0" }`. Give each crate a documented `#![forbid(unsafe_code)]` library root. Do not add a root `[package]` section.
+Set `rust-toolchain.toml` to channel `stable` with `rustfmt` and `clippy`. Both crate manifests inherit workspace package fields and lints; `magic-tdx-rs` depends on `magic-market-core = { path = "../magic-market-core", version = "=0.1.0" }`. Give each crate a documented `#![forbid(unsafe_code)]` library root. Do not add a root `[package]` section.
 
 - [ ] **Step 5: Preserve licenses and source provenance entry points**
 
@@ -426,7 +425,7 @@ cargo test --workspace --all-targets --all-features
 cargo test --workspace --doc --all-features
 cargo doc --workspace --all-features --no-deps
 bash tools/compliance/check.sh
-cargo +1.83.0 check --workspace --all-targets
+cargo check --workspace --all-targets
 ```
 
 Expected: every command exits `0`; no default test opens an external network connection.

@@ -392,7 +392,7 @@
 - `docs/PERFORMANCE_RESULTS.md` still describes Tencent `mixed` as four families even though current code has five; historical 100/8 evidence must remain labeled as the pre-statistics rotation.
 - Deployment currently describes Sina only as Quote/K-line/minute and opens two Sina hosts. It must add financial/options capabilities, `stock.finance.sina.com.cn`, and updated health/load operations without changing the seven packaged probe binary count.
 - Changelog already contains the Core intelligence-contract/analysis slice, but not the implemented Tencent statistics or Sina statements/options.
-- Two full Rust 1.83 checks reused a stale `magic_market_core` artifact: Cargo checked only `magic-sina-rs` and reported the pre-widening option API even though the source exports `ContractMonth` and the new fields. Manifests and `cargo metadata` confirm Sina points to the local Core path. The next diagnostic must use a fresh isolated target directory to distinguish stale incremental metadata from source defects.
+- Two full Rust stable checks reused a stale `magic_market_core` artifact: Cargo checked only `magic-sina-rs` and reported the pre-widening option API even though the source exports `ContractMonth` and the new fields. Manifests and `cargo metadata` confirm Sina points to the local Core path. The next diagnostic must use a fresh isolated target directory to distinguish stale incremental metadata from source defects.
 
 ## 2026-07-23 independent Slice B review
 
@@ -450,7 +450,7 @@
   validation, zero redirects, byte caps and real `ureq` clients. New provider
   crates will reuse this architecture while assigning endpoint-specific
   whitelists and smaller per-family caps.
-- The Core/Router/analysis shared-field barrier passes all focused Rust 1.83
+- The Core/Router/analysis shared-field barrier passes all focused Rust stable
   tests, format and strict Clippy. `ProviderId` already contains Eastmoney,
   Baidu, Tonghuashun, Iwencai, Cninfo and Cailianpress identities, so provider
   crates do not need identity changes.
@@ -497,7 +497,7 @@
   six local Provider crates plus `block-buffer`, `cpufeatures`,
   `crypto-common`, `digest`, `generic-array`, `md-5`, `sha1`, `typenum` and
   `version_check`. No pre-existing package version remains changed.
-- Core, Router and analysis tests pass on Rust 1.83 after the PostClose contract
+- Core, Router and analysis tests pass on Rust stable after the PostClose contract
   and expanded source fields. This confirms the shared-contract barrier is
   stable while isolated Provider implementation continues.
 - Core/Router public documentation was stale at the original eight market
@@ -550,7 +550,7 @@
 - CLS live probe returned five complete, newest-first telegraph records; the load probe completed 2/2 requests and 20 records at concurrency one.
 - Baidu live probe returned five unadjusted daily bars for 华电辽能 (`600396`) with MA5/MA10/MA20; a source discontinuity around an ex-dividend event proved that treating this endpoint as forward-adjusted would be incorrect. The load probe completed 2/2 requests and 40 records at concurrency one.
 - iWencai without an API key returns HTTP 401 with `not_found_apikey`; the provider maps this to a redacted typed authentication error and never reports fake success.
-- Final focused gates for CLS/Baidu/iWencai passed on Rust 1.83: 20 tests, strict Clippy, rustdoc with warnings denied, doctests, compliance, and diff checking.
+- Final focused gates for CLS/Baidu/iWencai passed on Rust stable: 20 tests, strict Clippy, rustdoc with warnings denied, doctests, compliance, and diff checking.
 - Empty successful iWencai data is rejected as a protocol error, CLS validates newest-first source timestamps, and Baidu rejects empty, duplicate, or unordered K-line payloads.
 
 ## 2026-07-23 provider boundary constants
@@ -631,7 +631,7 @@
 - Closed the review's PostClose P2 proactively: record source dates must equal trading dates,
   while the Router rejects batch/request date mismatch, over-limit output, duplicate ranks and
   duplicate instruments before selection.
-- `magic-exchange-rs` now passes 13 deterministic Rust 1.83 tests and real official probes:
+- `magic-exchange-rs` now passes 13 deterministic Rust stable tests and real official probes:
   SSE `600396` and SZSE `000858` each returned three announcements; the alternating load run
   passed 4/4 at 0.9294 attempts/s, P50 1082 ms, P95/max 1214 ms and a 1003 ms minimum start gap.
 - Official announcement pagination is fixed at 50 rows remotely and truncated locally only after

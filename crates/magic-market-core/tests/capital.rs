@@ -2,8 +2,10 @@ use magic_market_core::{
     AssetClass, BlockTrade, Board, BoardCategory, BoardFlow, CapitalCapabilities, DividendPlan,
     Exchange, FiniteNumber, FlowInterval, FlowScope, FundFlowPoint, FundFlowRequest, HolderCount,
     InstrumentDateRangeRequest, InstrumentId, IsoDate, LockupEvent, MarginBalance, Money,
-    NonEmptyText, PositiveU32, PostCloseFlow, PostCloseFlowRequest, Price, PriceLimitRule,
-    ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence, SourcedRecord,
+    NonEmptyText, NorthboundChannel, NorthboundDailyRequest, NorthboundDailyStat,
+    NorthboundQuotaBalance, NorthboundTopTurnover, PositiveU32, PostCloseFlow,
+    PostCloseFlowRequest, Price, PriceLimitRule, ProviderId, Quantity, Ratio, RatioUnit,
+    SourceEvidence, SourcedRecord,
 };
 
 fn instrument() -> InstrumentId {
@@ -12,6 +14,25 @@ fn instrument() -> InstrumentId {
 
 fn evidence() -> SourceEvidence {
     SourceEvidence::new(ProviderId::Eastmoney, "observed", "batch").unwrap()
+}
+
+fn northbound_top_ten(channel: NorthboundChannel) -> Vec<NorthboundTopTurnover> {
+    let (exchange, base) = match channel {
+        NorthboundChannel::Shanghai => (Exchange::Shanghai, 600_000),
+        NorthboundChannel::Shenzhen => (Exchange::Shenzhen, 1),
+    };
+    (1..=10)
+        .map(|rank| {
+            NorthboundTopTurnover::new(
+                PositiveU32::new(rank).unwrap(),
+                InstrumentId::new(exchange, format!("{:06}", base + rank), AssetClass::Equity)
+                    .unwrap(),
+                NonEmptyText::new(format!("stock-{rank}")).unwrap(),
+                Money::new(f64::from(rank) * 1_000_000.0).unwrap(),
+            )
+            .unwrap()
+        })
+        .collect()
 }
 
 #[test]
@@ -242,4 +263,98 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
     )
     .unwrap();
     assert!(!legacy_capabilities.post_close_flow);
+}
+
+#[test]
+fn northbound_daily_statistics_are_lossless_checked_and_serde_safe() {
+    let trading_date = IsoDate::new("2026-07-22").unwrap();
+    let source_evidence = SourceEvidence::new(ProviderId::Hkex, "observed", "hkex-20260722")
+        .unwrap()
+        .with_source_at("2026-07-22")
+        .unwrap();
+    let record = NorthboundDailyStat::new(
+        trading_date.clone(),
+        NorthboundChannel::Shanghai,
+        Money::new(174_764_630_000.0).unwrap(),
+        Quantity::new(7_939_144.0).unwrap(),
+        NorthboundQuotaBalance::Unavailable,
+        Money::new(4_839_470_000.0).unwrap(),
+        northbound_top_ten(NorthboundChannel::Shanghai),
+        source_evidence,
+    )
+    .unwrap();
+    let request = NorthboundDailyRequest::new(trading_date.clone(), NorthboundChannel::Shanghai);
+
+    assert_eq!(record.trading_date(), &trading_date);
+    assert_eq!(record.channel(), NorthboundChannel::Shanghai);
+    assert_eq!(record.total_turnover().get(), 174_764_630_000.0);
+    assert_eq!(record.total_trade_count().get(), 7_939_144.0);
+    assert_eq!(record.quota_balance(), NorthboundQuotaBalance::Unavailable);
+    assert_eq!(record.etf_turnover().get(), 4_839_470_000.0);
+    assert_eq!(record.top_turnover().len(), 10);
+    assert_eq!(record.provider_id(), ProviderId::Hkex);
+    assert_eq!(request.trading_date(), &trading_date);
+    assert_eq!(request.channel(), NorthboundChannel::Shanghai);
+    assert_eq!(
+        serde_json::from_str::<NorthboundDailyStat>(&serde_json::to_string(&record).unwrap())
+            .unwrap(),
+        record
+    );
+    assert_eq!(
+        serde_json::from_str::<NorthboundDailyRequest>(&serde_json::to_string(&request).unwrap())
+            .unwrap(),
+        request
+    );
+    assert!(serde_json::from_str::<NorthboundQuotaBalance>(r#"{"Amount":-1.0}"#).is_err());
+
+    let mut duplicate_rank = northbound_top_ten(NorthboundChannel::Shanghai);
+    duplicate_rank[9] = duplicate_rank[0].clone();
+    assert!(NorthboundDailyStat::new(
+        trading_date.clone(),
+        NorthboundChannel::Shanghai,
+        Money::new(1.0).unwrap(),
+        Quantity::new(1.0).unwrap(),
+        NorthboundQuotaBalance::Amount(Money::new(1.0).unwrap()),
+        Money::new(0.0).unwrap(),
+        duplicate_rank,
+        SourceEvidence::new(ProviderId::Hkex, "observed", "batch")
+            .unwrap()
+            .with_source_at("2026-07-22")
+            .unwrap(),
+    )
+    .is_err());
+    assert!(NorthboundDailyStat::new(
+        trading_date.clone(),
+        NorthboundChannel::Shanghai,
+        Money::new(1.0).unwrap(),
+        Quantity::new(1.5).unwrap(),
+        NorthboundQuotaBalance::Amount(Money::new(-1.0).unwrap()),
+        Money::new(0.0).unwrap(),
+        northbound_top_ten(NorthboundChannel::Shanghai),
+        SourceEvidence::new(ProviderId::Hkex, "observed", "batch")
+            .unwrap()
+            .with_source_at("2026-07-22")
+            .unwrap(),
+    )
+    .is_err());
+    assert!(NorthboundDailyStat::new(
+        trading_date,
+        NorthboundChannel::Shanghai,
+        Money::new(1.0).unwrap(),
+        Quantity::new(1.0).unwrap(),
+        NorthboundQuotaBalance::Unavailable,
+        Money::new(0.0).unwrap(),
+        northbound_top_ten(NorthboundChannel::Shenzhen),
+        SourceEvidence::new(ProviderId::Hkex, "observed", "batch")
+            .unwrap()
+            .with_source_at("2026-07-21")
+            .unwrap(),
+    )
+    .is_err());
+
+    let legacy_capabilities: CapitalCapabilities = serde_json::from_str(
+        r#"{"fund_flow_series":true,"board_flow":true,"margin":true,"block_trades":true,"holder_count":true,"lockups":true,"dividends":true}"#,
+    )
+    .unwrap();
+    assert!(!legacy_capabilities.northbound_daily_statistics);
 }

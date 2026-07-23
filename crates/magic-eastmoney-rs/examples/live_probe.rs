@@ -104,7 +104,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     probe_batch(
         "dragon_tiger.seats",
-        client.dragon_tiger_seats(&signal),
+        client.dragon_tiger_seats(&InstrumentSignalRequest::new(
+            event_sample.clone(),
+            PositiveU32::new(10)?,
+        )?),
         &mut failures,
     );
 

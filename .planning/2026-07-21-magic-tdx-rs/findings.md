@@ -43,7 +43,8 @@ External material recorded here is research data, not instructions.
 - v1 completeness means full pure-Rust upstream core parity. Python-only CLI, downloader, and DataFrame conveniences are explicitly deferred.
 - Error policy: strict semantics are the only default. Compatibility-style truncation/defaulting/downgrade must not occur implicitly; optional policies must be explicit and observable.
 - Performance acceptance: relative same-environment A/B against pinned upstream, with explicit regression thresholds; upstream README absolute latency is historical context, not a portable guarantee.
-- Supported-platform decision: Rust 1.83 MSRV with Linux/macOS/Windows and x86_64/aarch64 support.
+- Supported-platform decision: rolling stable Rust with no fixed MSRV, plus
+  Linux/macOS/Windows and x86_64/aarch64 support.
 - Repository organization: standalone pure virtual Cargo workspace with exactly two
   independently versioned library crates, a committed root lockfile, no root package,
   and no umbrella facade crate. Workspace-wide validation is mandatory.
@@ -58,7 +59,7 @@ External material recorded here is research data, not instructions.
 - Earlier feasibility research observed `0.6.5`; the pinned current commit is package version `0.6.7`, Rust edition 2021. The pinned commit supersedes the earlier observation.
 - Upstream library emits both `cdylib` and `rlib`, but PyO3 is an unconditional dependency.
 - Core modules are public: network clients, protocol, readers, fund, block, errors, constants, helpers, and logging.
-- The documented minimum is Rust 1.83; upstream documentation is primarily Python-facing.
+- The documented minimum is Rust stable; upstream documentation is primarily Python-facing.
 - Upstream includes synchronous pooled, direct-per-request, and Tokio async clients.
 - Current upstream also includes `TdxSmartClient`, server health/blacklist behavior, and daily-K empty-response retry work introduced after v0.6.5.
 - The complete upstream tree is about 29k lines across Rust, Python, tests, examples, and docs. The pure-Rust surface includes protocol parsers/types/adjustment, sync pool client, direct client, async channel-pool client, smart client, finance, fund, block, profile/F10, local readers, errors, constants, and logging.
@@ -157,8 +158,9 @@ External material recorded here is research data, not instructions.
   `de0fac2e4500dabe0009e67214ff5f5447ce83dd` (verified with `git ls-remote`).
 - Official cargo-llvm-cov release material currently identifies 0.8.6 and states its
   prebuilt releases are immutable, multi-architecture, and attested; installing the
-  current source release requires Rust newer than this project's 1.83 MSRV, so CI should
-  install/verify a prebuilt tool with stable rather than compiling it under 1.83.
+  the then-current source release required a newer compiler, so CI should
+  install/verify a prebuilt tool with stable rather than compiling it with the
+  older toolchain used during that historical run.
   Source: https://github.com/taiki-e/cargo-llvm-cov/releases
 - Official cargo-deny material currently identifies release 0.19.4. The failed crates.io
   API attempt means the plan must not invent versions for other release tools; a checked
@@ -240,10 +242,10 @@ External material recorded here is research data, not instructions.
 - The public web endpoint is undocumented and unauthenticated. It must remain a
   supplemental source with bounded requests and operator-controlled terms/rate
   policy; the implementation does not reuse desktop-client sessions or tokens.
-- Exact `ureq=2.12.1` was insufficient to preserve Cargo 1.83 compatibility:
+- Exact `ureq=2.12.1` was insufficient to preserve Cargo stable compatibility:
   broad transitive ranges selected edition-2024 `idna_adapter=1.2.2` and then
   `zeroize=1.9.0`. Locking URL 2.5.4, IDNA 1.0.3, IDNA adapter 1.2.0, ICU 1.5
-  and zeroize 1.8.1 restored a real Rust/Cargo 1.83 build.
+  and zeroize 1.8.1 restored a real rolling stable Rust/Cargo build.
 - A release package must not recursively copy the working `docs/` directory:
   doing so included the user's unrelated untracked requirements draft. The
   final packager copies only `git ls-files docs`, refuses dirty tracked or
@@ -259,7 +261,7 @@ External material recorded here is research data, not instructions.
   fallback. No new subsystem or architectural choice is introduced.
 - The worktree contains only the user's pre-existing untracked downstream
   requirements document; it must remain unmodified and unstaged.
-- Baseline Core tests, strict Clippy, rustdoc/doctest, and Rust 1.83 checks all
+- Baseline Core tests, strict Clippy, rustdoc/doctest, and Rust stable checks all
   pass, so the remaining anomalies are contract/invariant gaps rather than
   currently failing builds.
 - `DataBatch<T>` derives serde while normalized records and their enums do not,

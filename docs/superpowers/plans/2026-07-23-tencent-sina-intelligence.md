@@ -13,7 +13,7 @@ enrichment independently so short base quotes remain valid. Sina adds isolated
 financial and option modules; Core option records are widened only where the
 source exposes real fields or lacks an exact expiry.
 
-**Tech stack:** Rust 2021, MSRV 1.83, `serde`, `serde_json`, `encoding_rs`,
+**Tech stack:** Rust 2021, no fixed MSRV, `serde`, `serde_json`, `encoding_rs`,
 `ureq`, existing Core/Provider/Router contracts.
 
 ---
@@ -110,7 +110,7 @@ source exposes real fields or lacks an exact expiry.
 
 - [x] Document exact supported fields, units, endpoint stability and remaining
   reference-project Provider gaps.
-- [x] Run format, Rust 1.83 locked all-target check and all workspace tests.
+- [x] Run format, Rust stable locked all-target check and all workspace tests.
 - [x] Run strict workspace Clippy, rustdoc, doctests, docs links and compliance.
 - [x] Review the complete diff, verify the user's requirements file is unstaged,
   commit Slice B, push `main` and record the commit.

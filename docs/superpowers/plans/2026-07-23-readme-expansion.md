@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the root README as the common orientation and runnable fast path. Summarize capability truth in compact matrices and link protocol fields, performance evidence, deployment detail and rollback policy to their existing canonical documents.
 
-**Tech Stack:** GitHub-flavored Markdown, Rust/Cargo 1.83.0 commands, repository documentation checks, Bash release tooling.
+**Tech Stack:** GitHub-flavored Markdown, rolling stable Rust/Cargo commands, repository documentation checks, Bash release tooling.
 
 ---
 
@@ -82,7 +82,7 @@ proved, `observed_at`, `batch_id`, `DataStatus` and batch quality issues.
 Include these runnable command families:
 
 ```bash
-rustup toolchain install 1.83.0 --profile minimal --component rustfmt --component clippy
+rustup toolchain install stable --profile minimal --component rustfmt --component clippy
 cargo fetch --locked
 cargo test --workspace --all-targets --locked --offline
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings

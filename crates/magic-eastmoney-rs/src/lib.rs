@@ -88,6 +88,7 @@ impl EastmoneyClient {
             lockups: true,
             dividends: true,
             post_close_flow: false,
+            northbound_daily_statistics: false,
         }
     }
 

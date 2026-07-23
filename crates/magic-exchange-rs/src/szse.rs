@@ -1,3 +1,4 @@
+use crate::szse_quote::{build_quote_url, parse_quote_snapshot};
 use crate::transport::{
     validate_endpoint, validate_minimum_interval, validate_request, validate_response,
     validate_timeout, ExchangeTransport, HttpMethod, HttpRequest, HttpResponse, HttpsTransport,
@@ -5,8 +6,10 @@ use crate::transport::{
 };
 use crate::{ExchangeError, ProviderCapabilities};
 use magic_market_core::{
-    Announcement, Announcements, AssetClass, ContentCapabilities, DataBatch, Exchange, HttpsUrl,
-    InstrumentDateRangeRequest, InstrumentId, NonEmptyText, Provenance, ProviderId, SourceEvidence,
+    Announcement, Announcements, AssetClass, Capabilities, CapitalCapabilities,
+    ContentCapabilities, DataBatch, DataStatus, Exchange, HttpsUrl, InstrumentDateRangeRequest,
+    InstrumentId, NonEmptyText, OrderBook, OrderBooks, Provenance, ProviderId, Quote,
+    RealtimeQuotes, SignalCapabilities, SourceEvidence,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -16,6 +19,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const ENDPOINT: &str = "https://www.szse.cn/api/disc/announcement/annList";
 const HOST: &str = "www.szse.cn";
 const PATH: &str = "/api/disc/announcement/annList";
+const QUOTE_PATH: &str = "/api/market/ssjjhq/getTimeData";
+const DRAGON_TIGER_PATH: &str = "/api/report/ShowReport/data";
 const PAGE_SIZE: u32 = 50;
 const MAX_RECORDS: u32 = 500;
 const USER_AGENT: &str =
@@ -107,11 +112,43 @@ impl SzseClient {
     pub const fn capabilities() -> ProviderCapabilities {
         ProviderCapabilities {
             provider: ProviderId::Szse,
+            market: Capabilities {
+                quotes: true,
+                bars: false,
+                minute: false,
+                trades: false,
+                fundamentals: false,
+                corporate_actions: false,
+                blocks: false,
+                money_flow: false,
+                order_book: true,
+                auction: false,
+                security_metadata: false,
+            },
             content: ContentCapabilities {
                 instrument_news: false,
                 global_news: false,
                 announcements: true,
                 investor_questions: false,
+            },
+            capital: CapitalCapabilities {
+                fund_flow_series: false,
+                board_flow: false,
+                margin: false,
+                block_trades: false,
+                holder_count: false,
+                lockups: false,
+                dividends: false,
+                post_close_flow: false,
+                northbound_daily_statistics: false,
+            },
+            signals: SignalCapabilities {
+                board_memberships: false,
+                strong_stock_reasons: false,
+                dragon_tiger: true,
+                market_rankings: false,
+                popularity: false,
+                concept_hits: false,
             },
         }
     }
@@ -121,6 +158,76 @@ impl SzseClient {
         let response = self.gate.execute(|| self.transport.execute(&request))?;
         validate_response(&request, &response, &["json"])?;
         Ok(response)
+    }
+
+    pub(crate) fn execute_dragon_tiger(
+        &self,
+        request: HttpRequest,
+    ) -> Result<HttpResponse, ExchangeError> {
+        validate_request(&request, HttpMethod::Get, HOST, DRAGON_TIGER_PATH)?;
+        let response = self.gate.execute(|| self.transport.execute(&request))?;
+        validate_response(&request, &response, &["json"])?;
+        Ok(response)
+    }
+
+    fn quote_parts(
+        &self,
+        instruments: &[InstrumentId],
+        kind: &str,
+    ) -> Result<QuoteParts, ExchangeError> {
+        if instruments.is_empty() || instruments.len() > 20 {
+            return Err(ExchangeError::InvalidRequest(
+                "SZSE Quote/OrderBook request must contain 1..=20 instruments".into(),
+            ));
+        }
+        let mut seen = HashSet::with_capacity(instruments.len());
+        if instruments
+            .iter()
+            .any(|instrument| !seen.insert(instrument.clone()))
+        {
+            return Err(ExchangeError::InvalidRequest(
+                "SZSE Quote/OrderBook request contains duplicate instruments".into(),
+            ));
+        }
+        let batch_id = format!("szse-official:{}:{kind}", now()?);
+        let mut records = Vec::with_capacity(instruments.len());
+        let mut source_at = Vec::with_capacity(instruments.len());
+        for instrument in instruments {
+            let request = HttpRequest {
+                method: HttpMethod::Get,
+                url: build_quote_url(instrument)?,
+                headers: vec![
+                    ("User-Agent".into(), USER_AGENT.into()),
+                    ("Accept".into(), "application/json".into()),
+                ],
+                body: Vec::new(),
+            };
+            validate_request(&request, HttpMethod::Get, HOST, QUOTE_PATH)?;
+            let response = self.gate.execute(|| self.transport.execute(&request))?;
+            validate_response(&request, &response, &["json"])?;
+            let observed_at = now()?;
+            let (quote, order_book) =
+                parse_quote_snapshot(instrument, &response.body, &observed_at, &batch_id)?
+                    .into_parts();
+            source_at.push(
+                quote
+                    .source_at()
+                    .ok_or_else(|| ExchangeError::Schema("SZSE Quote lacks source_at".into()))?
+                    .to_owned(),
+            );
+            records.push((quote, order_book));
+        }
+        let fetched_at = now()?;
+        let oldest_source_at = source_at
+            .into_iter()
+            .min()
+            .ok_or_else(|| ExchangeError::Incomplete("SZSE Quote batch is empty".into()))?;
+        Ok(QuoteParts {
+            records,
+            fetched_at,
+            batch_id,
+            oldest_source_at,
+        })
     }
 
     fn page(
@@ -159,6 +266,64 @@ impl SzseClient {
         })?;
         serde_json::from_slice(&response.body)
             .map_err(|error| ExchangeError::Decode(error.to_string()))
+    }
+}
+
+struct QuoteParts {
+    records: Vec<(Quote, OrderBook)>,
+    fetched_at: String,
+    batch_id: String,
+    oldest_source_at: String,
+}
+
+impl QuoteParts {
+    fn provenance(&self) -> Result<Provenance, ExchangeError> {
+        Ok(Provenance::new("szse-official", &self.fetched_at)?
+            .with_source_at(&self.oldest_source_at)?
+            .with_batch_id(&self.batch_id)?)
+    }
+}
+
+impl RealtimeQuotes for SzseClient {
+    type Quote = Quote;
+    type Error = ExchangeError;
+
+    fn realtime_quotes(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<Self::Quote>, Self::Error> {
+        let parts = self.quote_parts(instruments, "quote")?;
+        let provenance = parts.provenance()?;
+        let records = parts.records.into_iter().map(|(quote, _)| quote).collect();
+        Ok(DataBatch::strict(records, provenance))
+    }
+}
+
+impl OrderBooks for SzseClient {
+    type Error = ExchangeError;
+
+    fn order_books(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<OrderBook>, Self::Error> {
+        let parts = self.quote_parts(instruments, "order-book")?;
+        let provenance = parts.provenance()?;
+        let records = parts
+            .records
+            .into_iter()
+            .map(|(_, order_book)| order_book)
+            .collect::<Vec<_>>();
+        let issues = records
+            .iter()
+            .filter(|record| record.status() != DataStatus::Available)
+            .map(|record| {
+                format!(
+                    "SZSE order book for {} does not contain all five bid and ask levels",
+                    record.instrument().code()
+                )
+            })
+            .collect();
+        DataBatch::best_effort(records, provenance, issues).map_err(ExchangeError::from)
     }
 }
 
