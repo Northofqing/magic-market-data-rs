@@ -1,0 +1,84 @@
+# Multi-provider router task plan
+
+## Goal
+
+Build and release a provider-neutral, evidence-preserving failover router for
+all normalized market-data families, then produce and verify the current release
+artifact without modifying the external `stock_analysis` repository.
+
+## Constraints
+
+- Preserve `ProviderId`, provider batch IDs, source timestamps and every failed
+  routing attempt.
+- Never turn an invalid caller request into a successful fallback.
+- Never merge records from different providers into one successful batch.
+- Never add cache, daemon, database, HTTP or downstream application policy to
+  the first router release.
+- Keep Rust 1.83 compatibility and the existing strict release gates.
+- Preserve the user's untracked
+  `docs/integrations/stock-analysis-market-data-requirements.md`.
+
+## Phases
+
+### Phase 1: Current release artifact
+
+Status: complete
+
+- Build the four probes for commit `ce7f1c6`.
+- Verify every packaged file against `SHA256SUMS`.
+
+### Phase 2: Router design and implementation plan
+
+Status: in_progress
+
+- Write and self-review the approved provider-neutral design.
+- Write an exact TDD implementation plan.
+- Commit the design/plan before implementation.
+
+### Phase 3: Core evidence contract and router crate
+
+Status: pending
+
+- Add a common sourced-record evidence trait to Core.
+- Add generic source adapters, acceptance policy, failover chain, trace and
+  aggregate error types.
+- Cover terminal failure, fallback, quality rejection, empty data, duplicate
+  registration and evidence mismatch.
+
+### Phase 4: Real provider wiring and deployment
+
+Status: pending
+
+- Add a live TDX-to-Tencent source-time/quality fallback probe.
+- Update workspace, compliance, packaging, deployment and capability docs.
+- Generate and verify the new five-probe release package.
+
+### Phase 5: Final gates and delivery
+
+Status: pending
+
+- Run formatting, Rust 1.83 workspace check/test/Clippy, rustdoc/doctest, docs,
+  compliance and diff checks.
+- Perform a local self-review because subagent dispatch is prohibited by the
+  active developer instruction.
+- Commit, push and verify `origin/main`.
+
+## Decisions
+
+- Use a new `magic-market-router` crate that depends only on
+  `magic-market-core`.
+- Use one generic `FailoverChain<Request, Record>` plus family aliases instead
+  of a monolithic provider enum.
+- Provider-specific error mapping remains explicit at the registration
+  boundary.
+- A successful result is the first non-empty batch satisfying the configured
+  quality/source-time policy and record evidence checks.
+- Invalid requests stop immediately; recoverable errors and rejected batches
+  may try the next provider.
+- Every result/error contains an ordered attempt trace.
+
+## Errors encountered
+
+| Error | Attempt | Resolution |
+| --- | --- | --- |
+| `quality.rs` was queried but Core keeps `QualityReport` in `batch.rs` | 1 | Read `batch.rs` completely and use its public API. |
