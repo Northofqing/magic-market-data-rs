@@ -849,9 +849,11 @@ accepted as production coverage evidence.
 The coverage workflow must run for pull requests and release candidates, invoke
 the same checker, and upload `coverage.json` with `if: always()` so a failed
 threshold still leaves auditable evidence. It must use current stable/default
-Rust, declare no MSRV, and contain no toolchain/component installation command.
-It first runs `cargo llvm-cov --version`; absence is an explicit infrastructure
-failure rather than permission to skip or install a tool ad hoc.
+Rust, declare no MSRV and contain no Rust toolchain/component installation
+command. GitHub-hosted runners bootstrap the separately versioned and auditable
+crates.io package `cargo-llvm-cov` at the exact reviewed version `0.8.7`; this
+CI-only tool install must not select a Rust version. It then runs
+`cargo llvm-cov --version` before producing evidence.
 
 - [ ] **Step 7: Verify and commit the coverage policy**
 
@@ -871,8 +873,8 @@ the real report is generated.
 
 - [ ] **Step 8: Produce and enforce the real workspace artifact**
 
-Do not install a toolchain, rustup component or coverage tool in this task.
-First prove the already provisioned command exists, then run:
+The local real-evidence run must not install a toolchain, rustup component or
+coverage tool. First prove the already provisioned command exists, then run:
 
 ```bash
 cargo llvm-cov --version
@@ -1100,6 +1102,7 @@ this exact content:
 - strict workspace Clippy: PASS
 - workspace tests and rustdoc: PASS
 - compliance and docs links: PASS
+- PR/release coverage runner: pinned `cargo-llvm-cov 0.8.7`, current stable Rust
 - production workspace line coverage >= 80%: PASS
 - configured critical data-chain aggregate coverage >= 95%: PASS
 - every configured critical coverage glob present: PASS

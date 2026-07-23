@@ -48,8 +48,8 @@ obtain a pass.
 
 ## Commands
 
-The coverage tool must already be provisioned. This workflow does not install a
-Rust toolchain, rustup component or coverage tool.
+Local release validation uses the already provisioned coverage tool and never
+installs a Rust toolchain, rustup component or coverage tool.
 
 ```bash
 cargo llvm-cov --version
@@ -61,6 +61,12 @@ CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=1 cargo llvm-cov \
   -- --test-threads=1
 python3 tools/coverage/check_thresholds.py target/coverage/coverage.json
 ```
+
+GitHub-hosted runners do not include `cargo-llvm-cov`. The required PR/release
+job installs the auditable crates.io package at the exact version `0.8.7` with
+its lockfile before producing evidence. That CI-only tool bootstrap does not
+select or constrain a Rust release; CI continues to validate current stable
+Rust. Changing the coverage-tool version requires a reviewed workflow change.
 
 Checker regression tests are fast and run independently:
 
