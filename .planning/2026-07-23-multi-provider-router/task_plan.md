@@ -29,7 +29,7 @@ Status: complete
 
 ### Phase 2: Router design and implementation plan
 
-Status: in_progress
+Status: complete
 
 - Write and self-review the approved provider-neutral design.
 - Write an exact TDD implementation plan.
@@ -37,7 +37,7 @@ Status: in_progress
 
 ### Phase 3: Core evidence contract and router crate
 
-Status: pending
+Status: in_progress
 
 - Add a common sourced-record evidence trait to Core.
 - Add generic source adapters, acceptance policy, failover chain, trace and

@@ -8,3 +8,6 @@
 - Selected the provider-neutral generic failover-chain design.
 - Wrote and self-reviewed the router design; no placeholder or ambiguous
   provider dependency remains.
+- Committed the design baseline as `0738d11`.
+- Wrote and self-reviewed the exact TDD implementation plan, then moved to
+  inline execution under the user's standing no-confirmation instruction.
