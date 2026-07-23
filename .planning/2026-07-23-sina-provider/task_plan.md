@@ -68,3 +68,4 @@ its deployment boundary, package its probes, and deliver the result to Git.
 
 | Error | Attempt | Resolution |
 | --- | --- | --- |
+| Cargo could not find package `magic-sina-rs` | 1 | Expected TDD red state before adding the workspace member and crate scaffold. |

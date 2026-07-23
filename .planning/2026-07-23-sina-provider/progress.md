@@ -21,3 +21,5 @@
 - Wrote and self-reviewed the exact TDD implementation plan, including
   deterministic/live/load gates, documentation, packaging, delivery and the
   post-Sina EMQuant entitlement check.
+- Proved the initial missing-package red state, added the sixth workspace crate
+  and passed the public capability/trait compile contract on Rust 1.83.
