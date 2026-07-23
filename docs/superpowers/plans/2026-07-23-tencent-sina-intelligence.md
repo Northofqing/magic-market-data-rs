@@ -112,5 +112,5 @@ source exposes real fields or lacks an exact expiry.
   reference-project Provider gaps.
 - [x] Run format, Rust 1.83 locked all-target check and all workspace tests.
 - [x] Run strict workspace Clippy, rustdoc, doctests, docs links and compliance.
-- [ ] Review the complete diff, verify the user's requirements file is unstaged,
+- [x] Review the complete diff, verify the user's requirements file is unstaged,
   commit Slice B, push `main` and record the commit.

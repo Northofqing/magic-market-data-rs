@@ -65,6 +65,8 @@ Phase 4
 - Slice B Task 2 (Tencent market statistics) is complete.
 - Slice B Task 3 (Sina financial statements) is complete.
 - Slice B Task 4 (Sina ETF options) is complete.
+- Slice B Task 5 (release gate, commit and push) is complete at
+  `ca165beb374080e32403548983b91ea24486bd1f`.
 - Then implement Eastmoney broad intelligence families, CNInfo/Tonghuashun,
   CLS/Baidu/Iwencai and exchange announcement sources in separate reviewed
   slices.

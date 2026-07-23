@@ -252,3 +252,6 @@
 - Third independent review confirms every original and follow-up P0/P1 is closed; no new blocking finding remains.
 - Final isolated release preflight passes after all review fixes, including the Unicode panic and zero/half-level regressions.
 - Slice B is ready for precise staging, commit and push; the user's untracked requirements document remains excluded.
+- Slice B was committed as `ca165beb374080e32403548983b91ea24486bd1f`
+  and pushed to `main`; the user's untracked requirements document remained
+  excluded.
