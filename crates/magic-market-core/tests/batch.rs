@@ -33,4 +33,11 @@ fn provenance_and_quality_reject_empty_evidence() {
         vec![" ".into()],
     )
     .is_err());
+    assert!(DataBatch::<u8>::best_effort(
+        vec![],
+        Provenance::new("fixture", "now").unwrap(),
+        vec!["bad\nissue".into()],
+    )
+    .is_err());
+    assert!(Provenance::new("bad\nsource", "now").is_err());
 }
