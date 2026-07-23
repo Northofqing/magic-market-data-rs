@@ -1,76 +1,102 @@
 # TDX capability matrix
 
-The first delivery covers the complete pure-Rust capability surface of the
-pinned `tdxrs` implementation. The following modules are present in the
-`magic-tdx-rs` crate:
+`magic-tdx-rs` is the complete pure-Rust TDX source driver in this workspace.
+It contains blocking, direct, Tokio async and smart-failover clients plus remote
+services and local TDX file readers.
 
-| Area | Implementation |
-|---|---|
-| Blocking pooled client | `TdxHqClient` |
-| Direct client | `TdxDirectClient` |
-| Tokio async client | `AsyncTdxHqClient` |
-| Smart failover client | `TdxSmartClient` |
-| Quotes and bars | `protocol::parsers`, `net::*` |
-| Five-level order book | `OrderBooks` on blocking, smart and async clients; includes visible bid/ask depth plus record-level source/observation/provider/batch evidence |
-| Minute data | current and dated history through `protocol::parsers` and service facades |
-| Executed trades | normalized `Trades`/`AsyncTrades` on blocking, smart, direct and async clients; current and dated history with automatic paging, explicit source/observation evidence, and unknown source direction codes preserved |
-| Security metadata | normalized `SecurityMetadataProvider` on blocking and smart clients; source name/ST evidence is retained while unavailable listing date, rule version, and source time stay explicit |
-| Finance and corporate actions | `protocol::finance_fields`, `protocol::adjuster` |
-| Fund data | `fund` |
-| Block data | `block` |
-| F10/profile | `profile`, `TdxF10Client` |
-| Local readers | `reader` |
+| Area | Implementation and verified boundary |
+| --- | --- |
+| Quotes | `RealtimeQuotes` on blocking/smart/direct/async; Shanghai, Shenzhen and Beijing |
+| K lines | All 12 source categories from 1 minute through yearly; stock and index |
+| Five-level books | `OrderBooks` with visible bid/ask depth and record evidence; Shanghai, Shenzhen and Beijing |
+| Minute data | Current and dated history plus normalized `MinuteData`; cumulative quantity, no source amount |
+| Executed trades | Current and dated history with automatic paging and unknown source sides preserved |
+| Security list/metadata | Full count/list and partial normalized metadata for Shanghai/Shenzhen |
+| Finance/actions | Realtime 34 fields, market archives, 45 named indicators and XDXR |
+| Funds | Quotes, bars, finance and XDXR |
+| Blocks | Industry, concept and index classifications |
+| F10/profile | Categories, named sections and complete payloads |
+| Local readers | Daily/minute bars, finance and block files |
+| Money flow | `false`; field-specific `Unsupported` |
+| Call auction | `false`; field-specific `Unsupported` |
 
-The core contract also declares `MoneyFlows` and `Auctions`. TDX does not expose
-auditable standardized feeds for those families, so their capabilities remain
-explicitly `false`; callers receive an unsupported disposition rather than
-fabricated zeros or empty successful batches.
+## Beijing market evidence
 
-Python/PyO3 bindings are excluded. Real-network validation is opt-in through
-`examples/live_probe.rs`; deterministic validation is covered by the upstream
-unit and parser suite.
+Live protocol validation on 2026-07-23 tried TDX markets `0`, `1` and `2` for
+太湖远大 `920118`. Markets `0` and `1` returned a mismatched Shanghai record;
+only market `2` returned `(market=2, code=920118, price=16.91)`. The adapter
+therefore maps `Exchange::Beijing` exclusively to `2` and still rejects any
+response whose market/code does not match the request.
 
-The historical financial-file path first uses TDX's official
-`data.tdx.com.cn/tdxfin/` distribution endpoint and checks HTTP framing, ZIP
-bounds, uncompressed length and CRC before parsing. The `gpcw.txt` byte length
-is treated as a bounded allocation hint because the manifest and HTTP object can
-be updated independently; a stale length never bypasses the ZIP integrity gate. The quote-server
-`0x06B9` report transport remains a fallback because current quote nodes may
-return the `gpcw.txt` manifest but an empty fragment for large ZIP files.
+The release probe then returned:
 
-On 2026-07-22, the release `live_probe` returned non-empty data for all TDX
-families exercised by the example: one stock quote; all 12 stock K-line
-categories; five index bars; 27,590 Shanghai security records reported and a
-1,000-record list page; 240 current and 240 historical minute points; 20 current
-and 20 historical transactions; current finance; 30 corporate-action records;
-industry, concept and index blocks; fund quote/bars/actions; and 16 F10
-categories. It also downloaded the 5,116,020-byte `gpcw20260331.zip`, validated
-and parsed 5,526 market-wide financial records, and extracted all 45 named
-indicators for `600396` (华电辽能).
+- one normalized Beijing Quote at 16.91;
+- five Beijing daily bars;
+- five bid and five ask levels;
+- 120 current-session and 240 previous-session minute points;
+- 20 current trades.
 
-The same probe fetched source names and ST markers for `600396` and `000001`.
-The TDX security-list packet does not carry listing dates, versioned price-limit
-rules, board fields, or a source timestamp, so board is visibly derived from
-exchange/code and the record remains `Unavailable` with field-level quality
-issues. Beijing is a first-class core exchange but TDX requests return
-`Unsupported` until an official market identifier is verified; Beijing is never
-silently mapped to Shenzhen market `0`.
+The normalized minute batch was complete and carried source time through
+`2026-07-23T11:30:00+08:00`. Quantity is the cumulative source quantity;
+TDX minute packets do not expose an auditable cumulative amount, so that field
+remains `None`.
 
-After changing the live sample to Shanghai-listed 华电辽能 (`600396`) and
-rerunning on 2026-07-22, the quote price was 14.92, the security-list name was
-`华电辽能`, all 12 K-line categories returned, both minute datasets returned
-240 rows, trade pagination returned 1,820/1,820 and 2,001/2,001 rows, and the
-market-wide archive returned 5,526 records plus 45 named indicators for the
-sample security.
+Beijing security count returned 364, but live-verified servers close the
+`market=2` security-list request. Because the list packet is required for name
+metadata, a Beijing `SecurityMetadataProvider` request returns an immediate
+`Unsupported` explaining this endpoint boundary. It is not retried as a fake
+Shanghai/Shenzhen request. Shanghai/Shenzhen metadata remains available.
 
-The normalized trade probe additionally returned 20/20 current/historical
-records with record-level evidence. Paging was exercised across real server
-boundaries: current trades returned 1,820/1,820 and historical trades returned
-2,001/2,001. TDX direction values `0/1/2` normalize to buy/sell/neutral; observed
-post-market values such as `5/8` remain `Unknown(value)` and mark quality
-incomplete rather than being guessed.
+## Provenance and partial records
 
-`ProviderId::LocalTerminal` is reserved for an authorized, read-only local
-terminal/SDK adapter. It must never read account, position, cash, or order
-state, and it remains unimplemented until the terminal's official local API or
-cache format is identified.
+TDX Quote and order-book packets contain a raw quote-time area whose format is
+still unverified. The adapter leaves `source_at=None` and marks quality
+incomplete; it never promotes `observed_at` into source time. These records
+cannot enter a downstream five-second freshness gate that requires an
+auditable source timestamp.
+
+The security-list packet supplies name and enough evidence to identify ST
+names. It does not supply listing date, versioned price-limit rules, board or
+source timestamp. Board is visibly derived from exchange/code and the
+normalized metadata record remains `Unavailable` with field-level issues.
+
+TDX current trade direction values `0/1/2` map to buy/sell/neutral. Other
+observed values, including post-market values such as `5` and `8`, remain
+`Unknown(value)` and make quality incomplete rather than being guessed.
+
+## Explicit unsupported families
+
+The normalized `MoneyFlow` contract requires auditable main/net inflow fields
+and source methodology. TDX Quote/trade packets do not provide them. The
+normalized `AuctionSnapshot` requires indicative price and matched/unmatched
+quantities; the implemented packets do not provide those fields. Both traits
+are callable but capabilities remain `false`, and both return field-specific
+`Unsupported` errors instead of zeros or empty successful batches.
+
+## Real-network acceptance result
+
+On 2026-07-23 this command exited zero with
+`live_probe_status=passed`:
+
+```bash
+cargo run -p magic-tdx-rs --example live_probe --release
+```
+
+In addition to the Beijing evidence above, it returned all 12 stock K-line
+categories, five index bars, Shanghai/Shenzhen metadata for 华电辽能 `600396`
+and 平安银行 `000001`, 20 current and 20 historical trades, cross-page
+1,820/1,820 current and 2,001/2,001 historical trades, realtime finance, 30
+XDXR records, three block families, fund data and 16 F10 categories. It
+downloaded and validated the `gpcw20260331.zip` archive, parsed 5,526 records
+and extracted all 45 named indicators.
+
+The financial-file path uses TDX's `data.tdx.com.cn/tdxfin/` distribution
+endpoint and validates HTTP framing, ZIP bounds, uncompressed length and CRC.
+The manifest byte length is only a bounded allocation hint because the manifest
+and object can change independently. The quote-server report transport remains
+a fallback because current nodes can return the manifest but an empty large
+file fragment.
+
+Python/PyO3 bindings are excluded. `ProviderId::LocalTerminal` remains reserved
+for a separately authorized read-only terminal adapter and must never expose
+account, position, cash or order state.

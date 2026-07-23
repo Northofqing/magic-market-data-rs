@@ -8,7 +8,7 @@
 
 - `magic-tdx-live-probe`：TDX 全能力真实探针；
 - `magic-emquant-live-probe`：官方 EMQuant SDK 探针；
-- `magic-tencent-live-probe`：腾讯 Quote/五档探针；
+- `magic-tencent-live-probe`：腾讯 Quote/五档/K线/分时/逐笔探针；
 - `magic-tencent-load-probe`：有界短时并发探针。
 
 ## 可重复构建
@@ -25,8 +25,9 @@ git commit
 bash tools/release/package.sh
 ```
 
-预检在离线模式运行格式、Rust 1.83 全目标编译、全部测试、严格 Clippy、rustdoc、
-doctest、文档链接、合规和 diff 空白检查。打包脚本随后用锁文件构建四个 release
+预检在每次新建的隔离 target 目录中，以离线模式运行格式、Rust 1.83 全目标编译、
+全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff 空白检查，避免
+本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建四个 release
 探针，复制为不冲突的文件名，并生成 SHA-256 清单：
 
 ```text
@@ -82,7 +83,7 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | Provider | 必需出站访问 | 本地写入 |
 | --- | --- | --- |
 | TDX | 已配置行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` | `~/.tdxrs/server_cache.json`；调用方指定的财务缓存 |
-| Tencent | `qt.gtimg.cn:443`，HTTPS | 无持久缓存 |
+| Tencent | `qt.gtimg.cn:443`、`web.ifzq.gtimg.cn:443`、`ifzq.gtimg.cn:443`、`stock.gtimg.cn:443`，HTTPS | 无持久缓存 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
 
 防火墙应只开放所需出站目标。TDX 财务下载当前是厂商 HTTP 分发端点，代码通过响应
@@ -148,14 +149,18 @@ EMQuant API 产品权限。这不是部署成功状态。开通权限后必须�
 market_release_dir=target/dist/$(git rev-parse HEAD)
 "$market_release_dir/bin/magic-tencent-live-probe"
 "$market_release_dir/bin/magic-tdx-live-probe"
+MAGIC_TENCENT_LOAD_OPERATION=mixed MAGIC_TENCENT_LOAD_REQUESTS=20 \
+  MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
+  "$market_release_dir/bin/magic-tencent-load-probe"
 MAGIC_EMQUANT_BRIDGE=/opt/magic-market-data/libexec/emquant/emquant-snapshot \
   "$market_release_dir/bin/magic-emquant-live-probe"
 ```
 
 所有探针都以退出码表达真假：预期能力缺记录、代码错配、协议异常、无权限或超时会
 退出非零，不会打印模拟记录后成功。TDX 探针理解周末、盘前、午休和盘后差异；
-Tencent 盘前零现价会明确失败，涨跌停缺档会标记质量不完整；EMQuant 必须获得所需
-API/Level-2 权限才可通过相应数据族。
+Tencent 盘前零现价会明确失败，涨跌停缺档会标记质量不完整，load probe 会轮转
+Quote、日线、分时和当日逐笔；EMQuant 必须获得所需 API/Level-2 权限才可通过
+相应数据族。
 
 上线门至少保存以下证据，但不要保存账号、令牌或原始登录包：
 

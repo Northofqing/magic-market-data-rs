@@ -3,14 +3,14 @@ use crate::protocol::constants::{
     KLINE_15MIN, KLINE_1HOUR, KLINE_1MIN, KLINE_30MIN, KLINE_5MIN, KLINE_DAILY, KLINE_MONTHLY,
     KLINE_WEEKLY, KLINE_YEARLY,
 };
-use crate::protocol::types::{SecurityInfo, TickData};
+use crate::protocol::types::{MinuteTimePrice, SecurityInfo, TickData};
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use magic_market_core::{
     AsyncHistoricalBars, AsyncRealtimeQuotes, AsyncTrades, AuctionSnapshot, Auctions, BarInterval,
-    BarsRequest, Board, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId, Money,
-    MoneyFlow, MoneyFlows, OrderBook, OrderBooks, Price, PriceLimitRule, ProviderId, Quantity,
-    Quote, Ratio, RatioUnit, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade,
-    TradeSide, Trades, TradesRequest,
+    BarsRequest, Board, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId, MinuteData,
+    MinuteDataRequest, MinutePoint, Money, MoneyFlow, MoneyFlows, OrderBook, OrderBooks, Price,
+    PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
+    SecurityMetadata, SecurityMetadataProvider, Trade, TradeSide, Trades, TradesRequest,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -40,9 +40,10 @@ fn market(id: &InstrumentId) -> Result<u8, TdxError> {
     match id.exchange() {
         magic_market_core::Exchange::Shanghai => Ok(1),
         magic_market_core::Exchange::Shenzhen => Ok(0),
-        magic_market_core::Exchange::Beijing => Err(TdxError::Unsupported(
-            "beijing exchange: TDX market identifier is not verified".into(),
-        )),
+        // Live protocol evidence on 2026-07-23 uniquely returned market/code
+        // `(2, 920118)` for market 2. Candidates 0 and 1 returned a mismatched
+        // Shanghai record and are therefore never accepted for Beijing.
+        magic_market_core::Exchange::Beijing => Ok(2),
     }
 }
 fn category(interval: BarInterval) -> Result<u8, TdxError> {
@@ -101,6 +102,111 @@ fn strict_bars(
     ensure_nonempty(&records)?;
     let provenance = bars_provenance(source, &records)?;
     Ok(DataBatch::strict(records, provenance))
+}
+
+fn compact_date(value: &str) -> Result<u32, TdxError> {
+    let digits = value.replace('-', "");
+    if digits.len() != 8 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(TdxError::InvalidData(format!(
+            "invalid TDX minute date {value:?}"
+        )));
+    }
+    digits
+        .parse()
+        .map_err(|_| TdxError::InvalidData(format!("invalid TDX minute date {value:?}")))
+}
+
+fn display_date(value: u32) -> Result<String, TdxError> {
+    let value = format!("{value:08}");
+    if value.len() != 8 {
+        return Err(TdxError::InvalidData(
+            "TDX minute date must contain eight digits".into(),
+        ));
+    }
+    Ok(format!(
+        "{}-{}-{}",
+        &value[0..4],
+        &value[4..6],
+        &value[6..8]
+    ))
+}
+
+fn valid_tdx_minute(value: &str) -> bool {
+    value.len() == 5
+        && value.as_bytes()[2] == b':'
+        && (("09:31"..="11:30").contains(&value) || ("13:01"..="15:00").contains(&value))
+}
+
+fn normalize_minute_records(
+    source: &str,
+    instrument: &InstrumentId,
+    date: &str,
+    mut records: Vec<MinuteTimePrice>,
+) -> Result<DataBatch<MinutePoint>, TdxError> {
+    if records.is_empty() {
+        return Err(TdxError::InvalidData(
+            "TDX returned an empty minute-data response".into(),
+        ));
+    }
+    if records.len() > 240 {
+        return Err(TdxError::InvalidData(format!(
+            "TDX returned {} minute points; maximum is 240",
+            records.len()
+        )));
+    }
+    records.sort_by(|left, right| left.time.cmp(&right.time));
+    let observed_at = fetched_at()?;
+    let batch_id = format!("{source}:{observed_at}:minute");
+    let mut normalized = Vec::with_capacity(records.len());
+    let mut cumulative_quantity = 0.0;
+    let mut previous_time: Option<&str> = None;
+    for record in &records {
+        if !valid_tdx_minute(&record.time) {
+            return Err(TdxError::InvalidData(format!(
+                "TDX minute time is outside the verified session grid: {:?}",
+                record.time
+            )));
+        }
+        if previous_time.is_some_and(|previous| previous >= record.time.as_str()) {
+            return Err(TdxError::InvalidData(
+                "TDX minute times are duplicated or unordered".into(),
+            ));
+        }
+        if !record.vol.is_finite() || record.vol < 0.0 {
+            return Err(TdxError::InvalidData(
+                "TDX minute volume must be finite and non-negative".into(),
+            ));
+        }
+        cumulative_quantity += record.vol;
+        if !cumulative_quantity.is_finite() {
+            return Err(TdxError::InvalidData(
+                "TDX cumulative minute volume overflowed".into(),
+            ));
+        }
+        let minute_at = format!("{date} {}", record.time);
+        let source_at = format!("{date}T{}:00+08:00", record.time);
+        normalized.push(MinutePoint::new(
+            instrument.clone(),
+            minute_at,
+            Price::new(record.price)?,
+            Quantity::new(cumulative_quantity)?,
+            None,
+            DataStatus::Available,
+            Some(source_at),
+            observed_at.clone(),
+            ProviderId::Tdx,
+            batch_id.clone(),
+        )?);
+        previous_time = Some(&record.time);
+    }
+    let latest_source_at = normalized
+        .last()
+        .and_then(|point| point.source_at())
+        .ok_or_else(|| TdxError::InvalidData("TDX minute source time is missing".into()))?;
+    let provenance = magic_market_core::Provenance::new(source, observed_at)?
+        .with_source_at(latest_source_at)?
+        .with_batch_id(batch_id)?;
+    Ok(DataBatch::strict(normalized, provenance))
 }
 
 fn optional_quote_price(value: f64, field: &str) -> Result<Option<Price>, TdxError> {
@@ -455,6 +561,21 @@ where
     Ok(records)
 }
 
+fn validate_security_metadata_request(instruments: &[InstrumentId]) -> Result<(), TdxError> {
+    if instruments
+        .iter()
+        .any(|instrument| instrument.exchange() == magic_market_core::Exchange::Beijing)
+    {
+        return Err(TdxError::Unsupported(
+            "TDX market=2 serves Beijing quotes, bars, minute data, trades and order books, \
+             but live-verified servers close the security-list request required for Beijing \
+             security metadata"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 fn normalize_security_metadata(
     source: &str,
     instruments: &[InstrumentId],
@@ -535,6 +656,7 @@ impl SecurityMetadataProvider for TdxHqClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<SecurityMetadata>, Self::Error> {
+        validate_security_metadata_request(instruments)?;
         let records = fetch_security_records(
             instruments,
             |value| self.get_security_count(value),
@@ -569,6 +691,37 @@ impl HistoricalBars for TdxHqClient {
             0,
         )?;
         strict_bars("tdx", records)
+    }
+}
+
+impl MinuteData for TdxHqClient {
+    type Error = TdxError;
+
+    fn minute_data(
+        &self,
+        request: &MinuteDataRequest,
+    ) -> Result<DataBatch<MinutePoint>, Self::Error> {
+        let (date, records) = match request.date() {
+            Some(date) => (
+                date.to_owned(),
+                self.get_history_minute_time_data(
+                    market(request.instrument())?,
+                    request.instrument().code(),
+                    compact_date(date)?,
+                )?,
+            ),
+            None => {
+                let compact = crate::net::utils::today_yyyymmdd();
+                (
+                    display_date(compact)?,
+                    self.get_minute_time_data(
+                        market(request.instrument())?,
+                        request.instrument().code(),
+                    )?,
+                )
+            }
+        };
+        normalize_minute_records("tdx", request.instrument(), &date, records)
     }
 }
 
@@ -869,6 +1022,17 @@ impl HistoricalBars for crate::TdxSmartClient {
             0,
         )?;
         strict_bars("tdx-smart", records)
+    }
+}
+
+impl MinuteData for crate::TdxSmartClient {
+    type Error = TdxError;
+
+    fn minute_data(
+        &self,
+        request: &MinuteDataRequest,
+    ) -> Result<DataBatch<MinutePoint>, Self::Error> {
+        <TdxHqClient as MinuteData>::minute_data(self.inner(), request)
     }
 }
 
@@ -1290,10 +1454,48 @@ mod tests {
     }
 
     #[test]
-    fn beijing_fails_explicitly_without_an_unverified_tdx_market_number() {
-        let instrument =
-            InstrumentId::new(Exchange::Beijing, "920001", AssetClass::Equity).unwrap();
-        assert!(matches!(market(&instrument), Err(TdxError::Unsupported(_))));
+    fn beijing_uses_the_live_verified_tdx_market_number() {
+        let beijing = InstrumentId::new(Exchange::Beijing, "920001", AssetClass::Equity).unwrap();
+        assert_eq!(market(&beijing).unwrap(), 2);
+        assert_eq!(market(&instrument("600001")).unwrap(), 1);
+        let shenzhen = InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity).unwrap();
+        assert_eq!(market(&shenzhen).unwrap(), 0);
+    }
+
+    #[test]
+    fn rejects_beijing_security_metadata_before_transport() {
+        let beijing = InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity).unwrap();
+        let error = validate_security_metadata_request(&[beijing]).unwrap_err();
+        assert!(matches!(error, TdxError::Unsupported(_)));
+        assert!(error.to_string().contains("security-list"));
+    }
+
+    #[test]
+    fn normalizes_tdx_minute_rows_into_cumulative_chronological_points() {
+        let records = vec![
+            MinuteTimePrice {
+                time: "09:32".into(),
+                price: 15.6,
+                avg_price: 15.5,
+                vol: 20.0,
+            },
+            MinuteTimePrice {
+                time: "09:31".into(),
+                price: 15.4,
+                avg_price: 15.4,
+                vol: 10.0,
+            },
+        ];
+        let batch =
+            normalize_minute_records("test", &instrument("600396"), "2026-07-23", records).unwrap();
+        assert_eq!(batch.records()[0].minute_at(), "2026-07-23 09:31");
+        assert_eq!(batch.records()[0].cumulative_quantity().get(), 10.0);
+        assert_eq!(batch.records()[1].cumulative_quantity().get(), 30.0);
+        assert_eq!(
+            batch.records()[1].source_at(),
+            Some("2026-07-23T09:32:00+08:00")
+        );
+        assert!(batch.records()[1].cumulative_amount().is_none());
     }
 
     #[test]
@@ -1337,7 +1539,11 @@ macro_rules! unsupported_p0 {
                 &self,
                 _instruments: &[InstrumentId],
             ) -> Result<DataBatch<MoneyFlow>, Self::Error> {
-                Err(TdxError::Unsupported("money_flow".into()))
+                Err(TdxError::Unsupported(
+                    "TDX quote/trade packets do not provide auditable main/net inflow fields or \
+                     source methodology required by MoneyFlow"
+                        .into(),
+                ))
             }
         }
         impl Auctions for $client {
@@ -1346,7 +1552,11 @@ macro_rules! unsupported_p0 {
                 &self,
                 _instruments: &[InstrumentId],
             ) -> Result<DataBatch<AuctionSnapshot>, Self::Error> {
-                Err(TdxError::Unsupported("auction".into()))
+                Err(TdxError::Unsupported(
+                    "TDX packets do not provide the standardized indicative price and matched/\
+                     unmatched quantities required by AuctionSnapshot"
+                        .into(),
+                ))
             }
         }
     };

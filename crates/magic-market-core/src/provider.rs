@@ -1157,6 +1157,24 @@ fn valid_clock_time(value: &str) -> bool {
     hour < 24 && minute < 60 && second < 60
 }
 
+fn valid_minute_timestamp(value: &str) -> bool {
+    if value.len() != 16
+        || !matches!(value.as_bytes()[10], b' ' | b'T')
+        || !valid_iso_date(&value[..10])
+    {
+        return false;
+    }
+    let clock = &value[11..];
+    clock.len() == 5
+        && clock.as_bytes()[2] == b':'
+        && clock
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| index == 2 || byte.is_ascii_digit())
+        && clock[0..2].parse::<u8>().is_ok_and(|hour| hour < 24)
+        && clock[3..5].parse::<u8>().is_ok_and(|minute| minute < 60)
+}
+
 fn valid_bar_time(value: &str, interval: BarInterval) -> bool {
     match interval {
         BarInterval::Minute1
@@ -1172,6 +1190,127 @@ fn valid_bar_time(value: &str, interval: BarInterval) -> bool {
         BarInterval::Day | BarInterval::Week | BarInterval::Month | BarInterval::Year => {
             valid_iso_date(value)
         }
+    }
+}
+
+/// One source minute with cumulative session volume and amount.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "MinutePointWire")]
+pub struct MinutePoint {
+    instrument: InstrumentId,
+    minute_at: String,
+    price: crate::Price,
+    cumulative_quantity: crate::Quantity,
+    cumulative_amount: Option<crate::Money>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+
+impl MinutePoint {
+    /// Builds one checked minute point.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentId,
+        minute_at: impl Into<String>,
+        price: crate::Price,
+        cumulative_quantity: crate::Quantity,
+        cumulative_amount: Option<crate::Money>,
+        status: DataStatus,
+        source_at: Option<String>,
+        observed_at: impl Into<String>,
+        provider: ProviderId,
+        batch_id: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        let minute_at = checked_text("minute_at", minute_at)?;
+        if !valid_minute_timestamp(&minute_at) {
+            return Err(crate::CoreError::InvalidRequest(
+                "invalid minute timestamp".into(),
+            ));
+        }
+        ensure_nonnegative_money("minute_cumulative_amount", cumulative_amount)?;
+        let source_at = source_at
+            .map(|value| checked_text("source_at", value))
+            .transpose()?;
+        ensure_status_consistent(status, source_at.is_some(), "minute point")?;
+        Ok(Self {
+            instrument,
+            minute_at,
+            price,
+            cumulative_quantity,
+            cumulative_amount,
+            status,
+            source_at,
+            observed_at: checked_text("observed_at", observed_at)?,
+            provider,
+            batch_id: checked_text("batch_id", batch_id)?,
+        })
+    }
+
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn minute_at(&self) -> &str {
+        &self.minute_at
+    }
+    pub fn price(&self) -> crate::Price {
+        self.price
+    }
+    pub fn cumulative_quantity(&self) -> crate::Quantity {
+        self.cumulative_quantity
+    }
+    pub fn cumulative_amount(&self) -> Option<crate::Money> {
+        self.cumulative_amount
+    }
+    pub fn status(&self) -> DataStatus {
+        self.status
+    }
+    pub fn source_at(&self) -> Option<&str> {
+        self.source_at.as_deref()
+    }
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+    pub fn provider(&self) -> ProviderId {
+        self.provider
+    }
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+}
+
+#[derive(Deserialize)]
+struct MinutePointWire {
+    instrument: InstrumentId,
+    minute_at: String,
+    price: crate::Price,
+    cumulative_quantity: crate::Quantity,
+    cumulative_amount: Option<crate::Money>,
+    status: DataStatus,
+    source_at: Option<String>,
+    observed_at: String,
+    provider: ProviderId,
+    batch_id: String,
+}
+
+impl TryFrom<MinutePointWire> for MinutePoint {
+    type Error = crate::CoreError;
+
+    fn try_from(value: MinutePointWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.instrument,
+            value.minute_at,
+            value.price,
+            value.cumulative_quantity,
+            value.cumulative_amount,
+            value.status,
+            value.source_at,
+            value.observed_at,
+            value.provider,
+            value.batch_id,
+        )
     }
 }
 
@@ -1437,6 +1576,60 @@ impl<'de> Deserialize<'de> for BarsRequest {
     }
 }
 
+/// Validated current or single-day minute-data request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MinuteDataRequest {
+    instrument: InstrumentId,
+    date: Option<String>,
+}
+
+impl MinuteDataRequest {
+    pub fn new(instrument: InstrumentId) -> Self {
+        Self {
+            instrument,
+            date: None,
+        }
+    }
+
+    /// Selects one historical trading date in `YYYY-MM-DD` form.
+    pub fn with_date(mut self, date: impl Into<String>) -> Result<Self, crate::CoreError> {
+        let date = date.into();
+        if !valid_iso_date(&date) {
+            return Err(crate::CoreError::InvalidRequest(
+                "invalid minute-data date".into(),
+            ));
+        }
+        self.date = Some(date);
+        Ok(self)
+    }
+
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+    pub fn date(&self) -> Option<&str> {
+        self.date.as_deref()
+    }
+}
+
+impl<'de> Deserialize<'de> for MinuteDataRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Repr {
+            instrument: InstrumentId,
+            date: Option<String>,
+        }
+        let repr = Repr::deserialize(deserializer)?;
+        let request = Self::new(repr.instrument);
+        match repr.date {
+            Some(date) => request.with_date(date).map_err(de::Error::custom),
+            None => Ok(request),
+        }
+    }
+}
+
 /// Validated current or single-day historical trade request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TradesRequest {
@@ -1511,6 +1704,15 @@ pub trait HistoricalBars {
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error>;
 }
 
+/// Provider capability for current and historical minute data.
+pub trait MinuteData {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn minute_data(
+        &self,
+        request: &MinuteDataRequest,
+    ) -> Result<DataBatch<MinutePoint>, Self::Error>;
+}
+
 /// Provider capability for realtime quotes.
 pub trait RealtimeQuotes {
     type Quote;
@@ -1572,6 +1774,16 @@ pub trait AsyncHistoricalBars {
         &self,
         request: &BarsRequest,
     ) -> Result<DataBatch<Self::Bar>, Self::Error>;
+}
+
+/// Async provider capability for current and historical minute data.
+#[allow(async_fn_in_trait)]
+pub trait AsyncMinuteData {
+    type Error: std::error::Error + Send + Sync + 'static;
+    async fn minute_data_async(
+        &self,
+        request: &MinuteDataRequest,
+    ) -> Result<DataBatch<MinutePoint>, Self::Error>;
 }
 
 /// Async provider capability for realtime quotes.

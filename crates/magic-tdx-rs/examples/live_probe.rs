@@ -1,5 +1,6 @@
 use magic_market_core::{
-    AssetClass, Exchange, InstrumentId, OrderBooks, SecurityMetadataProvider, Trades, TradesRequest,
+    AssetClass, Exchange, InstrumentId, MinuteData, MinuteDataRequest, OrderBooks, RealtimeQuotes,
+    SecurityMetadataProvider, Trades, TradesRequest,
 };
 use magic_tdx_rs::{
     net::utils::today_yyyymmdd,
@@ -363,6 +364,58 @@ fn main() {
                 }
                 Err(error) => record_error(&mut errors, "quotes", error),
             }
+            for candidate_market in [0_u8, 1, 2] {
+                match client.get_security_quotes(&[(candidate_market, "920118")]) {
+                    Ok(quotes) => {
+                        println!(
+                            "beijing_market_candidate={} count={} records={:?}",
+                            candidate_market,
+                            quotes.len(),
+                            quotes
+                                .iter()
+                                .map(|quote| (
+                                    quote.market,
+                                    quote.code.as_str(),
+                                    quote.price,
+                                    quote.reversed_bytes0,
+                                    quote.servertime.as_str()
+                                ))
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                    Err(error) => println!(
+                        "beijing_market_candidate={} error={}",
+                        candidate_market, error
+                    ),
+                }
+            }
+            let beijing_instrument =
+                InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity)
+                    .expect("valid Beijing probe instrument");
+            match client.realtime_quotes(std::slice::from_ref(&beijing_instrument)) {
+                Ok(batch) => {
+                    println!(
+                        "beijing_quotes={} provenance={:?} quality={:?}",
+                        batch.records().len(),
+                        batch.provenance(),
+                        batch.quality()
+                    );
+                    for quote in batch.records() {
+                        println!(
+                            "beijing_quote code={} price={} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                            quote.instrument().code(),
+                            quote.price().get(),
+                            quote.status(),
+                            quote.source_at(),
+                            quote.observed_at(),
+                            quote.provider(),
+                            quote.batch_id()
+                        );
+                    }
+                    require_count(&mut errors, "beijing_quotes", batch.records().len(), 1);
+                }
+                Err(error) => record_error(&mut errors, "beijing_quotes", error),
+            }
             match client.get_security_bars(4, 1, "600396", 0, 5, 0) {
                 Ok(bars) => {
                     println!(
@@ -374,12 +427,19 @@ fn main() {
                 }
                 Err(error) => record_error(&mut errors, "bars", error),
             }
-            let inner = client.inner();
-            match inner.connect("180.153.18.170", 7709, Some(3.0)) {
-                Ok(true) => println!("full_probe_server=180.153.18.170:7709"),
-                Ok(false) => record_error(&mut errors, "full_probe_connect", "returned false"),
-                Err(error) => record_error(&mut errors, "full_probe_connect", error),
+            match client.get_security_bars(KLINE_DAILY, 2, "920118", 0, 5, 0) {
+                Ok(bars) => {
+                    println!(
+                        "beijing_bars={} first_datetime={}",
+                        bars.len(),
+                        bars.first().map_or("none", |bar| bar.datetime.as_str())
+                    );
+                    require_nonempty(&mut errors, "beijing_bars", bars.len());
+                }
+                Err(error) => record_error(&mut errors, "beijing_bars", error),
             }
+            let inner = client.inner();
+            println!("full_probe_server={:?}", inner.connected_server());
             for category in 0_u8..=11 {
                 match inner.get_security_bars(category, 1, "600396", 0, 1, 0) {
                     Ok(items) => {
@@ -425,6 +485,13 @@ fn main() {
                 }
                 Err(error) => record_error(&mut errors, "security_list", error),
             }
+            match inner.get_security_count(2) {
+                Ok(value) => {
+                    println!("security_count_bj={value}");
+                    require_nonempty(&mut errors, "security_count_bj", usize::from(value));
+                }
+                Err(error) => record_error(&mut errors, "security_count_bj", error),
+            }
             let metadata_instruments = [
                 InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
                     .expect("valid Shanghai metadata instrument"),
@@ -461,10 +528,20 @@ fn main() {
                 }
                 Err(error) => record_error(&mut errors, "security_metadata", error),
             }
+            match client.security_metadata(std::slice::from_ref(&beijing_instrument)) {
+                Err(TdxError::Unsupported(reason)) => {
+                    println!("beijing_security_metadata=expected_unsupported reason={reason}");
+                }
+                Err(error) => record_error(&mut errors, "beijing_security_metadata", error),
+                Ok(batch) => errors.push(format!(
+                    "beijing_security_metadata: expected Unsupported, received {} records",
+                    batch.records().len()
+                )),
+            }
             let book_instrument =
                 InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
                     .expect("valid order-book instrument");
-            match client.order_books(&[book_instrument]) {
+            match client.order_books(&[book_instrument, beijing_instrument.clone()]) {
                 Ok(batch) => {
                     println!(
                         "order_books={} provenance={:?} quality={:?}",
@@ -472,7 +549,7 @@ fn main() {
                         batch.provenance(),
                         batch.quality()
                     );
-                    require_count(&mut errors, "order_books", batch.records().len(), 1);
+                    require_count(&mut errors, "order_books", batch.records().len(), 2);
                     for book in batch.records() {
                         println!(
                             "order_book code={} status={:?} total_bid={:?} total_ask={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
@@ -528,6 +605,55 @@ fn main() {
                     }
                     Err(error) => record_error(&mut errors, "minute_history", error),
                 }
+            }
+            match probe_minute_data(2, "920118") {
+                Ok(probe) => {
+                    println!(
+                        "beijing_minute_data_current={} current_status={} beijing_minute_data_latest_session={} latest_session_date={} server={}",
+                        probe.current_count,
+                        probe.current_status,
+                        probe.latest_session_count,
+                        probe.latest_session_date,
+                        probe.server
+                    );
+                    require_count(
+                        &mut errors,
+                        "beijing_minute_data_latest_session",
+                        probe.latest_session_count,
+                        240,
+                    );
+                }
+                Err(error) => record_error(&mut errors, "beijing_minute_data", error),
+            }
+            match client.minute_data(&MinuteDataRequest::new(beijing_instrument.clone())) {
+                Ok(batch) => {
+                    println!(
+                        "beijing_normalized_minute={} provenance={:?} quality={:?}",
+                        batch.records().len(),
+                        batch.provenance(),
+                        batch.quality()
+                    );
+                    require_nonempty(
+                        &mut errors,
+                        "beijing_normalized_minute",
+                        batch.records().len(),
+                    );
+                    for point in batch.records() {
+                        println!(
+                            "beijing_minute at={} price={} cumulative_quantity={} cumulative_amount={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                            point.minute_at(),
+                            point.price().get(),
+                            point.cumulative_quantity().get(),
+                            point.cumulative_amount().map(|value| value.get()),
+                            point.status(),
+                            point.source_at(),
+                            point.observed_at(),
+                            point.provider(),
+                            point.batch_id()
+                        );
+                    }
+                }
+                Err(error) => record_error(&mut errors, "beijing_normalized_minute", error),
             }
             match inner.get_transaction_data(1, "600396", 0, 20) {
                 Ok(items) => {
@@ -600,6 +726,57 @@ fn main() {
                         record_current_error(
                             &mut errors,
                             "normalized_trades_current",
+                            error,
+                            session,
+                        );
+                    }
+                }
+            }
+            let beijing_current_request = TradesRequest::new(beijing_instrument.clone(), 20)
+                .expect("valid Beijing current trade request");
+            match client.trades(&beijing_current_request) {
+                Ok(batch) => {
+                    println!(
+                        "beijing_normalized_trades_current={} provenance={:?} quality={:?}",
+                        batch.records().len(),
+                        batch.provenance(),
+                        batch.quality()
+                    );
+                    for trade in batch.records() {
+                        println!(
+                            "beijing_trade current time={} price={} quantity={} count={:?} side={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                            trade.trade_at(),
+                            trade.price().get(),
+                            trade.quantity().get(),
+                            trade.trade_count(),
+                            trade.side(),
+                            trade.status(),
+                            trade.source_at(),
+                            trade.observed_at(),
+                            trade.provider(),
+                            trade.batch_id()
+                        );
+                    }
+                    if let Some(session) = session {
+                        let times = batch
+                            .records()
+                            .iter()
+                            .map(|trade| trade.trade_at())
+                            .collect::<Vec<_>>();
+                        validate_current_trades(
+                            &mut errors,
+                            "beijing_normalized_trades_current",
+                            &times,
+                            20,
+                            session,
+                        );
+                    }
+                }
+                Err(error) => {
+                    if let Some(session) = session {
+                        record_current_error(
+                            &mut errors,
+                            "beijing_normalized_trades_current",
                             error,
                             session,
                         );

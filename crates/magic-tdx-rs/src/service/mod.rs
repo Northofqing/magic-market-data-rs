@@ -387,14 +387,22 @@ impl TdxService {
         &self,
         _instruments: &[InstrumentId],
     ) -> Result<DataBatch<MoneyFlow>, TdxError> {
-        Err(TdxError::Unsupported("money_flow".into()))
+        Err(TdxError::Unsupported(
+            "TDX quote/trade packets do not provide auditable main/net inflow fields or source \
+             methodology required by MoneyFlow"
+                .into(),
+        ))
     }
     /// TDX has no standardized call-auction snapshot packet.
     pub fn auction_snapshots(
         &self,
         _instruments: &[InstrumentId],
     ) -> Result<DataBatch<AuctionSnapshot>, TdxError> {
-        Err(TdxError::Unsupported("auction".into()))
+        Err(TdxError::Unsupported(
+            "TDX packets do not provide the standardized indicative price and matched/unmatched \
+             quantities required by AuctionSnapshot"
+                .into(),
+        ))
     }
     /// Fetches a market security count.
     pub fn security_count(&self, market: u8) -> Result<u16, TdxError> {

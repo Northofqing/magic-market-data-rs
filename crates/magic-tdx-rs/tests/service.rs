@@ -12,13 +12,17 @@ fn service_facade_constructs_without_network() {
 fn unsupported_p0_capabilities_are_explicit() {
     let service = magic_tdx_rs::TdxService::new();
     let result = service.money_flows(&[]);
+    let message = result.as_ref().unwrap_err().to_string();
     assert!(matches!(
         result,
         Err(magic_tdx_rs::TdxError::Unsupported(_))
     ));
+    assert!(message.contains("main/net inflow"));
     let result = service.auction_snapshots(&[]);
+    let message = result.as_ref().unwrap_err().to_string();
     assert!(matches!(
         result,
         Err(magic_tdx_rs::TdxError::Unsupported(_))
     ));
+    assert!(message.contains("matched/unmatched"));
 }

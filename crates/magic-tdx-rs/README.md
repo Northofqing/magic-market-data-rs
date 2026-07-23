@@ -9,7 +9,7 @@ clients. All network calls are read-only and return the upstream error type.
 
 | Facade | Coverage |
 | --- | --- |
-| `TdxService` | Smart failover K-lines, quotes, chunked quotes, normalized security metadata, securities, minute/trade history, finance and XDXR |
+| `TdxService` | Smart failover K-lines, quotes, chunked quotes, normalized Shanghai/Shenzhen security metadata, securities, minute/trade history, finance and XDXR |
 | `AsyncTdxService` | Async-pool equivalents, including atomic security-list pagination |
 | `BlockService` | Industry, concept, index blocks, block K-lines and quotes |
 | `FundService` | Fund/ETF list, bars, quotes, finance and XDXR |
@@ -26,4 +26,7 @@ cargo run -p magic-tdx-rs --example live_probe --release
 
 The probe prints source-backed security name/ST/board evidence and also prints
 unavailable listing-date, price-limit-rule, and source-time fields explicitly.
-It never guesses a complete metadata record from the security code.
+It verifies Beijing market `2` Quote, bars, books, normalized minute data and
+current trades. Beijing security metadata is explicitly unsupported because
+live servers close the market-2 security-list request; it is never remapped to
+Shanghai or Shenzhen.

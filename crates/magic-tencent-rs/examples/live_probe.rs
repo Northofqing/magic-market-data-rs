@@ -1,4 +1,8 @@
-use magic_market_core::{AssetClass, Exchange, InstrumentId, Money, OrderBooks, RealtimeQuotes};
+use magic_market_core::{
+    AssetClass, BarInterval, BarsRequest, Exchange, HistoricalBars, InstrumentId, MinuteData,
+    MinuteDataRequest, Money, OrderBooks, RealtimeQuotes, SecurityMetadataProvider, Trades,
+    TradesRequest,
+};
 use magic_tencent_rs::TencentClient;
 use std::error::Error;
 use std::time::Duration;
@@ -7,18 +11,19 @@ fn parse_instrument(value: &str) -> Result<InstrumentId, Box<dyn Error>> {
     let (code, exchange) = value
         .trim()
         .rsplit_once('.')
-        .ok_or("security code must use CODE.SH or CODE.SZ")?;
+        .ok_or("security code must use CODE.SH, CODE.SZ or CODE.BJ")?;
     let exchange = match exchange.to_ascii_uppercase().as_str() {
         "SH" => Exchange::Shanghai,
         "SZ" => Exchange::Shenzhen,
-        _ => return Err("exchange suffix must be SH or SZ".into()),
+        "BJ" => Exchange::Beijing,
+        _ => return Err("exchange suffix must be SH, SZ or BJ".into()),
     };
     Ok(InstrumentId::new(exchange, code, AssetClass::Equity)?)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let codes =
-        std::env::var("MAGIC_TENCENT_CODES").unwrap_or_else(|_| "600396.SH,000001.SZ".to_owned());
+    let codes = std::env::var("MAGIC_TENCENT_CODES")
+        .unwrap_or_else(|_| "600396.SH,000001.SZ,920118.BJ".to_owned());
     let instruments = codes
         .split(',')
         .map(parse_instrument)
@@ -99,6 +104,199 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ask.quantity().map(|value| value.get())
             );
         }
+    }
+
+    let metadata = client.security_metadata(&instruments)?;
+    if metadata.records().len() != instruments.len() {
+        return Err("security metadata response cardinality mismatch".into());
+    }
+    println!(
+        "security_metadata count={} provenance={:?} quality={:?}",
+        metadata.records().len(),
+        metadata.provenance(),
+        metadata.quality()
+    );
+    for record in metadata.records() {
+        println!(
+            "security code={} exchange={:?} name={:?} board={:?} is_st={:?} listed_on={:?} price_limit_percent={:?} price_limit_version={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+            record.instrument().code(),
+            record.instrument().exchange(),
+            record.name(),
+            record.board(),
+            record.is_st(),
+            record.listed_on(),
+            record.price_limit().percent().map(|value| value.get()),
+            record.price_limit().version(),
+            record.status(),
+            record.source_at(),
+            record.observed_at(),
+            record.provider(),
+            record.batch_id()
+        );
+    }
+
+    let primary = instruments
+        .iter()
+        .find(|instrument| instrument.exchange() == Exchange::Shanghai)
+        .ok_or("live probe requires one Shanghai instrument")?;
+    for interval in [
+        BarInterval::Minute1,
+        BarInterval::Minute5,
+        BarInterval::Minute15,
+        BarInterval::Minute30,
+        BarInterval::Hour1,
+        BarInterval::Day,
+        BarInterval::Week,
+        BarInterval::Month,
+    ] {
+        let request = BarsRequest::new(primary.clone(), interval, 3)?;
+        let bars = client.historical_bars(&request)?;
+        if bars.records().is_empty() || bars.records().len() > 3 {
+            return Err(format!("{interval:?} bar response count is invalid").into());
+        }
+        println!(
+            "bars interval={interval:?} count={} provenance={:?} quality={:?}",
+            bars.records().len(),
+            bars.provenance(),
+            bars.quality()
+        );
+        for bar in bars.records() {
+            println!(
+                "  bar start={} end={} open={} high={} low={} close={} volume_lots={} amount_yuan={:?} adjustment={:?} source_at={:?} provider={:?} batch_id={}",
+                bar.bar_start(),
+                bar.bar_end(),
+                bar.open().get(),
+                bar.high().get(),
+                bar.low().get(),
+                bar.close().get(),
+                bar.volume().get(),
+                bar.amount().map(Money::get),
+                bar.adjustment(),
+                bar.source_at(),
+                bar.provider(),
+                bar.batch_id()
+            );
+        }
+    }
+    let year_request = BarsRequest::new(primary.clone(), BarInterval::Year, 3)?;
+    match client.historical_bars(&year_request) {
+        Err(error) => println!("bars interval=Year unsupported={error}"),
+        Ok(_) => return Err("Tencent year bars unexpectedly reported support".into()),
+    }
+
+    if let Some(beijing) = instruments
+        .iter()
+        .find(|instrument| instrument.exchange() == Exchange::Beijing)
+    {
+        let request = BarsRequest::new(beijing.clone(), BarInterval::Day, 3)?;
+        let bars = client.historical_bars(&request)?;
+        println!(
+            "beijing_daily_bars count={} provenance={:?} quality={:?}",
+            bars.records().len(),
+            bars.provenance(),
+            bars.quality()
+        );
+        for bar in bars.records() {
+            println!(
+                "  beijing_bar start={} open={} high={} low={} close={} volume_lots={} source_at={:?}",
+                bar.bar_start(),
+                bar.open().get(),
+                bar.high().get(),
+                bar.low().get(),
+                bar.close().get(),
+                bar.volume().get(),
+                bar.source_at()
+            );
+        }
+    }
+
+    for instrument in instruments.iter().filter(|instrument| {
+        matches!(
+            instrument.exchange(),
+            Exchange::Shanghai | Exchange::Beijing
+        )
+    }) {
+        let minute = client.minute_data(&MinuteDataRequest::new(instrument.clone()))?;
+        if minute.records().is_empty() {
+            return Err(
+                format!("current minute response is empty for {}", instrument.code()).into(),
+            );
+        }
+        println!(
+            "minute_current code={} count={} provenance={:?} quality={:?}",
+            instrument.code(),
+            minute.records().len(),
+            minute.provenance(),
+            minute.quality()
+        );
+        for point in minute.records() {
+            println!(
+                "  minute at={} price={} cumulative_lots={} cumulative_amount_yuan={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                point.minute_at(),
+                point.price().get(),
+                point.cumulative_quantity().get(),
+                point.cumulative_amount().map(Money::get),
+                point.status(),
+                point.source_at(),
+                point.observed_at(),
+                point.provider(),
+                point.batch_id()
+            );
+        }
+    }
+
+    let history_date =
+        std::env::var("MAGIC_TENCENT_HISTORY_DATE").unwrap_or_else(|_| "2026-07-22".to_owned());
+    let minute_history = client
+        .minute_data(&MinuteDataRequest::new(primary.clone()).with_date(history_date.clone())?)?;
+    if minute_history.records().is_empty() {
+        return Err("historical minute response is empty".into());
+    }
+    println!(
+        "minute_history code={} date={} count={} provenance={:?} quality={:?}",
+        primary.code(),
+        history_date,
+        minute_history.records().len(),
+        minute_history.provenance(),
+        minute_history.quality()
+    );
+    for point in minute_history.records() {
+        println!(
+            "  minute_history at={} price={} cumulative_lots={} cumulative_amount_yuan={:?} status={:?} source_at={:?}",
+            point.minute_at(),
+            point.price().get(),
+            point.cumulative_quantity().get(),
+            point.cumulative_amount().map(Money::get),
+            point.status(),
+            point.source_at()
+        );
+    }
+
+    let trades = client.trades(&TradesRequest::new(primary.clone(), 20)?)?;
+    if trades.records().is_empty() || trades.records().len() > 20 {
+        return Err("trade response count is invalid".into());
+    }
+    println!(
+        "trades_current code={} count={} provenance={:?} quality={:?}",
+        primary.code(),
+        trades.records().len(),
+        trades.provenance(),
+        trades.quality()
+    );
+    for trade in trades.records() {
+        println!(
+            "  trade at={} price={} quantity_lots={} count={:?} side={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+            trade.trade_at(),
+            trade.price().get(),
+            trade.quantity().get(),
+            trade.trade_count(),
+            trade.side(),
+            trade.status(),
+            trade.source_at(),
+            trade.observed_at(),
+            trade.provider(),
+            trade.batch_id()
+        );
     }
     println!("live_probe_status=passed");
     Ok(())

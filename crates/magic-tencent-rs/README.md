@@ -1,5 +1,7 @@
 # magic-tencent-rs
 
-Read-only supplemental Tencent quote adapter for沪深 A-share realtime quotes
-and five-level order books. See the [integration contract](../../docs/integrations/tencent-web.md)
-for verified fields, units, limitations, and live-test commands.
+Read-only supplemental Tencent adapter for verified 沪深京 A-share quotes,
+five-level books, K lines, current/historical minute data, current trades and
+partial security metadata. See the
+[integration contract](../../docs/integrations/tencent-web.md) for exact
+market/period boundaries, units, deployment endpoints and live/load commands.

@@ -3,13 +3,17 @@
 //!
 //! The endpoint is undocumented and has no project-visible SLA. This crate
 //! consequently exposes only fields whose positions and units are checked by
-//! fixtures and live probes: Shanghai/Shenzhen A-share quotes and five-level
-//! order books.
+//! fixtures and live probes.
+
+mod bars;
+mod minute;
+mod trades;
 
 use encoding_rs::GBK;
 use magic_market_core::{
-    AssetClass, BookLevel, Capabilities, DataBatch, DataStatus, Exchange, InstrumentId, Money,
-    OrderBook, OrderBooks, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
+    AssetClass, Board, BookLevel, Capabilities, DataBatch, DataStatus, Exchange, InstrumentId,
+    Money, OrderBook, OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio,
+    RatioUnit, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider,
 };
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -104,7 +108,7 @@ impl SnapshotTransport for HttpsTransport {
 #[derive(Clone)]
 pub struct TencentClient {
     endpoint: String,
-    transport: Arc<dyn SnapshotTransport>,
+    pub(crate) transport: Arc<dyn SnapshotTransport>,
 }
 
 impl std::fmt::Debug for TencentClient {
@@ -142,16 +146,16 @@ impl TencentClient {
     pub const fn capabilities() -> Capabilities {
         Capabilities {
             quotes: true,
-            bars: false,
-            minute: false,
-            trades: false,
+            bars: true,
+            minute: true,
+            trades: true,
             fundamentals: false,
             corporate_actions: false,
             blocks: false,
             money_flow: false,
             order_book: true,
             auction: false,
-            security_metadata: false,
+            security_metadata: true,
         }
     }
 
@@ -181,7 +185,9 @@ struct Snapshot {
     source_at: Option<String>,
 }
 
-fn validate_instruments(instruments: &[InstrumentId]) -> Result<Vec<String>, TencentError> {
+pub(crate) fn validate_instruments(
+    instruments: &[InstrumentId],
+) -> Result<Vec<String>, TencentError> {
     if instruments.is_empty() {
         return Err(TencentError::InvalidRequest(
             "instrument list must not be empty".into(),
@@ -205,11 +211,7 @@ fn validate_instruments(instruments: &[InstrumentId]) -> Result<Vec<String>, Ten
             let prefix = match instrument.exchange() {
                 Exchange::Shanghai => "sh",
                 Exchange::Shenzhen => "sz",
-                Exchange::Beijing => {
-                    return Err(TencentError::Unsupported(
-                        "Beijing exchange symbol mapping is unverified".into(),
-                    ));
-                }
+                Exchange::Beijing => "bj",
             };
             let code = instrument.code();
             if code.len() != 6 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -279,6 +281,7 @@ fn parse_line(line: &str) -> Result<Snapshot, TencentError> {
         match fields[0] {
             "1" => "sh",
             "51" => "sz",
+            "62" => "bj",
             other => {
                 return Err(TencentError::Protocol(format!(
                     "{symbol} has unverified market code {other}"
@@ -532,7 +535,7 @@ fn order_snapshots(
     Ok(ordered)
 }
 
-fn now() -> Result<String, TencentError> {
+pub(crate) fn now() -> Result<String, TencentError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| format!("{}.{:09}", duration.as_secs(), duration.subsec_nanos()))
@@ -743,12 +746,77 @@ impl OrderBooks for TencentClient {
     }
 }
 
+fn derived_board(instrument: &InstrumentId) -> Board {
+    match instrument.exchange() {
+        Exchange::Beijing => Board::Beijing,
+        Exchange::Shanghai if instrument.code().starts_with("688") => Board::Star,
+        Exchange::Shenzhen
+            if instrument.code().starts_with("300") || instrument.code().starts_with("301") =>
+        {
+            Board::ChiNext
+        }
+        Exchange::Shanghai | Exchange::Shenzhen => Board::Main,
+    }
+}
+
+fn st_flag(name: &str) -> bool {
+    let uppercase = name.trim().to_ascii_uppercase();
+    uppercase.starts_with("ST")
+        || uppercase.starts_with("*ST")
+        || uppercase.starts_with("S*ST")
+        || uppercase.starts_with("SST")
+}
+
+impl SecurityMetadataProvider for TencentClient {
+    type Error = TencentError;
+
+    fn security_metadata(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<SecurityMetadata>, Self::Error> {
+        let snapshots = self.snapshots(instruments)?;
+        let observed_at = now()?;
+        let batch_id = format!("tencent-web:{observed_at}:security-metadata");
+        let mut records = Vec::with_capacity(snapshots.len());
+        let mut issues = Vec::with_capacity(snapshots.len() * 4);
+        for (instrument, snapshot) in instruments.iter().zip(&snapshots) {
+            let name = snapshot.name.clone();
+            let is_st = name.as_deref().map(st_flag);
+            issues.push(format!(
+                "{}: board is derived from exchange/code because the Tencent snapshot has no board field",
+                instrument.code()
+            ));
+            issues.push(format!("{}: listing date unavailable", instrument.code()));
+            issues.push(format!(
+                "{}: source-backed price-limit rule and version unavailable",
+                instrument.code()
+            ));
+            records.push(SecurityMetadata::new(
+                instrument.clone(),
+                name,
+                Some(derived_board(instrument)),
+                is_st,
+                None,
+                PriceLimitRule::new(None, None)?,
+                DataStatus::Unavailable,
+                snapshot.source_at.clone(),
+                observed_at.clone(),
+                ProviderId::Tencent,
+                batch_id.clone(),
+            )?);
+        }
+        let provenance = batch_provenance("security-metadata", &observed_at, &snapshots)?;
+        Ok(DataBatch::best_effort(records, provenance, issues)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const SH_LINE: &str = "v_sh600396=\"1~华电辽能~600396~15.47~14.92~15.30~1775070~821130~950794~15.47~212~15.46~95~15.45~64~15.44~3~15.43~375~15.49~49~15.50~2721~15.51~241~15.52~450~15.53~86~~20260723094907~0.55~3.69~15.88~14.85~15.47/1775070/2729507908~1775070~272951~\";";
     const SZ_LINE: &str = "v_sz000001=\"51~平安银行~000001~11.22~11.08~11.10~1000~400~600~11.21~10~11.20~20~11.19~30~11.18~40~11.17~50~11.22~11~11.23~21~11.24~31~11.25~41~11.26~51~~20260723094908~0.14~1.26~11.30~11.01~11.22/1000/1122000~1000~112~\";";
+    const BJ_LINE: &str = "v_bj920118=\"62~太湖远大~920118~16.91~16.53~16.44~3240~1810~1430~16.82~1~16.81~4~16.80~12~16.73~4~16.72~8~16.93~30~16.94~2~16.95~8~16.97~5~16.98~10~~20260723114602~0.38~2.30~16.99~16.38~16.91/3240/5425465~3240~542.55~\";";
 
     #[derive(Clone)]
     struct FixtureTransport {
@@ -778,6 +846,9 @@ mod tests {
     }
     fn sz() -> InstrumentId {
         InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity).unwrap()
+    }
+    fn bj() -> InstrumentId {
+        InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity).unwrap()
     }
 
     #[test]
@@ -849,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_duplicates_unsupported_markets_and_cardinality_mismatch() {
+    fn rejects_duplicates_and_cardinality_mismatch() {
         let client = TencentClient::with_transport(FixtureTransport {
             response: encoded(SH_LINE),
         });
@@ -857,15 +928,39 @@ mod tests {
             client.realtime_quotes(&[sh(), sh()]),
             Err(TencentError::InvalidRequest(_))
         ));
-        let bj = InstrumentId::new(Exchange::Beijing, "920000", AssetClass::Equity).unwrap();
-        assert!(matches!(
-            client.realtime_quotes(&[bj]),
-            Err(TencentError::Unsupported(_))
-        ));
         assert!(matches!(
             client.realtime_quotes(&[sh(), sz()]),
             Err(TencentError::Protocol(_))
         ));
+    }
+
+    #[test]
+    fn beijing_quote_book_and_metadata_use_verified_market_code() {
+        let client = TencentClient::with_transport(FixtureTransport {
+            response: encoded(BJ_LINE),
+        });
+        let quotes = client.realtime_quotes(&[bj()]).unwrap();
+        assert_eq!(
+            quotes.records()[0].instrument().exchange(),
+            Exchange::Beijing
+        );
+        assert_eq!(quotes.records()[0].name(), Some("太湖远大"));
+        let books = client.order_books(&[bj()]).unwrap();
+        assert_eq!(
+            books.records()[0].bids()[0].price().map(Price::get),
+            Some(16.82)
+        );
+        let metadata = client.security_metadata(&[bj()]).unwrap();
+        assert_eq!(metadata.records()[0].board(), Some(Board::Beijing));
+        assert!(metadata.records()[0].listed_on().is_none());
+        assert!(!metadata.quality().is_complete());
+    }
+
+    #[test]
+    fn security_metadata_st_flag_uses_name_prefix_only() {
+        assert!(st_flag("*ST示例"));
+        assert!(st_flag("ST示例"));
+        assert!(!st_flag("BEST示例"));
     }
 
     #[test]
@@ -949,8 +1044,10 @@ mod tests {
         let capabilities = TencentClient::capabilities();
         assert!(capabilities.quotes);
         assert!(capabilities.order_book);
-        assert!(!capabilities.bars);
-        assert!(!capabilities.minute);
+        assert!(capabilities.bars);
+        assert!(capabilities.minute);
+        assert!(capabilities.trades);
+        assert!(capabilities.security_metadata);
         assert!(!capabilities.money_flow);
         assert!(!capabilities.auction);
     }

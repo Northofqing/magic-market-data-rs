@@ -30,6 +30,17 @@ Breaking migrations:
 - Added `magic-tencent-rs`, a supplemental HTTPS/GBK provider with strict
   cardinality, verified source timestamps, CNY amounts, source-lot quantities,
   deterministic fixtures, live probes, and a bounded concurrent load probe.
+- Added provider-neutral checked `MinutePoint`/`MinuteDataRequest` contracts and
+  implemented normalized current/dated minute data for TDX and Tencent.
+- Live-verified TDX Beijing market `2` for Quote, daily bars, five-level books,
+  minute data, and current trades; Beijing security metadata now fails early
+  with the exact unsupported security-list boundary.
+- Expanded Tencent to Beijing Quote/books, 1/5/15/30/60-minute and
+  day/week/month bars, current/dated minute data, current-session paged trades,
+  and partial security metadata. Unsupported year bars, historical trades,
+  Beijing intraday bars/trades, money flow, and auction remain explicit.
+- Expanded the Tencent bounded load probe with per-family and mixed modes; the
+  100-request/8-worker mixed live run completed without failures.
 - Pinned the HTTPS URL/IDNA/zeroize dependency chain in `Cargo.lock` so Cargo
   1.83 can parse and compile it without the transitive edition-2024 failure.
 - Added release preflight/package scripts and an operator deployment runbook

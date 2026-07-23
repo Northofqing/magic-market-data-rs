@@ -20,18 +20,22 @@ This is a parser microbenchmark, not a network throughput claim.
 
 `cargo test --workspace --all-targets --offline` passes the imported TDX suite,
 including async pool round-robin, concurrent channel operation, pool lifecycle,
-rate limiting, heartbeat, disconnect, and retry tests (219 TDX unit tests plus
-adapter, capability, fuzz-smoke, golden and service integration tests).
+rate limiting, heartbeat, disconnect, retry, normalized minute, Beijing market
+mapping, and explicit unsupported-boundary tests.
 
 ## Live connectivity
 
-On 2026-07-22 the read-only release `live_probe` completed against live TDX
+On 2026-07-23 the read-only release `live_probe` completed against live TDX
 services after SmartClient discarded an unavailable cached endpoint. It returned
 stock and fund quotes, all 12 stock K-line categories, index bars, security
 counts/list data, current and historical minute and transaction records,
 real-time finance, corporate actions, three block families, fund data and F10.
-The financial archive stage downloaded 5,116,020 bytes from TDX's official data
-host, parsed 5,526 records and extracted 45 named indicators for `600519`.
+The Beijing sample `920118` returned Quote price 16.91, five daily bars, two
+five-level book sides, 120 current and 240 previous-session minute points, and
+20 current trades. Beijing security metadata was explicitly unsupported because
+market-2 security-list requests close at the live servers.
+The financial archive stage downloaded 5,116,226 bytes from TDX's official data
+host, parsed 5,526 records and extracted 45 named indicators for `600396`.
 The normalized transaction probe crossed real paging boundaries with
 1,820/1,820 current and 2,001/2,001 historical records.
 
@@ -52,13 +56,14 @@ Command:
 cargo run -p magic-tencent-rs --example load_probe --release --offline
 ```
 
-Observed on the development machine on 2026-07-23, requesting 华电辽能
-`600396.SH` and 平安银行 `000001.SZ` in every request:
+The probe now supports `quotes`, `bars`, `minute`, `trades`, and `mixed`.
+Observed on the development machine on 2026-07-23 with `mixed`, which rotates
+the four operation families for 华电辽能 `600396.SH`:
 
 ```text
-requests=20 concurrency=4 successes=20 failures=0 records=40
-elapsed_seconds=2.669 requests_per_second=7.49
-latency_us_p50=152333 latency_us_p95=1772762 latency_us_max=2017417
+requests=100 concurrency=8 successes=100 failures=0 records=3700
+elapsed_seconds=1.770 requests_per_second=56.49
+latency_us_p50=100077 latency_us_p95=219676 latency_us_max=251169
 ```
 
 This is a short, bounded connectivity/load sample against an undocumented
