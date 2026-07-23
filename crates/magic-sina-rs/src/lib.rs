@@ -5,12 +5,14 @@
 //! crate therefore advertises only response families covered by strict
 //! deterministic parsers and real probes.
 
+mod bars;
+
 use encoding_rs::GB18030;
 use magic_market_core::{
-    AssetClass, Bar, BarsRequest, Board, BookLevel, Capabilities, DataBatch, DataStatus, Exchange,
-    HistoricalBars, InstrumentId, MinuteData, MinuteDataRequest, MinutePoint, Money, OrderBook,
-    OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit,
-    RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider,
+    AssetClass, Board, BookLevel, Capabilities, DataBatch, DataStatus, Exchange, InstrumentId,
+    MinuteData, MinuteDataRequest, MinutePoint, Money, OrderBook, OrderBooks, Price,
+    PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
+    SecurityMetadata, SecurityMetadataProvider,
 };
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -384,7 +386,7 @@ fn parse_book_pair(
     Ok((price, quantity))
 }
 
-fn shares_to_lots(shares: f64) -> Result<f64, SinaError> {
+pub(crate) fn shares_to_lots(shares: f64) -> Result<f64, SinaError> {
     if !shares.is_finite() || shares < 0.0 {
         return Err(SinaError::Protocol(
             "share quantity must be finite and non-negative".into(),
@@ -444,7 +446,7 @@ fn parse_optional_timestamp(date: &str, time: &str) -> Result<Option<String>, Si
     Ok(Some(format!("{date}T{time}+08:00")))
 }
 
-fn valid_date(value: &str) -> bool {
+pub(crate) fn valid_date(value: &str) -> bool {
     if value.len() != 10
         || value.as_bytes()[4] != b'-'
         || value.as_bytes()[7] != b'-'
@@ -469,7 +471,7 @@ fn valid_date(value: &str) -> bool {
     year >= 1900 && day > 0 && day <= max_day
 }
 
-fn valid_time(value: &str) -> bool {
+pub(crate) fn valid_time(value: &str) -> bool {
     if value.len() != 8
         || value.as_bytes()[2] != b':'
         || value.as_bytes()[5] != b':'
@@ -797,15 +799,6 @@ impl SecurityMetadataProvider for SinaClient {
         }
         let provenance = batch_provenance("security-metadata", &observed_at, &snapshots)?;
         Ok(DataBatch::best_effort(records, provenance, issues)?)
-    }
-}
-
-impl HistoricalBars for SinaClient {
-    type Bar = Bar;
-    type Error = SinaError;
-
-    fn historical_bars(&self, _request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        Err(pending())
     }
 }
 

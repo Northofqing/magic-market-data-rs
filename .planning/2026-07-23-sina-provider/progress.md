@@ -29,3 +29,7 @@
 - Implemented normalized Sina Quote, five-level OrderBook and partial security
   metadata. Ten deterministic tests pass across Shanghai, Shenzhen and Beijing,
   including limit-up empty asks and malformed/contradictory response cases.
+- Implemented strict Sina K-line JSON parsing for 1/5/15/30/60-minute and daily
+  periods, with 800-row limits, order/duplicate/time/OHLC checks, CNY amounts,
+  share-to-lot conversion and explicit unsupported range/week/month/year
+  requests. All 16 current crate/contract tests pass.
