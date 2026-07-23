@@ -255,3 +255,14 @@
 - Slice B was committed as `ca165beb374080e32403548983b91ea24486bd1f`
   and pushed to `main`; the user's untracked requirements document remained
   excluded.
+
+## 2026-07-23 public intelligence providers
+
+- Wrote the shared-contract and six-provider implementation plan at
+  `docs/superpowers/plans/2026-07-23-public-intelligence-providers.md`.
+- Confirmed all broad domain traits already exist in Core and Router; the
+  dependency barrier is an optional-field widening plus checked serde/routing
+  regression tests.
+- Main owns shared manifests, lockfile, Core and Router. Eastmoney,
+  CNInfo/Tonghuashun and CLS/Baidu/iWencai will run as isolated parallel lanes
+  after the shared gate passes.

@@ -419,3 +419,34 @@
 - The timestamp validator now rejects non-ASCII before slicing and has a `catch_unwind` regression. Sina atomically normalizes zero-price/zero-quantity top levels, rejects half levels/negative amplitude, and its normalized record must round-trip through Core serde. README now lists all three Sina hosts.
 - Final Slice B scope is 24 tracked modified files plus two intended new Sina modules (`financials.rs`, `options.rs`), with 2,048 tracked insertions and 145 deletions before adding the new-file line count. `git diff --check` passes. The only unrelated untracked file is the user's requirements document and remains excluded.
 - Final staged scope is 26 files with 3,533 insertions and 145 deletions, including the two intended new Sina modules. Cached diff whitespace passes; `docs/integrations/stock-analysis-market-data-requirements.md` is the sole unstaged/untracked file.
+- Slice B was pushed as `ca165beb374080e32403548983b91ea24486bd1f`
+  with completion metadata in `0fa345b`.
+- The next provider slice starts from existing normalized Core modules
+  (`capital`, `content`, `limit_pool`, `research`, `signals`) rather than adding
+  a second analysis schema. The workspace currently has seven crates and no
+  Eastmoney/CNInfo/THS/CLS/Baidu/iWencai provider crates.
+- Before parallel provider work, main owns the shared Core field widening,
+  Router adapters, workspace manifest and lockfile; provider lanes must not edit
+  those shared files.
+- Core already defines every broad business family needed by the next slice.
+  The shared barrier is therefore a backward-compatible optional-field widening:
+  Eastmoney capital details, Dragon-Tiger seat buy/sell/net values, per-period
+  consensus ranges/counts, CNInfo announcement/question metadata, THS
+  popularity/limit-pool detail and board-flow tiers.
+- Current content code makes announcement category mandatory and hides
+  `InvestorQuestion` fields behind checked construction. CNInfo needs an
+  optional category and optional answerer/source identifiers while preserving
+  the answer/answer-time invariant.
+- Current `ConsensusSnapshot` has only one aggregate contributor count.
+  Per-year contributor count and EPS min/max belong on `EarningsEstimate` so
+  different forecast years do not lose source semantics.
+- Shared field widening has a small deterministic blast radius: the affected
+  structs are currently constructed only by Core tests and the network-free
+  analysis tests. No existing concrete Provider depends on those literals yet.
+- Router already has adapters and aliases for every target intelligence family,
+  so the next barrier needs routing regression coverage, not new routing
+  abstractions.
+- Existing public-web crates use injected bounded byte transports, HTTPS-only
+  validation, zero redirects, byte caps and real `ureq` clients. New provider
+  crates will reuse this architecture while assigning endpoint-specific
+  whitelists and smaller per-family caps.

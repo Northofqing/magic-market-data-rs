@@ -67,6 +67,10 @@ Phase 4
 - Slice B Task 4 (Sina ETF options) is complete.
 - Slice B Task 5 (release gate, commit and push) is complete at
   `ca165beb374080e32403548983b91ea24486bd1f`.
+- Execute
+  `docs/superpowers/plans/2026-07-23-public-intelligence-providers.md` as
+  Slices C and D. Shared Core/Router/workspace files are a main-thread barrier;
+  isolated Provider crates may be implemented in parallel after it passes.
 - Then implement Eastmoney broad intelligence families, CNInfo/Tonghuashun,
   CLS/Baidu/Iwencai and exchange announcement sources in separate reviewed
   slices.
