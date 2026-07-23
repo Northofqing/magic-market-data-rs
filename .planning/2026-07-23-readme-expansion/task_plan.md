@@ -29,14 +29,14 @@ Status: complete
 
 ### Phase 2: Implementation plan
 
-Status: in_progress
+Status: complete
 
 - Write an exact documentation implementation plan.
 - Self-review the plan for missing sections, placeholders and contradictions.
 
 ### Phase 3: README expansion
 
-Status: pending
+Status: in_progress
 
 - Replace the sparse root README with the approved Chinese-first entry manual.
 - Keep technical identifiers, commands and API names exact.

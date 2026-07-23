@@ -9,3 +9,5 @@
 - Selected the operator-first entry-manual design under the user's standing
   no-confirmation instruction.
 - Wrote the README design and opened a dedicated persistent plan.
+- Wrote the exact implementation plan with required headings, capability truth,
+  commands, verification gates, package checks and delivery steps.
