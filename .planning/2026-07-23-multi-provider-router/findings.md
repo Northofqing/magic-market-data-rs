@@ -14,5 +14,13 @@
   therefore exercises a real TDX rejection followed by Tencent selection.
 - The release script currently packages four probes and the compliance script
   asserts an exact four-member workspace, so both must change with the router.
-- EMQuant entitlement remains an external `10001003/EQERR_NO_ACCESS` blocker;
-  the router must not pretend that permission is available.
+- EMQuant activation refreshed `target/emquant/runtime/userInfo` at
+  `2026-07-23 14:22:04 +0800`, proving that the SMS/device activation completed.
+  A clean SDK process still returns `10001003/EQERR_NO_ACCESS` before every
+  query. The vendor header confirms that `start(nullptr, ...)` is the supported
+  `userInfo` login path after SDK 2.0, so the remaining blocker is server-side
+  API entitlement propagation; the router must not pretend that permission is
+  available.
+- A minimal official ABI login with `ForceLogin=1` also returns `10001003`,
+  ruling out a stale concurrent API session. Choice must enable or propagate
+  the API product entitlement separately from device/SMS activation.

@@ -140,9 +140,11 @@ MAGIC_EMQUANT_USERNAME
 MAGIC_EMQUANT_PASSWORD
 ```
 
-当前开发机已完成短信激活，但真实 SDK 返回 `10001003/EQERR_NO_ACCESS`：账号没有
-EMQuant API 产品权限。这不是部署成功状态。开通权限后必须重新运行探针并取得真实
-记录；不能把“bridge 能启动”当成数据能力验收。
+当前开发机在 2026-07-23 审核通过后重新完成短信激活，`userInfo` 已刷新；普通登录
+和 `ForceLogin=1` 的最小官方 ABI 登录仍都返回
+`10001003/EQERR_NO_ACCESS`。这表示设备激活成功，但 EMQuant API 产品 entitlement
+尚未在登录服务生效，不是部署成功状态。后台权限生效后必须重新运行探针并取得真实
+记录；不能把“审核通过”“激活成功”或“bridge 能启动”当成数据能力验收。
 
 ## 健康检查与上线门
 

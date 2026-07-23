@@ -42,3 +42,21 @@
 - Committed the audited routing integration as `f8ca94e`, generated all five
   release probes from a clean tracked worktree and verified every packaged file
   against `SHA256SUMS`.
+- Pushed the completed router release through `bb9450b`; local `HEAD` and
+  `origin/main` resolve to the same full commit.
+- Confirmed the second SMS activation refreshed the local `userInfo` at
+  `2026-07-23 14:22:04 +0800`.
+- Reran the complete official Choice probe both while the activator was open
+  and after cleanly closing it. Quote, order book, daily money flow, daily bars
+  and five-minute bars all stop at SDK login with `10001003/EQERR_NO_ACCESS`.
+- Checked the vendor header and example: SDK 2.0+ explicitly permits a null
+  login structure for `userInfo` auto-login, and `ForceLogin` only controls
+  concurrent sessions. Local token, device, runtime path and process state are
+  therefore ruled out; server-side entitlement propagation remains pending.
+- Built a temporary login-only official ABI probe and verified
+  `start(nullptr, "ForceLogin=1")` outside the network sandbox. It also returned
+  `10001003`, conclusively ruling out an old concurrent login as the cause.
+- The first release rebuild ran out of disk at the final router compilation.
+  Removed only reproducible debug/release caches and the exact partial output,
+  preserving historical distributions and the EMQuant runtime. The clean retry
+  produced all five probes and every packaged SHA-256 entry passed.

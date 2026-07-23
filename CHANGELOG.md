@@ -54,6 +54,10 @@ Breaking migrations:
 - Added release preflight/package scripts and an operator deployment runbook
   covering platform artifacts, network access, secrets, EMQuant activation,
   health evidence, observability, rollback, and release verification.
+- Recorded the post-approval EMQuant verification boundary: the device
+  activation token was refreshed locally, while both normal and forced
+  official SDK login still return `10001003` until the account's API product
+  entitlement is propagated by Choice.
 
 Serde input now passes through the same constructors used by Rust callers, so
 invalid numeric values, identifiers, evidence, dates, OHLC ranges, order-book

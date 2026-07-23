@@ -72,6 +72,16 @@ Completion evidence:
   and every SHA-256 entry passed.
 - Only the user's untracked requirements document remains outside Git.
 
+### Phase 6: Post-approval Choice verification
+
+Status: in_progress
+
+- Verify that the official activator refreshes the project-local `userInfo`.
+- Run Quote, order-book, money-flow, daily-bar and minute-bar requests through
+  the official SDK after activation.
+- If the entitlement becomes active, record the live evidence, rerun release
+  gates, regenerate the release package, commit and push.
+
 ## Decisions
 
 - Use a new `magic-market-router` crate that depends only on
@@ -99,3 +109,6 @@ Completion evidence:
 | Sandboxed router live probe exhausted both sources because outbound TDX and Tencent DNS were blocked | 1 | Classified both as retryable transport attempts, then reran the identical command with approved network access; the real route passed. |
 | Choice review was approved but the official SDK still returned `10001003/EQERR_NO_ACCESS` with the 2026-07-22 `userInfo` | 1 | Reproduced all supported families, confirmed the activation file was stale, and opened the official activator to refresh the post-approval token. |
 | First post-approval activator launch exited without changing `userInfo`; a second SDK probe still returned `10001003` | 2 | Started `loginactivator_mac` directly from its runtime directory and kept the GUI process alive for the SMS refresh. |
+| The refreshed 2026-07-23 activation token still returned `10001003` for every supported family | 3 | Confirmed the token timestamp, closed the activator, verified the documented `start(nullptr, ...)` login path and reran a clean SDK process; the remaining state is server-side entitlement propagation. |
+| A minimal direct bridge request returned `10002002` inside the network sandbox | 1 | Reran the identical official connection outside the sandbox; it reached Choice and returned the authoritative account error `10001003`. |
+| The first post-documentation release rebuild exhausted the 442 MiB remaining data volume | 1 | Confirmed the partial package and temporary build tree, removed only reproducible `target/debug` and `target/release` caches plus the exact incomplete output, then regenerated and verified all five probes. |
