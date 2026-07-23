@@ -36,6 +36,16 @@
 **Status:** in_progress
 
 - Starting the detailed Slice A implementation plan and Core API audit.
+- Audited Core identity, provenance, value, capability, trait and serde
+  patterns plus Router adapter structure.
+- Confirmed that new records can reuse the generic failover engine through the
+  existing `SourcedRecord` boundary.
+- Audited focused Core/Router tests and the repository's implementation-plan
+  format; selected reusable validated primitives to keep the larger domain
+  surface checked without repetitive wire DTO code.
+- Wrote the eight-task Slice A implementation plan covering RED contracts,
+  validated evidence, all normalized domains, Router adapters, pure analysis
+  and the compatibility gate.
 
 ## Test results
 
@@ -48,3 +58,4 @@
 | Error | Attempt | Resolution |
 | --- | ---: | --- |
 | `sed: SKILL.md: No such file or directory` during a combined reference/local audit | 1 | Logged the path mix-up and split later reads by explicit working directory. |
+| `sed: magic-market-core/src/lib.rs: No such file or directory` during the first Slice A audit | 1 | The workspace stores members under `crates/`; corrected the audit path before any edit. |
