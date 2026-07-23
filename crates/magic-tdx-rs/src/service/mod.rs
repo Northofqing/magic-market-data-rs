@@ -497,3 +497,7 @@ impl Default for TdxService {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/internal/service.rs"]
+mod tests;
