@@ -41,6 +41,9 @@ fn limit_entry_round_trips_with_optional_reason() {
         break_count: None,
         streak: Some(PositiveU32::new(2).unwrap()),
         industry: None,
+        board_name: None,
+        seal_state: None,
+        reseal_count: None,
         reason: Some(NonEmptyText::new("电力").unwrap()),
         evidence: SourceEvidence::new(ProviderId::Eastmoney, "observed", "pool").unwrap(),
     };

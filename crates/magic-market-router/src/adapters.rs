@@ -1,4 +1,4 @@
-use crate::{FailoverChain, SourceError, SourceFn};
+use crate::{FailoverChain, FailureKind, SourceError, SourceFn};
 use magic_market_core::{
     Announcement, Announcements, AuctionSnapshot, Auctions, Bar, BarsRequest, BlockTrade,
     BlockTrades, BoardCategory, BoardFlow, BoardFlows, BoardMembership, BoardMembershipProvider,
@@ -11,12 +11,13 @@ use magic_market_core::{
     MarketRankingKind, MarketRankings, MarketStatistics, MarketStatisticsProvider, MinuteData,
     MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider, NonEmptyText,
     OptionContract, OptionData, OptionGreeks, OptionQuote, OrderBook, OrderBooks, PopularityData,
-    PopularityRank, PositiveU32, ProviderId, Quote, RealtimeQuotes, ResearchReport,
-    ResearchReports, ResearchRequest, SecurityMetadata, SecurityMetadataProvider, SecurityProfile,
-    SecurityProfiles, SemanticSearch, SemanticSearchDocument, SemanticSearchRequest, StatementKind,
-    StrongStockReason, StrongStockReasons, TechnicalBar, TechnicalBarsProvider, Trade, Trades,
-    TradesRequest,
+    PopularityRank, PositiveU32, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows, ProviderId,
+    Quote, RealtimeQuotes, ResearchReport, ResearchReports, ResearchRequest, SecurityMetadata,
+    SecurityMetadataProvider, SecurityProfile, SecurityProfiles, SemanticSearch,
+    SemanticSearchDocument, SemanticSearchRequest, StatementKind, StrongStockReason,
+    StrongStockReasons, TechnicalBar, TechnicalBarsProvider, Trade, Trades, TradesRequest,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub type QuoteRouter = FailoverChain<[InstrumentId], Quote>;
@@ -48,6 +49,7 @@ pub type BlockTradeRouter = FailoverChain<InstrumentDateRangeRequest, BlockTrade
 pub type HolderCountRouter = FailoverChain<InstrumentDateRangeRequest, HolderCount>;
 pub type LockupRouter = FailoverChain<InstrumentDateRangeRequest, LockupEvent>;
 pub type DividendRouter = FailoverChain<InstrumentDateRangeRequest, DividendPlan>;
+pub type PostCloseFlowRouter = FailoverChain<PostCloseFlowRequest, PostCloseFlow>;
 pub type InstrumentNewsRouter = FailoverChain<InstrumentDateRangeRequest, NewsItem>;
 pub type GlobalNewsRouter = FailoverChain<PositiveU32, NewsItem>;
 pub type AnnouncementRouter = FailoverChain<InstrumentDateRangeRequest, Announcement>;
@@ -401,6 +403,70 @@ date_range_source!(
 );
 date_range_source!(lockup_source, LockupEvents, lockup_events, LockupEvent);
 date_range_source!(dividend_source, DividendPlans, dividend_plans, DividendPlan);
+
+pub fn post_close_flow_source<Provider, Classify>(
+    provider_id: ProviderId,
+    provider: Arc<Provider>,
+    classify: Classify,
+) -> SourceFn<PostCloseFlowRequest, PostCloseFlow>
+where
+    Provider: PostCloseFlows + Send + Sync + 'static,
+    Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
+{
+    SourceFn::new(provider_id, move |request| {
+        let batch = provider.post_close_flows(request).map_err(&classify)?;
+        let requested_date = request.trading_date().as_str();
+        let batch_source_at = batch.provenance().source_at().ok_or_else(|| {
+            SourceError::try_next(
+                FailureKind::Evidence,
+                "post-close flow batch provenance is missing source_at",
+            )
+        })?;
+        if batch_source_at.get(..10) != Some(requested_date)
+            || !matches!(
+                batch_source_at.as_bytes().get(10),
+                None | Some(b' ') | Some(b'T')
+            )
+        {
+            return Err(SourceError::try_next(
+                FailureKind::Evidence,
+                format!(
+                    "post-close flow batch source date does not match requested date {requested_date}"
+                ),
+            ));
+        }
+        if batch.records().len() > request.limit().get() as usize {
+            return Err(SourceError::try_next(
+                FailureKind::Quality,
+                "post-close flow batch exceeds requested limit",
+            ));
+        }
+        let mut ranks = HashSet::with_capacity(batch.records().len());
+        let mut instruments = HashSet::with_capacity(batch.records().len());
+        for record in batch.records() {
+            if record.trading_date() != request.trading_date() {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "post-close flow record date does not match requested date",
+                ));
+            }
+            if !ranks.insert(record.rank().get()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "post-close flow batch contains a duplicate rank",
+                ));
+            }
+            if !instruments.insert(record.instrument().clone()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "post-close flow batch contains a duplicate instrument",
+                ));
+            }
+        }
+        Ok(batch)
+    })
+}
+
 date_range_source!(
     instrument_news_source,
     NewsProvider,

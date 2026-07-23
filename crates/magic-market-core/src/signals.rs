@@ -58,6 +58,9 @@ pub struct DragonTigerSeat {
     pub rank: PositiveU32,
     pub seat_name: NonEmptyText,
     pub amount: Money,
+    pub buy_amount: Option<Money>,
+    pub sell_amount: Option<Money>,
+    pub net_amount: Option<Money>,
     pub evidence: SourceEvidence,
 }
 
@@ -87,6 +90,12 @@ pub struct PopularityRank {
     pub rank: PositiveU32,
     pub price: Option<Price>,
     pub name: Option<NonEmptyText>,
+    pub rank_change: Option<FiniteNumber>,
+    pub return_ratio: Option<Ratio>,
+    pub heat: Option<FiniteNumber>,
+    #[serde(default)]
+    pub concepts: Vec<NonEmptyText>,
+    pub tag: Option<NonEmptyText>,
     /// Evidence for an optional second-source quote join.
     pub quote_evidence: Option<SourceEvidence>,
     /// Evidence for the ranking response itself.

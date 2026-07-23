@@ -1,12 +1,14 @@
 use magic_market_core::{
     AssetClass, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, DataBatch, Exchange,
     HistoricalBars, InstrumentId, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow,
-    MoneyFlows, OrderBook, OrderBooks, Provenance, ProviderId, Quote, RealtimeQuotes,
-    SecurityMetadata, SecurityMetadataProvider, Trade, Trades, TradesRequest,
+    MoneyFlows, OrderBook, OrderBooks, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows,
+    Provenance, ProviderId, Quote, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider,
+    Trade, Trades, TradesRequest,
 };
 use magic_market_router::{
-    auction_source, bars_source, minute_source, money_flow_source, order_book_source, quote_source,
-    security_metadata_source, trades_source, FailureKind, RoutedSource, SourceError,
+    auction_source, bars_source, minute_source, money_flow_source, order_book_source,
+    post_close_flow_source, quote_source, security_metadata_source, trades_source, FailureKind,
+    RoutedSource, SourceError,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -107,6 +109,30 @@ impl Auctions for FixtureProvider {
     }
 }
 
+impl PostCloseFlows for FixtureProvider {
+    type Error = FixtureError;
+    fn post_close_flows(
+        &self,
+        request: &PostCloseFlowRequest,
+    ) -> Result<DataBatch<PostCloseFlow>, Self::Error> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            Err(FixtureError)
+        } else {
+            Ok(DataBatch::strict(
+                Vec::new(),
+                Provenance::new("fixture", "observed")
+                    .unwrap()
+                    .with_source_at(format!(
+                        "{} 15:35:00",
+                        request.trading_date().as_str()
+                    ))
+                    .unwrap(),
+            ))
+        }
+    }
+}
+
 impl SecurityMetadataProvider for FixtureProvider {
     type Error = FixtureError;
     fn security_metadata(
@@ -132,6 +158,11 @@ fn every_core_family_has_a_provider_neutral_adapter() {
     let bars_request = BarsRequest::new(instrument(), BarInterval::Day, 5).unwrap();
     let minute_request = MinuteDataRequest::new(instrument());
     let trades_request = TradesRequest::new(instrument(), 5).unwrap();
+    let post_close_request = PostCloseFlowRequest::new(
+        magic_market_core::IsoDate::new("2026-07-23").unwrap(),
+        magic_market_core::PositiveU32::new(10).unwrap(),
+    )
+    .unwrap();
 
     assert_eq!(
         quote_source(ProviderId::Custom, Arc::clone(&provider), classify)
@@ -171,11 +202,16 @@ fn every_core_family_has_a_provider_neutral_adapter() {
             .is_err()
     );
     assert!(
+        post_close_flow_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&post_close_request)
+            .is_err()
+    );
+    assert!(
         security_metadata_source(ProviderId::Custom, Arc::clone(&provider), classify)
             .fetch(&instruments)
             .is_err()
     );
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 8);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 9);
 }
 
 #[test]
@@ -185,6 +221,11 @@ fn every_adapter_preserves_a_successful_provider_batch() {
     let bars_request = BarsRequest::new(instrument(), BarInterval::Day, 5).unwrap();
     let minute_request = MinuteDataRequest::new(instrument());
     let trades_request = TradesRequest::new(instrument(), 5).unwrap();
+    let post_close_request = PostCloseFlowRequest::new(
+        magic_market_core::IsoDate::new("2026-07-23").unwrap(),
+        magic_market_core::PositiveU32::new(10).unwrap(),
+    )
+    .unwrap();
 
     let quote = quote_source(ProviderId::Custom, Arc::clone(&provider), classify)
         .fetch(&instruments)
@@ -207,6 +248,9 @@ fn every_adapter_preserves_a_successful_provider_batch() {
     let auction = auction_source(ProviderId::Custom, Arc::clone(&provider), classify)
         .fetch(&instruments)
         .unwrap();
+    let post_close = post_close_flow_source(ProviderId::Custom, Arc::clone(&provider), classify)
+        .fetch(&post_close_request)
+        .unwrap();
     let metadata = security_metadata_source(ProviderId::Custom, Arc::clone(&provider), classify)
         .fetch(&instruments)
         .unwrap();
@@ -219,10 +263,11 @@ fn every_adapter_preserves_a_successful_provider_batch() {
         flow.provenance(),
         book.provenance(),
         auction.provenance(),
+        post_close.provenance(),
         metadata.provenance(),
     ] {
         assert_eq!(provenance.source(), "fixture");
         assert_eq!(provenance.fetched_at(), "observed");
     }
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 8);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 9);
 }

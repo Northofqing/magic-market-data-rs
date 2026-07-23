@@ -21,7 +21,7 @@ pub use capital::{
     BlockTrade, BlockTrades, BoardFlow, BoardFlows, CapitalCapabilities, DividendPlan,
     DividendPlans, FlowInterval, FlowScope, FundFlowPoint, FundFlowRequest, FundFlowSeries,
     HolderCount, HolderCounts, InstrumentDateRangeRequest, LockupEvent, LockupEvents,
-    MarginBalance, MarginData,
+    MarginBalance, MarginData, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows,
 };
 pub use company::{
     CompanyCapabilities, FinancialLine, FinancialStatement, FinancialStatements, ProfileFact,

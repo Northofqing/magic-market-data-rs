@@ -29,7 +29,7 @@ fn news_and_announcement_urls_are_https_and_sourced() {
     let announcement = Announcement {
         announcement_id: NonEmptyText::new("ann-1").unwrap(),
         instrument: instrument(),
-        category: NonEmptyText::new("公司公告").unwrap(),
+        category: Some(NonEmptyText::new("公司公告").unwrap()),
         title: NonEmptyText::new("年度报告").unwrap(),
         published_at: NonEmptyText::new("2026-07-23").unwrap(),
         canonical_url: HttpsUrl::new("https://example.com/ann-1").unwrap(),
@@ -70,6 +70,19 @@ fn unanswered_investor_question_is_not_fabricated() {
         NonEmptyText::new("2026-07-23").unwrap(),
         None,
         Some(NonEmptyText::new("2026-07-24").unwrap()),
+        evidence(ProviderId::Cninfo),
+    )
+    .is_err());
+    assert!(InvestorQuestion::new_with_metadata(
+        NonEmptyText::new("q-3").unwrap(),
+        instrument(),
+        NonEmptyText::new("公司").unwrap(),
+        NonEmptyText::new("问题").unwrap(),
+        NonEmptyText::new("2026-07-23").unwrap(),
+        None,
+        None,
+        Some(NonEmptyText::new("source-3").unwrap()),
+        Some(NonEmptyText::new("董秘").unwrap()),
         evidence(ProviderId::Cninfo),
     )
     .is_err());

@@ -23,7 +23,7 @@ pub struct NewsItem {
 pub struct Announcement {
     pub announcement_id: NonEmptyText,
     pub instrument: InstrumentId,
-    pub category: NonEmptyText,
+    pub category: Option<NonEmptyText>,
     pub title: NonEmptyText,
     pub published_at: NonEmptyText,
     pub canonical_url: HttpsUrl,
@@ -41,6 +41,8 @@ pub struct InvestorQuestion {
     question_at: NonEmptyText,
     answer: Option<NonEmptyText>,
     answer_at: Option<NonEmptyText>,
+    source_question_id: Option<NonEmptyText>,
+    answerer: Option<NonEmptyText>,
     evidence: SourceEvidence,
 }
 
@@ -56,9 +58,41 @@ impl InvestorQuestion {
         answer_at: Option<NonEmptyText>,
         evidence: SourceEvidence,
     ) -> Result<Self, crate::CoreError> {
+        Self::new_with_metadata(
+            question_id,
+            instrument,
+            company,
+            question,
+            question_at,
+            answer,
+            answer_at,
+            None,
+            None,
+            evidence,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_metadata(
+        question_id: NonEmptyText,
+        instrument: InstrumentId,
+        company: NonEmptyText,
+        question: NonEmptyText,
+        question_at: NonEmptyText,
+        answer: Option<NonEmptyText>,
+        answer_at: Option<NonEmptyText>,
+        source_question_id: Option<NonEmptyText>,
+        answerer: Option<NonEmptyText>,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
         if answer.is_none() && answer_at.is_some() {
             return Err(crate::CoreError::InvalidRequest(
                 "answer_at cannot be present without an answer".into(),
+            ));
+        }
+        if answer.is_none() && answerer.is_some() {
+            return Err(crate::CoreError::InvalidRequest(
+                "answerer cannot be present without an answer".into(),
             ));
         }
         Ok(Self {
@@ -69,6 +103,8 @@ impl InvestorQuestion {
             question_at,
             answer,
             answer_at,
+            source_question_id,
+            answerer,
             evidence,
         })
     }
@@ -101,6 +137,14 @@ impl InvestorQuestion {
         self.answer_at.as_ref()
     }
 
+    pub fn source_question_id(&self) -> Option<&NonEmptyText> {
+        self.source_question_id.as_ref()
+    }
+
+    pub fn answerer(&self) -> Option<&NonEmptyText> {
+        self.answerer.as_ref()
+    }
+
     pub fn evidence(&self) -> &SourceEvidence {
         &self.evidence
     }
@@ -115,6 +159,8 @@ struct InvestorQuestionWire {
     question_at: NonEmptyText,
     answer: Option<NonEmptyText>,
     answer_at: Option<NonEmptyText>,
+    source_question_id: Option<NonEmptyText>,
+    answerer: Option<NonEmptyText>,
     evidence: SourceEvidence,
 }
 
@@ -124,7 +170,7 @@ impl<'de> Deserialize<'de> for InvestorQuestion {
         D: Deserializer<'de>,
     {
         let wire = InvestorQuestionWire::deserialize(deserializer)?;
-        Self::new(
+        Self::new_with_metadata(
             wire.question_id,
             wire.instrument,
             wire.company,
@@ -132,6 +178,8 @@ impl<'de> Deserialize<'de> for InvestorQuestion {
             wire.question_at,
             wire.answer,
             wire.answer_at,
+            wire.source_question_id,
+            wire.answerer,
             wire.evidence,
         )
         .map_err(de::Error::custom)

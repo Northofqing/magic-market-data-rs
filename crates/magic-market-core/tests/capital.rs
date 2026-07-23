@@ -1,9 +1,9 @@
 use magic_market_core::{
-    AssetClass, BlockTrade, BoardCategory, BoardFlow, DividendPlan, Exchange, FiniteNumber,
-    FlowInterval, FlowScope, FundFlowPoint, FundFlowRequest, HolderCount,
+    AssetClass, BlockTrade, Board, BoardCategory, BoardFlow, CapitalCapabilities, DividendPlan,
+    Exchange, FiniteNumber, FlowInterval, FlowScope, FundFlowPoint, FundFlowRequest, HolderCount,
     InstrumentDateRangeRequest, InstrumentId, IsoDate, LockupEvent, MarginBalance, Money,
-    NonEmptyText, PositiveU32, Price, ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
-    SourcedRecord,
+    NonEmptyText, PositiveU32, PostCloseFlow, PostCloseFlowRequest, Price, PriceLimitRule,
+    ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence, SourcedRecord,
 };
 
 fn instrument() -> InstrumentId {
@@ -36,6 +36,13 @@ fn flow_series_distinguishes_missing_from_source_zero() {
         rank: PositiveU32::new(1).unwrap(),
         return_ratio: None,
         main_net: None,
+        super_large_net: None,
+        large_net: None,
+        medium_net: None,
+        small_net: None,
+        leader_instrument: None,
+        leader_name: None,
+        leader_return_ratio: None,
         evidence: evidence(),
     };
 
@@ -52,7 +59,10 @@ fn capital_records_round_trip_without_defaulting_absence() {
             trading_date: IsoDate::new("2026-07-23").unwrap(),
             financing_balance: None,
             financing_buy: Some(Money::new(0.0).unwrap()),
+            financing_repayment: None,
             securities_lending_balance: None,
+            securities_lending_sell: None,
+            securities_lending_repayment: None,
             total_balance: None,
             evidence: evidence(),
         },
@@ -61,6 +71,8 @@ fn capital_records_round_trip_without_defaulting_absence() {
             trading_date: IsoDate::new("2026-07-23").unwrap(),
             traded_at: None,
             price: Price::new(4.0).unwrap(),
+            close_price: None,
+            premium_ratio: None,
             volume: Quantity::new(100.0).unwrap(),
             amount: Some(Money::new(400.0).unwrap()),
             buyer: None,
@@ -71,7 +83,9 @@ fn capital_records_round_trip_without_defaulting_absence() {
             instrument: instrument(),
             report_date: IsoDate::new("2026-06-30").unwrap(),
             holders: Quantity::new(10_000.0).unwrap(),
+            holder_change: None,
             change_ratio: Some(Ratio::new(-2.0, RatioUnit::Percent).unwrap()),
+            average_shares_per_holder: None,
             evidence: evidence(),
         },
         LockupEvent {
@@ -79,12 +93,15 @@ fn capital_records_round_trip_without_defaulting_absence() {
             listing_date: IsoDate::new("2026-08-01").unwrap(),
             share_type: NonEmptyText::new("首发原股东限售股份").unwrap(),
             shares: Quantity::new(1_000.0).unwrap(),
+            able_shares: None,
+            free_float_ratio: None,
             market_value: None,
             evidence: evidence(),
         },
         DividendPlan {
             instrument: instrument(),
             report_date: IsoDate::new("2025-12-31").unwrap(),
+            ex_dividend_date: None,
             state: NonEmptyText::new("实施").unwrap(),
             cash_per_ten: Some(FiniteNumber::new(1.0).unwrap()),
             bonus_per_ten: None,
@@ -138,4 +155,91 @@ fn range_requests_are_bounded_and_calendar_checked() {
         r#"{"scope":{"Instrument":{"exchange":"Shanghai","code":"600396","asset_class":"Equity"}},"interval":"Day120","limit":10001}"#
     )
     .is_err());
+}
+
+#[test]
+fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
+    let source_evidence = evidence().with_source_at("2026-07-23 15:35:00").unwrap();
+    let record = PostCloseFlow::new(
+        instrument(),
+        Some(NonEmptyText::new("华电辽能").unwrap()),
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        Price::new(4.36).unwrap(),
+        Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+        Money::new(12_000_000.0).unwrap(),
+        Some(Board::Main),
+        Some(
+            PriceLimitRule::new(
+                Some(Ratio::new(10.0, RatioUnit::Percent).unwrap()),
+                Some("source-rule".into()),
+            )
+            .unwrap(),
+        ),
+        source_evidence,
+    )
+    .unwrap();
+    let request = PostCloseFlowRequest::new(
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(10).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(request.limit().get(), 10);
+    assert_eq!(request.trading_date().as_str(), "2026-07-23");
+    assert_eq!(
+        serde_json::from_str::<PostCloseFlow>(&serde_json::to_string(&record).unwrap()).unwrap(),
+        record
+    );
+    let mut missing_source_time = serde_json::to_value(&record).unwrap();
+    missing_source_time["evidence"]["source_at"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<PostCloseFlow>(missing_source_time).is_err());
+    assert!(PostCloseFlow::new(
+        instrument(),
+        None,
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        Price::new(4.36).unwrap(),
+        Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+        Money::new(12_000_000.0).unwrap(),
+        None,
+        None,
+        evidence(),
+    )
+    .is_err());
+    assert!(PostCloseFlow::new(
+        instrument(),
+        None,
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        Price::new(4.36).unwrap(),
+        Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+        Money::new(12_000_000.0).unwrap(),
+        None,
+        None,
+        evidence().with_source_at("2026-07-22 15:35:00").unwrap(),
+    )
+    .is_err());
+    assert!(PostCloseFlow::new(
+        instrument(),
+        None,
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        Price::new(4.36).unwrap(),
+        Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+        Money::new(12_000_000.0).unwrap(),
+        None,
+        None,
+        evidence().with_source_at("not-a-date").unwrap(),
+    )
+    .is_err());
+    assert!(PostCloseFlowRequest::new(
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(101).unwrap()
+    )
+    .is_err());
+    let legacy_capabilities: CapitalCapabilities = serde_json::from_str(
+        r#"{"fund_flow_series":true,"board_flow":true,"margin":true,"block_trades":true,"holder_count":true,"lockups":true,"dividends":true}"#,
+    )
+    .unwrap();
+    assert!(!legacy_capabilities.post_close_flow);
 }

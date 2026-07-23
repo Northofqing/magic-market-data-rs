@@ -1,12 +1,13 @@
 use magic_market_core::{
     AssetClass, ContractMonth, DataBatch, Exchange, FiniteNumber, InstrumentId, MarketStatistics,
     MarketStatisticsProvider, Money, NonEmptyText, OptionContract, OptionData, OptionGreeks,
-    OptionKind, OptionQuote, Provenance, ProviderId, SourceEvidence,
+    OptionKind, OptionQuote, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows, Price,
+    Provenance, ProviderId, Ratio, RatioUnit, SourceEvidence,
 };
 use magic_market_router::{
     market_statistics_source, option_contract_source, option_greeks_source, option_quote_source,
-    AcceptancePolicy, AttemptStatus, FailureKind, MarketStatisticsRouter, OptionContractRouter,
-    OptionGreeksRouter, OptionQuoteRouter, SourceError,
+    post_close_flow_source, AcceptancePolicy, AttemptStatus, FailureKind, MarketStatisticsRouter,
+    OptionContractRouter, OptionGreeksRouter, OptionQuoteRouter, PostCloseFlowRouter, SourceError,
 };
 use std::sync::{Arc, Mutex};
 
@@ -58,6 +59,201 @@ fn instrument() -> InstrumentId {
 
 fn classify(_: FixtureError) -> SourceError {
     SourceError::try_next(FailureKind::Transport, "fixture")
+}
+
+struct PostCloseFixtureProvider {
+    record_provider: ProviderId,
+    batch_provider_name: &'static str,
+    response_date: Option<&'static str>,
+    duplicate_rank: bool,
+    seen_dates: Mutex<Vec<String>>,
+    seen_limits: Mutex<Vec<u32>>,
+}
+
+impl PostCloseFlows for PostCloseFixtureProvider {
+    type Error = FixtureError;
+
+    fn post_close_flows(
+        &self,
+        request: &PostCloseFlowRequest,
+    ) -> Result<DataBatch<PostCloseFlow>, Self::Error> {
+        self.seen_dates
+            .lock()
+            .unwrap()
+            .push(request.trading_date().as_str().to_owned());
+        self.seen_limits.lock().unwrap().push(request.limit().get());
+        let response_date = self
+            .response_date
+            .unwrap_or_else(|| request.trading_date().as_str());
+        let batch_id = format!("post-close-{response_date}");
+        let source_at = format!("{response_date} 15:35:00");
+        let record = PostCloseFlow::new(
+            instrument(),
+            Some(NonEmptyText::new("华电辽能").unwrap()),
+            magic_market_core::IsoDate::new(response_date).unwrap(),
+            magic_market_core::PositiveU32::new(1).unwrap(),
+            Price::new(16.41).unwrap(),
+            Ratio::new(9.99, RatioUnit::Percent).unwrap(),
+            Money::new(100_000_000.0).unwrap(),
+            None,
+            None,
+            SourceEvidence::new(self.record_provider, "observed", &batch_id)
+                .unwrap()
+                .with_source_at(&source_at)
+                .unwrap(),
+        )
+        .unwrap();
+        let records = if self.duplicate_rank {
+            vec![record.clone(), record]
+        } else {
+            vec![record]
+        };
+        Ok(DataBatch::strict(
+            records,
+            Provenance::new(self.batch_provider_name, "observed")
+                .unwrap()
+                .with_source_at(source_at)
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        ))
+    }
+}
+
+#[test]
+fn post_close_adapter_forwards_date_and_routes_only_matching_sourced_records() {
+    let wrong = Arc::new(PostCloseFixtureProvider {
+        record_provider: ProviderId::Eastmoney,
+        batch_provider_name: "tencent",
+        response_date: None,
+        duplicate_rank: false,
+        seen_dates: Mutex::new(Vec::new()),
+        seen_limits: Mutex::new(Vec::new()),
+    });
+    let valid = Arc::new(PostCloseFixtureProvider {
+        record_provider: ProviderId::Eastmoney,
+        batch_provider_name: "eastmoney",
+        response_date: None,
+        duplicate_rank: false,
+        seen_dates: Mutex::new(Vec::new()),
+        seen_limits: Mutex::new(Vec::new()),
+    });
+    let request = PostCloseFlowRequest::new(
+        magic_market_core::IsoDate::new("2026-07-23").unwrap(),
+        magic_market_core::PositiveU32::new(10).unwrap(),
+    )
+    .unwrap();
+    let mut router = PostCloseFlowRouter::new(
+        AcceptancePolicy::new()
+            .with_require_complete(true)
+            .with_require_source_at(true),
+    );
+    router
+        .register(post_close_flow_source(
+            ProviderId::Tencent,
+            Arc::clone(&wrong),
+            classify,
+        ))
+        .unwrap();
+    router
+        .register(post_close_flow_source(
+            ProviderId::Eastmoney,
+            Arc::clone(&valid),
+            classify,
+        ))
+        .unwrap();
+
+    let outcome = router.route(&request).unwrap();
+    assert_eq!(outcome.selected_provider(), ProviderId::Eastmoney);
+    assert_eq!(outcome.batch().records().len(), 1);
+    assert_eq!(
+        outcome.batch().records()[0].evidence().source_at(),
+        Some("2026-07-23 15:35:00")
+    );
+    assert!(matches!(
+        outcome.attempts()[0].status(),
+        AttemptStatus::Rejected {
+            kind: FailureKind::Evidence,
+            ..
+        }
+    ));
+    assert_eq!(wrong.seen_dates.lock().unwrap().as_slice(), ["2026-07-23"]);
+    assert_eq!(valid.seen_dates.lock().unwrap().as_slice(), ["2026-07-23"]);
+    assert_eq!(wrong.seen_limits.lock().unwrap().as_slice(), [10]);
+    assert_eq!(valid.seen_limits.lock().unwrap().as_slice(), [10]);
+}
+
+#[test]
+fn post_close_adapter_rejects_wrong_dates_and_duplicate_ranks() {
+    let wrong_date = Arc::new(PostCloseFixtureProvider {
+        record_provider: ProviderId::Tencent,
+        batch_provider_name: "tencent",
+        response_date: Some("2026-07-22"),
+        duplicate_rank: false,
+        seen_dates: Mutex::new(Vec::new()),
+        seen_limits: Mutex::new(Vec::new()),
+    });
+    let duplicate_rank = Arc::new(PostCloseFixtureProvider {
+        record_provider: ProviderId::Sina,
+        batch_provider_name: "sina",
+        response_date: None,
+        duplicate_rank: true,
+        seen_dates: Mutex::new(Vec::new()),
+        seen_limits: Mutex::new(Vec::new()),
+    });
+    let valid = Arc::new(PostCloseFixtureProvider {
+        record_provider: ProviderId::Eastmoney,
+        batch_provider_name: "eastmoney",
+        response_date: None,
+        duplicate_rank: false,
+        seen_dates: Mutex::new(Vec::new()),
+        seen_limits: Mutex::new(Vec::new()),
+    });
+    let request = PostCloseFlowRequest::new(
+        magic_market_core::IsoDate::new("2026-07-23").unwrap(),
+        magic_market_core::PositiveU32::new(10).unwrap(),
+    )
+    .unwrap();
+    let mut router = PostCloseFlowRouter::new(AcceptancePolicy::new());
+    router
+        .register(post_close_flow_source(
+            ProviderId::Tencent,
+            wrong_date,
+            classify,
+        ))
+        .unwrap();
+    router
+        .register(post_close_flow_source(
+            ProviderId::Sina,
+            duplicate_rank,
+            classify,
+        ))
+        .unwrap();
+    router
+        .register(post_close_flow_source(
+            ProviderId::Eastmoney,
+            valid,
+            classify,
+        ))
+        .unwrap();
+
+    let outcome = router.route(&request).unwrap();
+    assert_eq!(outcome.selected_provider(), ProviderId::Eastmoney);
+    assert_eq!(outcome.attempts().len(), 3);
+    assert!(matches!(
+        outcome.attempts()[0].status(),
+        AttemptStatus::Failed {
+            kind: FailureKind::Evidence,
+            ..
+        }
+    ));
+    assert!(matches!(
+        outcome.attempts()[1].status(),
+        AttemptStatus::Failed {
+            kind: FailureKind::Quality,
+            ..
+        }
+    ));
 }
 
 #[test]

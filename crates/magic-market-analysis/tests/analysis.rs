@@ -109,6 +109,9 @@ fn pool(kind: LimitPoolKind, code: &str) -> LimitPoolEntry {
         break_count: None,
         streak: None,
         industry: None,
+        board_name: None,
+        seal_state: None,
+        reseal_count: None,
         reason: None,
         evidence: evidence(ProviderId::Eastmoney, "pool"),
     }

@@ -27,6 +27,9 @@ pub struct LimitPoolEntry {
     pub break_count: Option<u32>,
     pub streak: Option<PositiveU32>,
     pub industry: Option<NonEmptyText>,
+    pub board_name: Option<NonEmptyText>,
+    pub seal_state: Option<NonEmptyText>,
+    pub reseal_count: Option<u32>,
     pub reason: Option<NonEmptyText>,
     pub evidence: SourceEvidence,
 }

@@ -12,12 +12,103 @@ pub enum ReportScope {
 }
 
 /// One fiscal-period estimate retained exactly as supplied.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EarningsEstimate {
-    pub fiscal_year: PositiveU32,
-    pub eps: Option<FiniteNumber>,
-    pub revenue: Option<Money>,
-    pub profit: Option<Money>,
+    fiscal_year: PositiveU32,
+    eps: Option<FiniteNumber>,
+    eps_min: Option<FiniteNumber>,
+    eps_max: Option<FiniteNumber>,
+    contributor_count: Option<PositiveU32>,
+    revenue: Option<Money>,
+    profit: Option<Money>,
+}
+
+impl EarningsEstimate {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        fiscal_year: PositiveU32,
+        eps: Option<FiniteNumber>,
+        eps_min: Option<FiniteNumber>,
+        eps_max: Option<FiniteNumber>,
+        contributor_count: Option<PositiveU32>,
+        revenue: Option<Money>,
+        profit: Option<Money>,
+    ) -> Result<Self, crate::CoreError> {
+        if let (Some(minimum), Some(maximum)) = (eps_min, eps_max) {
+            if minimum.get() > maximum.get() {
+                return Err(crate::CoreError::InvalidRequest(
+                    "earnings EPS minimum must not exceed maximum".into(),
+                ));
+            }
+        }
+        Ok(Self {
+            fiscal_year,
+            eps,
+            eps_min,
+            eps_max,
+            contributor_count,
+            revenue,
+            profit,
+        })
+    }
+
+    pub fn fiscal_year(&self) -> PositiveU32 {
+        self.fiscal_year
+    }
+
+    pub fn eps(&self) -> Option<FiniteNumber> {
+        self.eps
+    }
+
+    pub fn eps_min(&self) -> Option<FiniteNumber> {
+        self.eps_min
+    }
+
+    pub fn eps_max(&self) -> Option<FiniteNumber> {
+        self.eps_max
+    }
+
+    pub fn contributor_count(&self) -> Option<PositiveU32> {
+        self.contributor_count
+    }
+
+    pub fn revenue(&self) -> Option<Money> {
+        self.revenue
+    }
+
+    pub fn profit(&self) -> Option<Money> {
+        self.profit
+    }
+}
+
+#[derive(Deserialize)]
+struct EarningsEstimateWire {
+    fiscal_year: PositiveU32,
+    eps: Option<FiniteNumber>,
+    eps_min: Option<FiniteNumber>,
+    eps_max: Option<FiniteNumber>,
+    contributor_count: Option<PositiveU32>,
+    revenue: Option<Money>,
+    profit: Option<Money>,
+}
+
+impl<'de> Deserialize<'de> for EarningsEstimate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = EarningsEstimateWire::deserialize(deserializer)?;
+        Self::new(
+            wire.fiscal_year,
+            wire.eps,
+            wire.eps_min,
+            wire.eps_max,
+            wire.contributor_count,
+            wire.revenue,
+            wire.profit,
+        )
+        .map_err(de::Error::custom)
+    }
 }
 
 /// One published stock or industry research report.
@@ -29,6 +120,8 @@ pub struct ResearchReport {
     pub organization: NonEmptyText,
     pub author: Option<NonEmptyText>,
     pub rating: Option<NonEmptyText>,
+    pub industry_code: Option<NonEmptyText>,
+    pub industry_name: Option<NonEmptyText>,
     pub published_at: NonEmptyText,
     pub canonical_url: HttpsUrl,
     pub pdf_url: Option<HttpsUrl>,

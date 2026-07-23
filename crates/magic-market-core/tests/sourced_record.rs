@@ -3,9 +3,9 @@ use magic_market_core::{
     ConsensusSnapshot, DividendPlan, DragonTigerEntry, DragonTigerSeat, FinancialStatement,
     FundFlowPoint, HolderCount, InvestorQuestion, LimitPoolEntry, LockupEvent, MarginBalance,
     MarketRankingEntry, MarketStatistics, MinutePoint, MoneyFlow, NewsItem, OptionContract,
-    OptionGreeks, OptionQuote, OrderBook, PopularityRank, ProviderId, Quote, ResearchReport,
-    SecurityMetadata, SecurityProfile, SemanticSearchDocument, SourcedRecord, StrongStockReason,
-    TechnicalBar, Trade,
+    OptionGreeks, OptionQuote, OrderBook, PopularityRank, PostCloseFlow, ProviderId, Quote,
+    ResearchReport, SecurityMetadata, SecurityProfile, SemanticSearchDocument, SourcedRecord,
+    StrongStockReason, TechnicalBar, Trade,
 };
 
 fn assert_sourced<T: SourcedRecord>() {}
@@ -39,6 +39,7 @@ fn every_normalized_record_exposes_common_evidence() {
     assert_sourced::<HolderCount>();
     assert_sourced::<LockupEvent>();
     assert_sourced::<DividendPlan>();
+    assert_sourced::<PostCloseFlow>();
     assert_sourced::<NewsItem>();
     assert_sourced::<Announcement>();
     assert_sourced::<InvestorQuestion>();

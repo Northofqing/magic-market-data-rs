@@ -14,12 +14,16 @@ fn evidence(provider: ProviderId) -> SourceEvidence {
 
 #[test]
 fn research_and_consensus_records_are_typed_and_sourced() {
-    let estimate = EarningsEstimate {
-        fiscal_year: PositiveU32::new(2026).unwrap(),
-        eps: Some(FiniteNumber::new(0.42).unwrap()),
-        revenue: None,
-        profit: None,
-    };
+    let estimate = EarningsEstimate::new(
+        PositiveU32::new(2026).unwrap(),
+        Some(FiniteNumber::new(0.42).unwrap()),
+        Some(FiniteNumber::new(0.40).unwrap()),
+        Some(FiniteNumber::new(0.44).unwrap()),
+        Some(PositiveU32::new(5).unwrap()),
+        None,
+        None,
+    )
+    .unwrap();
     let report = ResearchReport {
         report_id: NonEmptyText::new("H3_ABC").unwrap(),
         scope: ReportScope::Instrument(instrument()),
@@ -27,6 +31,8 @@ fn research_and_consensus_records_are_typed_and_sourced() {
         organization: NonEmptyText::new("示例证券").unwrap(),
         author: None,
         rating: Some(NonEmptyText::new("增持").unwrap()),
+        industry_code: None,
+        industry_name: None,
         published_at: NonEmptyText::new("2026-07-23 08:00:00").unwrap(),
         canonical_url: HttpsUrl::new("https://example.com/report/H3_ABC").unwrap(),
         pdf_url: Some(HttpsUrl::new("https://example.com/H3_ABC.pdf").unwrap()),
@@ -47,6 +53,20 @@ fn research_and_consensus_records_are_typed_and_sourced() {
         serde_json::from_str::<ResearchReport>(&json).unwrap(),
         report
     );
+    assert!(serde_json::from_str::<EarningsEstimate>(
+        r#"{"fiscal_year":2026,"eps":0.42,"eps_min":0.5,"eps_max":0.4,"contributor_count":5,"revenue":null,"profit":null}"#
+    )
+    .is_err());
+    assert!(EarningsEstimate::new(
+        PositiveU32::new(2026).unwrap(),
+        Some(FiniteNumber::new(0.42).unwrap()),
+        Some(FiniteNumber::new(0.5).unwrap()),
+        Some(FiniteNumber::new(0.4).unwrap()),
+        None,
+        None,
+        None,
+    )
+    .is_err());
 }
 
 #[test]

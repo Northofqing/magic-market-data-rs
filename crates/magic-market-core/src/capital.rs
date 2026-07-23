@@ -48,6 +48,13 @@ pub struct BoardFlow {
     pub rank: PositiveU32,
     pub return_ratio: Option<Ratio>,
     pub main_net: Option<Money>,
+    pub super_large_net: Option<Money>,
+    pub large_net: Option<Money>,
+    pub medium_net: Option<Money>,
+    pub small_net: Option<Money>,
+    pub leader_instrument: Option<InstrumentId>,
+    pub leader_name: Option<NonEmptyText>,
+    pub leader_return_ratio: Option<Ratio>,
     pub evidence: SourceEvidence,
 }
 
@@ -57,7 +64,10 @@ pub struct MarginBalance {
     pub trading_date: IsoDate,
     pub financing_balance: Option<Money>,
     pub financing_buy: Option<Money>,
+    pub financing_repayment: Option<Money>,
     pub securities_lending_balance: Option<Money>,
+    pub securities_lending_sell: Option<Quantity>,
+    pub securities_lending_repayment: Option<Quantity>,
     pub total_balance: Option<Money>,
     pub evidence: SourceEvidence,
 }
@@ -68,6 +78,8 @@ pub struct BlockTrade {
     pub trading_date: IsoDate,
     pub traded_at: Option<NonEmptyText>,
     pub price: Price,
+    pub close_price: Option<Price>,
+    pub premium_ratio: Option<Ratio>,
     pub volume: Quantity,
     pub amount: Option<Money>,
     pub buyer: Option<NonEmptyText>,
@@ -80,7 +92,9 @@ pub struct HolderCount {
     pub instrument: InstrumentId,
     pub report_date: IsoDate,
     pub holders: Quantity,
+    pub holder_change: Option<FiniteNumber>,
     pub change_ratio: Option<Ratio>,
+    pub average_shares_per_holder: Option<Quantity>,
     pub evidence: SourceEvidence,
 }
 
@@ -90,6 +104,8 @@ pub struct LockupEvent {
     pub listing_date: IsoDate,
     pub share_type: NonEmptyText,
     pub shares: Quantity,
+    pub able_shares: Option<Quantity>,
+    pub free_float_ratio: Option<Ratio>,
     pub market_value: Option<Money>,
     pub evidence: SourceEvidence,
 }
@@ -98,6 +114,7 @@ pub struct LockupEvent {
 pub struct DividendPlan {
     pub instrument: InstrumentId,
     pub report_date: IsoDate,
+    pub ex_dividend_date: Option<IsoDate>,
     pub state: NonEmptyText,
     pub cash_per_ten: Option<FiniteNumber>,
     pub bonus_per_ten: Option<FiniteNumber>,
@@ -105,6 +122,152 @@ pub struct DividendPlan {
     pub allotment_per_ten: Option<FiniteNumber>,
     pub reduction_ratio: Option<Ratio>,
     pub evidence: SourceEvidence,
+}
+
+/// One source-ranked post-close main-fund-flow record.
+///
+/// Board and price-limit metadata remain optional because they must come from a
+/// source record rather than code-based inference.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PostCloseFlow {
+    instrument: InstrumentId,
+    name: Option<NonEmptyText>,
+    trading_date: IsoDate,
+    rank: PositiveU32,
+    close: Price,
+    change: Ratio,
+    main_net: Money,
+    board: Option<crate::Board>,
+    price_limit_rule: Option<crate::PriceLimitRule>,
+    evidence: SourceEvidence,
+}
+
+impl PostCloseFlow {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentId,
+        name: Option<NonEmptyText>,
+        trading_date: IsoDate,
+        rank: PositiveU32,
+        close: Price,
+        change: Ratio,
+        main_net: Money,
+        board: Option<crate::Board>,
+        price_limit_rule: Option<crate::PriceLimitRule>,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
+        let source_at = evidence.source_at().ok_or_else(|| {
+            crate::CoreError::InvalidRequest(
+                "post-close flow evidence must include source_at".into(),
+            )
+        })?;
+        let source_date_text = source_at.get(..10).ok_or_else(|| {
+            crate::CoreError::InvalidRequest(
+                "post-close flow source_at must start with YYYY-MM-DD".into(),
+            )
+        })?;
+        if !matches!(source_at.as_bytes().get(10), None | Some(b' ') | Some(b'T')) {
+            return Err(crate::CoreError::InvalidRequest(
+                "post-close flow source_at date must end or be followed by a time separator".into(),
+            ));
+        }
+        let source_date = IsoDate::new(source_date_text)?;
+        if source_date != trading_date {
+            return Err(crate::CoreError::InvalidRequest(format!(
+                "post-close flow source date {} does not match trading date {}",
+                source_date.as_str(),
+                trading_date.as_str()
+            )));
+        }
+        Ok(Self {
+            instrument,
+            name,
+            trading_date,
+            rank,
+            close,
+            change,
+            main_net,
+            board,
+            price_limit_rule,
+            evidence,
+        })
+    }
+
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+
+    pub fn name(&self) -> Option<&NonEmptyText> {
+        self.name.as_ref()
+    }
+
+    pub fn trading_date(&self) -> &IsoDate {
+        &self.trading_date
+    }
+
+    pub fn rank(&self) -> PositiveU32 {
+        self.rank
+    }
+
+    pub fn close(&self) -> Price {
+        self.close
+    }
+
+    pub fn change(&self) -> Ratio {
+        self.change
+    }
+
+    pub fn main_net(&self) -> Money {
+        self.main_net
+    }
+
+    pub fn board(&self) -> Option<crate::Board> {
+        self.board
+    }
+
+    pub fn price_limit_rule(&self) -> Option<&crate::PriceLimitRule> {
+        self.price_limit_rule.as_ref()
+    }
+
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+}
+
+#[derive(Deserialize)]
+struct PostCloseFlowWire {
+    instrument: InstrumentId,
+    name: Option<NonEmptyText>,
+    trading_date: IsoDate,
+    rank: PositiveU32,
+    close: Price,
+    change: Ratio,
+    main_net: Money,
+    board: Option<crate::Board>,
+    price_limit_rule: Option<crate::PriceLimitRule>,
+    evidence: SourceEvidence,
+}
+
+impl<'de> Deserialize<'de> for PostCloseFlow {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = PostCloseFlowWire::deserialize(deserializer)?;
+        Self::new(
+            wire.instrument,
+            wire.name,
+            wire.trading_date,
+            wire.rank,
+            wire.close,
+            wire.change,
+            wire.main_net,
+            wire.board,
+            wire.price_limit_rule,
+            wire.evidence,
+        )
+        .map_err(de::Error::custom)
+    }
 }
 
 macro_rules! impl_sourced {
@@ -131,6 +294,7 @@ impl_sourced!(
     HolderCount,
     LockupEvent,
     DividendPlan,
+    PostCloseFlow,
 );
 
 /// Reusable bounded date-range request for one instrument.
@@ -267,6 +431,51 @@ impl<'de> Deserialize<'de> for FundFlowRequest {
     }
 }
 
+/// Bounded request for a source-ranked post-close flow snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PostCloseFlowRequest {
+    trading_date: IsoDate,
+    limit: PositiveU32,
+}
+
+impl PostCloseFlowRequest {
+    pub fn new(trading_date: IsoDate, limit: PositiveU32) -> Result<Self, crate::CoreError> {
+        if limit.get() > 100 {
+            return Err(crate::CoreError::InvalidRequest(
+                "post-close flow limit must be at most 100".into(),
+            ));
+        }
+        Ok(Self {
+            trading_date,
+            limit,
+        })
+    }
+
+    pub fn trading_date(&self) -> &IsoDate {
+        &self.trading_date
+    }
+
+    pub fn limit(&self) -> PositiveU32 {
+        self.limit
+    }
+}
+
+#[derive(Deserialize)]
+struct PostCloseFlowRequestWire {
+    trading_date: IsoDate,
+    limit: PositiveU32,
+}
+
+impl<'de> Deserialize<'de> for PostCloseFlowRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = PostCloseFlowRequestWire::deserialize(deserializer)?;
+        Self::new(wire.trading_date, wire.limit).map_err(de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct CapitalCapabilities {
     pub fund_flow_series: bool,
@@ -276,6 +485,8 @@ pub struct CapitalCapabilities {
     pub holder_count: bool,
     pub lockups: bool,
     pub dividends: bool,
+    #[serde(default)]
+    pub post_close_flow: bool,
 }
 
 pub trait FundFlowSeries {
@@ -334,4 +545,12 @@ pub trait DividendPlans {
         &self,
         request: &InstrumentDateRangeRequest,
     ) -> Result<DataBatch<DividendPlan>, Self::Error>;
+}
+
+pub trait PostCloseFlows {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn post_close_flows(
+        &self,
+        request: &PostCloseFlowRequest,
+    ) -> Result<DataBatch<PostCloseFlow>, Self::Error>;
 }

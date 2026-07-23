@@ -57,6 +57,9 @@ fn dragon_tiger_missing_amounts_remain_absent() {
         rank: PositiveU32::new(1).unwrap(),
         seat_name: NonEmptyText::new("机构专用").unwrap(),
         amount: Money::new(0.0).unwrap(),
+        buy_amount: Some(Money::new(0.0).unwrap()),
+        sell_amount: None,
+        net_amount: None,
         evidence: evidence(ProviderId::Eastmoney, "seat"),
     };
 
@@ -72,6 +75,11 @@ fn popularity_join_retains_both_evidence_records() {
         rank: PositiveU32::new(3).unwrap(),
         price: None,
         name: None,
+        rank_change: None,
+        return_ratio: None,
+        heat: None,
+        concepts: vec![],
+        tag: None,
         quote_evidence: Some(evidence(ProviderId::Tencent, "quote")),
         evidence: evidence(ProviderId::Eastmoney, "rank"),
     };
@@ -87,5 +95,10 @@ fn popularity_join_retains_both_evidence_records() {
         rank.quote_evidence.as_ref().unwrap().provider(),
         ProviderId::Tencent
     );
+    let legacy_json = serde_json::to_string(&rank)
+        .unwrap()
+        .replace(",\"concepts\":[]", "");
+    let restored: PopularityRank = serde_json::from_str(&legacy_json).unwrap();
+    assert!(restored.concepts.is_empty());
     assert_eq!(hit.evidence_batch_id(), "concept");
 }
