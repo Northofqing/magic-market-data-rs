@@ -15,3 +15,9 @@
   trade-detail route is presentation HTML, so neither is advertised directly.
 - Selected the public Quote + K-line design under the user's standing
   no-confirmation authorization and wrote the design specification.
+- The user reported that Choice/EMQuant product entitlement is now enabled.
+  Added a final real EMQuant probe after Sina verification so activation and
+  entitlement are proved separately.
+- Wrote and self-reviewed the exact TDD implementation plan, including
+  deterministic/live/load gates, documentation, packaging, delivery and the
+  post-Sina EMQuant entitlement check.

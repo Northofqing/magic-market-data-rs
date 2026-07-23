@@ -30,7 +30,7 @@ its deployment boundary, package its probes, and deliver the result to Git.
 
 ### Phase 2: Design and implementation plan
 
-**Status:** in_progress
+**Status:** complete
 
 - Compare integration approaches and select the smallest honest capability set.
 - Write and self-review the design specification.
@@ -38,7 +38,7 @@ its deployment boundary, package its probes, and deliver the result to Git.
 
 ### Phase 3: Provider implementation
 
-**Status:** pending
+**Status:** in_progress
 
 - Add `magic-sina-rs` with strict parsing, bounded HTTP and capability traits.
 - Add deterministic unit/contract tests and live/load probes.
