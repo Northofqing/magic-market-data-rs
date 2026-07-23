@@ -13,18 +13,21 @@ cleanup_preflight() {
 }
 trap cleanup_preflight EXIT
 
-cargo fmt --all -- --check
-bash -n tools/release/preflight.sh tools/release/package.sh
+RUSTUP_TOOLCHAIN=1.83.0 cargo fmt --all -- --check
+bash -n tools/compliance/check.sh tools/release/preflight.sh tools/release/package.sh
 CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
-  cargo check --workspace --all-targets --locked --offline
+  cargo check --workspace --all-targets --all-features --locked --offline
 CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
-  cargo test --workspace --all-targets --locked --offline
+  cargo test --workspace --all-targets --all-features --locked --offline \
+  -- --test-threads=1
 CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
-  cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+  cargo clippy --workspace --all-targets --all-features --locked --offline \
+  -- -D warnings
 CARGO_TARGET_DIR="$preflight_target_dir" RUSTDOCFLAGS='-D warnings' RUSTUP_TOOLCHAIN=1.83.0 \
-  cargo doc --workspace --no-deps --locked --offline
+  cargo doc --workspace --all-features --no-deps --locked --offline
 CARGO_TARGET_DIR="$preflight_target_dir" RUSTUP_TOOLCHAIN=1.83.0 \
-  cargo test --workspace --doc --locked --offline
+  cargo test --workspace --all-features --doc --locked --offline \
+  -- --test-threads=1
 bash tools/docs/check_links.sh
 bash tools/compliance/check.sh
 git diff --check
