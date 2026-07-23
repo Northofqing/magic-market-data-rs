@@ -58,6 +58,10 @@ Breaking migrations:
   activation token was refreshed locally, while both normal and forced
   official SDK login still return `10001003` until the account's API product
   entitlement is propagated by Choice.
+- Expanded the root README into a Chinese-first developer and operator entry
+  manual covering workspace boundaries, normalized evidence, exact Provider
+  capabilities, deterministic setup, real/load probes, failover routing,
+  release packaging, deployment constraints and security navigation.
 
 Serde input now passes through the same constructors used by Rust callers, so
 invalid numeric values, identifiers, evidence, dates, OHLC ranges, order-book

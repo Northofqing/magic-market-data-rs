@@ -36,14 +36,14 @@ Status: complete
 
 ### Phase 3: README expansion
 
-Status: in_progress
+Status: complete
 
 - Replace the sparse root README with the approved Chinese-first entry manual.
 - Keep technical identifiers, commands and API names exact.
 
 ### Phase 4: Verification and delivery
 
-Status: pending
+Status: in_progress
 
 - Run link, compliance and diff checks.
 - Review all capability claims against the source documents.

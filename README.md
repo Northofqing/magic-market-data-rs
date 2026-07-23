@@ -1,34 +1,478 @@
 # magic-market-data-rs
 
-Standalone Rust market-data workspace containing:
+面向中国证券市场的 Rust 统一行情工作区。项目把 TDX、腾讯网页行情和东方财富
+Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源证据的多 Provider
+顺序切源能力。
 
-- `magic-market-core`: provider-neutral checked values and batch metadata.
-- `magic-market-router`: provider-neutral, evidence-preserving ordered failover
-  for every normalized data family.
-- `magic-tdx-rs`: pure-Rust TDX protocol, readers, parsers, clients, funds,
-  blocks, and F10/profile support extracted from upstream `tdxrs`.
-- `magic-emquant-rs`: read-only Eastmoney/Choice provider using the separately
-  built official-SDK snapshot bridge, without Rust `unsafe` or stored credentials.
-- `magic-tencent-rs`: bounded HTTPS/GBK/JSON supplemental provider for verified
-  Shanghai/Shenzhen/Beijing quotes, books, K lines, minute data, current trades,
-  and partial security metadata.
+当前代码固定使用 Rust 1.83.0，生产 Rust 路径禁止 `unsafe`。确定性测试默认不访问
+公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值冒充
+实盘成功。
 
-The upstream implementation is retained under the MIT license. Python/PyO3
-bindings are intentionally excluded. Network integration remains opt-in; the
-deterministic test suite uses local fixtures and mocks.
+> 当前状态（2026-07-23）：TDX、Tencent 和 TDX→Tencent 路由已有真实网络验收；
+> EMQuant 的本机设备激活已经完成，但官方 SDK 登录仍返回
+> `10001003/EQERR_NO_ACCESS`，因此尚不能标记为实盘数据源。
 
-## Verification
+## 项目定位
 
-```bash
-cargo test --workspace --all-targets
-cargo clippy --workspace --all-targets -- -D warnings
-cargo doc --workspace --no-deps
+本仓库提供两类交付物：
+
+- 可被业务服务依赖的 Rust library crates；
+- 部署前和故障排查时使用的只读诊断 probe。
+
+它刻意不提供以下能力：
+
+- 常驻行情守护进程、任务调度器或 HTTP/gRPC 服务；
+- 数据库、历史数据仓库、跨请求缓存或陈旧数据回填；
+- 下单、撤单、持仓、资金、账户或交易登录能力；
+- 不可观察的重试、跨 Provider 拼接或模拟数据回退；
+- 对公共网页端点的生产 SLA、展示权或再分发授权承诺。
+
+生产应用应在自己的服务层补充并发预算、限频、熔断、缓存、持久化、交易阶段新鲜度
+判断和监控。本项目负责源适配、数据校验、证据保留和显式切源。
+
+## 工作区结构
+
+| Crate | 责任 | 明确边界 |
+| --- | --- | --- |
+| `magic-market-core` | Provider 无关的证券标识、请求、值对象、标准化记录、批次证据和 Provider traits | 不联网，不选择数据源 |
+| `magic-market-router` | 第一个合格批次的顺序切源、错误分类、质量门、来源时间门和完整 attempt trace | 不缓存、不跨源合并、不维护熔断状态 |
+| `magic-tdx-rs` | 纯 Rust TDX 协议、同步/异步/直连/Smart 客户端、服务门面和本地文件读取器 | MoneyFlow 与集合竞价显式不支持 |
+| `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖已验证的沪深京基础行情 | 公共网页接口，无正式 SLA |
+| `magic-emquant-rs` | 通过独立 C++ bridge 调用官方 Choice/EMQuant SDK 的只读适配层 | 厂商 SDK、授权和激活文件不进入仓库 |
+
+依赖方向保持简单：
+
+```text
+业务服务
+   │
+   ├── magic-market-router ──→ magic-market-core
+   │          ▲
+   │          └── Provider 注册适配
+   │
+   ├── magic-tdx-rs ─────────→ magic-market-core
+   ├── magic-tencent-rs ─────→ magic-market-core
+   └── magic-emquant-rs ─────→ magic-market-core
 ```
 
-Deployment layout, platform constraints, health checks, rollback, and release
-packaging are documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Provider
-details are in [TDX capabilities](docs/TDX_CAPABILITIES.md),
-[Eastmoney EMQuant](docs/integrations/eastmoney-emquant.md), and
-[Tencent web quotes](docs/integrations/tencent-web.md). Routing policy and
-attempt evidence are documented in
-[multi-provider routing](docs/MULTI_PROVIDER_ROUTING.md).
+Router 的生产依赖只有 Core，具体 Provider 在应用注册边界接入，避免公共契约反向依赖
+某个厂商实现。
+
+## 统一数据契约与证据
+
+Core 当前定义八类统一数据族：
+
+| 数据族 | 统一入口 | 关键语义 |
+| --- | --- | --- |
+| 实时行情 | `RealtimeQuotes` | 当前价、昨收、开高低、量额、名称和状态 |
+| K 线 | `HistoricalBars` | 周期、OHLCV、成交额、复权语义和有界数量 |
+| 分时 | `MinuteData` | 当日/指定日期分钟点、累计量额与单调性 |
+| 逐笔成交 | `Trades` | 成交时间、价格、数量、方向和分页连续性 |
+| 资金流 | `MoneyFlows` | 主力及超大/大/中/小单净流入的可审计定义 |
+| 五档盘口 | `OrderBooks` | 买卖五档价格/数量、可见总深度和缺档状态 |
+| 集合竞价 | `Auctions` | 撮合价、匹配量及未匹配买卖量 |
+| 证券元数据 | `SecurityMetadataProvider` | 名称、ST、板块、上市日和涨跌停规则 |
+
+每条标准化记录与批次都保留证据，而不是只返回裸数值：
+
+- `ProviderId`：真实来源，切源后也不改写；
+- `source_at`：只有源报文能够证明时才存在；
+- `observed_at` 或批次 `fetched_at`：本机观测/抓取时间；Bar 等批次型记录由
+  provenance 保存抓取时间；
+- `batch_id`：记录与 provenance 必须一致；
+- `DataStatus`：`Available`、`Unavailable` 等显式状态；
+- `QualityReport`：缺字段、未验证来源时间或部分可用原因。
+
+构造器拒绝非有限数、非法价格/数量、空证据、代码错配、重复/乱序记录、OHLC
+矛盾、盘口半档和批次证据不一致。缺失值保持缺失并产生质量证据，不会填 `0`；
+不支持的数据族返回 typed error，不会返回空成功批次。
+
+## Provider 能力矩阵
+
+状态说明：
+
+- **实盘**：实现已通过真实网络 probe；
+- **已实现/待权限**：代码和确定性测试完成，但当前账号/字段尚未实盘验收；
+- **部分**：只覆盖表中写明的市场、周期或字段；
+- **不支持**：入口显式返回 `Unsupported`。
+
+| 能力 | TDX | Tencent | Choice/EMQuant |
+| --- | --- | --- | --- |
+| Quote | 实盘：沪深京 | 实盘：沪深京 | 已实现/待 API entitlement |
+| K 线 | 实盘：个股/指数，12 类周期（1 分钟至年线） | 部分实盘：沪深 1/5/15/30/60 分钟、日/周/月；北京日线 | 已实现/待权限：分钟、日/周/月/年 |
+| 分时 | 实盘：当日与按日期历史 | 实盘：当日与历史；市场边界见专项文档 | 未接入独立 `MinuteData`；分钟 K 见上一行 |
+| 逐笔 | 实盘：当日与历史，自动翻页 | 部分实盘：沪深当日；历史与北京不支持 | 不支持 |
+| 五档盘口 | 实盘：沪深京 | 实盘：沪深京 | 已实现/待 Level-2 权限 |
+| 资金流 | 不支持 | 不支持 | 已实现/待权限：日级大中小单指标 |
+| 证券列表/元数据 | 沪深全市场列表与部分标准化元数据；北京列表端点不支持 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 未验证，当前 capability 关闭 |
+| 财务数据 | 实盘：实时 34 项、报告包和 45 个命名指标 | 不支持 | 当前未接入统一财务契约 |
+| 除权除息 | 实盘：XDXR 分红/送股/配股/缩股历史 | 不支持 | 当前未接入 |
+| 板块/F10/基金 | 实盘：行业/概念/指数、F10、基金数据 | 不支持 | 当前未接入 |
+| 开盘集合竞价 | 不支持 | 不支持 | 不支持：完整字段集尚未证明 |
+
+### TDX
+
+TDX 是当前覆盖最广的纯 Rust 数据源，包含 Blocking、Direct、Tokio Async 和
+Smart failover 客户端。2026-07-23 的真实 probe 覆盖：
+
+- 华电辽能 `600396.SH`、平安银行 `000001.SZ`、太湖远大 `920118.BJ`；
+- 12 类个股 K 线和指数 K 线；
+- 五档、当日/历史分时、当日/历史逐笔及跨页大样本；
+- 沪深证券列表、实时财务、财务报告包、45 个英文指标、XDXR；
+- 行业/概念/指数板块、基金和 F10。
+
+TDX Quote/盘口报文中的时间区域格式尚未完成审计，所以标准化记录保留
+`source_at=None` 并标记质量不完整。它们不能直接通过要求可审计源时间的 5 秒新鲜度
+门。TDX 也没有满足统一 MoneyFlow 和集合竞价契约的字段，不会从成交或盘口推测。
+
+完整边界见 [TDX 能力矩阵](docs/TDX_CAPABILITIES.md)。
+
+### Tencent
+
+Tencent 是基础行情补充源。它不读取桌面客户端、Cookie、账户或设备令牌，只访问
+公开网页行情端点。Quote 提供可验证的 `YYYYMMDDHHMMSS` 源时间，但网页接口没有
+正式版本合同或 SLA，不能单独承担生产主链路。
+
+2026-07-23 的真实上限短压测为 100 请求、8 并发、100/100 成功、3,700 条记录、
+56.49 req/s、P50 100.077 ms、P95 219.676 ms、最大 251.169 ms。这只是短时诊断，
+不是允许调用频率或厂商性能承诺。
+
+市场、周期、单位、盘后分钟点和端点边界见
+[Tencent 接入合同](docs/integrations/tencent-web.md)。
+
+### Choice/EMQuant
+
+Rust 适配器和只读 snapshot bridge 已实现 Quote、日/周/月/年 K 线、
+1/5/15/30/60 分钟线、五档和日级资金流。bridge 作为子进程隔离厂商 C++ ABI，使
+Rust workspace 保持无 `unsafe`。
+
+当前开发机的短信/设备激活文件已在 2026-07-23 刷新，但普通登录和
+`ForceLogin=1` 最小官方 ABI 登录都返回 `10001003/EQERR_NO_ACCESS`。这说明设备
+激活成功但 EMQuant API 产品 entitlement 尚未在登录服务生效；因此上述能力不能
+标记为实盘通过。桌面东方财富客户端登录也不能替代 EMQuant API 激活或产品权限。
+
+SDK 安装、签名、激活和错误码说明见
+[Choice/EMQuant 接入文档](docs/integrations/eastmoney-emquant.md)。
+
+## 快速开始
+
+### 环境要求
+
+- Git；
+- Rust/Cargo 1.83.0；
+- Bash 和常用 Unix 工具（发布脚本）；
+- 首次获取依赖时允许访问 crates.io；
+- 运行真实 probe 时允许对应 Provider 的出站网络。
+
+安装固定工具链并获取锁定依赖：
+
+```bash
+git clone https://github.com/Northofqing/magic-market-data-rs.git
+cd magic-market-data-rs
+rustup toolchain install 1.83.0 --profile minimal \
+  --component rustfmt --component clippy
+cargo fetch --locked
+```
+
+`Cargo.lock` 固定了与 Cargo 1.83 兼容的 URL/IDNA/zeroize 依赖链。不要删除锁文件
+后直接升级，否则可能重新解析到需要 edition 2024 的包。
+
+### 确定性验证
+
+依赖已经获取后，以下命令不访问行情公网：
+
+```bash
+cargo check --workspace --all-targets --locked --offline
+cargo test --workspace --all-targets --locked --offline
+cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+cargo doc --workspace --no-deps --locked --offline
+```
+
+完整发布门一次执行格式、Rust 1.83 全目标编译、全部测试、严格 Clippy、rustdoc、
+doctest、链接、合规和 diff 检查：
+
+```bash
+bash tools/release/preflight.sh
+```
+
+## 真实数据探针
+
+所有 live probe 都会打印标准化字段、来源和质量信息，并以退出码表达真假。登录
+失败、预期能力缺记录、代码错配、协议矛盾、超时或权限不足都会退出非零；不会打印
+fixture 后返回成功。
+
+命令中的 Cargo `--offline` 只禁止 Cargo 重新解析/下载依赖，不会阻止编译出的
+probe 访问行情网络。
+
+### TDX 全能力 probe
+
+```bash
+cargo run -p magic-tdx-rs --example live_probe --release
+```
+
+该命令打印 Quote、全部 K 线周期、五档、分时、逐笔、证券列表/数量、实时与报告期
+财务、45 个命名指标、XDXR、板块、基金和 F10。财务报告包会校验 HTTP 边界、ZIP
+目录、解压长度和 CRC。
+
+### Tencent 功能 probe
+
+```bash
+MAGIC_TENCENT_CODES=600396.SH,000001.SZ,920118.BJ \
+MAGIC_TENCENT_HISTORY_DATE=2026-07-22 \
+cargo run -p magic-tencent-rs --example live_probe --release --locked --offline
+```
+
+默认超时可通过 `MAGIC_TENCENT_TIMEOUT_SECS` 调整。盘前零现价、涨跌停缺档和特定
+市场端点空结果会按协议边界失败或标记质量降级，不会被改写成其他市场数据。
+
+### Tencent 有界并发 probe
+
+```bash
+MAGIC_TENCENT_LOAD_OPERATION=mixed \
+MAGIC_TENCENT_LOAD_REQUESTS=20 \
+MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
+cargo run -p magic-tencent-rs --example load_probe --release --locked --offline
+```
+
+`MAGIC_TENCENT_LOAD_OPERATION` 可选 `quotes`、`bars`、`minute`、`trades` 或
+`mixed`。程序在联网前强制最多 100 请求、8 个线程，防止把诊断工具误用成无限压测。
+
+### TDX→Tencent 路由 probe
+
+```bash
+cargo run -p magic-market-router --example live_probe --release --locked --offline
+```
+
+probe 要求批次质量完整且存在来源时间。TDX 会返回真实 Quote，但因名称/源时间证据
+不足被质量门拒绝；随后 Tencent 返回合格批次并被选中。输出同时保留 TDX 拒绝和
+Tencent 选中的 attempt trace。
+
+### Choice/EMQuant probe
+
+先用获授权的官方 macOS SDK 构建本机 bridge：
+
+```bash
+bash tools/emquant/check_sdk.sh /approved/path/EMQuantAPI_CPP_Mac
+bash tools/emquant/build_snapshot_bridge.sh /approved/path/EMQuantAPI_CPP_Mac
+```
+
+若返回 `10001014/EQERR_NEED_ACTIVATE`，运行同级官方激活器并完成短信激活：
+
+```bash
+target/emquant/runtime/loginactivator_mac
+```
+
+然后运行：
+
+```bash
+MAGIC_EMQUANT_CODES=600396.SH,000001.SZ \
+cargo run -p magic-emquant-rs --example live_probe --release
+```
+
+`MAGIC_EMQUANT_TIMEOUT_SECS` 可覆盖默认 30 秒子进程超时。只有真实 Quote、五档、
+资金流、日 K 和分钟 K 全部按预期返回时，probe 才退出零。厂商 SDK、加密服务器
+列表、动态库和 `userInfo` 都只存在于 Git 忽略的本机 runtime，不进入 release 包。
+
+## 多数据源路由
+
+`magic-market-router` 对每个数据族使用独立的 `FailoverChain`：
+
+```text
+同一不可变请求
+    │
+    ├─ Provider A ─ 终止错误 ───────────────→ 整体失败
+    │              可恢复错误/质量拒绝 ─┐
+    ├─ Provider B ←──────────────────────┘
+    │              合格批次 ─────────────→ 批次 + 完整 attempt trace
+    └─ Provider C ─ 全部失败 ─────────────→ Exhausted + 完整 attempt trace
+```
+
+Router 永远拒绝空批次、Provider ID 错配、缺失 provenance batch ID 和记录/批次 ID
+不一致。调用方还可以要求：
+
+- `require_complete`：拒绝带任何质量问题的批次；
+- `require_source_at`：拒绝没有批次级来源时间的批次。
+
+Provider 错误必须在注册点明确映射为 `InvalidRequest`、`Unsupported`、
+`Transport`、`Timeout`、`RateLimited`、`NoData`、`Protocol` 或 `Provider`，
+同时选择 `Stop` 或 `TryNext`。非法请求必须停止，不能靠后续 Provider 的偶然成功
+掩盖调用缺陷。
+
+最小 Tencent Quote 注册示例：
+
+```rust
+use magic_market_core::ProviderId;
+use magic_market_router::{
+    quote_source, AcceptancePolicy, FailureKind, QuoteRouter, SourceError,
+};
+use magic_tencent_rs::{TencentClient, TencentError};
+use std::error::Error;
+use std::sync::Arc;
+
+fn build_router() -> Result<QuoteRouter, Box<dyn Error>> {
+    let mut router = QuoteRouter::new(
+        AcceptancePolicy::new()
+            .with_require_complete(true)
+            .with_require_source_at(true),
+    );
+    router.register(quote_source(
+        ProviderId::Tencent,
+        Arc::new(TencentClient::new()?),
+        |error| match error {
+            TencentError::InvalidRequest(message) => {
+                SourceError::stop(FailureKind::InvalidRequest, message)
+            }
+            TencentError::Unsupported(message) => {
+                SourceError::try_next(FailureKind::Unsupported, message)
+            }
+            TencentError::Transport(message) => {
+                SourceError::try_next(FailureKind::Transport, message)
+            }
+            other => {
+                SourceError::try_next(FailureKind::Protocol, other.to_string())
+            }
+        },
+    ))?;
+    Ok(router)
+}
+```
+
+成功时读取 `RouteOutcome::selected_provider()`、`batch()` 和 `attempts()`；失败时从
+`RouterError::attempts()` 保留完整诊断。Router 不解析一个适用于所有数据族的固定
+“5 秒”规则：Quote、分钟线、日线和盘后指标的时间语义不同，新鲜度门属于业务层。
+
+完整策略见 [多数据源路由文档](docs/MULTI_PROVIDER_ROUTING.md)。
+
+## 构建发布与部署
+
+### 可重复发布
+
+发布前 tracked worktree 必须干净：
+
+```bash
+bash tools/release/preflight.sh
+git commit
+bash tools/release/package.sh
+```
+
+打包输出位于 `target/dist/GIT_SHA/`：
+
+```text
+target/dist/GIT_SHA/
+├── bin/
+│   ├── magic-emquant-live-probe
+│   ├── magic-router-live-probe
+│   ├── magic-tdx-live-probe
+│   ├── magic-tencent-live-probe
+│   └── magic-tencent-load-probe
+├── docs/
+├── licenses/
+├── Cargo.lock
+├── RELEASE_REVISION
+├── RUSTC_VERSION
+├── CARGO_VERSION
+├── TARGET_TRIPLE
+└── SHA256SUMS
+```
+
+校验当前提交制品：
+
+```bash
+release_dir=target/dist/$(git rev-parse HEAD)
+cd "$release_dir"
+shasum -a 256 -c SHA256SUMS
+```
+
+Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架构、Rust/Cargo
+版本和 Git SHA，不能把 macOS 二进制当成 Linux/Windows 制品。
+
+### 平台与网络摘要
+
+| 组件 | 平台 | 必需运行时访问 |
+| --- | --- | --- |
+| Core / Router | macOS、Linux、Windows | 无 |
+| TDX | macOS、Linux、Windows | 行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` |
+| Tencent | macOS、Linux、Windows | `qt.gtimg.cn`、`web.ifzq.gtimg.cn`、`ifzq.gtimg.cn`、`stock.gtimg.cn` 的 HTTPS |
+| 当前 EMQuant bridge | x86_64 macOS | 厂商加密服务器列表定义的目标；本机官方 SDK |
+
+TDX SmartClient 需要服务账号拥有独立可写目录来保存服务器健康缓存。TDX 财务包
+沿用厂商 HTTP 分发端点，代码校验结构、长度和 CRC，但传输层不加密；严格环境应
+关闭该能力或接入经过批准的完整性代理。
+
+当前 EMQuant C++ bridge 使用 macOS `.dylib`、`dlopen` 和 POSIX API。Linux 或
+Windows 虽可编译 Rust 层，但运行前必须基于对应平台官方 SDK 单独实现并验收。
+Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/Rosetta
+环境运行，不能跨架构加载动态库。
+
+完整文件布局、健康检查、容器要求、回滚和升级流程见
+[部署手册](docs/DEPLOYMENT.md)。
+
+### 生产集成责任
+
+业务守护进程应长期复用 Provider client，而不是为每条记录启动 probe，并负责：
+
+1. Provider 级并发上限、请求超时、退避和熔断；
+2. 交易阶段感知的新鲜度门；
+3. 缓存与数据库写入时保留真实来源和质量证据；
+4. 监控延迟、空结果、质量降级、源时间倒退和切源次数；
+5. 优雅停机和在途请求收敛；
+6. 按数据供应商协议控制展示、再分发和调用频率。
+
+## 安全与合规边界
+
+- 全部 Provider 接入均为只读市场数据；项目不访问账户、持仓、资金或下单接口。
+- 不代理、解密、重放东方财富桌面客户端或其他终端的私有登录流量。
+- 用户名、密码、手机号、验证码、Cookie、设备令牌、`userInfo` 和登录报文不得进入
+  源码、fixture、日志、镜像或 release 包。
+- EMQuant 厂商动态库、加密服务器列表和图片资源受厂商许可证约束，只能在获授权
+  主机本地准备。
+- Tencent 公共网页端点没有本项目可证明的 SLA 或再分发许可，部署方必须自行确认
+  服务条款。
+- 未验证字段必须保持 `None`/`Unavailable` 或返回 `Unsupported`，不得通过猜测、
+  跨源填补或模拟记录“修好”。
+- Probe 输出可记录 Provider、证券代码、批次 ID、质量问题、耗时和错误码，但不得
+  输出任何激活令牌或个人信息。
+
+## 当前验收状态
+
+以下是 2026-07-23 已保存的验收边界，不等同于供应商 SLA：
+
+| 项目 | 结果 | 证据摘要 |
+| --- | --- | --- |
+| Rust 1.83 全工作区门禁 | 通过 | check、全部测试、严格 Clippy、rustdoc/doctest、链接和合规 |
+| TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
+| Tencent live probe | 通过 | 沪深京 Quote/五档、已声明 K 线和分时边界、沪深当日逐笔 |
+| Tencent load probe | 通过 | 100 请求/8 并发，100/100 成功；仅为有界短样本 |
+| Router live probe | 通过 | TDX 质量拒绝被保留，Tencent 合格 Quote 被选中 |
+| EMQuant live probe | 未通过 | 激活文件已刷新，SDK 仍在查询前返回 `10001003/EQERR_NO_ACCESS` |
+| Release package | 通过 | 五个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
+
+任何 Provider 字段、授权、服务器或网页协议发生变化后，都必须重新运行对应的
+确定性测试和真实 probe。旧验收记录不能自动证明新版本仍然可用。
+
+## 文档索引
+
+| 文档 | 内容 |
+| --- | --- |
+| [部署手册](docs/DEPLOYMENT.md) | 可重复构建、平台、网络、EMQuant runtime、健康检查、回滚与升级 |
+| [TDX 能力矩阵](docs/TDX_CAPABILITIES.md) | 全数据族、北京市场、证据和显式不支持边界 |
+| [Tencent 接入合同](docs/integrations/tencent-web.md) | 端点、字段、单位、市场/周期边界与负载结果 |
+| [Choice/EMQuant 接入](docs/integrations/eastmoney-emquant.md) | SDK bridge、激活、能力映射和当前权限状态 |
+| [多数据源路由](docs/MULTI_PROVIDER_ROUTING.md) | 错误分类、接受政策、attempt trace 和真实切源 |
+| [性能结果](docs/PERFORMANCE_RESULTS.md) | 可复现性能证据及适用范围 |
+| [业务规则](docs/business_rules.md) | Smart server、重试和服务行为规则 |
+| [工程规则](docs/ENGINEERING_RULES.md) | 不变量、测试、错误和发布要求 |
+| [上游说明](docs/UPSTREAM.md) | TDX 来源代码和维护边界 |
+| [变更记录](CHANGELOG.md) | 未发布版本的破坏性迁移和新增能力 |
+
+## 上游与许可证
+
+工作区自身使用 `MIT OR Apache-2.0` 双许可证，详见
+[LICENSE-MIT](LICENSE-MIT) 和 [LICENSE-APACHE](LICENSE-APACHE)。
+
+`magic-tdx-rs` 起源于 MIT 许可的 `tdxrs` 代码，随后直接纳入本工作区并围绕强校验
+数据契约、服务门面、并发客户端、真实探针和发布门禁进行了扩展。上游 MIT 文本保留
+在 [LICENSES/tdxrs-MIT.txt](LICENSES/tdxrs-MIT.txt)，详细来源与差异见
+[docs/UPSTREAM.md](docs/UPSTREAM.md)。
+
+Choice/EMQuant 厂商 SDK 不属于仓库开源制品；Tencent/TDX 网络数据的使用、展示和
+再分发仍受各自供应商条款约束。

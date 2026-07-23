@@ -19,3 +19,8 @@
 - Release packaging produces five diagnostic binaries and a SHA-256 manifest
   from a clean tracked worktree. Vendor SDK files and activation tokens are
   deliberately excluded.
+- EMQuant implements minute intervals through `HistoricalBars`; it does not
+  implement the separate normalized `MinuteData` trait. The README must keep
+  minute K lines and intraday minute-point data distinct.
+- Most normalized records carry `observed_at`, while `Bar` relies on batch
+  provenance `fetched_at`; the common evidence description must name both.
