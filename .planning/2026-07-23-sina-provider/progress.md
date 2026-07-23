@@ -23,3 +23,9 @@
   post-Sina EMQuant entitlement check.
 - Proved the initial missing-package red state, added the sixth workspace crate
   and passed the public capability/trait compile contract on Rust 1.83.
+- Added strict HTTPS transport and GB18030 snapshot parsing with exact
+  cardinality/order, redundant top-of-book checks, calendar source time,
+  OHLC validation and uniform source-share-to-lot normalization.
+- Implemented normalized Sina Quote, five-level OrderBook and partial security
+  metadata. Ten deterministic tests pass across Shanghai, Shenzhen and Beijing,
+  including limit-up empty asks and malformed/contradictory response cases.
