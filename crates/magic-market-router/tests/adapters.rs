@@ -123,10 +123,7 @@ impl PostCloseFlows for FixtureProvider {
                 Vec::new(),
                 Provenance::new("fixture", "observed")
                     .unwrap()
-                    .with_source_at(format!(
-                        "{} 15:35:00",
-                        request.trading_date().as_str()
-                    ))
+                    .with_source_at(format!("{} 15:35:00", request.trading_date().as_str()))
                     .unwrap(),
             ))
         }

@@ -377,6 +377,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-exchange-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "magic-iwencai-rs"
 version = "0.2.0"
 dependencies = [

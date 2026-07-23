@@ -1,12 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd); cd "$repo_root"
-required=(AGENTS.md Cargo.toml Cargo.lock LICENSE-APACHE LICENSE-MIT LICENSES/tdxrs-MIT.txt docs/ENGINEERING_RULES.md docs/business_rules.md docs/DEPLOYMENT.md docs/MULTI_PROVIDER_ROUTING.md docs/integrations/tencent-web.md docs/integrations/sina-web.md crates/magic-market-router/Cargo.toml crates/magic-market-analysis/Cargo.toml crates/magic-tencent-rs/Cargo.toml crates/magic-sina-rs/Cargo.toml)
+required=(
+  AGENTS.md
+  Cargo.toml
+  Cargo.lock
+  LICENSE-APACHE
+  LICENSE-MIT
+  LICENSES/tdxrs-MIT.txt
+  docs/ENGINEERING_RULES.md
+  docs/business_rules.md
+  docs/DEPLOYMENT.md
+  docs/MULTI_PROVIDER_ROUTING.md
+  docs/integrations/tencent-web.md
+  docs/integrations/sina-web.md
+  docs/integrations/eastmoney-web.md
+  docs/integrations/cninfo-web.md
+  docs/integrations/tonghuashun-web.md
+  docs/integrations/cls-web.md
+  docs/integrations/baidu-web.md
+  docs/integrations/iwencai-api.md
+  docs/integrations/exchange-official.md
+  crates/magic-market-router/Cargo.toml
+  crates/magic-market-analysis/Cargo.toml
+  crates/magic-tencent-rs/Cargo.toml
+  crates/magic-sina-rs/Cargo.toml
+  crates/magic-eastmoney-rs/Cargo.toml
+  crates/magic-cninfo-rs/Cargo.toml
+  crates/magic-ths-rs/Cargo.toml
+  crates/magic-cls-rs/Cargo.toml
+  crates/magic-baidu-rs/Cargo.toml
+  crates/magic-iwencai-rs/Cargo.toml
+  crates/magic-exchange-rs/Cargo.toml
+)
 for path in "${required[@]}"; do test -s "$path" || { echo "missing required file: $path" >&2; exit 1; }; done
-rg -q '^members = \["crates/magic-market-core", "crates/magic-market-router", "crates/magic-tdx-rs", "crates/magic-emquant-rs", "crates/magic-tencent-rs", "crates/magic-sina-rs", "crates/magic-market-analysis"\]$' Cargo.toml
+workspace_members=(
+  crates/magic-market-core
+  crates/magic-market-router
+  crates/magic-tdx-rs
+  crates/magic-emquant-rs
+  crates/magic-tencent-rs
+  crates/magic-sina-rs
+  crates/magic-market-analysis
+  crates/magic-eastmoney-rs
+  crates/magic-cninfo-rs
+  crates/magic-ths-rs
+  crates/magic-cls-rs
+  crates/magic-baidu-rs
+  crates/magic-iwencai-rs
+  crates/magic-exchange-rs
+)
+workspace_manifest_members=$(sed -n '/^members = \[/,/^\]/p' Cargo.toml)
+for member in "${workspace_members[@]}"; do
+  rg -Fq "\"$member\"" <<<"$workspace_manifest_members" || {
+    echo "missing workspace member: $member" >&2
+    exit 1
+  }
+done
 if rg -n 'stock_analysis' crates/*/Cargo.toml; then exit 1; fi
 router_dependencies=$(sed -n '/^\[dependencies\]/,/^\[/p' crates/magic-market-router/Cargo.toml)
-if rg -q 'magic-(tdx|tencent|sina|emquant)-rs' <<<"$router_dependencies"; then
+if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|baidu|iwencai|exchange)-rs' <<<"$router_dependencies"; then
   echo "router production dependencies must remain provider-neutral" >&2
   exit 1
 fi

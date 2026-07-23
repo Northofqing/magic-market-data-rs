@@ -102,9 +102,59 @@ Breaking migrations:
 - Expanded `magic-market-router` with thin provider-neutral adapters for every
   new normalized family; all records continue through the existing
   provider/batch evidence rejection and ordered attempt trace.
+- Added the previously missing bounded `PostCloseFlow` Top10 contract and
+  Router adapter. It retains source-backed board/price-limit metadata and is
+  not advertised by any Provider until exact 15:35 ranking semantics are
+  verified. Checked records couple source date to trading date, and routing
+  rejects date mismatches, over-limit batches and duplicate ranks/instruments.
 - Added `magic-market-analysis`, a network-free crate for checked SMA, forward
   PE, PEG, configurable PE-digestion scenarios, limit-pool sentiment and
   cross-source freshness/value diagnostics with retained input evidence.
+- Added `magic-eastmoney-rs` as a public-web identity separate from
+  Choice/EMQuant, covering reports, minute/daily fund-flow parsing, three board
+  flow categories, dragon-tiger entries/seats, margin, block trades, holder
+  counts, lockups, dividends, four limit pools and popularity.
+  The real probe passes all advertised families. Both fund-flow hosts close the
+  current development network connection before an HTTP response, so that
+  family remains unadvertised and is reported as an expected-failure diagnostic
+  without failing the advertised-capability probe.
+- Kept Eastmoney keyword news unadvertised because its response has no
+  structured source instrument identity; the method returns `Unsupported`
+  instead of attaching the requested keyword instrument to a strict record.
+- Added `magic-cninfo-rs` for cached exact stock/org mapping, paged
+  announcements, canonical detail/PDF URLs and investor Q&A. Real live probes
+  returned three announcements and three Q&A records; a serial 3/3 load run
+  maintained a minimum 1002 ms request-start interval.
+- Added `magic-ths-rs` for consensus, strong-stock reasons, source-backed upper
+  limit-pool reasons/status and popularity. Real live probes passed all
+  declared families; a serial 3/3 load run maintained a minimum 1000 ms start
+  interval.
+- Added `magic-cls-rs` for signed, newest-first global telegraph/news records
+  with source timestamps, publishers, related instruments and topics. The
+  bounded 2/2 live load sample returned 20 records without failure.
+- Added `magic-baidu-rs` for unadjusted daily technical bars with source
+  MA5/MA10/MA20. The live probe returned five 华电辽能 bars and the bounded 2/2
+  load sample returned 40 records without failure.
+- Added `magic-iwencai-rs` for explicit API-Key/X-Claw authenticated semantic
+  search, result de-duplication and secret-redacted errors. Without a licensed
+  key, the real endpoint's HTTP 401 is reported as authentication failure and
+  never replaced by fixture or Cookie-derived data.
+- Added `magic-exchange-rs` with first-class SSE/SZSE/HKEX identities and
+  admitted official SSE/SZSE announcements. Both clients use fixed 50-row
+  pagination with local truncation, strict source security/date/URL/page
+  checks, clone-shared serial gates and real live/load probes; HKEX advertises
+  no family until its later lossless contract is implemented.
+- All six public providers enforce HTTPS host allowlists, zero redirects,
+  timeouts, response-size/request bounds, strict non-empty output, source
+  evidence, deterministic injected transports, live probes and conservative
+  bounded load probes.
+- Closed final strict-identity review findings: public adapters no longer map
+  Shanghai `900xxx` B shares to Beijing, CLS related instruments distinguish
+  verified ETF/index/equity code families, and malformed present THS metadata
+  fails schema validation instead of disappearing as an absent field.
+- Expanded release packaging from seven to twenty-one uniquely named probe
+  binaries and added secret-gated iWencai plus public-web live/load workflow
+  coverage.
 
 Serde input now passes through the same constructors used by Rust callers, so
 invalid numeric values, identifiers, evidence, dates, OHLC ranges, order-book

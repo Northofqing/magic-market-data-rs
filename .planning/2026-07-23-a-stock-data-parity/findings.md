@@ -450,3 +450,193 @@
   validation, zero redirects, byte caps and real `ureq` clients. New provider
   crates will reuse this architecture while assigning endpoint-specific
   whitelists and smaller per-family caps.
+- The Core/Router/analysis shared-field barrier passes all focused Rust 1.83
+  tests, format and strict Clippy. `ProviderId` already contains Eastmoney,
+  Baidu, Tonghuashun, Iwencai, Cninfo and Cailianpress identities, so provider
+  crates do not need identity changes.
+- Parallel ownership is now active: one isolated lane for Eastmoney, one for
+  CNInfo/Tonghuashun and one for CLS/Baidu/iWencai. Main alone owns Core,
+  Router, workspace manifests, lockfile, integration docs and final gates.
+- Release packaging previously installed seven probe binaries. The six new
+  provider crates each require live and load probes, so the main package script
+  now uses one checked build/install helper and targets nineteen binaries in
+  total.
+- The user's untracked market-data handoff explicitly calls for a normalized
+  `PostCloseFlow` Top10 contract. Auction is already fully modeled and every
+  current Provider explicitly supports or rejects it, but post-close ranking is
+  absent from Core/Router. Main will add the contract and routing surface now;
+  real records remain unavailable until a source with verified 15:35 semantics
+  is authorized.
+- Post-close flow belongs in the existing `capital` domain and can reuse
+  source-backed `Board`/`PriceLimitRule` metadata. It must not infer a limit rule
+  from a code, and ranking requests must be bounded independently from
+  intraday flow series.
+- The user's handoff also states that account, push scheduling, AI and trading
+  decisions remain outside this workspace. New news/intelligence crates stay
+  pull-only Provider APIs and must not add a second scheduler or any account
+  side effects.
+- CNInfo and Tonghuashun manifests now exist using only already-locked
+  dependencies; main will refresh `Cargo.lock` once all six manifests are
+  present so provider lanes can finish with `--locked`.
+- The compliance script hardcodes the previous single-line seven-member
+  workspace and will fail after adding providers. It also forbids only the four
+  old concrete Provider dependencies in Router. Main must convert both checks
+  to explicit member iteration and a complete concrete-provider pattern.
+- The manual live workflow currently runs only TDX. After provider probes are
+  stable, add a public-web matrix and keep credentialed iWencai behind an
+  explicit repository secret; deterministic CI remains network-free.
+- All six manifests now exist. The first offline lock refresh correctly refused
+  a manifest-only Baidu crate because it had no Rust target; the isolated lane
+  is adding minimal targets before main repeats the lock refresh. This is a
+  workspace-shape error, not a dependency-resolution failure.
+- CLS's verified request signing currently adds `sha1` and `md-5`; those
+  packages were not present in the previous lockfile, so after targets exist
+  main will try the offline registry cache first and use the approved dependency
+  fetch path only if required.
+- Exact lock audit after MSRV restoration shows only new package entries:
+  six local Provider crates plus `block-buffer`, `cpufeatures`,
+  `crypto-common`, `digest`, `generic-array`, `md-5`, `sha1`, `typenum` and
+  `version_check`. No pre-existing package version remains changed.
+- Core, Router and analysis tests pass on Rust 1.83 after the PostClose contract
+  and expanded source fields. This confirms the shared-contract barrier is
+  stable while isolated Provider implementation continues.
+- Core/Router public documentation was stale at the original eight market
+  families. It now enumerates the complete intelligence/capital/content/option
+  surface and explicitly states that `PostCloseFlowRouter` cannot rename
+  ordinary daily or board flow into a verified 15:35 Top10 batch.
+- Mid-flight static audit confirms every new network crate forbids `unsafe`,
+  uses HTTPS-only host checks, zero redirects and response caps. Observed
+  `unwrap`/`expect` hits are currently confined to fixture/test code.
+- News investigation covered both target lanes. CLS implements the signed
+  roll-list endpoint for global telegraph items. Final review proved
+  Eastmoney's keyword-search rows do not contain structured instrument identity,
+  so that method remains an unadvertised diagnostic/`Unsupported` boundary
+  rather than a falsely strict instrument-news capability.
+- Baidu, CLS and iWencai already include live/load examples and capability
+  tests; CNInfo/THS fixture suites and Eastmoney's individual family modules are
+  present but their agents are still completing final examples/gates.
+- Main review found iWencai could return a strict empty success, include a raw
+  authentication status message that might echo a credential, and assign batch
+  `source_at` from the first relevance-ranked document. The lane must reject
+  empty success, redact auth errors, and retain publication time only at record
+  level unless the response provides a real batch timestamp.
+- CLS request signing matches the verified `md5(sha1(sorted-query))` fixture and
+  rejects empty/error-code results. Baidu rejects empty/duplicate/unordered
+  rows, preserves forward adjustment and uses the last ordered bar date as
+  batch source time.
+- CNInfo correctly serializes requests through a shared gate, uses a 24-hour
+  in-memory organization map and bounded ten-page fetches, but no-result
+  announcement/question queries still produced strict empty batches; those
+  must become explicit no-data errors.
+- THS has the same strict-empty gap in strong-stock, upper-limit and popularity
+  paths. Its fixture proves `limit_up_type="换手板"` is a seal/type state, not a
+  board name; the mapping must move it to `seal_state` and leave `board_name`
+  absent unless a real board field exists.
+- iWencai empty/auth/source-time findings are closed. A real unauthenticated
+  request reached the official endpoint and returned HTTP 401 with
+  `not_found_apikey`; the Provider redacts it into typed Authentication and
+  does not claim live semantic records.
+## 2026-07-23 CNInfo / THS implementation audit
+
+- CNInfo production hosts are restricted to `www.cninfo.com.cn`, `irm.cninfo.com.cn`, and `static.cninfo.com.cn`; the provider implements organization-code mapping, announcements/PDF metadata, and IRM Q&A.
+- CNInfo uses a 24-hour in-memory instrument mapping cache, at most 30 rows per page, at most 10 pages, and at most 300 records per public request. Response bodies are capped at 8 MiB.
+- THS production hosts are restricted to `basic.10jqka.com.cn`, `zx.10jqka.com.cn`, `data.10jqka.com.cn`, and `dq.10jqka.com.cn`; the provider implements consensus, strong-stock, limit-pool, and popularity domains.
+- THS request bounds are 20 instruments for consensus, 200 records for strong/limit data, 100 records for popularity, and 4 MiB per response body.
+- Both transports hold a shared asynchronous request gate through the complete response read, enforcing actual concurrency one and a minimum one-second request start interval across cloned provider handles.
+- Audit blockers sent back to the implementation lane: strict requests must reject empty CNInfo announcement/IRM results and empty THS strong/limit/popularity results; THS `limit_up_type` belongs to `seal_state`, not `board_name`, while `high_days` drives streak semantics.
+
+## 2026-07-23 CLS / Baidu / iWencai acceptance evidence
+
+- CLS live probe returned five complete, newest-first telegraph records; the load probe completed 2/2 requests and 20 records at concurrency one.
+- Baidu live probe returned five unadjusted daily bars for 华电辽能 (`600396`) with MA5/MA10/MA20; a source discontinuity around an ex-dividend event proved that treating this endpoint as forward-adjusted would be incorrect. The load probe completed 2/2 requests and 40 records at concurrency one.
+- iWencai without an API key returns HTTP 401 with `not_found_apikey`; the provider maps this to a redacted typed authentication error and never reports fake success.
+- Final focused gates for CLS/Baidu/iWencai passed on Rust 1.83: 20 tests, strict Clippy, rustdoc with warnings denied, doctests, compliance, and diff checking.
+- Empty successful iWencai data is rejected as a protocol error, CLS validates newest-first source timestamps, and Baidu rejects empty, duplicate, or unordered K-line payloads.
+
+## 2026-07-23 provider boundary constants
+
+- Eastmoney uses a 12-second default timeout, a shared minimum one-second transport interval, a 4 MiB response ceiling, and at most 20 requests in its bounded load probe.
+- CNInfo uses a 15-second default timeout, a configurable but never sub-second shared interval, an 8 MiB response ceiling, and at most five load-probe requests.
+- THS uses a 15-second default timeout, a configurable but never sub-second shared interval, a 4 MiB response ceiling, and at most five load-probe requests.
+- CNInfo capabilities truthfully advertise only announcements and investor questions; THS advertises consensus, strong-stock reasons, popularity, upper limit pool, and source-backed limit reasons.
+- The CNInfo audit corrected generated announcement URLs to include the stock code, announcement ID, organization ID, and announcement time; the canonical form returned HTTP 200 in the real probe.
+
+## 2026-07-23 independent review finding
+
+- Independent cross-review reproduced a real CNInfo pagination defect for limits above one page:
+  changing the remote `pageSize` from 30 to the remaining count changes the meaning of `pageNum`,
+  so a 50-record request fetched page 1 at size 30 and page 2 at size 20, overlapping 10
+  announcement IDs and failing duplicate validation.
+- Required correction: keep the remote page width fixed at 30 for every page, locally truncate to
+  the requested limit, and compute IRM consumed rows using the fixed remote page width. A
+  multi-page regression must assert constant remote page size and no duplicate records.
+
+## 2026-07-23 independent review closure and second-pass findings
+
+- CNInfo fixed-page pagination is closed with a dynamic 50-record/two-page regression for both
+  announcements and IRM.
+- CNInfo and THS now reject code-prefix/exchange mismatches (`6` Shanghai, `0/3` Shenzhen,
+  `4/8/9` Beijing) instead of attaching a caller-supplied wrong exchange to real source data.
+- CNInfo paginated batches and THS multi-instrument consensus now capture `observed_at` after the
+  final response; delayed-transport regressions prove timestamps do not predate completion.
+- Core review found and closed three invariant/compatibility gaps: `EarningsEstimate` now has
+  private fields and a checked constructor, legacy `PopularityRank` and `CapitalCapabilities` JSON
+  default the new collection/flag fields, and `PostCloseFlow` requires source time through checked
+  construction and deserialization.
+- Router now has a non-empty PostClose record test that verifies request forwarding, source-time
+  acceptance and rejection of mismatched record evidence.
+- Second-pass review found Baidu's endpoint returns unadjusted—not forward-adjusted—bars, Baidu
+  also needed exchange/code validation, CLS/Baidu/iWencai lacked clone-shared production pacing,
+  iWencai observed time was captured before the response, and iWencai capability admission was
+  ahead of a successful authenticated live probe. These fixes are assigned to the original lane.
+
+## 2026-07-23 root live/load reruns
+
+- Eastmoney full live returned real data for every advertised family. Minute and daily fund flow
+  remain unadvertised diagnostics because both hosts terminated TLS before an HTTP response.
+  The final post-remediation advertised three-attempt load probe returned 3/3, 0 failures,
+  p50 40 ms, p95/max 45 ms, and a 1002 ms minimum high-level-attempt start gap.
+- CNInfo full live returned three announcements and three investor questions. Its 3/3 serial
+  load rerun measured 0.9498 requests/s, p50 795 ms, p95/max 1381 ms, and a 1004 ms minimum gap.
+- THS full live returned consensus, strong-stock reasons, a source-backed upper-limit pool, and
+  popularity. Its 3/3 serial load rerun measured 1.4288 requests/s, p50 106 ms, p95/max 167 ms,
+  and a 1002 ms minimum gap.
+- CLS and Baidu live probes again passed with five and five records respectively; their latest
+  2/2 load reruns returned 20 and 40 records with zero failures.
+
+## 2026-07-23 final public-provider review and exchange slice
+
+- CLS/Baidu/iWencai remediation is complete: clone-shared one-second gates remain held through
+  complete response reads, Baidu is correctly unadjusted with exchange/code checks, CLS rejects
+  malformed present metadata, iWencai records observation time after the response and keeps
+  semantic-search capability false without an authorized live success.
+- Root real reruns passed: CLS live 5 and load 2/2 (20 records); Baidu live 5 unadjusted 华电辽能
+  bars and load 2/2 (40 records); iWencai without a key remains a typed, nonzero authentication
+  boundary with `semantic_search=false`.
+- Eastmoney's final independent review found three remaining P1 classes: every strict
+  instrument/date row must carry verifiable source identity/date; publication/period timestamps
+  need calendar-valid parsing; and the load probe must call high-level attempts by that name and
+  keep unadvertised fund flow in a diagnostic-only status. A dedicated lane is closing these
+  before release.
+- Official source reconnaissance verified viable HTTPS announcement endpoints for SSE and SZSE,
+  official SZSE dragon-tiger and quote/order-book endpoints, and HKEX daily northbound statistics.
+  SSE public Quote remains unsupported because the observed host requires obsolete TLS.
+- Wrote the execution plan
+  `docs/superpowers/plans/2026-07-23-official-exchange-providers.md`; SSE/SZSE official
+  announcement implementation is running in parallel as the first exchange checkpoint.
+- The final public-slice review found three additional P1s now under remediation: `900xxx`
+  Shanghai B-share codes must not be labeled Beijing, CLS topic instruments must preserve
+  ETF/index asset class instead of forcing Equity, and present-but-malformed THS optional
+  metadata must fail strict parsing rather than disappear.
+- Closed the review's PostClose P2 proactively: record source dates must equal trading dates,
+  while the Router rejects batch/request date mismatch, over-limit output, duplicate ranks and
+  duplicate instruments before selection.
+- `magic-exchange-rs` now passes 13 deterministic Rust 1.83 tests and real official probes:
+  SSE `600396` and SZSE `000858` each returned three announcements; the alternating load run
+  passed 4/4 at 0.9294 attempts/s, P50 1082 ms, P95/max 1214 ms and a 1003 ms minimum start gap.
+- Official announcement pagination is fixed at 50 rows remotely and truncated locally only after
+  full page validation. The Router independently rejects wrong instrument/date/evidence,
+  duplicate IDs and over-limit announcement batches.
+- SZSE detail/PDF samples returned HTTP 200/application-pdf. SSE records provide official PDF
+  URLs, but a CDN bot response prevented a download claim; URL metadata remains the exact
+  admitted boundary.

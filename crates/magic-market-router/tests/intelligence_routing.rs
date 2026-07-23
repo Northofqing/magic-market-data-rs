@@ -1,13 +1,15 @@
 use magic_market_core::{
-    AssetClass, ContractMonth, DataBatch, Exchange, FiniteNumber, InstrumentId, MarketStatistics,
+    Announcement, Announcements, AssetClass, ContractMonth, DataBatch, Exchange, FiniteNumber,
+    HttpsUrl, InstrumentDateRangeRequest, InstrumentId, IsoDate, MarketStatistics,
     MarketStatisticsProvider, Money, NonEmptyText, OptionContract, OptionData, OptionGreeks,
-    OptionKind, OptionQuote, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows, Price,
-    Provenance, ProviderId, Ratio, RatioUnit, SourceEvidence,
+    OptionKind, OptionQuote, PositiveU32, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows,
+    Price, Provenance, ProviderId, Ratio, RatioUnit, SourceEvidence,
 };
 use magic_market_router::{
-    market_statistics_source, option_contract_source, option_greeks_source, option_quote_source,
-    post_close_flow_source, AcceptancePolicy, AttemptStatus, FailureKind, MarketStatisticsRouter,
-    OptionContractRouter, OptionGreeksRouter, OptionQuoteRouter, PostCloseFlowRouter, SourceError,
+    announcement_source, market_statistics_source, option_contract_source, option_greeks_source,
+    option_quote_source, post_close_flow_source, AcceptancePolicy, AnnouncementRouter,
+    AttemptStatus, FailureKind, MarketStatisticsRouter, OptionContractRouter, OptionGreeksRouter,
+    OptionQuoteRouter, PostCloseFlowRouter, SourceError,
 };
 use std::sync::{Arc, Mutex};
 
@@ -59,6 +61,143 @@ fn instrument() -> InstrumentId {
 
 fn classify(_: FixtureError) -> SourceError {
     SourceError::try_next(FailureKind::Transport, "fixture")
+}
+
+struct AnnouncementFixtureProvider {
+    record_provider: ProviderId,
+    batch_source: &'static str,
+    instrument: InstrumentId,
+    published_at: &'static str,
+    duplicate_id: bool,
+}
+
+impl Announcements for AnnouncementFixtureProvider {
+    type Error = FixtureError;
+
+    fn announcements(
+        &self,
+        _request: &InstrumentDateRangeRequest,
+    ) -> Result<DataBatch<Announcement>, Self::Error> {
+        let batch_id = format!("announcement-{}", self.batch_source);
+        let evidence = SourceEvidence::new(self.record_provider, "observed", &batch_id)
+            .unwrap()
+            .with_source_at(self.published_at)
+            .unwrap();
+        let record = Announcement {
+            announcement_id: NonEmptyText::new("A001").unwrap(),
+            instrument: self.instrument.clone(),
+            category: None,
+            title: NonEmptyText::new("fixture announcement").unwrap(),
+            published_at: NonEmptyText::new(self.published_at).unwrap(),
+            canonical_url: HttpsUrl::new("https://example.com/announcement/A001").unwrap(),
+            pdf_url: None,
+            evidence,
+        };
+        let records = if self.duplicate_id {
+            vec![record.clone(), record]
+        } else {
+            vec![record]
+        };
+        Ok(DataBatch::strict(
+            records,
+            Provenance::new(self.batch_source, "observed")
+                .unwrap()
+                .with_source_at(self.published_at)
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        ))
+    }
+}
+
+#[test]
+fn announcement_adapter_rejects_wrong_identity_date_and_duplicate_ids() {
+    let requested = instrument();
+    let request = InstrumentDateRangeRequest::new(requested.clone(), PositiveU32::new(2).unwrap())
+        .unwrap()
+        .with_range(
+            IsoDate::new("2026-07-01").unwrap(),
+            IsoDate::new("2026-07-23").unwrap(),
+        )
+        .unwrap();
+    let providers = [
+        (
+            ProviderId::Sse,
+            AnnouncementFixtureProvider {
+                record_provider: ProviderId::Sse,
+                batch_source: "sse",
+                instrument: InstrumentId::new(Exchange::Shanghai, "600000", AssetClass::Equity)
+                    .unwrap(),
+                published_at: "2026-07-23",
+                duplicate_id: false,
+            },
+        ),
+        (
+            ProviderId::Szse,
+            AnnouncementFixtureProvider {
+                record_provider: ProviderId::Szse,
+                batch_source: "szse",
+                instrument: requested.clone(),
+                published_at: "2026-06-30",
+                duplicate_id: false,
+            },
+        ),
+        (
+            ProviderId::Tencent,
+            AnnouncementFixtureProvider {
+                record_provider: ProviderId::Tencent,
+                batch_source: "tencent",
+                instrument: requested.clone(),
+                published_at: "2026-07-23",
+                duplicate_id: true,
+            },
+        ),
+        (
+            ProviderId::Cninfo,
+            AnnouncementFixtureProvider {
+                record_provider: ProviderId::Cninfo,
+                batch_source: "cninfo",
+                instrument: requested,
+                published_at: "2026-07-23",
+                duplicate_id: false,
+            },
+        ),
+    ];
+    let mut router = AnnouncementRouter::new(AcceptancePolicy::new());
+    for (provider_id, provider) in providers {
+        router
+            .register(announcement_source(
+                provider_id,
+                Arc::new(provider),
+                classify,
+            ))
+            .unwrap();
+    }
+
+    let outcome = router.route(&request).unwrap();
+    assert_eq!(outcome.selected_provider(), ProviderId::Cninfo);
+    assert_eq!(outcome.attempts().len(), 4);
+    assert!(matches!(
+        outcome.attempts()[0].status(),
+        AttemptStatus::Failed {
+            kind: FailureKind::Evidence,
+            ..
+        }
+    ));
+    assert!(matches!(
+        outcome.attempts()[1].status(),
+        AttemptStatus::Failed {
+            kind: FailureKind::Evidence,
+            ..
+        }
+    ));
+    assert!(matches!(
+        outcome.attempts()[2].status(),
+        AttemptStatus::Failed {
+            kind: FailureKind::Quality,
+            ..
+        }
+    ));
 }
 
 struct PostCloseFixtureProvider {

@@ -23,3 +23,47 @@ jobs:
         with:
           name: live-tdx-probe
           path: live-probe.txt
+  live-public-web:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        provider:
+          - tencent
+          - sina
+          - eastmoney
+          - cninfo
+          - ths
+          - cls
+          - baidu
+          - exchange
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo run -p magic-${{ matrix.provider }}-rs --example live_probe --release --locked | tee live-${{ matrix.provider }}.txt
+      - run: cargo run -p magic-${{ matrix.provider }}-rs --example load_probe --release --locked | tee -a live-${{ matrix.provider }}.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-${{ matrix.provider }}-probe
+          path: live-${{ matrix.provider }}.txt
+  live-iwencai:
+    runs-on: ubuntu-latest
+    env:
+      MAGIC_IWENCAI_API_KEY: ${{ secrets.MAGIC_IWENCAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run authenticated probes
+        if: ${{ env.MAGIC_IWENCAI_API_KEY != '' }}
+        run: |
+          cargo run -p magic-iwencai-rs --example live_probe --release --locked | tee live-iwencai.txt
+          cargo run -p magic-iwencai-rs --example load_probe --release --locked | tee -a live-iwencai.txt
+      - name: Record missing credential
+        if: ${{ env.MAGIC_IWENCAI_API_KEY == '' }}
+        run: printf 'iwencai_status=skipped_missing_repository_secret\n' | tee live-iwencai.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-iwencai-probe
+          path: live-iwencai.txt

@@ -1,0 +1,19 @@
+[package]
+name = "magic-exchange-rs"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bounded read-only adapters for official SSE, SZSE and HKEX data"
+
+[dependencies]
+magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
+serde = { workspace = true }
+serde_json = "1"
+thiserror = { workspace = true }
+ureq = { version = "=2.12.1", default-features = false, features = ["tls"] }
+url = "2"
+
+[lints]
+workspace = true

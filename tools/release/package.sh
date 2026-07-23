@@ -55,34 +55,37 @@ case "$host_triple" in
 esac
 example_dir="$package_target_dir/$host_triple/release/examples"
 
-CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-tdx-rs \
-  --example live_probe --release --locked --offline --target "$host_triple"
-install -m 0755 "$example_dir/live_probe$executable_suffix" \
-  "$bin_dir/magic-tdx-live-probe$executable_suffix"
-CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-emquant-rs \
-  --example live_probe --release --locked --offline --target "$host_triple"
-install -m 0755 "$example_dir/live_probe$executable_suffix" \
-  "$bin_dir/magic-emquant-live-probe$executable_suffix"
-CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-tencent-rs \
-  --example live_probe --release --locked --offline --target "$host_triple"
-install -m 0755 "$example_dir/live_probe$executable_suffix" \
-  "$bin_dir/magic-tencent-live-probe$executable_suffix"
-CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-tencent-rs \
-  --example load_probe --release --locked --offline --target "$host_triple"
-install -m 0755 "$example_dir/load_probe$executable_suffix" \
-  "$bin_dir/magic-tencent-load-probe$executable_suffix"
-CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-sina-rs \
-  --example live_probe --release --locked --offline --target "$host_triple"
-install -m 0755 "$example_dir/live_probe$executable_suffix" \
-  "$bin_dir/magic-sina-live-probe$executable_suffix"
-CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-sina-rs \
-  --example load_probe --release --locked --offline --target "$host_triple"
-install -m 0755 "$example_dir/load_probe$executable_suffix" \
-  "$bin_dir/magic-sina-load-probe$executable_suffix"
-CARGO_TARGET_DIR="$package_target_dir" cargo build -p magic-market-router \
-  --example live_probe --release --locked --offline --target "$host_triple"
-install -m 0755 "$example_dir/live_probe$executable_suffix" \
-  "$bin_dir/magic-router-live-probe$executable_suffix"
+build_probe() {
+  package_name=$1
+  example_name=$2
+  installed_name=$3
+  CARGO_TARGET_DIR="$package_target_dir" cargo build -p "$package_name" \
+    --example "$example_name" --release --locked --offline --target "$host_triple"
+  install -m 0755 "$example_dir/$example_name$executable_suffix" \
+    "$bin_dir/$installed_name$executable_suffix"
+}
+
+build_probe magic-tdx-rs live_probe magic-tdx-live-probe
+build_probe magic-emquant-rs live_probe magic-emquant-live-probe
+build_probe magic-tencent-rs live_probe magic-tencent-live-probe
+build_probe magic-tencent-rs load_probe magic-tencent-load-probe
+build_probe magic-sina-rs live_probe magic-sina-live-probe
+build_probe magic-sina-rs load_probe magic-sina-load-probe
+build_probe magic-market-router live_probe magic-router-live-probe
+build_probe magic-eastmoney-rs live_probe magic-eastmoney-live-probe
+build_probe magic-eastmoney-rs load_probe magic-eastmoney-load-probe
+build_probe magic-cninfo-rs live_probe magic-cninfo-live-probe
+build_probe magic-cninfo-rs load_probe magic-cninfo-load-probe
+build_probe magic-ths-rs live_probe magic-ths-live-probe
+build_probe magic-ths-rs load_probe magic-ths-load-probe
+build_probe magic-cls-rs live_probe magic-cls-live-probe
+build_probe magic-cls-rs load_probe magic-cls-load-probe
+build_probe magic-baidu-rs live_probe magic-baidu-live-probe
+build_probe magic-baidu-rs load_probe magic-baidu-load-probe
+build_probe magic-iwencai-rs live_probe magic-iwencai-live-probe
+build_probe magic-iwencai-rs load_probe magic-iwencai-load-probe
+build_probe magic-exchange-rs live_probe magic-exchange-live-probe
+build_probe magic-exchange-rs load_probe magic-exchange-load-probe
 
 while IFS= read -r -d '' tracked_doc; do
   target_parent="$dist_dir/$(dirname "$tracked_doc")"

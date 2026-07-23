@@ -13,6 +13,7 @@ members = [
     "crates/magic-cls-rs",
     "crates/magic-baidu-rs",
     "crates/magic-iwencai-rs",
+    "crates/magic-exchange-rs",
 ]
 resolver = "2"
 [workspace.package]

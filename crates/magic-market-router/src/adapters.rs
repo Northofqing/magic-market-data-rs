@@ -6,16 +6,17 @@ use magic_market_core::{
     DividendPlans, DragonTigerData, DragonTigerEntry, DragonTigerSeat, FinancialStatement,
     FinancialStatements, FlowInterval, FundFlowPoint, FundFlowRequest, FundFlowSeries,
     HistoricalBars, HolderCount, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
-    InstrumentSignalRequest, InvestorQuestion, InvestorQuestions, LimitPoolEntry, LimitPoolRequest,
-    LimitPools, LockupEvent, LockupEvents, MarginBalance, MarginData, MarketRankingEntry,
-    MarketRankingKind, MarketRankings, MarketStatistics, MarketStatisticsProvider, MinuteData,
-    MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider, NonEmptyText,
-    OptionContract, OptionData, OptionGreeks, OptionQuote, OrderBook, OrderBooks, PopularityData,
-    PopularityRank, PositiveU32, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows, ProviderId,
-    Quote, RealtimeQuotes, ResearchReport, ResearchReports, ResearchRequest, SecurityMetadata,
-    SecurityMetadataProvider, SecurityProfile, SecurityProfiles, SemanticSearch,
-    SemanticSearchDocument, SemanticSearchRequest, StatementKind, StrongStockReason,
-    StrongStockReasons, TechnicalBar, TechnicalBarsProvider, Trade, Trades, TradesRequest,
+    InstrumentSignalRequest, InvestorQuestion, InvestorQuestions, IsoDate, LimitPoolEntry,
+    LimitPoolRequest, LimitPools, LockupEvent, LockupEvents, MarginBalance, MarginData,
+    MarketRankingEntry, MarketRankingKind, MarketRankings, MarketStatistics,
+    MarketStatisticsProvider, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
+    NewsItem, NewsProvider, NonEmptyText, OptionContract, OptionData, OptionGreeks, OptionQuote,
+    OrderBook, OrderBooks, PopularityData, PopularityRank, PositiveU32, PostCloseFlow,
+    PostCloseFlowRequest, PostCloseFlows, ProviderId, Quote, RealtimeQuotes, ResearchReport,
+    ResearchReports, ResearchRequest, SecurityMetadata, SecurityMetadataProvider, SecurityProfile,
+    SecurityProfiles, SemanticSearch, SemanticSearchDocument, SemanticSearchRequest, StatementKind,
+    StrongStockReason, StrongStockReasons, TechnicalBar, TechnicalBarsProvider, Trade, Trades,
+    TradesRequest,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -473,12 +474,83 @@ date_range_source!(
     instrument_news,
     NewsItem
 );
-date_range_source!(
-    announcement_source,
-    Announcements,
-    announcements,
-    Announcement
-);
+pub fn announcement_source<Provider, Classify>(
+    provider_id: ProviderId,
+    provider: Arc<Provider>,
+    classify: Classify,
+) -> SourceFn<InstrumentDateRangeRequest, Announcement>
+where
+    Provider: Announcements + Send + Sync + 'static,
+    Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
+{
+    SourceFn::new(provider_id, move |request| {
+        let batch = provider.announcements(request).map_err(&classify)?;
+        if batch.records().len() > request.limit().get() as usize {
+            return Err(SourceError::try_next(
+                FailureKind::Quality,
+                "announcement batch exceeds requested limit",
+            ));
+        }
+        let mut ids = HashSet::with_capacity(batch.records().len());
+        for record in batch.records() {
+            if &record.instrument != request.instrument() {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "announcement record instrument does not match requested instrument",
+                ));
+            }
+            if !ids.insert(record.announcement_id.as_str()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "announcement batch contains a duplicate announcement ID",
+                ));
+            }
+            let published_date = announcement_date(record.published_at.as_str(), "published_at")?;
+            if request.start().is_some_and(|start| published_date < *start)
+                || request.end().is_some_and(|end| published_date > *end)
+            {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "announcement publication date is outside the requested range",
+                ));
+            }
+            let source_at = record.evidence.source_at().ok_or_else(|| {
+                SourceError::try_next(
+                    FailureKind::Evidence,
+                    "announcement record evidence is missing source_at",
+                )
+            })?;
+            if announcement_date(source_at, "evidence source_at")? != published_date {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "announcement evidence source date does not match publication date",
+                ));
+            }
+        }
+        Ok(batch)
+    })
+}
+
+fn announcement_date(value: &str, field: &str) -> Result<IsoDate, SourceError> {
+    let date = value.get(..10).ok_or_else(|| {
+        SourceError::try_next(
+            FailureKind::Evidence,
+            format!("announcement {field} must start with YYYY-MM-DD"),
+        )
+    })?;
+    if !matches!(value.as_bytes().get(10), None | Some(b' ') | Some(b'T')) {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            format!("announcement {field} has an invalid date/time separator"),
+        ));
+    }
+    IsoDate::new(date).map_err(|error| {
+        SourceError::try_next(
+            FailureKind::Evidence,
+            format!("announcement {field} is invalid: {error}"),
+        )
+    })
+}
 date_range_source!(
     investor_question_source,
     InvestorQuestions,

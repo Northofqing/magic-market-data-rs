@@ -8,13 +8,15 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值冒充
 实盘成功。
 
-> 当前状态（2026-07-23）：TDX、Tencent、Sina 和 TDX→Tencent 路由已有真实网络验收；
-> Choice/EMQuant 已完成设备激活和 API 登录，日线与日级资金流已取得真实记录；
-> Quote、盘口和分钟线仍返回 `10001012/EQERR_ACCESS_INSUFFICIENCE`，需补充对应产品
-> 或字段权限后才能上线这些数据族。Tencent 行情统计、Sina 财务三表和 510050 ETF
-> 期权已经完成真实网络验收；Sina 另外三个 ETF 期权标的已实现待逐一实测。研报、
-> 信号、资金面、新闻、公告、打板和舆情互动仍只有 Provider 无关契约及纯分析层，
-> 对应网页 Provider 尚在后续分片接入。
+> 当前状态（2026-07-23）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
+> CLS、Baidu 及 SSE/SZSE 官方公告已通过真实网络验收；Eastmoney 已声明能力的
+> live/load 探针全部通过，
+> 分钟/日级资金流因当前网络返回 empty reply 而保持未声明能力；关键词新闻响应没有
+> 结构化证券身份，也不伪装成个股新闻。两者只作为未准入诊断运行。
+> Choice/EMQuant 已完成设备激活和 API 登录，日线与日级资金流已取得
+> 真实记录，Quote、盘口和分钟线仍因 `10001012/EQERR_ACCESS_INSUFFICIENCE` 待补
+> 权限。iWencai 已实现正式 API Key 鉴权，当前没有授权 Key，因此真实 401 会按设计
+> 非零退出，不会伪报成功。
 
 ## 项目定位
 
@@ -44,6 +46,13 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
 | `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖基础行情、沪深财务三表和沪市 ETF 期权 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
 | `magic-emquant-rs` | 通过独立 C++ bridge 调用官方 Choice/EMQuant SDK 的只读适配层 | 厂商 SDK、授权和激活文件不进入仓库 |
+| `magic-eastmoney-rs` | 东财公开研报、资金流解析、龙虎榜、资本事件、涨跌停池和人气 | 与 Choice/EMQuant 身份分离；关键词新闻无结构化证券身份，不声明个股新闻能力 |
+| `magic-cninfo-rs` | 巨潮公告/PDF 与互动易问答 | 只读公开信息；不读取账户或桌面登录态 |
+| `magic-ths-rs` | 同花顺一致预期、强势原因、涨停池和热榜 | 只读公开补充源；字段/频率以当前探针为准 |
+| `magic-cls-rs` | 财联社签名电报/全球新闻 | 只支持全局电报，不伪造个股过滤 |
+| `magic-baidu-rs` | 百度未复权日线和源端 MA5/10/20 | 不提供 Quote/分钟/Level-2 |
+| `magic-iwencai-rs` | 获授权 API Key 的语义搜索 | 无 Key 明确鉴权失败，不复用 Cookie |
+| `magic-exchange-rs` | SSE/SZSE 官方公告与 SSE/SZSE/HKEX 独立来源身份 | 当前只声明沪深官方公告；HKEX 与其他官方数据族保持关闭 |
 | `magic-market-analysis` | 基于标准化记录的均线、估值、涨停情绪和跨源诊断 | 纯函数、不联网；主观估值锚点必须由调用方配置 |
 
 依赖方向保持简单：
@@ -59,6 +68,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
    ├── magic-tencent-rs ─────→ magic-market-core
    ├── magic-sina-rs ─────────→ magic-market-core
    ├── magic-emquant-rs ─────→ magic-market-core
+   ├── magic-exchange-rs ────→ magic-market-core
    └── magic-market-analysis → magic-market-core
 ```
 
@@ -67,7 +77,7 @@ Router 的生产依赖只有 Core，具体 Provider 在应用注册边界接入�
 
 ## 统一数据契约与证据
 
-Core 当前定义八类统一数据族：
+Core 当前定义八类基础行情数据族：
 
 | 数据族 | 统一入口 | 关键语义 |
 | --- | --- | --- |
@@ -103,13 +113,14 @@ Router 适配器已经通过确定性测试。
 
 | 领域 | 主要记录 | 当前状态 |
 | --- | --- | --- |
-| 行情增强 | `MarketStatistics`、`TechnicalBar` | Tencent 股票/指数/ETF 统计实盘；Baidu 技术 K 线待接 |
-| 研报与一致预期 | `ResearchReport`、`ConsensusSnapshot`、`SemanticSearchDocument` | 契约/路由完成；Eastmoney/同花顺/iwencai 待接 |
-| 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | 契约/路由完成；Provider 待接 |
-| 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | 契约/路由完成；Provider 待接 |
-| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | 契约/路由完成；Eastmoney/CLS/CNInfo 待接 |
+| 行情增强 | `MarketStatistics`、`TechnicalBar` | Tencent 股票/指数/ETF 统计与 Baidu 未复权日 K/MA 实盘 |
+| 研报与一致预期 | `ResearchReport`、`ConsensusSnapshot`、`SemanticSearchDocument` | Eastmoney 研报、THS 一致预期实盘；iWencai 已实现/待授权 Key |
+| 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 龙虎榜/人气与 THS 强势原因/热榜实盘；板块归属/概念命中待源 |
+| 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
+| 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | 契约/路由完成；没有 Provider 获得已验证的 15:35 Top10 语义 |
+| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS 全球电报、CNInfo 公告/互动易实盘；个股新闻仍待有结构化证券身份的来源 |
 | 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | Sina 沪深三表实盘；SecurityProfile/TDX 映射待接 |
-| 打板 | 四类 `LimitPoolEntry` | 原始契约/路由完成；Eastmoney/同花顺待接 |
+| 打板 | 四类 `LimitPoolEntry` | Eastmoney 四类池与 THS 涨停池实盘；字段缺失不跨源猜测 |
 | ETF 期权 | `OptionContract`、`OptionQuote`、`OptionGreeks` | Sina 510050 实盘；510300/588000/510500 已实现待实测 |
 
 所有扩展记录使用受检 `SourceEvidence`；非空文本、HTTPS URL、Gregorian 日期、
@@ -148,6 +159,18 @@ Router 适配器已经通过确定性测试。
 | 除权除息 | 实盘：XDXR 分红/送股/配股/缩股历史 | 不支持 | 不支持 | 当前未接入 |
 | 板块/F10/基金 | 实盘：行业/概念/指数、F10、基金数据 | 不支持 | 不支持 | 当前未接入 |
 | 开盘集合竞价 | 不支持 | 不支持 | 不支持 | 不支持：完整字段集尚未证明 |
+
+### 公共研究、内容与信号 Provider
+
+| Provider | 已真实取得 | 当前明确边界 |
+| --- | --- | --- |
+| Eastmoney Web | 个股/行业研报、三类板块流、龙虎榜、融资融券、大宗、户数、解禁、分红、四类打板、人气 | 当前网络对两个资金流 host 返回 empty reply；关键词新闻无证券身份；PDF 只给 URL；无已验证 15:35 Top10 |
+| CNInfo | 华电辽能公告/PDF metadata、比亚迪互动易问答 | 内容源，不提供行情；PDF 不由 crate 下载 |
+| THS | 一致预期、强势原因、涨停池/原因、股票热榜 | 只声明已验证涨停池，不声明其他三类池 |
+| CLS | 签名全球电报及来源时间、发布者、关联股票/主题 | 不伪造个股过滤，不是行情源 |
+| Baidu | 华电辽能未复权日 K、MA5/10/20 | 不提供实时 Quote、分钟线或 Level-2 |
+| iWencai | 正式 X-Claw 鉴权和语义结果解析 | 真实数据待合法 API Key；不读取 Cookie/桌面登录态 |
+| SSE/SZSE official | 沪深官方公告、详情/PDF URL metadata | HKEX、官方龙虎榜和行情仍保持未声明 |
 
 ### TDX
 
@@ -380,6 +403,33 @@ cargo run -p magic-emquant-rs --example live_probe --release
 资金流、日 K 和分钟 K 全部按预期返回时，probe 才退出零。厂商 SDK、加密服务器
 列表、动态库和 `userInfo` 都只存在于 Git 忽略的本机 runtime，不进入 release 包。
 
+### 公开研究、内容与信号 probes
+
+```bash
+cargo run -p magic-eastmoney-rs --example live_probe --release --locked --offline
+cargo run -p magic-cninfo-rs --example live_probe --release --locked --offline
+cargo run -p magic-ths-rs --example live_probe --release --locked --offline
+cargo run -p magic-cls-rs --example live_probe --release --locked --offline
+cargo run -p magic-baidu-rs --example live_probe --release --locked --offline
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+```
+
+每个 crate 另有同名 `load_probe`。Eastmoney 最多 20 次高层数据族 attempt
+（部分数据族内部包含多个 HTTP 请求），CNInfo/THS 最多 5 请求，
+CLS/Baidu 最多 3 请求，official-exchange 最多 6 次 announcement attempt；这些
+公共/官方网页 probe 都强制并发 1、请求间隔至少 1 秒。默认
+证券和日期可以通过各 crate 文档列出的 `MAGIC_*` 环境变量覆盖。
+
+iWencai 必须使用单独获授权的 API Key：
+
+```bash
+MAGIC_IWENCAI_API_KEY=... \
+cargo run -p magic-iwencai-rs --example live_probe --release --locked --offline
+```
+
+缺少 Key 或真实 HTTP 401/403 会返回脱敏的 typed `Authentication` 错误。程序不会
+读取浏览器 Cookie 或复用同花顺桌面客户端登录态。
+
 ## 多数据源路由
 
 `magic-market-router` 对每个数据族使用独立的 `FailoverChain`：
@@ -467,13 +517,25 @@ bash tools/release/package.sh
 ```text
 target/dist/GIT_SHA/
 ├── bin/
+│   ├── magic-baidu-live-probe
+│   ├── magic-baidu-load-probe
+│   ├── magic-cls-live-probe
+│   ├── magic-cls-load-probe
+│   ├── magic-cninfo-live-probe
+│   ├── magic-cninfo-load-probe
 │   ├── magic-emquant-live-probe
+│   ├── magic-eastmoney-live-probe
+│   ├── magic-eastmoney-load-probe
+│   ├── magic-iwencai-live-probe
+│   ├── magic-iwencai-load-probe
 │   ├── magic-router-live-probe
 │   ├── magic-sina-live-probe
 │   ├── magic-sina-load-probe
 │   ├── magic-tdx-live-probe
 │   ├── magic-tencent-live-probe
-│   └── magic-tencent-load-probe
+│   ├── magic-tencent-load-probe
+│   ├── magic-ths-live-probe
+│   └── magic-ths-load-probe
 ├── docs/
 ├── licenses/
 ├── Cargo.lock
@@ -503,6 +565,13 @@ Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架�
 | TDX | macOS、Linux、Windows | 行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` |
 | Tencent | macOS、Linux、Windows | `qt.gtimg.cn`、`web.ifzq.gtimg.cn`、`ifzq.gtimg.cn`、`stock.gtimg.cn` 的 HTTPS |
 | Sina | macOS、Linux、Windows | `hq.sinajs.cn`、`quotes.sina.cn`、`stock.finance.sina.com.cn` 的 HTTPS |
+| Eastmoney Web | macOS、Linux、Windows | `reportapi`、`push2/push2his/push2ex`、`datacenter-web`、`emappdata` 等文档列出的 HTTPS 主机 |
+| CNInfo | macOS、Linux、Windows | `www.cninfo.com.cn`、`irm.cninfo.com.cn`、`static.cninfo.com.cn` 的 HTTPS |
+| THS | macOS、Linux、Windows | `basic`、`zx`、`data`、`dq.10jqka.com.cn` 的 HTTPS |
+| CLS | macOS、Linux、Windows | `www.cls.cn` 的 HTTPS |
+| Baidu | macOS、Linux、Windows | `finance.pae.baidu.com` 的 HTTPS |
+| SSE/SZSE official | macOS、Linux、Windows | `query.sse.com.cn`、`www.szse.cn` 的 HTTPS |
+| iWencai | macOS、Linux、Windows | `openapi.iwencai.com` 的 HTTPS；需要获授权 API Key |
 | 当前 EMQuant bridge | x86_64 macOS | 厂商加密服务器列表定义的目标；本机官方 SDK |
 
 TDX SmartClient 需要服务账号拥有独立可写目录来保存服务器健康缓存。TDX 财务包
@@ -536,8 +605,8 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
   源码、fixture、日志、镜像或 release 包。
 - EMQuant 厂商动态库、加密服务器列表和图片资源受厂商许可证约束，只能在获授权
   主机本地准备。
-- Tencent/Sina 公共网页端点没有本项目可证明的 SLA 或再分发许可，部署方必须自行
-  确认服务条款。
+- Tencent、Sina、Eastmoney、CNInfo、THS、CLS 和 Baidu 公共网页端点没有本项目
+  可证明的 SLA 或再分发许可，部署方必须自行确认服务条款。
 - 未验证字段必须保持 `None`/`Unavailable` 或返回 `Unsupported`，不得通过猜测、
   跨源填补或模拟记录“修好”。
 - Probe 输出可记录 Provider、证券代码、批次 ID、质量问题、耗时和错误码，但不得
@@ -557,7 +626,14 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Sina load probe | 通过 | mixed 20/4、财务 6/2、510050 期权 6/2 均零失败 |
 | Router live probe | 通过 | TDX 质量拒绝被保留，Tencent 合格 Quote 被选中 |
 | EMQuant live probe | 部分通过 | 登录成功；真实日线、日级资金流通过；Quote/盘口/分钟返回 `10001012`，完整 probe 按设计退出非零 |
-| Release package | 每个提交独立构建 | 七个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
+| Eastmoney live/load | 通过（已声明能力） | live 的研报、板块、龙虎榜、资本数据、四类池和人气通过；load 3/3、最小高层 attempt 起始间隔 1002 ms；未声明资金流/关键词新闻保持诊断 |
+| CNInfo live/load | 通过 | 公告 3 条、互动易 3 条；load 3/3，最小请求起始间隔 1004 ms |
+| THS live/load | 通过 | 一致预期、强势原因、涨停池、热榜；load 3/3，最小请求起始间隔 1002 ms |
+| CLS live/load | 通过 | 签名电报 5 条；load 2/2、20 条记录、零失败 |
+| Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
+| SSE/SZSE official live/load | 通过 | 沪深官方公告各 3 条；load 4/4、最小 attempt 起始间隔 1003 ms |
+| iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
+| Release package | 每个提交独立构建 | 二十一个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 
 任何 Provider 字段、授权、服务器或网页协议发生变化后，都必须重新运行对应的
 确定性测试和真实 probe。旧验收记录不能自动证明新版本仍然可用。
@@ -571,6 +647,13 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | [Tencent 接入合同](docs/integrations/tencent-web.md) | 端点、统计字段/单位、市场/周期边界与负载结果 |
 | [Sina 接入合同](docs/integrations/sina-web.md) | 基础行情、财务三表、ETF 期权、字段与负载结果 |
 | [Choice/EMQuant 接入](docs/integrations/eastmoney-emquant.md) | SDK bridge、激活、能力映射和当前权限状态 |
+| [Eastmoney Web 接入](docs/integrations/eastmoney-web.md) | 研报、资金面、龙虎榜、打板、人气及未准入诊断 |
+| [CNInfo 接入](docs/integrations/cninfo-web.md) | 证券/org 映射、公告/PDF 和互动易问答 |
+| [THS 接入](docs/integrations/tonghuashun-web.md) | 一致预期、强势原因、涨停池和热榜 |
+| [CLS 接入](docs/integrations/cls-web.md) | 签名全球电报、字段和限流边界 |
+| [Baidu 接入](docs/integrations/baidu-web.md) | 未复权日 K 与源端 MA5/10/20 |
+| [iWencai 接入](docs/integrations/iwencai-api.md) | API Key 鉴权、语义搜索和脱敏错误 |
+| [交易所官方源](docs/integrations/exchange-official.md) | SSE/SZSE 公告、官方来源边界与后续 HKEX 计划 |
 | [多数据源路由](docs/MULTI_PROVIDER_ROUTING.md) | 错误分类、接受政策、attempt trace 和真实切源 |
 | [性能结果](docs/PERFORMANCE_RESULTS.md) | 可复现性能证据及适用范围 |
 | [业务规则](docs/business_rules.md) | Smart server、重试和服务行为规则 |
@@ -588,5 +671,5 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 在 [LICENSES/tdxrs-MIT.txt](LICENSES/tdxrs-MIT.txt)，详细来源与差异见
 [docs/UPSTREAM.md](docs/UPSTREAM.md)。
 
-Choice/EMQuant 厂商 SDK 不属于仓库开源制品；Tencent/Sina/TDX 网络数据的使用、
-展示和再分发仍受各自供应商条款约束。
+Choice/EMQuant 厂商 SDK 不属于仓库开源制品；所有第三方网络数据的使用、展示和
+再分发仍受各自供应商条款约束。

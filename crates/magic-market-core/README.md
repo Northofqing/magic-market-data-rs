@@ -4,7 +4,9 @@ Provider-neutral checked market-data contracts.
 
 The core distinguishes Shanghai, Shenzhen, and Beijing exchanges and exposes
 source-evidenced contracts for quotes, bars, current/historical minute points,
-trades, five-level books, money flow, auctions, and security metadata. Minute
+trades, five-level books, intraday money flow, ranked post-close flow, auctions,
+security metadata, research, signals, capital events, public content, financial
+statements, limit pools and ETF options. Minute
 points keep cumulative quantity and optional cumulative amount; metadata keeps
 board, ST status, listing date, and the price-limit rule/version independently
 optional. A provider may return fields it can prove without inventing the rest.
@@ -14,6 +16,13 @@ prices, quantities, identifiers, dates, evidence strings, OHLC ranges, and
 contradictory quality reports are rejected instead of entering normalized
 data. Validated requests expose read-only accessors so callers cannot bypass
 their constructors with struct literals.
+
+`PostCloseFlow` is a contract rather than a synthetic calculation: it keeps the
+source rank, close/change, main net amount and optional source-backed board and
+price-limit rule. Its checked constructor and deserializer require record-level
+`source_at` with the same calendar date as `trading_date`; no Provider should
+advertise it until exact post-close ranking semantics and source time have been
+verified.
 
 ```rust
 use magic_market_core::{
