@@ -48,3 +48,14 @@ issues, provenance mismatch, future or stale source time, duplicate identity,
 unit inconsistency, and cross-field inconsistency fail explicitly.
 `diagnostic_complete_unadmitted`, `skipped_missing_secret`, and `failed` never
 promote or satisfy a capability.
+
+## BR-013 TDX normalized bar atomicity
+The provider-facing Magic TDX historical-bar operation returns only
+provider-neutral `magic_market_core::Bar` records. Raw `SecurityBar` remains a
+wire/protocol DTO and is not a second `HistoricalBars` contract. One request is
+atomic: declared rows must decode completely; empty, oversized, duplicate,
+non-increasing, invalid, inconsistent or unconfirmed greater-than-20-percent
+jump sequences fail explicitly. The adapter never sorts, deduplicates, fills
+or mixes fields. TDX bar volume is preserved in lots, amount in CNY yuan, and
+every record must carry `ProviderId::Tdx`, the exact source timestamp and the
+same non-empty batch identity as batch provenance.
