@@ -319,6 +319,98 @@ fn blocking_service_raw_query_seam_preserves_all_passthrough_parameters() {
     );
 }
 
+#[derive(Default)]
+struct ScriptedAsyncServiceQuery {
+    count_calls: RefCell<Vec<u8>>,
+    count_responses: RefCell<VecDeque<Result<u16, TdxError>>>,
+    list_calls: RefCell<Vec<(u8, u16)>>,
+    list_responses: RefCell<VecDeque<Result<Vec<SecurityInfo>, TdxError>>>,
+}
+
+impl crate::adapter::AsyncTdxQuery for ScriptedAsyncServiceQuery {
+    async fn security_bars(
+        &self,
+        _category: u8,
+        _market: u8,
+        _code: &str,
+        _start: u32,
+        _count: u16,
+        _adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        unconfigured("async bars")
+    }
+
+    async fn security_quotes(
+        &self,
+        _instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError> {
+        unconfigured("async quotes")
+    }
+
+    async fn transaction_data(
+        &self,
+        _market: u8,
+        _code: &str,
+        _start: u16,
+        _count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        unconfigured("async current transactions")
+    }
+
+    async fn history_transaction_data(
+        &self,
+        _market: u8,
+        _code: &str,
+        _start: u16,
+        _count: u16,
+        _date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        unconfigured("async history transactions")
+    }
+
+    async fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        self.count_calls.borrow_mut().push(market);
+        self.count_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("async security count"))
+    }
+
+    async fn security_list(
+        &self,
+        market: u8,
+        start: u16,
+    ) -> Result<Vec<SecurityInfo>, TdxError> {
+        self.list_calls.borrow_mut().push((market, start));
+        self.list_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("async security list"))
+    }
+}
+
+#[tokio::test]
+async fn async_service_security_list_seam_assembles_declared_count_atomically() {
+    let query = ScriptedAsyncServiceQuery {
+        count_responses: RefCell::new(VecDeque::from([Ok(2001)])),
+        list_responses: RefCell::new(VecDeque::from([
+            Ok((0..1000).map(security).collect()),
+            Ok((1000..2000).map(security).collect()),
+            Ok(vec![security(2000)]),
+        ])),
+        ..Default::default()
+    };
+
+    let records = security_list_all_async_with(&query, 1).await.unwrap();
+
+    assert_eq!(records.len(), 2001);
+    assert_eq!(*query.count_calls.borrow(), vec![1]);
+    assert_eq!(
+        *query.list_calls.borrow(),
+        vec![(1, 0), (1, 1000), (1, 2000)]
+    );
+}
+
 #[test]
 fn service_market_mapping_and_construction_are_explicit() {
     assert_eq!(
