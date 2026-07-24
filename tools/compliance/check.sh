@@ -20,6 +20,7 @@ required=(
   docs/integrations/cls-web.md
   docs/integrations/baidu-web.md
   docs/integrations/iwencai-api.md
+  docs/integrations/exchange-official.md
   crates/magic-market-router/Cargo.toml
   crates/magic-market-analysis/Cargo.toml
   crates/magic-tencent-rs/Cargo.toml
@@ -30,6 +31,7 @@ required=(
   crates/magic-cls-rs/Cargo.toml
   crates/magic-baidu-rs/Cargo.toml
   crates/magic-iwencai-rs/Cargo.toml
+  crates/magic-exchange-rs/Cargo.toml
 )
 for required_file in "${required[@]}"; do
   test -s "$required_file" || {
@@ -74,6 +76,7 @@ workspace_members=(
   crates/magic-cls-rs
   crates/magic-baidu-rs
   crates/magic-iwencai-rs
+  crates/magic-exchange-rs
 )
 workspace_manifest_members=$(sed -n '/^members = \[/,/^\]/p' Cargo.toml)
 for member in "${workspace_members[@]}"; do
@@ -82,7 +85,6 @@ for member in "${workspace_members[@]}"; do
     exit 1
   }
 done
-
 expected_workspace_crate_version=0.2.0
 while IFS= read -r manifest; do
   package_version=$(
@@ -105,7 +107,7 @@ done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml -print | LC_ALL=C 
 
 if rg -n 'stock_analysis' crates/*/Cargo.toml; then exit 1; fi
 router_dependencies=$(sed -n '/^\[dependencies\]/,/^\[/p' crates/magic-market-router/Cargo.toml)
-if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|baidu|iwencai)-rs' <<<"$router_dependencies"; then
+if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|baidu|iwencai|exchange)-rs' <<<"$router_dependencies"; then
   echo "router production dependencies must remain provider-neutral" >&2
   exit 1
 fi

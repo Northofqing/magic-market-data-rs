@@ -182,7 +182,7 @@ fn is_valid_iso_date(value: &str) -> bool {
     if !(1900..=9999).contains(&year) || !(1..=12).contains(&month) {
         return false;
     }
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
     let days = match month {
         2 if leap => 29,
         2 => 28,

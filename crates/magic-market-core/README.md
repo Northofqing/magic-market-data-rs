@@ -11,6 +11,12 @@ points keep cumulative quantity and optional cumulative amount; metadata keeps
 board, ST status, listing date, and the price-limit rule/version independently
 optional. A provider may return fields it can prove without inventing the rest.
 
+`NorthboundDailyStat` keeps the trading date/channel, CNY turnover, source
+trade count, explicit quota availability, ETF turnover and exactly ranked
+Top10 securities. `DragonTigerEntry`/`DragonTigerSeat` keep official reasons
+and complete side/rank evidence without treating public trading information as
+Level-2 data.
+
 Construction and deserialization use the same validation boundary. Invalid
 prices, quantities, identifiers, dates, evidence strings, OHLC ranges, and
 contradictory quality reports are rejected instead of entering normalized

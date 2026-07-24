@@ -19,7 +19,7 @@ magic-tdx-rs 以 jiangtaovan/tdxrs 的固定提交为行为基线，采用“审
 - 提交：18b05ffc9d8a257b5ba5add8a2d1ab038261747d
 - 上游包版本：0.6.7
 - 许可证：MIT；派生代码必须保留版权和许可证声明
-- MSRV 基线：Rust 1.83
+- 工具链基线：rolling stable，不声明固定 MSRV
 
 固定提交是所有兼容矩阵、差分夹具和性能 A/B 的唯一基线。未来升级必须通过单独设计、重新审计和新证据完成，不能漂移跟随 main。
 
@@ -50,7 +50,7 @@ magic-tdx-rs 以 jiangtaovan/tdxrs 的固定提交为行为基线，采用“审
 5. 保持与固定上游同量级的速率和并发，满足第 12 节的相对 A/B 门槛。
 6. 提供完整、落地、可机械验证的文档和示例。
 7. 通过外部下游集成合同保持 `stock_analysis` 的业务质量、新鲜度和回退政策。
-8. 支持 Rust 1.83，以及 Linux、macOS、Windows 的 x86_64/aarch64 目标。
+8. 支持 Rust stable，以及 Linux、macOS、Windows 的 x86_64/aarch64 目标。
 
 ### 2.2 非目标
 
@@ -608,7 +608,7 @@ pytdx、mootdx 或抓包只用于解释协议歧义；它们不能取代固定�
 - overall coverage >= 80%；
 - 核心协议、解析和数据链路 >= 95%；
 - cargo-semver-checks、依赖许可证和安全审计通过；
-- 跨平台/MSRV CI 通过；
+- 跨平台/stable CI 通过；
 - 差分和性能门槛通过；
 - 受控在线只读验证通过；
 - 文档、示例和链接通过；
@@ -698,7 +698,7 @@ pytdx、mootdx 或抓包只用于解释协议歧义；它们不能取代固定�
 - [ ] 本仓库生产路径没有 mock、fixture 或日志占位。
 - [ ] 确定性性能回归 <= 5%。
 - [ ] live median/p95 回归 <= 10%，成功率不降低。
-- [ ] Rust 1.83 和目标 OS/架构矩阵通过。
+- [ ] Rust stable 和目标 OS/架构矩阵通过。
 - [ ] overall coverage >= 80%，核心链路 >= 95%。
 - [ ] 文档、rustdoc、doctest、examples、链接和 SemVer 检查通过。
 - [ ] 本仓库适用的 compliance、许可证、来源映射和依赖安全审计通过。

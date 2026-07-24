@@ -6,7 +6,7 @@
 
 **Architecture:** A protocol request becomes an immutable `RequestEnvelope` and is executed under one operation deadline. Blocking uses a five-connection pool, Direct creates one connection per request under a semaphore, Async owns four connection tasks with bounded channels and deterministic round-robin, and Smart selects/fails over observable endpoints while consuming one shared retry budget.
 
-**Tech Stack:** Rust 1.83, std TCP, Tokio net/sync/time, tracing, parking_lot, crossbeam-channel, socket2, local scripted loopback servers, Criterion.
+**Tech Stack:** Rust stable, std TCP, Tokio net/sync/time, tracing, parking_lot, crossbeam-channel, socket2, local scripted loopback servers, Criterion.
 
 ---
 

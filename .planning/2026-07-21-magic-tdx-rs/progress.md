@@ -26,7 +26,7 @@
 - User selected complete pure-Rust upstream functionality without Python user-layer utilities.
 - User selected strict typed errors over upstream-compatible silent/default behavior.
 - User selected reproducible relative A/B performance gates with 5% deterministic/client throughput and 10% live-network latency envelopes.
-- User selected Rust 1.83 and cross-platform/cross-architecture support.
+- User selected Rust stable and cross-platform/cross-architecture support.
 - User initially selected a non-virtual Cargo workspace containing the current
   application and both new crates; the later standalone-repository decision below
   supersedes this layout.
@@ -106,7 +106,7 @@
   diagnostics, provider-neutral trades, TDX sync/async auto-pagination, parser
   repair, and live cross-page evidence.
 - Passed workspace all-target tests (219 TDX unit tests plus integrations), all
-  doctests, strict Clippy, Rust 1.83 check, rustdoc, link checks, and compliance.
+  doctests, strict Clippy, Rust stable check, rustdoc, link checks, and compliance.
 - Opened the prepared official EMQuant activator; `userInfo` is not generated
   yet, so real EMQuant queries remain account-activation blocked.
 - Installed the missing GTK 3 runtime, diagnosed the missing activator image
@@ -127,7 +127,7 @@
 - Repaired stale financial-manifest size handling while retaining HTTP and ZIP
   integrity checks; real market-wide financial parsing now succeeds again.
 - Final verification passed: workspace all-target tests, strict Clippy, rustdoc,
-  doctests (11 passed, 3 explicitly ignored), Rust 1.83 all-target check,
+  doctests (11 passed, 3 explicitly ignored), Rust stable all-target check,
   documentation links, compliance, runtime packaging, and diff hygiene.
 - Started Phase 10 after the user requested that all `magic-market-core`
   anomalies be resolved. Restored the active file-based plan and began a
@@ -146,7 +146,7 @@
   serde regression coverage for requests, listing dates, OHLC, and price-limit
   rules. Stabilized the scheduler-sensitive async limiter test found by the
   workspace run.
-- Final static gates passed: strict workspace Clippy, Rust 1.83 all-target
+- Final static gates passed: strict workspace Clippy, Rust stable all-target
   check, warning-free rustdoc, doctests, link checking, and compliance.
 - Re-ran the release TDX live probe against 华电辽能 `600396`: quote 14.92,
   all 12 stock K-line categories, index K-line, 240-point current/historical
@@ -178,9 +178,9 @@
   exact request/response cardinality and ordering, source calendar validation,
   quote/composite coherence checks, atomic missing book levels, conservative
   batch source time, and deterministic transport/protocol failure tests.
-- Pinned the URL/IDNA/zeroize dependency chain after reproducing Cargo 1.83's
+- Pinned the URL/IDNA/zeroize dependency chain after reproducing Cargo stable's
   edition-2024 manifest failure; the final crate and workspace compile with the
-  repository's pinned Rust/Cargo 1.83.0 toolchain.
+  repository's pinned rolling stable Rust/Cargo toolchain.
 - The final real Tencent release probe returned complete Quote and five-level
   records for 华电辽能 `600396.SH` and 平安银行 `000001.SZ`, including CNY
   amount, source-lot volume/depth, source time, observation time and batch ID.

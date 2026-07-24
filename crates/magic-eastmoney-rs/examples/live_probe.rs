@@ -120,22 +120,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         "dragon_tiger.entries",
         client.dragon_tiger_entries(&signal),
         &source_policy,
-        |record| &record.evidence,
-        |record| record.entry_id.as_str().to_owned(),
+        |record| record.evidence(),
+        |record| record.entry_id().as_str().to_owned(),
         &mut failures,
     );
     probe_batch(
         "dragon_tiger.seats",
-        client.dragon_tiger_seats(&signal),
+        client.dragon_tiger_seats(&InstrumentSignalRequest::new(
+            event_sample.clone(),
+            PositiveU32::new(10)?,
+        )?),
         &source_policy,
-        |record| &record.evidence,
+        |record| record.evidence(),
         |record| {
             format!(
                 "{}:{:?}:{}:{}",
-                record.entry_id,
-                record.side,
-                record.rank.get(),
-                record.seat_name
+                record.entry_id(),
+                record.side(),
+                record.rank().get(),
+                record.seat_name()
             )
         },
         &mut failures,

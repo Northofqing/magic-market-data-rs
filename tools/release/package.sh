@@ -84,6 +84,8 @@ build_probe magic-baidu-rs live_probe magic-baidu-live-probe
 build_probe magic-baidu-rs load_probe magic-baidu-load-probe
 build_probe magic-iwencai-rs live_probe magic-iwencai-live-probe
 build_probe magic-iwencai-rs load_probe magic-iwencai-load-probe
+build_probe magic-exchange-rs live_probe magic-exchange-live-probe
+build_probe magic-exchange-rs load_probe magic-exchange-load-probe
 
 while IFS= read -r -d '' tracked_doc; do
   target_parent="$dist_dir/$(dirname "$tracked_doc")"

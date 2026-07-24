@@ -92,7 +92,7 @@ Status: complete
   activation is complete and live records await account API entitlement.
 - Completed: represent Beijing exchange and auditable security metadata,
   including explicit unavailable fields instead of inferred fake completeness.
-- Completed final tests, strict Clippy, rustdoc/doctests, Rust 1.83 check,
+- Completed final tests, strict Clippy, rustdoc/doctests, Rust stable check,
   documentation links, compliance, TDX live validation, and EMQuant failure-path
   validation. EMQuant live records remain externally blocked by account
   entitlement `10001003/EQERR_NO_ACCESS`, not unfinished repository code.
@@ -117,7 +117,7 @@ Completion evidence:
   explicit partial-quality semantics are implemented across Core and consumers.
 - TDX raw quote time bytes remain auditable but are not promoted to normalized
   source timestamps because their wire format is unverified.
-- Workspace tests, strict Clippy, Rust 1.83 and stable checks, rustdoc, doctests,
+- Workspace tests, strict Clippy, Rust stable and stable checks, rustdoc, doctests,
   documentation links, compliance, and the strict TDX live probe pass.
 - The EMQuant probe exercises every supported family and truthfully reports the
   external account entitlement error `10001003/EQERR_NO_ACCESS` for each one.
@@ -144,7 +144,7 @@ Completion evidence:
   bounded HTTPS and failure-path coverage; every other family stays false.
 - Real release probes returned complete records for `600396.SH` and
   `000001.SZ`; the bounded 20-request/four-worker probe completed 20/20.
-- Rust/Cargo 1.83 full preflight, tests, strict Clippy, rustdoc/doctests, link
+- rolling stable Rust/Cargo full preflight, tests, strict Clippy, rustdoc/doctests, link
   and compliance checks pass; the edition-2024 dependency regression is pinned.
 - Deployment and integration runbooks plus isolated, clean-worktree release
   packaging are complete. Independent final review found no Critical/Important
@@ -164,7 +164,9 @@ Completion evidence:
 - v1 functional scope: all pinned-upstream pure Rust capabilities (equity/index quotes and bars, minute/tick/history, security list/count, finance, XDXR, funds, blocks, F10/profile, local readers, and all four client strategies). Python CLI, DataFrame helpers, and downloader are out of scope.
 - Reliability policy: strict by default. Malformed/truncated packets, missing fields, over-limit batches, incomplete pagination/context, adjustment-source failure, and exhausted empty responses are typed errors. Chunking or best-effort behavior requires explicit opt-in and visible outcome metadata.
 - Performance policy: compare against pinned upstream in same-machine, same-profile, same-fixture/server alternating A/B runs. Reader/protocol and 1/5/60-concurrency client throughput regressions are capped at 5%; controlled live-network median/p95 regression is capped at 10%, with no lower success rate.
-- Platform policy: MSRV Rust 1.83; Linux, macOS, and Windows; x86_64 and aarch64. Cross-platform CI proves build/test portability while fixed benchmark hosts provide comparable performance evidence.
+- Platform policy: rolling stable Rust with no fixed MSRV; Linux, macOS, and
+  Windows; x86_64 and aarch64. Cross-platform CI proves build/test portability
+  while fixed benchmark hosts provide comparable performance evidence.
 - Repository organization: a standalone pure virtual Cargo workspace with exactly two
   independently versioned library members, `magic-market-core` and `magic-tdx-rs`.
   The root has no package or umbrella facade crate and commits `Cargo.lock` for
@@ -177,7 +179,7 @@ Completion evidence:
 - Design section 2 approved: four explicit client types, typed builders/requests, TDX source records plus normalized provider results, capability traits, provenance-bearing batches, and a documented SemVer-stable facade.
 - Design section 3 approved: bounds-checked parsing, typed contextual errors, strict full-batch/adjustment semantics, explicit no-data/empty distinction, observable optional policies, and no public panics or swallowed task errors.
 - Design section 4 approved: distinct lock-safe client execution models, bounded backpressure/timeouts/retry budgets, explicit adaptive rate-limit scopes, and three-layer reproducible performance gates.
-- Design section 5 approved: unit/golden/property/fuzz/protocol-replay/integration/live-diagnostic test layers, pinned-upstream differential evidence, cross-platform MSRV CI, coverage and SemVer gates.
+- Design section 5 approved: unit/golden/property/fuzz/protocol-replay/integration/live-diagnostic test layers, pinned-upstream differential evidence, cross-platform stable CI, coverage and SemVer gates.
 - Design section 6 approved: complete landed documentation set, enforced public rustdoc/examples/link checks, evidence-backed protocol/performance/compatibility claims, complete Chinese technical docs with English README/API synopsis, and pre-1.0 stabilization.
 - Design section 7 approved: additive staged migration, preservation of application policy, no silent production fallback, explicit old-module disposition, registered business rules, independently revertible integration, and all Gate A-D evidence before release.
 - Repository relocation: all design/planning artifacts live in the dedicated

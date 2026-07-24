@@ -124,5 +124,5 @@ Unsupported 测试。在线验收至少覆盖：
 - TDX 北京候选编码、Quote/K线/分时/逐笔；
 - 所有仍不支持能力的明确输出。
 
-最终必须通过格式化、workspace tests、strict Clippy、Rust 1.83 all-target check、
+最终必须通过格式化、workspace tests、strict Clippy、Rust stable all-target check、
 rustdoc/doctest、文档链接、合规检查和有界负载探针。在线样本只记录实测，不宣称 SLA。

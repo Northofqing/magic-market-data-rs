@@ -1,0 +1,56 @@
+[{
+  "metadata": {
+    "catalogid":"1842_detal",
+    "tabkey":"tab1",
+    "conditions":[
+      {"name":"DQRQ","defaultValue":"2026-07-23"},
+      {"name":"ZQDM","defaultValue":"000603"},
+      {"name":"ZBDM","defaultValue":"0901"}
+    ],
+    "cols":{
+      "dqrq":"公告日期",
+      "zqjc":"[none]",
+      "cjsl":"成 交 量",
+      "cjje":"成交金额",
+      "plyy":"[none]"
+    }
+  },
+  "data":[{
+    "dqrq":"2026-07-23",
+    "ycqj":"无",
+    "zqjc":"盛达资源&nbsp;(000603)",
+    "cjsl":"69,170,347 份/股",
+    "cjje":"1,656,097,547 元",
+    "plyy":"日价格涨幅偏离值达到9.07%"
+  }],
+  "error":null
+},{
+  "metadata":{
+    "catalogid":"1842_detal",
+    "tabkey":"tab2",
+    "conditions":[
+      {"name":"DQRQ","defaultValue":"2026-07-23"},
+      {"name":"ZQDM","defaultValue":"000603"},
+      {"name":"ZBDM","defaultValue":"0901"}
+    ],
+    "cols":{
+      "mmlb":"买/卖",
+      "zsmc":"会员营业部名称",
+      "mrje":"买入金额<br>（元）",
+      "mcje":"卖出金额<br>（元）"
+    }
+  },
+  "data":[
+    {"mmlb":"买1","zsmc":"深股通专用","mrje":"136,235,364","mcje":"185,329,440"},
+    {"mmlb":"买2","zsmc":"国泰海通证券股份有限公司北京知春路证券营业部","mrje":"112,304,399","mcje":"1,403,337"},
+    {"mmlb":"买3","zsmc":"机构专用","mrje":"37,589,828","mcje":"0"},
+    {"mmlb":"买4","zsmc":"机构专用","mrje":"27,014,122","mcje":"27,977,745"},
+    {"mmlb":"买5","zsmc":"机构专用","mrje":"26,201,294","mcje":"33,471,072"},
+    {"mmlb":"卖1","zsmc":"深股通专用","mrje":"136,235,364","mcje":"185,329,440"},
+    {"mmlb":"卖2","zsmc":"机构专用","mrje":"25,722,905","mcje":"51,712,871"},
+    {"mmlb":"卖3","zsmc":"机构专用","mrje":"26,201,294","mcje":"33,471,072"},
+    {"mmlb":"卖4","zsmc":"招商证券股份有限公司宁波丽江东路证券营业部","mrje":"48,330","mcje":"32,281,355"},
+    {"mmlb":"卖5","zsmc":"机构专用","mrje":"27,014,122","mcje":"27,977,745"}
+  ],
+  "error":null
+}]

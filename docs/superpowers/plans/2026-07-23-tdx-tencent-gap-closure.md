@@ -6,7 +6,7 @@
 
 **Architecture:** Keep TDX on its audited binary protocol while adding evidence-gated Beijing/time handling. Split Tencent by native HTTPS data family, add provider-neutral minute contracts to Core, and require strict fixtures plus real probes before advertising a capability.
 
-**Tech Stack:** Rust 2021/MSRV 1.83, `ureq`, `serde_json`, `encoding_rs`, existing `magic-market-core` contracts, TDX binary protocol, Tencent HTTPS endpoints.
+**Tech Stack:** Rust 2021/no fixed MSRV, `ureq`, `serde_json`, `encoding_rs`, existing `magic-market-core` contracts, TDX binary protocol, Tencent HTTPS endpoints.
 
 ---
 
@@ -147,6 +147,6 @@
 - [ ] Document units, pagination, endpoint stability, authorization/SLA limitations and deployment network requirements.
 - [ ] Run `cargo fmt --all --check`.
 - [ ] Run `cargo test --workspace --all-targets --locked --offline`.
-- [ ] Run strict workspace Clippy, Rust 1.83 all-target check, rustdoc/doctest, link and compliance scripts.
+- [ ] Run strict workspace Clippy, Rust stable all-target check, rustdoc/doctest, link and compliance scripts.
 - [ ] Run both real release probes and bounded load probes.
 - [ ] Review the final diff, ensure the user's untracked requirements document is not staged, commit scoped files, and push `main`.

@@ -6,7 +6,7 @@
 
 **Architecture:** Capability services own request validation, packet selection, pagination/chunking, parsing, adjustment, empty/no-data interpretation, and provenance assembly; clients only supply their execution strategy. Source APIs return typed batches such as `DataBatch<SecurityBar>` and `DataBatch<SecurityQuote>`, while `TdxProvider` applies explicit checked normalization and quality validation before implementing provider-neutral traits.
 
-**Tech Stack:** Rust 1.83, the Phase 1 core contracts, Phase 2 strict protocol/readers, Phase 3 client executors, Serde, tracing, compile-time capability tests, scripted loopback integration.
+**Tech Stack:** Rust stable, the Phase 1 core contracts, Phase 2 strict protocol/readers, Phase 3 client executors, Serde, tracing, compile-time capability tests, scripted loopback integration.
 
 ---
 

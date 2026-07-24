@@ -3,7 +3,7 @@
 - The current root README is only 34 lines and does not explain setup, live
   probes, provider boundaries, routing, packaging or security.
 - The workspace contains Core, Router, TDX, Tencent and EMQuant crates and pins
-  Rust/Cargo 1.83.0 with `unsafe_code = "forbid"`.
+  rolling stable Rust/Cargo with `unsafe_code = "forbid"`.
 - TDX is the broad pure-Rust source. It live-verifies quotes, 12 K-line
   categories, books, minute data, trades, securities, finance, actions, blocks,
   funds and F10, but not normalized money flow or auction.

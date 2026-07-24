@@ -6,7 +6,7 @@
 
 **Architecture:** A cloneable `SinaClient` owns one bounded `ureq` transport. `lib.rs` handles symbols and GB18030 snapshots, `bars.rs` handles Sina JSON K lines, and `minute.rs` derives cumulative latest-session minute points from verified one-minute rows. Every record keeps `ProviderId::Sina`, source time, observation time and batch identity; unsupported families remain disabled.
 
-**Tech Stack:** Rust 1.83, `magic-market-core`, `ureq 2.12.1`, `encoding_rs`, `serde_json`, deterministic fixtures, official Sina HTTPS endpoints.
+**Tech Stack:** Rust stable, `magic-market-core`, `ureq 2.12.1`, `encoding_rs`, `serde_json`, deterministic fixtures, official Sina HTTPS endpoints.
 
 ---
 
@@ -76,7 +76,7 @@ fn public_client_implements_every_advertised_contract() {
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs --test capabilities --offline
+cargo test -p magic-sina-rs --test capabilities --offline
 ```
 
 Expected: failure because package `magic-sina-rs` does not exist.
@@ -90,7 +90,6 @@ Set the workspace line to include `crates/magic-sina-rs` after Tencent and creat
 name = "magic-sina-rs"
 version = "0.2.0"
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
@@ -161,7 +160,7 @@ next tasks replace each advertised method before any release claim.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs --test capabilities --offline
+cargo test -p magic-sina-rs --test capabilities --offline
 ```
 
 Expected: one passing test.
@@ -212,7 +211,7 @@ quantity without price and response larger than the transport cap.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs --lib --offline
+cargo test -p magic-sina-rs --lib --offline
 ```
 
 Expected: compile/test failures for missing snapshot functions and real trait behavior.
@@ -293,7 +292,7 @@ Do not set batch source time unless all snapshot records have one.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs --lib --offline
+cargo test -p magic-sina-rs --lib --offline
 ```
 
 Expected: all snapshot, Quote, OrderBook and metadata tests pass.
@@ -347,7 +346,7 @@ unordered/duplicate rows, too many rows and inconsistent OHLC.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs bars::tests --offline
+cargo test -p magic-sina-rs bars::tests --offline
 ```
 
 Expected: failure because `bars.rs` is not implemented.
@@ -385,7 +384,7 @@ batch provenance to the latest record source time.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs --all-targets --offline
+cargo test -p magic-sina-rs --all-targets --offline
 ```
 
 Expected: all tests pass.
@@ -431,7 +430,7 @@ missing amount, numeric overflow/non-finite values and a dated
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs minute::tests --offline
+cargo test -p magic-sina-rs minute::tests --offline
 ```
 
 Expected: failure because minute accumulation is absent.
@@ -471,7 +470,7 @@ with `date()` set returns explicit `Unsupported` before transport.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs --all-targets --offline
+cargo test -p magic-sina-rs --all-targets --offline
 ```
 
 Expected: all tests pass.
@@ -536,7 +535,7 @@ concurrency above 4 and unknown operations.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-sina-rs --all-targets --locked --offline
+cargo test -p magic-sina-rs --all-targets --locked --offline
 ```
 
 Expected: library, contract and example tests pass.
@@ -657,11 +656,11 @@ Run:
 
 ```bash
 cargo fmt --all
-RUSTUP_TOOLCHAIN=1.83.0 cargo check --workspace --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test --workspace --all-targets --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
-RUSTUP_TOOLCHAIN=1.83.0 RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked --offline
-RUSTUP_TOOLCHAIN=1.83.0 cargo test --workspace --doc --locked --offline
+cargo check --workspace --all-targets --locked --offline
+cargo test --workspace --all-targets --locked --offline
+cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked --offline
+cargo test --workspace --doc --locked --offline
 bash tools/docs/check_links.sh
 bash tools/compliance/check.sh
 git diff --check

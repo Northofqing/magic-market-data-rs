@@ -151,7 +151,7 @@ Deterministic tests cover:
 - missing/mismatched provenance batch ID;
 - adapter compilation and error classification for every Core data family.
 
-The existing full workspace gates remain mandatory under Rust 1.83. The live
+The existing full workspace gates remain mandatory under Rust stable. The live
 probe supplies network evidence but deterministic tests never require network.
 
 ## 7. Packaging and deployment
@@ -171,6 +171,6 @@ EMQuant only after the account has the required product entitlements.
 - Invalid requests cannot fall through to another source.
 - Every successful or failed route exposes ordered attempt evidence.
 - Empty/mixed-provider/mismatched-batch results cannot be accepted.
-- Deterministic tests and all release gates pass on Rust 1.83.
+- Deterministic tests and all release gates pass on Rust stable.
 - The real TDX-to-Tencent Quote probe exits zero with a selected source.
 - A five-probe package for the final Git SHA passes its SHA-256 verification.

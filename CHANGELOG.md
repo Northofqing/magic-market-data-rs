@@ -16,6 +16,9 @@ Breaking migrations:
   rejected and completeness is derived from the issue list.
 - Normalized records, quality reports, provenance, and requests expose
   read-only accessors instead of public invariant-bearing fields.
+- `DragonTigerEntry` and `DragonTigerSeat` now require checked constructors
+  and checked Serde. Seat JSON adds required `instrument` and `trading_date`
+  fields; legacy seat payloads without them must be migrated before decoding.
 - `Quote::new` and `Bar::with_source_at` now return `Result`; provider adapters
   propagate `CoreError` as a typed source.
 - TDX historical-bar adapters reject date ranges explicitly because the TDX
@@ -77,8 +80,8 @@ Breaking migrations:
   time required, it preserved the TDX quality rejection and selected a
   source-timestamped Tencent Quote without merging or rewriting Provider
   evidence.
-- Pinned the HTTPS URL/IDNA/zeroize dependency chain in `Cargo.lock` so Cargo
-  1.83 can parse and compile it without the transitive edition-2024 failure.
+- Pinned the HTTPS URL/IDNA/zeroize dependency chain in `Cargo.lock` after
+  reproducing a transitive edition-2024 manifest incompatibility.
 - Added release preflight/package scripts and an operator deployment runbook
   covering platform artifacts, network access, secrets, EMQuant activation,
   health evidence, observability, rollback, and release verification.
@@ -117,6 +120,8 @@ Breaking migrations:
   Choice/EMQuant, covering reports, minute/daily fund-flow parsing, three board
   flow categories, dragon-tiger entries/seats, margin, block trades, holder
   counts, lockups, dividends, four limit pools and popularity.
+  Seat requests reserve one atomic ten-record buy-five/sell-five group and
+  reject limits below ten or incomplete source groups.
   The real probe passes all advertised families. Both fund-flow hosts close the
   current development network connection before an HTTP response, so that
   family remains unadvertised and is reported as an expected-failure diagnostic
@@ -142,6 +147,16 @@ Breaking migrations:
   search, result de-duplication and secret-redacted errors. Without a licensed
   key, the real endpoint's HTTP 401 is reported as authentication failure and
   never replaced by fixture or Cookie-derived data.
+- Added `magic-exchange-rs` with first-class SSE/SZSE/HKEX identities:
+  SSE/SZSE announcements and dragon-tiger data, SZSE Quote/five-level book,
+  and lossless HKEX northbound DailyStat/Top10. Production traits enforce
+  full pagination, cross-page de-duplication, complete buy-five/sell-five
+  groups, source identity/time, exact units and clone-shared serial gates. The
+  merged tree retains deterministic fixtures and explicit live/load probe
+  commands; post-merge production admission must be regenerated rather than
+  inferred from either parent commit.
+- Switched the workspace, CI and release preflight to the rolling stable Rust
+  toolchain and removed the fixed MSRV declaration.
 - All six public providers enforce HTTPS host allowlists, zero redirects,
   timeouts, response-size/request bounds, strict non-empty output, source
   evidence, deterministic injected transports, live probes and conservative
@@ -150,7 +165,7 @@ Breaking migrations:
   Shanghai `900xxx` B shares to Beijing, CLS related instruments distinguish
   verified ETF/index/equity code families, and malformed present THS metadata
   fails schema validation instead of disappearing as an absent field.
-- Expanded release packaging from seven to nineteen uniquely named probe
+- Expanded release packaging from seven to twenty-one uniquely named probe
   binaries and added secret-gated iWencai plus public-web live/load workflow
   coverage.
 

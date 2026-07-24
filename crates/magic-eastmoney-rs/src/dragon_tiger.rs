@@ -11,6 +11,9 @@ use magic_market_core::{
 use serde_json::Value;
 use std::collections::HashSet;
 
+const SEAT_SIDE_CARDINALITY: u32 = 5;
+const SEAT_SIDE_FETCH_LIMIT: u32 = SEAT_SIDE_CARDINALITY + 1;
+
 impl DragonTigerData for EastmoneyClient {
     type Error = EastmoneyError;
 
@@ -35,6 +38,7 @@ impl DragonTigerData for EastmoneyClient {
         request: &InstrumentSignalRequest,
     ) -> Result<magic_market_core::DataBatch<DragonTigerSeat>, Self::Error> {
         validate_instrument(request.instrument())?;
+        validate_seat_limit(request)?;
         let source_date = match request.trading_date() {
             Some(date) => Some(date.as_str().to_owned()),
             None => {
@@ -78,11 +82,24 @@ impl DragonTigerData for EastmoneyClient {
                 "SELL",
             ),
         ] {
-            let side_rows = fetch_rows(self, report, &filter, sort, request.limit().get())?;
+            // Read one sentinel row beyond the admitted top five so an
+            // oversized upstream result cannot be hidden by fetch_rows'
+            // caller-limit truncation.
+            let side_rows = fetch_rows(self, report, &filter, sort, SEAT_SIDE_FETCH_LIMIT)?;
             rows.extend(side_rows.into_iter().map(|row| (side, row)));
         }
         map_seats(&rows, request, &source_date)
     }
+}
+
+fn validate_seat_limit(request: &InstrumentSignalRequest) -> Result<(), EastmoneyError> {
+    if request.limit().get() < 10 {
+        return Err(EastmoneyError::InvalidRequest(
+            "dragon-tiger seat limit must be at least 10 for one complete buy-five/sell-five group"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 fn signal_filter(request: &InstrumentSignalRequest, forced_date: Option<&str>) -> String {
@@ -116,27 +133,23 @@ fn map_entries(
                 request.trading_date().map(|date| date.as_str()),
             )?;
             let date = required_string(row, "TRADE_DATE")?;
-            let buy_amount = opt_money(row, "BILLBOARD_BUY_AMT")?;
-            let sell_amount = opt_money(row, "BILLBOARD_SELL_AMT")?;
-            let net_amount = opt_money(row, "BILLBOARD_NET_AMT")?;
-            validate_amount_arithmetic("dragon-tiger entry", buy_amount, sell_amount, net_amount)?;
-            Ok(DragonTigerEntry {
-                entry_id: entry_id(request.instrument().code(), &date)?,
-                instrument: request.instrument().clone(),
-                trading_date: iso_date(&date)?,
-                reason: optional_string(row.get("EXPLANATION"))?
+            Ok(DragonTigerEntry::new(
+                entry_id(request.instrument().code(), &date)?,
+                request.instrument().clone(),
+                iso_date(&date)?,
+                optional_string(row.get("EXPLANATION"))?
                     .map(NonEmptyText::new)
                     .transpose()?,
-                buy_amount,
-                sell_amount,
-                net_amount,
-                turnover_rate: percent(optional_f64(row.get("TURNOVERRATE"))?)?,
-                evidence: context.evidence_at(Some(&date))?,
-            })
+                opt_money(row, "BILLBOARD_BUY_AMT")?,
+                opt_money(row, "BILLBOARD_SELL_AMT")?,
+                opt_money(row, "BILLBOARD_NET_AMT")?,
+                percent(optional_f64(row.get("TURNOVERRATE"))?)?,
+                context.evidence_at(Some(&date))?,
+            )?)
         })
         .collect::<Result<Vec<_>, EastmoneyError>>()?;
     reject_duplicates(
-        records.iter().map(|record| record.entry_id.as_str()),
+        records.iter().map(|record| record.entry_id().as_str()),
         "dragon-tiger entry",
     )?;
     context.finish(records)
@@ -147,6 +160,22 @@ fn map_seats(
     request: &InstrumentSignalRequest,
     source_date: &str,
 ) -> Result<magic_market_core::DataBatch<DragonTigerSeat>, EastmoneyError> {
+    let buy_count = rows
+        .iter()
+        .filter(|(side, _)| *side == DragonTigerSide::Buy)
+        .count();
+    let sell_count = rows
+        .iter()
+        .filter(|(side, _)| *side == DragonTigerSide::Sell)
+        .count();
+    if rows.len() != 10
+        || buy_count != SEAT_SIDE_CARDINALITY as usize
+        || sell_count != SEAT_SIDE_CARDINALITY as usize
+    {
+        return Err(EastmoneyError::Protocol(format!(
+            "dragon-tiger seats require exactly five buy and five sell rows; got {buy_count} buy and {sell_count} sell"
+        )));
+    }
     let context = BatchContext::new("dragon-tiger-seats", Some(source_date))?;
     let mut buy_rank = 0_u32;
     let mut sell_rank = 0_u32;
@@ -177,7 +206,6 @@ fn map_seats(
             let buy_amount = opt_money(row, "BUY")?;
             let sell_amount = opt_money(row, "SELL")?;
             let net_amount = opt_money(row, "NET")?;
-            validate_amount_arithmetic("dragon-tiger seat", buy_amount, sell_amount, net_amount)?;
             let seat_name = NonEmptyText::new(required_string(row, "OPERATEDEPT_NAME")?)?;
             let seat_identity = format!("{source_date}:{side:?}:{seat_name}");
             if !seat_identities.insert(seat_identity.clone()) {
@@ -185,17 +213,19 @@ fn map_seats(
                     "duplicate dragon-tiger seat business identity {seat_identity}"
                 )));
             }
-            Ok(DragonTigerSeat {
-                entry_id: entry_id(request.instrument().code(), source_date)?,
-                side: *side,
-                rank: PositiveU32::new(rank)?,
+            Ok(DragonTigerSeat::new(
+                entry_id(request.instrument().code(), source_date)?,
+                request.instrument().clone(),
+                iso_date(source_date)?,
+                *side,
+                PositiveU32::new(rank)?,
                 seat_name,
                 amount,
                 buy_amount,
                 sell_amount,
                 net_amount,
-                evidence: context.evidence_at(Some(source_date))?,
-            })
+                context.evidence_at(Some(source_date))?,
+            )?)
         })
         .collect::<Result<Vec<_>, EastmoneyError>>()?;
     context.finish(records)
@@ -242,39 +272,6 @@ fn opt_money(row: &Value, key: &'static str) -> Result<Option<Money>, EastmoneyE
 fn required_money(row: &Value, key: &'static str) -> Result<Money, EastmoneyError> {
     opt_money(row, key)?
         .ok_or_else(|| EastmoneyError::Protocol(format!("dragon-tiger field {key} is absent")))
-}
-
-fn validate_amount_arithmetic(
-    family: &str,
-    buy: Option<Money>,
-    sell: Option<Money>,
-    net: Option<Money>,
-) -> Result<(), EastmoneyError> {
-    for (field, amount) in [("buy", buy), ("sell", sell)] {
-        if amount.is_some_and(|value| value.get() < 0.0) {
-            return Err(EastmoneyError::Protocol(format!(
-                "{family} {field} gross amount must be non-negative"
-            )));
-        }
-    }
-    if let (Some(buy), Some(sell), Some(net)) = (buy, sell, net) {
-        let expected = buy.get() - sell.get();
-        let scale = buy
-            .get()
-            .abs()
-            .max(sell.get().abs())
-            .max(net.get().abs())
-            .max(1.0);
-        if (expected - net.get()).abs() > f64::EPSILON * scale * 8.0 {
-            return Err(EastmoneyError::Protocol(format!(
-                "{family} net amount {} does not equal buy {} minus sell {}",
-                net.get(),
-                buy.get(),
-                sell.get()
-            )));
-        }
-    }
-    Ok(())
 }
 
 fn reject_duplicates<'a>(

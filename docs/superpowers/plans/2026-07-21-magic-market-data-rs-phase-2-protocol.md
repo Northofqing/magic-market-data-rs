@@ -6,7 +6,7 @@
 
 **Architecture:** All byte access flows through one contextual cursor and all decompression is size-bounded. Target modules are audited extractions from the fixed upstream commit, split by record family; source records preserve upstream fields and `f64` values, while malformed, truncated, incomplete, or ambiguous inputs return typed errors instead of zero/default/panic behavior.
 
-**Tech Stack:** Rust 1.83, Serde, thiserror, flate2, encoding_rs, regex, sha2, proptest, cargo-fuzz, pinned `tdxrs` commit `18b05ffc9d8a257b5ba5add8a2d1ab038261747d`.
+**Tech Stack:** Rust stable, Serde, thiserror, flate2, encoding_rs, regex, sha2, proptest, cargo-fuzz, pinned `tdxrs` commit `18b05ffc9d8a257b5ba5add8a2d1ab038261747d`.
 
 ---
 

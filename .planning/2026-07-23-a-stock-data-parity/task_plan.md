@@ -9,7 +9,7 @@ and explicit unsupported boundaries.
 
 ## Current phase
 
-Phase 4
+Phase 5
 
 ## Constraints
 
@@ -17,8 +17,9 @@ Phase 4
   untouched and uncommitted.
 - Treat the reference repository as protocol and capability research, not as
   code to copy blindly.
-- Preserve Rust 1.83 compatibility, `unsafe_code = "forbid"`, bounded network
-  access, record-level provenance, typed errors and no simulated success.
+- Track the current stable Rust toolchain without a fixed MSRV,
+  `unsafe_code = "forbid"`, bounded network access, record-level provenance,
+  typed errors and no simulated success.
 - Do not ingest credentials, account state, trading data or private client
   traffic.
 - Separate independently deployable business domains into their own Core
@@ -54,7 +55,7 @@ Phase 4
 
 ### Phase 4: Provider implementation
 
-**Status:** in_progress
+**Status:** complete
 
 - Implement provider modules in dependency order with deterministic fixtures.
 - Add bounded live/load probes and explicit unsupported/authentication errors.
@@ -71,12 +72,19 @@ Phase 4
   `docs/superpowers/plans/2026-07-23-public-intelligence-providers.md` as
   Slices C and D. Shared Core/Router/workspace files are a main-thread barrier;
   isolated Provider crates may be implemented in parallel after it passes.
-- Public-intelligence Tasks 1-5 are implemented and live-probed; final
-  Eastmoney P1 remediation and independent review are in progress before the
-  checkpoint release.
+- Public-intelligence Tasks 1-5, final Eastmoney remediation, independent
+  review and real probes are complete.
+- Execute
+  `docs/superpowers/plans/2026-07-23-official-exchange-providers.md` as Slice F.
+  Tasks 1-8 are complete, including official dragon-tiger, SZSE Quote/order
+  book, lossless HKEX northbound statistics and release verification.
+- Official exchange Tasks 1-7 are complete, including Router request-level
+  acceptance, deterministic fixtures, cross-page regression and production
+  trait live/load verification.
+
 ### Phase 5: Integration and acceptance
 
-**Status:** pending
+**Status:** complete
 
 - Add documentation, deployment, compliance and release packaging.
 - Run deterministic, live, load and cross-source verification.
@@ -101,3 +109,4 @@ Phase 4
 | New analysis workspace member required a local Cargo.lock package entry | 1 | Ran Cargo once with `--offline` but without `--locked`; it updated only the lock metadata and produced the expected missing-API RED result. |
 | Limit-pool duplicate detection required a hashable pool kind | 1 | Added `Hash` to the pure enum and reran the analysis tests successfully. |
 | Staged diff check found one blank line at EOF in the new analysis manifest | 1 | Removed the reproducible formatting defect, restaged only the manifest and passed the staged diff check. |
+| Official Provider capability initializers missed two existing signal fields after enabling dragon-tiger | 1 | Added explicit false values for popularity and concept hits to SSE, SZSE and HKEX before continuing the production wiring. |

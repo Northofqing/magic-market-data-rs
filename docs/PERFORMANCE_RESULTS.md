@@ -43,10 +43,11 @@ This is a connectivity and non-empty-result probe, not a latency or sustained
 throughput benchmark. Live latency and throughput remain environment-dependent
 and are not inferred from the parser microbenchmark above.
 
-## MSRV verification
+## Stable toolchain verification
 
-After a clean build, `RUSTUP_TOOLCHAIN=1.83.0 cargo check --workspace
---all-targets --offline` passes with the committed lockfile.
+After a clean build, `cargo check --workspace --all-targets --locked --offline`
+passes with the repository's rolling stable toolchain. The project does not
+declare a fixed MSRV.
 
 ## Tencent HTTPS bounded load probe
 
@@ -159,7 +160,7 @@ parser behavior, not endpoint SLA or permission for sustained traffic.
 
 ## iWencai authenticated probe status
 
-The iWencai deterministic authentication/search suite passes on Rust 1.83.
+The iWencai deterministic authentication/search suite passes on stable Rust.
 Without `MAGIC_IWENCAI_API_KEY`, the real probe exits non-zero with the typed
 `Authentication` error as designed; it does not import a browser session or
 print simulated documents. `semantic_search` consequently remains false in the
@@ -201,6 +202,28 @@ This historical Tonghuashun run predates the Task 8 machine admission gate. It
 must not be relabelled as current live admission. The current probe additionally
 requires `status=admitted` or source-evidenced `status=verified_empty`; a
 quality-incomplete empty-estimate pseudo-record now fails construction.
+
+## SSE/SZSE/HKEX official mixed probes
+
+Commit `904bd19` documented an upstream eight-operation historical baseline for
+SSE/SZSE announcements, SZSE Quote/order book, SSE/SZSE dragon-tiger entries
+and both HKEX northbound channels. That parent-commit result is not production
+admission evidence for the merged tree and is intentionally not reported here
+as a merged-tree pass.
+
+Regenerate evidence from the exact candidate revision with:
+
+```bash
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+MAGIC_EXCHANGE_LOAD_REQUESTS=8 MAGIC_EXCHANGE_LOAD_CONCURRENCY=1 \
+  MAGIC_EXCHANGE_LOAD_PACING_MS=1000 \
+  cargo run -p magic-exchange-rs --example load_probe --release --locked --offline
+```
+
+Archive the revision, compiler/Cargo versions, complete attempt output and
+timestamps. High-level attempts may include multiple internally paced HTTP
+requests, so their metrics are not HTTP throughput, an exchange SLA or
+permission for sustained traffic.
 
 ## Eastmoney public-web probe status
 

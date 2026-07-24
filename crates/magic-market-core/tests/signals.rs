@@ -13,6 +13,12 @@ fn evidence(provider: ProviderId, batch: &str) -> SourceEvidence {
     SourceEvidence::new(provider, "observed", batch).unwrap()
 }
 
+fn dated_evidence(provider: ProviderId, batch: &str) -> SourceEvidence {
+    evidence(provider, batch)
+        .with_source_at("2026-07-23")
+        .unwrap()
+}
+
 #[test]
 fn board_and_reason_contracts_preserve_unknown_categories() {
     let board = BoardMembership {
@@ -44,36 +50,103 @@ fn board_and_reason_contracts_preserve_unknown_categories() {
 
 #[test]
 fn dragon_tiger_missing_amounts_remain_absent() {
-    let entry = DragonTigerEntry {
-        entry_id: NonEmptyText::new("entry-1").unwrap(),
-        instrument: instrument(),
-        trading_date: IsoDate::new("2026-07-23").unwrap(),
-        reason: None,
-        buy_amount: Some(Money::new(0.0).unwrap()),
-        sell_amount: None,
-        net_amount: None,
-        turnover_rate: None,
-        evidence: evidence(ProviderId::Eastmoney, "entry"),
-    };
-    let seat = DragonTigerSeat {
-        entry_id: NonEmptyText::new("entry-1").unwrap(),
-        side: DragonTigerSide::Buy,
-        rank: PositiveU32::new(1).unwrap(),
-        seat_name: NonEmptyText::new("机构专用").unwrap(),
-        amount: Money::new(0.0).unwrap(),
-        buy_amount: Some(Money::new(0.0).unwrap()),
-        sell_amount: None,
-        net_amount: None,
-        evidence: evidence(ProviderId::Eastmoney, "seat"),
-    };
+    let entry = DragonTigerEntry::new(
+        NonEmptyText::new("entry-1").unwrap(),
+        instrument(),
+        IsoDate::new("2026-07-23").unwrap(),
+        None,
+        Some(Money::new(0.0).unwrap()),
+        None,
+        None,
+        None,
+        dated_evidence(ProviderId::Eastmoney, "entry"),
+    )
+    .unwrap();
+    let seat = DragonTigerSeat::new(
+        NonEmptyText::new("entry-1").unwrap(),
+        instrument(),
+        IsoDate::new("2026-07-23").unwrap(),
+        DragonTigerSide::Buy,
+        PositiveU32::new(1).unwrap(),
+        NonEmptyText::new("机构专用").unwrap(),
+        Money::new(0.0).unwrap(),
+        Some(Money::new(0.0).unwrap()),
+        None,
+        None,
+        dated_evidence(ProviderId::Eastmoney, "seat"),
+    )
+    .unwrap();
 
-    assert_eq!(entry.buy_amount.unwrap().get(), 0.0);
-    assert!(entry.sell_amount.is_none());
-    assert_eq!(seat.rank.get(), 1);
+    assert_eq!(entry.buy_amount().unwrap().get(), 0.0);
+    assert!(entry.sell_amount().is_none());
+    assert_eq!(seat.rank().get(), 1);
+    assert_eq!(seat.instrument(), &instrument());
+    assert_eq!(seat.trading_date().as_str(), "2026-07-23");
     assert_eq!(entry.provider_id(), ProviderId::Eastmoney);
     assert_eq!(entry.evidence_batch_id(), "entry");
     assert_eq!(seat.provider_id(), ProviderId::Eastmoney);
     assert_eq!(seat.evidence_batch_id(), "seat");
+    assert_eq!(
+        serde_json::from_value::<DragonTigerEntry>(serde_json::to_value(&entry).unwrap()).unwrap(),
+        entry
+    );
+    assert_eq!(
+        serde_json::from_value::<DragonTigerSeat>(serde_json::to_value(&seat).unwrap()).unwrap(),
+        seat
+    );
+}
+
+#[test]
+fn dragon_tiger_checked_deserialization_rejects_semantic_bypasses() {
+    let entry = DragonTigerEntry::new(
+        NonEmptyText::new("entry-1").unwrap(),
+        instrument(),
+        IsoDate::new("2026-07-23").unwrap(),
+        None,
+        Some(Money::new(100.0).unwrap()),
+        Some(Money::new(40.0).unwrap()),
+        Some(Money::new(60.0).unwrap()),
+        None,
+        dated_evidence(ProviderId::Eastmoney, "entry"),
+    )
+    .unwrap();
+    let seat = DragonTigerSeat::new(
+        NonEmptyText::new("entry-1").unwrap(),
+        instrument(),
+        IsoDate::new("2026-07-23").unwrap(),
+        DragonTigerSide::Buy,
+        PositiveU32::new(1).unwrap(),
+        NonEmptyText::new("机构专用").unwrap(),
+        Money::new(100.0).unwrap(),
+        Some(Money::new(100.0).unwrap()),
+        Some(Money::new(40.0).unwrap()),
+        Some(Money::new(60.0).unwrap()),
+        dated_evidence(ProviderId::Eastmoney, "seat"),
+    )
+    .unwrap();
+
+    let mut wrong_date = serde_json::to_value(&entry).unwrap();
+    wrong_date["evidence"]["source_at"] = serde_json::json!("2026-07-22");
+    assert!(serde_json::from_value::<DragonTigerEntry>(wrong_date).is_err());
+
+    let mut inconsistent_net = serde_json::to_value(&entry).unwrap();
+    inconsistent_net["net_amount"] = serde_json::json!(61.0);
+    assert!(serde_json::from_value::<DragonTigerEntry>(inconsistent_net).is_err());
+
+    let mut rank_six = serde_json::to_value(&seat).unwrap();
+    rank_six["rank"] = serde_json::json!(6);
+    assert!(serde_json::from_value::<DragonTigerSeat>(rank_six).is_err());
+
+    let mut wrong_side_amount = serde_json::to_value(&seat).unwrap();
+    wrong_side_amount["amount"] = serde_json::json!(99.0);
+    assert!(serde_json::from_value::<DragonTigerSeat>(wrong_side_amount).is_err());
+
+    let mut large_amount_bypass = serde_json::to_value(&seat).unwrap();
+    large_amount_bypass["amount"] = serde_json::json!(1_000_000_000_000_000.0);
+    large_amount_bypass["buy_amount"] = serde_json::json!(1_000_000_000_000_100.0);
+    large_amount_bypass["sell_amount"] = serde_json::Value::Null;
+    large_amount_bypass["net_amount"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<DragonTigerSeat>(large_amount_bypass).is_err());
 }
 
 #[test]

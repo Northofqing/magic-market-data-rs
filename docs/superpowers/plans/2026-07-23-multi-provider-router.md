@@ -6,7 +6,7 @@
 
 **Architecture:** `magic-market-core` exposes a common sourced-record evidence trait. A new `magic-market-router` crate depends only on Core and implements generic object-safe sources, explicit provider-error classification, acceptance policy, ordered attempt traces, and first-acceptable-batch routing. Concrete providers are wired only by generic adapter functions and the live example.
 
-**Tech Stack:** Rust 2021, MSRV 1.83, `magic-market-core`, `thiserror`, Cargo workspace tests, release shell scripts.
+**Tech Stack:** Rust 2021, no fixed MSRV, `magic-market-core`, `thiserror`, Cargo workspace tests, release shell scripts.
 
 ---
 
@@ -38,7 +38,7 @@ fn normalized_quote_exposes_common_evidence() {
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-core --test sourced_record --locked --offline
+cargo test -p magic-market-core --test sourced_record --locked --offline
 ```
 
 Expected: compile failure for missing `SourcedRecord`.
@@ -64,7 +64,7 @@ Each method delegates to the type's existing checked `provider()` and
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-core --all-targets --locked --offline
+cargo test -p magic-market-core --all-targets --locked --offline
 ```
 
 Expected: all Core tests pass.
@@ -103,7 +103,7 @@ assert_eq!(error.action(), FailureAction::Stop);
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-router --test source --locked --offline
+cargo test -p magic-market-router --test source --locked --offline
 ```
 
 Expected: Cargo reports that package `magic-market-router` does not exist.
@@ -152,7 +152,7 @@ debug representation omits the closure.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-router --test source --locked --offline
+cargo test -p magic-market-router --test source --locked --offline
 ```
 
 Expected: source tests pass.
@@ -188,7 +188,7 @@ provenance batch ID and record/provenance batch-ID mismatch.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-router --test router --locked --offline
+cargo test -p magic-market-router --test router --locked --offline
 ```
 
 Expected: compile failure for `FailoverChain`, `AcceptancePolicy` and trace types.
@@ -230,7 +230,7 @@ the trace.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-router --all-targets --locked --offline
+cargo test -p magic-market-router --all-targets --locked --offline
 ```
 
 Expected: all router tests pass.
@@ -265,7 +265,7 @@ returned `DataBatch`.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-router --test adapters --locked --offline
+cargo test -p magic-market-router --test adapters --locked --offline
 ```
 
 Expected: compile failure for missing adapter functions.
@@ -292,7 +292,7 @@ pub type SecurityMetadataRouter =
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-router --all-targets --locked --offline
+cargo test -p magic-market-router --all-targets --locked --offline
 ```
 
 Expected: all adapter and router tests pass.
@@ -324,7 +324,7 @@ connection becomes a retryable TDX source; it is not discarded.
 Run:
 
 ```bash
-RUSTUP_TOOLCHAIN=1.83.0 cargo test -p magic-market-router --all-targets --locked --offline
+cargo test -p magic-market-router --all-targets --locked --offline
 ```
 
 Expected: example and tests compile successfully.

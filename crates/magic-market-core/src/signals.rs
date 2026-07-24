@@ -1,6 +1,6 @@
 use crate::{
     DataBatch, FiniteNumber, InstrumentId, IsoDate, Money, NonEmptyText, PositiveU32, Price, Ratio,
-    SourceEvidence, SourcedRecord,
+    RatioUnit, SourceEvidence, SourcedRecord,
 };
 use serde::{de, Deserialize, Deserializer, Serialize};
 
@@ -32,17 +32,17 @@ pub struct StrongStockReason {
     pub evidence: SourceEvidence,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DragonTigerEntry {
-    pub entry_id: NonEmptyText,
-    pub instrument: InstrumentId,
-    pub trading_date: IsoDate,
-    pub reason: Option<NonEmptyText>,
-    pub buy_amount: Option<Money>,
-    pub sell_amount: Option<Money>,
-    pub net_amount: Option<Money>,
-    pub turnover_rate: Option<Ratio>,
-    pub evidence: SourceEvidence,
+    entry_id: NonEmptyText,
+    instrument: InstrumentId,
+    trading_date: IsoDate,
+    reason: Option<NonEmptyText>,
+    buy_amount: Option<Money>,
+    sell_amount: Option<Money>,
+    net_amount: Option<Money>,
+    turnover_rate: Option<Ratio>,
+    evidence: SourceEvidence,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,17 +51,312 @@ pub enum DragonTigerSide {
     Sell,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DragonTigerSeat {
-    pub entry_id: NonEmptyText,
-    pub side: DragonTigerSide,
-    pub rank: PositiveU32,
-    pub seat_name: NonEmptyText,
-    pub amount: Money,
-    pub buy_amount: Option<Money>,
-    pub sell_amount: Option<Money>,
-    pub net_amount: Option<Money>,
-    pub evidence: SourceEvidence,
+    entry_id: NonEmptyText,
+    instrument: InstrumentId,
+    trading_date: IsoDate,
+    side: DragonTigerSide,
+    rank: PositiveU32,
+    seat_name: NonEmptyText,
+    amount: Money,
+    buy_amount: Option<Money>,
+    sell_amount: Option<Money>,
+    net_amount: Option<Money>,
+    evidence: SourceEvidence,
+}
+
+impl DragonTigerEntry {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        entry_id: NonEmptyText,
+        instrument: InstrumentId,
+        trading_date: IsoDate,
+        reason: Option<NonEmptyText>,
+        buy_amount: Option<Money>,
+        sell_amount: Option<Money>,
+        net_amount: Option<Money>,
+        turnover_rate: Option<Ratio>,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
+        validate_dragon_tiger_evidence(&trading_date, &evidence)?;
+        validate_non_negative_money("dragon-tiger buy amount", buy_amount)?;
+        validate_non_negative_money("dragon-tiger sell amount", sell_amount)?;
+        validate_net_amount(buy_amount, sell_amount, net_amount)?;
+        if turnover_rate.is_some_and(|ratio| {
+            ratio.unit() != RatioUnit::Percent || ratio.get().is_sign_negative()
+        }) {
+            return Err(crate::CoreError::InvalidRequest(
+                "dragon-tiger turnover rate must be a non-negative percentage".into(),
+            ));
+        }
+        Ok(Self {
+            entry_id,
+            instrument,
+            trading_date,
+            reason,
+            buy_amount,
+            sell_amount,
+            net_amount,
+            turnover_rate,
+            evidence,
+        })
+    }
+
+    pub fn entry_id(&self) -> &NonEmptyText {
+        &self.entry_id
+    }
+
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+
+    pub fn trading_date(&self) -> &IsoDate {
+        &self.trading_date
+    }
+
+    pub fn reason(&self) -> Option<&NonEmptyText> {
+        self.reason.as_ref()
+    }
+
+    pub fn buy_amount(&self) -> Option<Money> {
+        self.buy_amount
+    }
+
+    pub fn sell_amount(&self) -> Option<Money> {
+        self.sell_amount
+    }
+
+    pub fn net_amount(&self) -> Option<Money> {
+        self.net_amount
+    }
+
+    pub fn turnover_rate(&self) -> Option<Ratio> {
+        self.turnover_rate
+    }
+
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+}
+
+impl DragonTigerSeat {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        entry_id: NonEmptyText,
+        instrument: InstrumentId,
+        trading_date: IsoDate,
+        side: DragonTigerSide,
+        rank: PositiveU32,
+        seat_name: NonEmptyText,
+        amount: Money,
+        buy_amount: Option<Money>,
+        sell_amount: Option<Money>,
+        net_amount: Option<Money>,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
+        validate_dragon_tiger_evidence(&trading_date, &evidence)?;
+        if rank.get() > 5 {
+            return Err(crate::CoreError::InvalidRequest(
+                "dragon-tiger seat rank must be between 1 and 5".into(),
+            ));
+        }
+        validate_non_negative_money("dragon-tiger seat amount", Some(amount))?;
+        validate_non_negative_money("dragon-tiger seat buy amount", buy_amount)?;
+        validate_non_negative_money("dragon-tiger seat sell amount", sell_amount)?;
+        validate_net_amount(buy_amount, sell_amount, net_amount)?;
+        let side_amount = match side {
+            DragonTigerSide::Buy => buy_amount,
+            DragonTigerSide::Sell => sell_amount,
+        };
+        if !side_amount.is_some_and(|value| money_values_match(value, amount)) {
+            return Err(crate::CoreError::InvalidRequest(
+                "dragon-tiger seat amount must match its side amount".into(),
+            ));
+        }
+        Ok(Self {
+            entry_id,
+            instrument,
+            trading_date,
+            side,
+            rank,
+            seat_name,
+            amount,
+            buy_amount,
+            sell_amount,
+            net_amount,
+            evidence,
+        })
+    }
+
+    pub fn entry_id(&self) -> &NonEmptyText {
+        &self.entry_id
+    }
+
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+
+    pub fn trading_date(&self) -> &IsoDate {
+        &self.trading_date
+    }
+
+    pub fn side(&self) -> DragonTigerSide {
+        self.side
+    }
+
+    pub fn rank(&self) -> PositiveU32 {
+        self.rank
+    }
+
+    pub fn seat_name(&self) -> &NonEmptyText {
+        &self.seat_name
+    }
+
+    pub fn amount(&self) -> Money {
+        self.amount
+    }
+
+    pub fn buy_amount(&self) -> Option<Money> {
+        self.buy_amount
+    }
+
+    pub fn sell_amount(&self) -> Option<Money> {
+        self.sell_amount
+    }
+
+    pub fn net_amount(&self) -> Option<Money> {
+        self.net_amount
+    }
+
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+}
+
+#[derive(Deserialize)]
+struct DragonTigerEntryWire {
+    entry_id: NonEmptyText,
+    instrument: InstrumentId,
+    trading_date: IsoDate,
+    reason: Option<NonEmptyText>,
+    buy_amount: Option<Money>,
+    sell_amount: Option<Money>,
+    net_amount: Option<Money>,
+    turnover_rate: Option<Ratio>,
+    evidence: SourceEvidence,
+}
+
+impl<'de> Deserialize<'de> for DragonTigerEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = DragonTigerEntryWire::deserialize(deserializer)?;
+        Self::new(
+            wire.entry_id,
+            wire.instrument,
+            wire.trading_date,
+            wire.reason,
+            wire.buy_amount,
+            wire.sell_amount,
+            wire.net_amount,
+            wire.turnover_rate,
+            wire.evidence,
+        )
+        .map_err(de::Error::custom)
+    }
+}
+
+#[derive(Deserialize)]
+struct DragonTigerSeatWire {
+    entry_id: NonEmptyText,
+    instrument: InstrumentId,
+    trading_date: IsoDate,
+    side: DragonTigerSide,
+    rank: PositiveU32,
+    seat_name: NonEmptyText,
+    amount: Money,
+    buy_amount: Option<Money>,
+    sell_amount: Option<Money>,
+    net_amount: Option<Money>,
+    evidence: SourceEvidence,
+}
+
+impl<'de> Deserialize<'de> for DragonTigerSeat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = DragonTigerSeatWire::deserialize(deserializer)?;
+        Self::new(
+            wire.entry_id,
+            wire.instrument,
+            wire.trading_date,
+            wire.side,
+            wire.rank,
+            wire.seat_name,
+            wire.amount,
+            wire.buy_amount,
+            wire.sell_amount,
+            wire.net_amount,
+            wire.evidence,
+        )
+        .map_err(de::Error::custom)
+    }
+}
+
+fn validate_dragon_tiger_evidence(
+    trading_date: &IsoDate,
+    evidence: &SourceEvidence,
+) -> Result<(), crate::CoreError> {
+    let source_at = evidence.source_at().ok_or_else(|| {
+        crate::CoreError::InvalidRequest(
+            "dragon-tiger record evidence must include source_at".into(),
+        )
+    })?;
+    let remainder = source_at
+        .strip_prefix(trading_date.as_str())
+        .ok_or_else(|| {
+            crate::CoreError::InvalidRequest(
+                "dragon-tiger record evidence date must match trading date".into(),
+            )
+        })?;
+    if !remainder.is_empty() && !remainder.starts_with('T') && !remainder.starts_with(' ') {
+        return Err(crate::CoreError::InvalidRequest(
+            "dragon-tiger record evidence date must match trading date".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_non_negative_money(name: &str, value: Option<Money>) -> Result<(), crate::CoreError> {
+    if value.is_some_and(|money| money.get().is_sign_negative()) {
+        return Err(crate::CoreError::InvalidRequest(format!(
+            "{name} must be non-negative"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_net_amount(
+    buy_amount: Option<Money>,
+    sell_amount: Option<Money>,
+    net_amount: Option<Money>,
+) -> Result<(), crate::CoreError> {
+    if let (Some(buy), Some(sell), Some(net)) = (buy_amount, sell_amount, net_amount) {
+        let expected = Money::new(buy.get() - sell.get())?;
+        if !money_values_match(net, expected) {
+            return Err(crate::CoreError::InvalidRequest(
+                "dragon-tiger net amount must equal buy amount minus sell amount".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn money_values_match(left: Money, right: Money) -> bool {
+    (left.get() - right.get()).abs() <= 0.01
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

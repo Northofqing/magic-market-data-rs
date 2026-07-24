@@ -2,10 +2,10 @@ use magic_market_core::{
     Announcement, AuctionSnapshot, Bar, BlockTrade, BoardFlow, BoardMembership, ConceptHit,
     ConsensusSnapshot, DividendPlan, DragonTigerEntry, DragonTigerSeat, FinancialStatement,
     FundFlowPoint, HolderCount, InvestorQuestion, LimitPoolEntry, LockupEvent, MarginBalance,
-    MarketRankingEntry, MarketStatistics, MinutePoint, MoneyFlow, NewsItem, OptionContract,
-    OptionGreeks, OptionQuote, OrderBook, PopularityRank, PostCloseFlow, ProviderId, Quote,
-    ResearchReport, SecurityMetadata, SecurityProfile, SemanticSearchDocument, SourcedRecord,
-    StrongStockReason, TechnicalBar, Trade,
+    MarketRankingEntry, MarketStatistics, MinutePoint, MoneyFlow, NewsItem, NorthboundDailyStat,
+    OptionContract, OptionGreeks, OptionQuote, OrderBook, PopularityRank, PostCloseFlow,
+    ProviderId, Quote, ResearchReport, SecurityMetadata, SecurityProfile, SemanticSearchDocument,
+    SourcedRecord, StrongStockReason, TechnicalBar, Trade,
 };
 
 fn assert_sourced<T: SourcedRecord>() {}
@@ -40,6 +40,7 @@ fn every_normalized_record_exposes_common_evidence() {
     assert_sourced::<LockupEvent>();
     assert_sourced::<DividendPlan>();
     assert_sourced::<PostCloseFlow>();
+    assert_sourced::<NorthboundDailyStat>();
     assert_sourced::<NewsItem>();
     assert_sourced::<Announcement>();
     assert_sourced::<InvestorQuestion>();

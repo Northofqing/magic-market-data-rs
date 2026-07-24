@@ -3,6 +3,7 @@ use crate::{
     Quantity, Ratio, SourceEvidence, SourcedRecord,
 };
 use serde::{de, Deserialize, Deserializer, Serialize};
+use std::collections::HashSet;
 
 use crate::BoardCategory;
 
@@ -122,6 +123,314 @@ pub struct DividendPlan {
     pub allotment_per_ten: Option<FiniteNumber>,
     pub reduction_ratio: Option<Ratio>,
     pub evidence: SourceEvidence,
+}
+
+/// Stock Connect northbound venue whose daily statistics are being requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NorthboundChannel {
+    Shanghai,
+    Shenzhen,
+}
+
+/// Daily quota balance as published by the source.
+///
+/// HKEX stopped publishing a meaningful quota balance in the historical-daily
+/// JavaScript and emits a sentinel instead. `Unavailable` preserves that
+/// distinction without relabeling turnover as net inflow.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub enum NorthboundQuotaBalance {
+    Amount(Money),
+    Unavailable,
+}
+
+impl<'de> Deserialize<'de> for NorthboundQuotaBalance {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        enum Wire {
+            Amount(Money),
+            Unavailable,
+        }
+
+        match Wire::deserialize(deserializer)? {
+            Wire::Amount(amount) if amount.get() < 0.0 => Err(de::Error::custom(
+                "northbound quota balance must be non-negative",
+            )),
+            Wire::Amount(amount) => Ok(Self::Amount(amount)),
+            Wire::Unavailable => Ok(Self::Unavailable),
+        }
+    }
+}
+
+/// One source-ranked security in a northbound daily Top 10 turnover table.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NorthboundTopTurnover {
+    rank: PositiveU32,
+    instrument: InstrumentId,
+    name: NonEmptyText,
+    total_turnover: Money,
+}
+
+impl NorthboundTopTurnover {
+    pub fn new(
+        rank: PositiveU32,
+        instrument: InstrumentId,
+        name: NonEmptyText,
+        total_turnover: Money,
+    ) -> Result<Self, crate::CoreError> {
+        if rank.get() > 10 {
+            return Err(crate::CoreError::InvalidRequest(
+                "northbound top-turnover rank must be at most 10".into(),
+            ));
+        }
+        if !matches!(
+            instrument.asset_class(),
+            crate::AssetClass::Equity | crate::AssetClass::Fund
+        ) {
+            return Err(crate::CoreError::InvalidRequest(
+                "northbound top-turnover instrument must be an equity or fund".into(),
+            ));
+        }
+        if total_turnover.get() < 0.0 {
+            return Err(crate::CoreError::InvalidValue {
+                field: "northbound_top_turnover",
+                value: total_turnover.get().to_string(),
+                reason: "must be non-negative",
+            });
+        }
+        Ok(Self {
+            rank,
+            instrument,
+            name,
+            total_turnover,
+        })
+    }
+
+    pub fn rank(&self) -> PositiveU32 {
+        self.rank
+    }
+
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+
+    pub fn name(&self) -> &NonEmptyText {
+        &self.name
+    }
+
+    pub fn total_turnover(&self) -> Money {
+        self.total_turnover
+    }
+}
+
+#[derive(Deserialize)]
+struct NorthboundTopTurnoverWire {
+    rank: PositiveU32,
+    instrument: InstrumentId,
+    name: NonEmptyText,
+    total_turnover: Money,
+}
+
+impl<'de> Deserialize<'de> for NorthboundTopTurnover {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = NorthboundTopTurnoverWire::deserialize(deserializer)?;
+        Self::new(wire.rank, wire.instrument, wire.name, wire.total_turnover)
+            .map_err(de::Error::custom)
+    }
+}
+
+/// One lossless official northbound daily-statistics record.
+///
+/// Money values use base CNY. Providers must convert source summary values
+/// expressed in RMB millions exactly once before constructing this record.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NorthboundDailyStat {
+    trading_date: IsoDate,
+    channel: NorthboundChannel,
+    total_turnover: Money,
+    total_trade_count: Quantity,
+    quota_balance: NorthboundQuotaBalance,
+    etf_turnover: Money,
+    top_turnover: Vec<NorthboundTopTurnover>,
+    evidence: SourceEvidence,
+}
+
+impl NorthboundDailyStat {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        trading_date: IsoDate,
+        channel: NorthboundChannel,
+        total_turnover: Money,
+        total_trade_count: Quantity,
+        quota_balance: NorthboundQuotaBalance,
+        etf_turnover: Money,
+        top_turnover: Vec<NorthboundTopTurnover>,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
+        if total_turnover.get() < 0.0 {
+            return Err(crate::CoreError::InvalidValue {
+                field: "northbound_total_turnover",
+                value: total_turnover.get().to_string(),
+                reason: "must be non-negative",
+            });
+        }
+        if total_trade_count.get().fract() != 0.0 {
+            return Err(crate::CoreError::InvalidValue {
+                field: "northbound_total_trade_count",
+                value: total_trade_count.get().to_string(),
+                reason: "must be an integer count",
+            });
+        }
+        if etf_turnover.get() < 0.0 {
+            return Err(crate::CoreError::InvalidValue {
+                field: "northbound_etf_turnover",
+                value: etf_turnover.get().to_string(),
+                reason: "must be non-negative",
+            });
+        }
+        if let NorthboundQuotaBalance::Amount(amount) = quota_balance {
+            if amount.get() < 0.0 {
+                return Err(crate::CoreError::InvalidValue {
+                    field: "northbound_quota_balance",
+                    value: amount.get().to_string(),
+                    reason: "must be non-negative",
+                });
+            }
+        }
+        if top_turnover.len() != 10 {
+            return Err(crate::CoreError::InvalidRequest(
+                "northbound daily statistics require exactly 10 ranked securities".into(),
+            ));
+        }
+        let expected_exchange = match channel {
+            NorthboundChannel::Shanghai => crate::Exchange::Shanghai,
+            NorthboundChannel::Shenzhen => crate::Exchange::Shenzhen,
+        };
+        let mut instruments = HashSet::with_capacity(top_turnover.len());
+        for (index, entry) in top_turnover.iter().enumerate() {
+            let expected_rank = u32::try_from(index + 1).map_err(|_| {
+                crate::CoreError::InvalidRequest("northbound top-turnover index exceeds u32".into())
+            })?;
+            if entry.rank().get() != expected_rank {
+                return Err(crate::CoreError::InvalidRequest(
+                    "northbound top-turnover ranks must be ordered 1 through 10".into(),
+                ));
+            }
+            if entry.instrument().exchange() != expected_exchange {
+                return Err(crate::CoreError::InvalidRequest(
+                    "northbound top-turnover exchange does not match channel".into(),
+                ));
+            }
+            if !instruments.insert(entry.instrument().clone()) {
+                return Err(crate::CoreError::InvalidRequest(
+                    "northbound top-turnover instruments must be unique".into(),
+                ));
+            }
+        }
+        let source_at = evidence.source_at().ok_or_else(|| {
+            crate::CoreError::InvalidRequest(
+                "northbound daily evidence must include source_at".into(),
+            )
+        })?;
+        let source_date_text = source_at.get(..10).ok_or_else(|| {
+            crate::CoreError::InvalidRequest(
+                "northbound daily source_at must start with YYYY-MM-DD".into(),
+            )
+        })?;
+        if !matches!(source_at.as_bytes().get(10), None | Some(b' ') | Some(b'T')) {
+            return Err(crate::CoreError::InvalidRequest(
+                "northbound daily source_at date must end or be followed by a time separator"
+                    .into(),
+            ));
+        }
+        let source_date = IsoDate::new(source_date_text)?;
+        if source_date != trading_date {
+            return Err(crate::CoreError::InvalidRequest(format!(
+                "northbound daily source date {} does not match trading date {}",
+                source_date.as_str(),
+                trading_date.as_str()
+            )));
+        }
+        Ok(Self {
+            trading_date,
+            channel,
+            total_turnover,
+            total_trade_count,
+            quota_balance,
+            etf_turnover,
+            top_turnover,
+            evidence,
+        })
+    }
+
+    pub fn trading_date(&self) -> &IsoDate {
+        &self.trading_date
+    }
+
+    pub fn channel(&self) -> NorthboundChannel {
+        self.channel
+    }
+
+    pub fn total_turnover(&self) -> Money {
+        self.total_turnover
+    }
+
+    pub fn total_trade_count(&self) -> Quantity {
+        self.total_trade_count
+    }
+
+    pub fn quota_balance(&self) -> NorthboundQuotaBalance {
+        self.quota_balance
+    }
+
+    pub fn etf_turnover(&self) -> Money {
+        self.etf_turnover
+    }
+
+    pub fn top_turnover(&self) -> &[NorthboundTopTurnover] {
+        &self.top_turnover
+    }
+
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+}
+
+#[derive(Deserialize)]
+struct NorthboundDailyStatWire {
+    trading_date: IsoDate,
+    channel: NorthboundChannel,
+    total_turnover: Money,
+    total_trade_count: Quantity,
+    quota_balance: NorthboundQuotaBalance,
+    etf_turnover: Money,
+    top_turnover: Vec<NorthboundTopTurnover>,
+    evidence: SourceEvidence,
+}
+
+impl<'de> Deserialize<'de> for NorthboundDailyStat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = NorthboundDailyStatWire::deserialize(deserializer)?;
+        Self::new(
+            wire.trading_date,
+            wire.channel,
+            wire.total_turnover,
+            wire.total_trade_count,
+            wire.quota_balance,
+            wire.etf_turnover,
+            wire.top_turnover,
+            wire.evidence,
+        )
+        .map_err(de::Error::custom)
+    }
 }
 
 /// One source-ranked post-close main-fund-flow record.
@@ -294,6 +603,7 @@ impl_sourced!(
     HolderCount,
     LockupEvent,
     DividendPlan,
+    NorthboundDailyStat,
     PostCloseFlow,
 );
 
@@ -460,6 +770,30 @@ impl PostCloseFlowRequest {
     }
 }
 
+/// Request for one official northbound daily-statistics channel and date.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NorthboundDailyRequest {
+    trading_date: IsoDate,
+    channel: NorthboundChannel,
+}
+
+impl NorthboundDailyRequest {
+    pub fn new(trading_date: IsoDate, channel: NorthboundChannel) -> Self {
+        Self {
+            trading_date,
+            channel,
+        }
+    }
+
+    pub fn trading_date(&self) -> &IsoDate {
+        &self.trading_date
+    }
+
+    pub fn channel(&self) -> NorthboundChannel {
+        self.channel
+    }
+}
+
 #[derive(Deserialize)]
 struct PostCloseFlowRequestWire {
     trading_date: IsoDate,
@@ -487,6 +821,8 @@ pub struct CapitalCapabilities {
     pub dividends: bool,
     #[serde(default)]
     pub post_close_flow: bool,
+    #[serde(default)]
+    pub northbound_daily_statistics: bool,
 }
 
 pub trait FundFlowSeries {
@@ -553,4 +889,12 @@ pub trait PostCloseFlows {
         &self,
         request: &PostCloseFlowRequest,
     ) -> Result<DataBatch<PostCloseFlow>, Self::Error>;
+}
+
+pub trait NorthboundDailyStatistics {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn northbound_daily_statistics(
+        &self,
+        request: &NorthboundDailyRequest,
+    ) -> Result<DataBatch<NorthboundDailyStat>, Self::Error>;
 }
