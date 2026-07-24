@@ -374,6 +374,10 @@ struct ScriptedAsyncBarsQuery {
     response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
     quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
     quote_response: RefCell<Option<Result<Vec<SecurityQuote>, TdxError>>>,
+    transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
+    transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
+    history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
+    history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
 }
 
 impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
@@ -411,6 +415,51 @@ impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
                 "scripted async quote response is not configured".into(),
             ))
         })
+    }
+
+    async fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        self.transaction_calls
+            .borrow_mut()
+            .push((market, code.to_owned(), start, count));
+        self.transaction_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted async current transaction response is not configured".into(),
+                ))
+            })
+    }
+
+    async fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        self.history_transaction_calls.borrow_mut().push((
+            market,
+            code.to_owned(),
+            start,
+            count,
+            date,
+        ));
+        self.history_transaction_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted async history transaction response is not configured".into(),
+                ))
+            })
     }
 }
 
@@ -456,6 +505,31 @@ async fn async_quote_seam_reorders_decoded_records() {
     assert_eq!(batch.records()[0].instrument().code(), "600001");
     assert_eq!(batch.records()[1].instrument().code(), "600002");
     assert_eq!(batch.provenance().source(), "tdx-async");
+}
+
+#[tokio::test]
+async fn async_trade_seam_uses_historical_query_and_short_terminal_page() {
+    let query = ScriptedAsyncBarsQuery {
+        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![
+            source_trade(0, 0),
+            source_trade(1, 1),
+        ])])),
+        ..Default::default()
+    };
+    let request = TradesRequest::new(instrument("600519"), 3)
+        .unwrap()
+        .with_date("2026-07-21")
+        .unwrap();
+
+    let batch = trades_async_with(&query, &request).await.unwrap();
+
+    assert!(query.transaction_calls.borrow().is_empty());
+    assert_eq!(
+        *query.history_transaction_calls.borrow(),
+        vec![(1, "600519".into(), 0, 3, 20260721)]
+    );
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.provenance().source(), "tdx-async-history");
 }
 
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
