@@ -369,6 +369,35 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
     }
 }
 
+trait AsyncTdxQuery {
+    async fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError>;
+}
+
+impl AsyncTdxQuery for crate::AsyncTdxHqClient {
+    async fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        crate::AsyncTdxHqClient::get_security_bars(
+            self, category, market, code, start, count, adjust,
+        )
+        .await
+    }
+}
+
 fn historical_bars_with(
     query: &impl BlockingTdxQuery,
     source: &str,
@@ -383,6 +412,25 @@ fn historical_bars_with(
         request.limit(),
         0,
     )?;
+    strict_bars(source, records)
+}
+
+async fn historical_bars_async_with(
+    query: &impl AsyncTdxQuery,
+    source: &str,
+    request: &BarsRequest,
+) -> Result<DataBatch<SecurityBar>, TdxError> {
+    reject_unsupported_bar_range(request)?;
+    let records = query
+        .security_bars(
+            category(request.interval())?,
+            market(request.instrument())?,
+            request.instrument().code(),
+            0,
+            request.limit(),
+            0,
+        )
+        .await?;
     strict_bars(source, records)
 }
 
@@ -1356,18 +1404,7 @@ impl AsyncHistoricalBars for crate::AsyncTdxHqClient {
         &self,
         request: &BarsRequest,
     ) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        reject_unsupported_bar_range(request)?;
-        let records = self
-            .get_security_bars(
-                category(request.interval())?,
-                market(request.instrument())?,
-                request.instrument().code(),
-                0,
-                request.limit(),
-                0,
-            )
-            .await?;
-        strict_bars("tdx-async", records)
+        historical_bars_async_with(self, "tdx-async", request).await
     }
 }
 
