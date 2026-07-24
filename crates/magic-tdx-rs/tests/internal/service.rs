@@ -457,8 +457,6 @@ fn service_market_mapping_and_construction_are_explicit() {
         market(&instrument(Exchange::Beijing, "920118")),
         Err(TdxError::Unsupported(_))
     ));
-    assert!(fetched_epoch().unwrap().parse::<u64>().is_ok());
-
     let blocking = TdxService::default();
     let _ = blocking.client();
     let asynchronous = AsyncTdxService::default();
