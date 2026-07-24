@@ -104,6 +104,81 @@ fn strict_bars(
     Ok(DataBatch::strict(records, provenance))
 }
 
+trait BlockingTdxQuery {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError>;
+}
+
+impl BlockingTdxQuery for TdxHqClient {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        TdxHqClient::get_security_bars(self, category, market, code, start, count, adjust)
+    }
+}
+
+impl BlockingTdxQuery for crate::TdxSmartClient {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        crate::TdxSmartClient::get_security_bars(
+            self, category, market, code, start, count, adjust,
+        )
+    }
+}
+
+impl BlockingTdxQuery for crate::TdxDirectClient {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        crate::TdxDirectClient::get_security_bars(
+            self, category, market, code, start, count, adjust,
+        )
+    }
+}
+
+fn historical_bars_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &BarsRequest,
+) -> Result<DataBatch<SecurityBar>, TdxError> {
+    reject_unsupported_bar_range(request)?;
+    let records = query.security_bars(
+        category(request.interval())?,
+        market(request.instrument())?,
+        request.instrument().code(),
+        0,
+        request.limit(),
+        0,
+    )?;
+    strict_bars(source, records)
+}
+
 fn compact_date(value: &str) -> Result<u32, TdxError> {
     let digits = value.replace('-', "");
     if digits.len() != 8 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -681,16 +756,7 @@ impl HistoricalBars for TdxHqClient {
     type Bar = SecurityBar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        reject_unsupported_bar_range(request)?;
-        let records = self.get_security_bars(
-            category(request.interval())?,
-            market(request.instrument())?,
-            request.instrument().code(),
-            0,
-            request.limit(),
-            0,
-        )?;
-        strict_bars("tdx", records)
+        historical_bars_with(self, "tdx", request)
     }
 }
 
@@ -1012,16 +1078,7 @@ impl HistoricalBars for crate::TdxSmartClient {
     type Bar = SecurityBar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        reject_unsupported_bar_range(request)?;
-        let records = self.get_security_bars(
-            category(request.interval())?,
-            market(request.instrument())?,
-            request.instrument().code(),
-            0,
-            request.limit(),
-            0,
-        )?;
-        strict_bars("tdx-smart", records)
+        historical_bars_with(self, "tdx-smart", request)
     }
 }
 
@@ -1064,16 +1121,7 @@ impl HistoricalBars for crate::TdxDirectClient {
     type Bar = SecurityBar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        reject_unsupported_bar_range(request)?;
-        let records = self.get_security_bars(
-            category(request.interval())?,
-            market(request.instrument())?,
-            request.instrument().code(),
-            0,
-            request.limit(),
-            0,
-        )?;
-        strict_bars("tdx-direct", records)
+        historical_bars_with(self, "tdx-direct", request)
     }
 }
 

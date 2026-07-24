@@ -55,7 +55,7 @@ fn source_bar() -> SecurityBar {
 
 #[derive(Default)]
 struct ScriptedBarsQuery {
-    calls: RefCell<Vec<(u8, u8, String, u16, u16, u8)>>,
+    calls: RefCell<Vec<(u8, u8, String, u32, u16, u8)>>,
     response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
 }
 
@@ -65,7 +65,7 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
         category: u8,
         market: u8,
         code: &str,
-        start: u16,
+        start: u32,
         count: u16,
         adjust: u8,
     ) -> Result<Vec<SecurityBar>, TdxError> {
