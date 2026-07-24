@@ -384,6 +384,23 @@ trait AsyncTdxQuery {
         &self,
         instruments: &[(u8, &str)],
     ) -> Result<Vec<SecurityQuote>, TdxError>;
+
+    async fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError>;
+
+    async fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError>;
 }
 
 impl AsyncTdxQuery for crate::AsyncTdxHqClient {
@@ -407,6 +424,30 @@ impl AsyncTdxQuery for crate::AsyncTdxHqClient {
         instruments: &[(u8, &str)],
     ) -> Result<Vec<SecurityQuote>, TdxError> {
         crate::AsyncTdxHqClient::get_security_quotes(self, instruments).await
+    }
+
+    async fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        crate::AsyncTdxHqClient::get_transaction_data(self, market, code, start, count).await
+    }
+
+    async fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        crate::AsyncTdxHqClient::get_history_transaction_data(
+            self, market, code, start, count, date,
+        )
+        .await
     }
 }
 
@@ -457,6 +498,75 @@ async fn realtime_quotes_async_with(
         .collect::<Result<_, _>>()?;
     let records = query.security_quotes(&pairs).await?;
     normalize_quotes(source, instruments, records)
+}
+
+async fn trades_async_with(
+    query: &impl AsyncTdxQuery,
+    request: &TradesRequest,
+) -> Result<DataBatch<Trade>, TdxError> {
+    let historical_date = request.date().map(tdx_trade_date).transpose()?;
+    let request_market = market(request.instrument())?;
+    let page_size = if historical_date.is_some() {
+        HISTORICAL_TRADE_PAGE_SIZE
+    } else {
+        CURRENT_TRADE_PAGE_SIZE
+    };
+    let mut records = Vec::with_capacity(usize::from(request.limit()));
+    let mut start = 0u16;
+    let mut remaining = request.limit();
+    while remaining != 0 {
+        let requested = remaining.min(page_size);
+        let page = match historical_date {
+            Some(date) => {
+                query
+                    .history_transaction_data(
+                        request_market,
+                        request.instrument().code(),
+                        start,
+                        requested,
+                        date,
+                    )
+                    .await?
+            }
+            None => {
+                query
+                    .transaction_data(
+                        request_market,
+                        request.instrument().code(),
+                        start,
+                        requested,
+                    )
+                    .await?
+            }
+        };
+        if page.len() > usize::from(requested) {
+            return Err(TdxError::InvalidData(
+                "TDX async trade page exceeds requested cardinality".into(),
+            ));
+        }
+        let fetched = u16::try_from(page.len())
+            .map_err(|_| TdxError::InvalidData("TDX trade page is too large".into()))?;
+        records.extend(page);
+        if fetched < requested {
+            break;
+        }
+        remaining -= fetched;
+        if remaining == 0 {
+            break;
+        }
+        start = start
+            .checked_add(fetched)
+            .ok_or_else(|| TdxError::InvalidData("TDX trade offset overflow".into()))?;
+    }
+    normalize_trade_records(
+        if historical_date.is_some() {
+            "tdx-async-history"
+        } else {
+            "tdx-async-current"
+        },
+        request,
+        records,
+    )
 }
 
 fn realtime_quotes_with(
@@ -1448,67 +1558,7 @@ impl AsyncTrades for crate::AsyncTdxHqClient {
     type Error = TdxError;
 
     async fn trades_async(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        let historical_date = request.date().map(tdx_trade_date).transpose()?;
-        let request_market = market(request.instrument())?;
-        let page_size = if historical_date.is_some() {
-            HISTORICAL_TRADE_PAGE_SIZE
-        } else {
-            CURRENT_TRADE_PAGE_SIZE
-        };
-        let mut records = Vec::with_capacity(usize::from(request.limit()));
-        let mut start = 0u16;
-        let mut remaining = request.limit();
-        while remaining != 0 {
-            let requested = remaining.min(page_size);
-            let page = match historical_date {
-                Some(date) => {
-                    self.get_history_transaction_data(
-                        request_market,
-                        request.instrument().code(),
-                        start,
-                        requested,
-                        date,
-                    )
-                    .await?
-                }
-                None => {
-                    self.get_transaction_data(
-                        request_market,
-                        request.instrument().code(),
-                        start,
-                        requested,
-                    )
-                    .await?
-                }
-            };
-            if page.len() > usize::from(requested) {
-                return Err(TdxError::InvalidData(
-                    "TDX async trade page exceeds requested cardinality".into(),
-                ));
-            }
-            let fetched = u16::try_from(page.len())
-                .map_err(|_| TdxError::InvalidData("TDX trade page is too large".into()))?;
-            records.extend(page);
-            if fetched < requested {
-                break;
-            }
-            remaining -= fetched;
-            if remaining == 0 {
-                break;
-            }
-            start = start
-                .checked_add(fetched)
-                .ok_or_else(|| TdxError::InvalidData("TDX trade offset overflow".into()))?;
-        }
-        normalize_trade_records(
-            if historical_date.is_some() {
-                "tdx-async-history"
-            } else {
-                "tdx-async-current"
-            },
-            request,
-            records,
-        )
+        trades_async_with(self, request).await
     }
 }
 
