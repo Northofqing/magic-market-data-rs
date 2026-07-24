@@ -1,10 +1,20 @@
 use super::*;
+use crate::transport::{read_http_response, HttpsTransport};
 use std::collections::VecDeque;
+use std::io::{self, Read};
 
 #[derive(Clone)]
 struct FixtureTransport {
     responses: Arc<Mutex<VecDeque<HttpResponse>>>,
     requests: Arc<Mutex<Vec<HttpRequest>>>,
+}
+
+struct FailingReader;
+
+impl Read for FailingReader {
+    fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::other("fixture read failed"))
+    }
 }
 
 impl FixtureTransport {
@@ -585,4 +595,492 @@ fn capabilities_do_not_claim_unimplemented_families() {
     assert!(capabilities.limit_pools.reasons);
     assert!(!capabilities.research.reports);
     assert!(!capabilities.limit_pools.broken);
+}
+
+#[test]
+fn bounded_https_reader_and_transport_constructor_fail_explicitly() {
+    let response = read_http_response(
+        200,
+        DEFAULT_POPULARITY_URL.to_owned(),
+        Some("application/json".to_owned()),
+        &b"{}"[..],
+    )
+    .unwrap();
+    assert_eq!(response.body, b"{}");
+    assert!(matches!(
+        read_http_response(200, DEFAULT_POPULARITY_URL.to_owned(), None, FailingReader),
+        Err(ThsError::Transport(_))
+    ));
+    assert!(matches!(
+        read_http_response(
+            200,
+            DEFAULT_POPULARITY_URL.to_owned(),
+            None,
+            vec![0; MAX_RESPONSE_BYTES + 1].as_slice()
+        ),
+        Err(ThsError::Incomplete(_))
+    ));
+    assert!(matches!(
+        HttpsTransport::new(Duration::ZERO),
+        Err(ThsError::InvalidRequest(_))
+    ));
+    assert!(matches!(
+        HttpsTransport::new(Duration::from_secs(61)),
+        Err(ThsError::InvalidRequest(_))
+    ));
+    HttpsTransport::new(Duration::from_millis(1)).unwrap();
+}
+
+#[test]
+fn constructors_configuration_and_debug_are_bounded() {
+    let config = ThsConfig {
+        timeout: Duration::ZERO,
+        ..ThsConfig::default()
+    };
+    assert!(matches!(
+        ThsClient::with_config(config),
+        Err(ThsError::InvalidRequest(_))
+    ));
+    let config = ThsConfig {
+        timeout: Duration::from_secs(61),
+        ..ThsConfig::default()
+    };
+    assert!(ThsClient::with_transport(config, FixtureTransport::new(vec![])).is_err());
+    let config = ThsConfig {
+        minimum_interval: Duration::from_millis(999),
+        ..ThsConfig::default()
+    };
+    assert!(ThsClient::with_transport(config, FixtureTransport::new(vec![])).is_err());
+    let client = ThsClient::new().unwrap();
+    assert!(format!("{client:?}").contains("ThsClient"));
+    ThsClient::with_config(ThsConfig::default()).unwrap();
+}
+
+#[test]
+fn request_response_and_media_guards_cover_every_failure_class() {
+    let request = HttpRequest {
+        method: HttpMethod::Get,
+        url: DEFAULT_POPULARITY_URL.to_owned(),
+        headers: vec![],
+    };
+    for value in [
+        "http://dq.10jqka.com.cn/x",
+        "https://user@dq.10jqka.com.cn/x",
+        "https://dq.10jqka.com.cn:444/x",
+        "https://example.com/x",
+        "not a url",
+    ] {
+        assert!(validate_url(value).is_err(), "{value}");
+    }
+    assert!(validate_request(&request).is_ok());
+
+    let make = |status, final_url: &str, content_type: Option<&str>, body: &[u8]| HttpResponse {
+        status,
+        final_url: final_url.to_owned(),
+        content_type: content_type.map(str::to_owned),
+        body: body.to_vec(),
+    };
+    assert!(validate_response(&request, &make(200, DEFAULT_POPULARITY_URL, None, b"{}")).is_ok());
+    assert!(matches!(
+        validate_response(&request, &make(401, DEFAULT_POPULARITY_URL, None, b"{}")),
+        Err(ThsError::Authentication(401))
+    ));
+    assert!(matches!(
+        validate_response(&request, &make(403, DEFAULT_POPULARITY_URL, None, b"{}")),
+        Err(ThsError::Authentication(403))
+    ));
+    assert!(matches!(
+        validate_response(&request, &make(429, DEFAULT_POPULARITY_URL, None, b"{}")),
+        Err(ThsError::RateLimited)
+    ));
+    assert!(matches!(
+        validate_response(&request, &make(503, DEFAULT_POPULARITY_URL, None, b"{}")),
+        Err(ThsError::HttpStatus(503))
+    ));
+    assert!(validate_response(
+        &request,
+        &make(200, "https://dq.10jqka.com.cn/other", None, b"{}")
+    )
+    .is_err());
+    assert!(validate_response(&request, &make(200, "https://example.com/x", None, b"{}")).is_err());
+    assert!(validate_response(
+        &request,
+        &make(
+            200,
+            DEFAULT_POPULARITY_URL,
+            None,
+            &vec![0; MAX_RESPONSE_BYTES + 1]
+        )
+    )
+    .is_err());
+
+    assert!(ensure_json(&make(200, DEFAULT_POPULARITY_URL, Some("text/html"), b"{}")).is_err());
+    assert!(ensure_json(&make(
+        200,
+        DEFAULT_POPULARITY_URL,
+        Some("application/json"),
+        b" []"
+    ))
+    .is_err());
+    assert!(ensure_json(&make(200, DEFAULT_POPULARITY_URL, None, b"  {}")).is_ok());
+    assert!(ensure_html(&make(
+        200,
+        DEFAULT_POPULARITY_URL,
+        Some("application/json"),
+        b"<html>"
+    ))
+    .is_err());
+    assert!(ensure_html(&make(200, DEFAULT_POPULARITY_URL, None, b"plain")).is_err());
+    assert!(ensure_html(&make(
+        200,
+        DEFAULT_POPULARITY_URL,
+        Some("text/html"),
+        b"<table>"
+    ))
+    .is_ok());
+}
+
+#[test]
+fn primitive_schema_helpers_preserve_absence_and_reject_bad_shapes() {
+    let object = serde_json::json!({"a": 1});
+    let array = serde_json::json!([1]);
+    assert_eq!(
+        required_string(Some(&serde_json::json!(" a  b ")), "x").unwrap(),
+        "a b"
+    );
+    assert!(required_string(None, "x").is_err());
+    assert_eq!(optional_string(Some(&Value::Null), "x").unwrap(), None);
+    assert!(optional_string(Some(&serde_json::json!(1)), "x").is_err());
+    assert!(optional_nonempty(Some(&serde_json::json!("x")), "x")
+        .unwrap()
+        .is_some());
+    assert!(optional_object(Some(&object), "x").unwrap().is_some());
+    assert!(optional_object(Some(&array), "x").is_err());
+    assert!(optional_array(Some(&array), "x").unwrap().is_some());
+    assert!(optional_array(Some(&object), "x").is_err());
+
+    assert_eq!(
+        required_f64(Some(&serde_json::json!("1.5")), "x").unwrap(),
+        1.5
+    );
+    assert_eq!(
+        optional_f64(Some(&serde_json::json!("--")), "x").unwrap(),
+        None
+    );
+    assert!(optional_f64(Some(&serde_json::json!("NaN")), "x").is_err());
+    assert_eq!(required_u64(Some(&serde_json::json!("7")), "x").unwrap(), 7);
+    assert_eq!(optional_u64(Some(&Value::Null), "x").unwrap(), None);
+    assert!(optional_u64(Some(&serde_json::json!(-1)), "x").is_err());
+    assert_eq!(
+        required_i64(Some(&serde_json::json!("-7")), "x").unwrap(),
+        -7
+    );
+    assert_eq!(
+        optional_i64(Some(&serde_json::json!("")), "x").unwrap(),
+        None
+    );
+    assert!(optional_i64(Some(&array), "x").is_err());
+
+    assert_eq!(split_subjects(" A + + B ").unwrap().len(), 2);
+    assert_eq!(parse_streak("首板"), Some(1));
+    assert_eq!(parse_streak("12天8板"), Some(8));
+    assert_eq!(parse_streak("未知"), None);
+    assert_eq!(strip_html("<b>A</b>&nbsp;&amp;&lt;&gt;"), "A &<>");
+    assert_eq!(header_index(&["年度".into()], "年度").unwrap(), 0);
+    assert!(header_index(&["年度".into(), "年度".into()], "年度").is_err());
+    assert_eq!(parse_html_optional_number("--", "x").unwrap(), None);
+    assert!(parse_html_optional_number("NaN", "x").is_err());
+    assert_eq!(
+        extract_as_of_date("截至2026-07-24"),
+        Some("2026-07-24".into())
+    );
+    assert_eq!(extract_as_of_date("截至bad"), None);
+
+    assert!(require_status(&serde_json::json!({"status": 0}), "status").is_ok());
+    assert!(require_status(
+        &serde_json::json!({"status": 1, "errormsg": "bad"}),
+        "status"
+    )
+    .is_err());
+    assert!(require_status(
+        &serde_json::json!({"status": 2, "message": "bad"}),
+        "status"
+    )
+    .is_err());
+}
+
+#[test]
+fn consensus_parser_rejects_malformed_and_contradictory_tables() {
+    assert_eq!(parse_consensus_table("<html/>").unwrap(), None);
+    for html in [
+        "汇总--预测年报每股收益",
+        "<table>汇总--预测年报每股收益",
+        "<table>汇总--预测年报每股收益</table>",
+        "<table><tr><th>年度</th></tr>汇总--预测年报每股收益</table>",
+        "<table><tr><th>年度</th><th>预测机构数</th><th>最小值</th><th>均值</th><th>最大值</th></tr><tr><td>x</td><td>1</td><td>1</td><td>1</td><td>1</td></tr>汇总--预测年报每股收益</table>",
+        "<table><tr><th>年度</th><th>预测机构数</th><th>最小值</th><th>均值</th><th>最大值</th></tr><tr><td>2027</td><td>x</td><td>1</td><td>1</td><td>1</td></tr>汇总--预测年报每股收益</table>",
+        "<table><tr><th>年度</th><th>预测机构数</th><th>最小值</th><th>均值</th><th>最大值</th></tr><tr><td>2027</td><td>1</td><td>2</td><td>1</td><td>3</td></tr>汇总--预测年报每股收益</table>",
+        "<table><tr><th>年度</th><th>预测机构数</th><th>最小值</th><th>均值</th><th>最大值</th></tr><tr><td>2027</td><td>1</td><td>1</td><td>4</td><td>3</td></tr>汇总--预测年报每股收益</table>",
+        "<table><tr><th>年度</th><th>预测机构数</th><th>最小值</th><th>均值</th><th>最大值</th></tr><tr><td>2027</td><td>1</td><td>--</td><td>--</td><td>--</td></tr>汇总--预测年报每股收益</table>",
+    ] {
+        assert!(parse_consensus_table(html).is_err(), "{html}");
+    }
+    assert!(extract_rows("<tr").is_err());
+    assert!(extract_rows("<tr>").is_err());
+    assert!(extract_cells("<td").is_err());
+    assert!(extract_cells("<td>x").is_err());
+}
+
+#[test]
+fn public_preflight_limits_reject_before_transport() {
+    let client = ThsClient::with_test_transport(FixtureTransport::new(vec![]));
+    assert!(client.consensus(&[]).is_err());
+    let many = (0..=MAX_CONSENSUS_INSTRUMENTS)
+        .map(|index| sh(&format!("6{index:05}")))
+        .collect::<Vec<_>>();
+    assert!(client.consensus(&many).is_err());
+    assert!(client.consensus(&[sh("600396"), sh("600396")]).is_err());
+    let index = InstrumentId::new(Exchange::Shanghai, "000001", AssetClass::Index).unwrap();
+    assert!(client.consensus(&[index]).is_err());
+
+    let no_date = InstrumentSignalRequest::new(sh("600396"), PositiveU32::new(1).unwrap()).unwrap();
+    assert!(client.strong_stock_reasons(&no_date).is_err());
+    let too_many = InstrumentSignalRequest::new(
+        sh("600396"),
+        PositiveU32::new(MAX_STRONG_LIMIT + 1).unwrap(),
+    )
+    .unwrap()
+    .with_trading_date(magic_market_core::IsoDate::new("2026-07-24").unwrap());
+    assert!(client.strong_stock_reasons(&too_many).is_err());
+
+    let wrong_pool = LimitPoolRequest::new(
+        LimitPoolKind::Broken,
+        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+        PositiveU32::new(1).unwrap(),
+    )
+    .unwrap();
+    assert!(client.limit_pool(&wrong_pool).is_err());
+    let large_pool = LimitPoolRequest::new(
+        LimitPoolKind::Upper,
+        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+        PositiveU32::new(MAX_LIMIT_POOL + 1).unwrap(),
+    )
+    .unwrap();
+    assert!(client.limit_pool(&large_pool).is_err());
+    assert!(client
+        .popularity(PositiveU32::new(MAX_POPULARITY + 1).unwrap())
+        .is_err());
+}
+
+#[test]
+fn identity_and_time_helpers_cover_verified_venues_and_boundaries() {
+    for (code, suffix) in [
+        ("600396", "SH"),
+        ("000001", "SZ"),
+        ("430001", "BJ"),
+        ("830001", "BJ"),
+        ("920001", "BJ"),
+    ] {
+        let instrument = equity_from_code(code).unwrap();
+        assert!(instrument_identity(&instrument).ends_with(suffix));
+    }
+    assert!(equity_from_code("bad").is_err());
+    assert!(equity_from_code("100001").is_err());
+    assert_eq!(
+        unix_seconds_to_china_iso(1_784_822_400).unwrap(),
+        "2026-07-24T00:00:00+08:00"
+    );
+    assert!(unix_seconds_to_china_iso(i64::MAX).is_err());
+    assert_eq!(civil_from_days(-719_468), None);
+    assert_eq!(civil_from_days(i64::MAX), None);
+    let provenance = provenance("tonghuashun", "1784822400", "batch", Some("2026-07-24")).unwrap();
+    assert_eq!(provenance.source_at(), Some("2026-07-24"));
+}
+
+fn limit_url_for(request: &LimitPoolRequest) -> String {
+    let mut url = Url::parse(DEFAULT_LIMIT_URL).unwrap();
+    url.query_pairs_mut()
+        .append_pair("page", "1")
+        .append_pair("limit", &request.limit().get().to_string())
+        .append_pair(
+            "field",
+            "199112,10,9001,330323,330324,330325,9002,330329,133971,133970,1968584,3475914,9003,9004",
+        )
+        .append_pair("filter", "HS,GEM2STAR")
+        .append_pair("order_field", "330324")
+        .append_pair("order_type", "0")
+        .append_pair(
+            "date",
+            &request.trading_date().as_str().replace('-', ""),
+        );
+    url.to_string()
+}
+
+fn popularity_url() -> String {
+    let mut url = Url::parse(DEFAULT_POPULARITY_URL).unwrap();
+    url.query_pairs_mut()
+        .append_pair("stock_type", "a")
+        .append_pair("type", "hour")
+        .append_pair("list_type", "normal");
+    url.to_string()
+}
+
+#[test]
+fn real_client_paths_cover_pacing_transport_and_consensus_failures() {
+    ThsClient::with_transport(ThsConfig::default(), FixtureTransport::new(vec![])).unwrap();
+
+    let url = "https://basic.10jqka.com.cn/600519/worth.html";
+    let invalid_gbk = HttpResponse {
+        status: 200,
+        final_url: url.into(),
+        content_type: Some("text/html".into()),
+        body: [b"<html>".as_slice(), &[0x81]].concat(),
+    };
+    let client = ThsClient::with_test_transport(FixtureTransport::new(vec![invalid_gbk]));
+    assert!(matches!(
+        client.consensus(&[sh("600519")]),
+        Err(ThsError::Decode(_))
+    ));
+
+    let client = ThsClient::with_test_transport(FixtureTransport::new(vec![html_response(
+        url,
+        "<html>source page without requested identity</html>",
+    )]));
+    assert!(matches!(
+        client.consensus(&[sh("600519")]),
+        Err(ThsError::Schema(_))
+    ));
+
+    let client = ThsClient::with_test_transport(FixtureTransport::new(vec![html_response(
+        url,
+        "<html>600519 source page without EPS table</html>",
+    )]));
+    assert!(matches!(
+        client.consensus(&[sh("600519")]),
+        Err(ThsError::Schema(_))
+    ));
+
+    let response_url = popularity_url();
+    let transport = FixtureTransport::new(vec![
+        json_response(
+            &response_url,
+            r#"{"status_code":0,"data":{"stock_list":[]}}"#,
+        ),
+        json_response(
+            &response_url,
+            r#"{"status_code":0,"data":{"stock_list":[]}}"#,
+        ),
+    ]);
+    let client = ThsClient::from_parts(
+        Duration::from_millis(1),
+        ThsConfig::default(),
+        Arc::new(transport),
+    );
+    assert!(client.popularity(PositiveU32::new(1).unwrap()).is_err());
+    assert!(client.popularity(PositiveU32::new(1).unwrap()).is_err());
+}
+
+#[test]
+fn strong_stock_schema_bounds_and_duplicates_fail_closed() {
+    let date = magic_market_core::IsoDate::new("2026-07-24").unwrap();
+    let request = InstrumentSignalRequest::new(sh("600396"), PositiveU32::new(2).unwrap())
+        .unwrap()
+        .with_trading_date(date.clone());
+    let url = format!(
+        "{DEFAULT_STRONG_ORIGIN}/event/api/getharden/date/{}/orderby/date/orderway/desc/charset/GBK/",
+        date.as_str()
+    );
+    let cases = [
+        serde_json::json!({"errocode":0}),
+        serde_json::json!({"errocode":0,"data":vec![serde_json::json!({"code":"x"});501]}),
+        serde_json::json!({"errocode":0,"data":[
+            {"code":"600396","reason":"A"},
+            {"code":"600396","reason":"B"}
+        ]}),
+    ];
+    for document in cases {
+        let body = serde_json::to_string(&document).unwrap();
+        let client =
+            ThsClient::with_test_transport(FixtureTransport::new(vec![json_response(&url, &body)]));
+        assert!(client.strong_stock_reasons(&request).is_err());
+    }
+}
+
+#[test]
+fn limit_pool_schema_bounds_duplicates_and_numbers_fail_closed() {
+    let request = LimitPoolRequest::new(
+        LimitPoolKind::Upper,
+        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+        PositiveU32::new(200).unwrap(),
+    )
+    .unwrap();
+    let url = limit_url_for(&request);
+    let base = serde_json::json!({
+        "code":"600396","latest":16.0,"change_rate":10.0
+    });
+    let cases = [
+        serde_json::json!({"status_code":0,"data":{}}),
+        serde_json::json!({"status_code":0,"data":{"info":vec![base.clone();201]}}),
+        serde_json::json!({"status_code":0,"data":{"info":[base.clone(),base.clone()]}}),
+        serde_json::json!({"status_code":0,"data":{"info":[{
+            "code":"600396","latest":16.0,"change_rate":10.0,"order_amount":-1
+        }]}}),
+        serde_json::json!({"status_code":0,"data":{"info":[{
+            "code":"600396","latest":16.0,"change_rate":10.0,
+            "open_num":u64::MAX
+        }]}}),
+    ];
+    for document in cases {
+        let body = serde_json::to_string(&document).unwrap();
+        let client =
+            ThsClient::with_test_transport(FixtureTransport::new(vec![json_response(&url, &body)]));
+        assert!(client.limit_pool(&request).is_err());
+    }
+}
+
+#[test]
+fn popularity_schema_bounds_duplicates_and_rank_overflow_fail_closed() {
+    let url = popularity_url();
+    let base = serde_json::json!({"code":"600396","order":1});
+    let cases = [
+        serde_json::json!({"status_code":0,"data":{}}),
+        serde_json::json!({"status_code":0,"data":{"stock_list":vec![base.clone();101]}}),
+        serde_json::json!({"status_code":0,"data":{"stock_list":[base.clone(),base.clone()]}}),
+        serde_json::json!({"status_code":0,"data":{"stock_list":[{
+            "code":"600396","order":u64::from(u32::MAX)+1
+        }]}}),
+    ];
+    for document in cases {
+        let body = serde_json::to_string(&document).unwrap();
+        let client =
+            ThsClient::with_test_transport(FixtureTransport::new(vec![json_response(&url, &body)]));
+        assert!(client.popularity(PositiveU32::new(100).unwrap()).is_err());
+    }
+}
+
+#[test]
+fn residual_parser_and_identity_branches_are_explicit() {
+    let short = "<table><tr><th>年度</th><th>预测机构数</th><th>最小值</th><th>均值</th><th>最大值</th></tr><tr><td>2027</td></tr>汇总--预测年报每股收益</table>";
+    assert!(parse_consensus_table(short).is_err());
+    assert_eq!(optional_object(None, "x").unwrap(), None);
+    assert_eq!(optional_array(None, "x").unwrap(), None);
+    assert_eq!(optional_f64(None, "x").unwrap(), None);
+    assert_eq!(optional_f64(Some(&Value::Null), "x").unwrap(), None);
+    assert!(optional_f64(Some(&serde_json::json!([])), "x").is_err());
+    assert_eq!(optional_u64(None, "x").unwrap(), None);
+    assert_eq!(
+        optional_u64(Some(&serde_json::json!("")), "x").unwrap(),
+        None
+    );
+    assert!(optional_u64(Some(&serde_json::json!([])), "x").is_err());
+    assert_eq!(optional_i64(None, "x").unwrap(), None);
+    assert_eq!(optional_i64(Some(&Value::Null), "x").unwrap(), None);
+    assert!(optional_i64(Some(&serde_json::json!([])), "x").is_err());
+
+    for (exchange, code) in [(Exchange::Beijing, "430001"), (Exchange::Beijing, "830001")] {
+        let instrument = InstrumentId::new(exchange, code, AssetClass::Equity).unwrap();
+        assert!(validate_equity(&instrument).is_ok());
+    }
+    let short = InstrumentId::new(Exchange::Shanghai, "123", AssetClass::Equity).unwrap();
+    assert!(validate_equity(&short).is_err());
 }
