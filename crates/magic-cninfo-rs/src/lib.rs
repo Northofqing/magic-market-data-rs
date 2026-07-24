@@ -1099,3 +1099,7 @@ fn civil_from_days(days_since_epoch: i64) -> Option<(i64, i64, i64)> {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/unit/coverage_tests.rs"]
+mod coverage_tests;

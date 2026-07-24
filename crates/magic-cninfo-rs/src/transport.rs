@@ -54,28 +54,10 @@ impl HttpsTransport {
         let status = response.status();
         let final_url = response.get_url().to_owned();
         let content_type = response.header("Content-Type").map(str::to_owned);
-        let mut body = Vec::new();
-        response
-            .into_reader()
-            .take((MAX_RESPONSE_BYTES + 1) as u64)
-            .read_to_end(&mut body)
-            .map_err(|error| CninfoError::Transport(error.to_string()))?;
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(CninfoError::Incomplete(format!(
-                "response body exceeds {MAX_RESPONSE_BYTES} bytes"
-            )));
-        }
-        Ok(HttpResponse {
-            status,
-            final_url,
-            content_type,
-            body,
-        })
+        read_http_response(status, final_url, content_type, response.into_reader())
     }
-}
 
-impl CninfoTransport for HttpsTransport {
-    fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, CninfoError> {
+    pub(crate) fn prepare(&self, request: &HttpRequest) -> ureq::Request {
         let mut wire = match request.method {
             HttpMethod::Get => self.agent.get(&request.url),
             HttpMethod::Post => self.agent.post(&request.url),
@@ -83,14 +65,51 @@ impl CninfoTransport for HttpsTransport {
         for (name, value) in &request.headers {
             wire = wire.set(name, value);
         }
+        wire
+    }
+}
+
+pub(crate) fn read_http_response(
+    status: u16,
+    final_url: String,
+    content_type: Option<String>,
+    reader: impl Read,
+) -> Result<HttpResponse, CninfoError> {
+    let mut body = Vec::new();
+    reader
+        .take((MAX_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut body)
+        .map_err(|error| CninfoError::Transport(error.to_string()))?;
+    if body.len() > MAX_RESPONSE_BYTES {
+        return Err(CninfoError::Incomplete(format!(
+            "response body exceeds {MAX_RESPONSE_BYTES} bytes"
+        )));
+    }
+    Ok(HttpResponse {
+        status,
+        final_url,
+        content_type,
+        body,
+    })
+}
+
+pub(crate) fn collect_transport_result(
+    result: Result<ureq::Response, ureq::Error>,
+) -> Result<HttpResponse, CninfoError> {
+    match result {
+        Ok(response) => HttpsTransport::collect(response),
+        Err(ureq::Error::Status(_, response)) => HttpsTransport::collect(response),
+        Err(ureq::Error::Transport(error)) => Err(CninfoError::Transport(error.to_string())),
+    }
+}
+
+impl CninfoTransport for HttpsTransport {
+    fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, CninfoError> {
+        let wire = self.prepare(request);
         let result = match request.method {
             HttpMethod::Get => wire.call(),
             HttpMethod::Post => wire.send_bytes(&request.body),
         };
-        match result {
-            Ok(response) => Self::collect(response),
-            Err(ureq::Error::Status(_, response)) => Self::collect(response),
-            Err(ureq::Error::Transport(error)) => Err(CninfoError::Transport(error.to_string())),
-        }
+        collect_transport_result(result)
     }
 }
