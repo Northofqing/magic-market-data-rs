@@ -257,8 +257,25 @@ where
     Provider: BoardMembershipProvider + Send + Sync + 'static,
     Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
 {
-    SourceFn::new(provider_id, move |request| {
-        provider.board_memberships(request).map_err(&classify)
+    SourceFn::new(provider_id, move |request: &[InstrumentId]| {
+        let requested: HashSet<_> = request.iter().cloned().collect();
+        let batch = provider.board_memberships(request).map_err(&classify)?;
+        let mut identities = HashSet::with_capacity(batch.records().len());
+        for record in batch.records() {
+            if !requested.contains(&record.instrument) {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "board-membership instrument was not requested",
+                ));
+            }
+            if !identities.insert((record.instrument.clone(), record.board_code.as_str())) {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "board-membership batch contains duplicate identities",
+                ));
+            }
+        }
+        Ok(batch)
     })
 }
 

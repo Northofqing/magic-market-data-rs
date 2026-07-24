@@ -2,6 +2,7 @@
 //! Provider-neutral, evidence-preserving market-data failover routing.
 
 mod adapters;
+mod discovery;
 mod error;
 mod router;
 mod source;
@@ -27,6 +28,10 @@ pub use adapters::{
     OptionGreeksRouter, OptionQuoteRouter, OrderBookRouter, PopularityRouter, PostCloseFlowRouter,
     QuoteRouter, ResearchRouter, SecurityMetadataRouter, SecurityProfileRouter,
     SemanticSearchRouter, StrongStockReasonRouter, TechnicalBarsRouter, TradesRouter,
+};
+pub use discovery::{
+    board_constituent_source, board_directory_source, dragon_tiger_discovery_source,
+    BoardConstituentRouter, BoardDirectoryRouter, DragonTigerDiscoveryRouter,
 };
 pub use error::{FailureAction, FailureKind, SourceError};
 pub use router::{
