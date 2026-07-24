@@ -1,8 +1,10 @@
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    AssetClass, BoardCategory, BoardFlows, DataBatch, Exchange, FlowInterval, FlowScope,
-    FundFlowRequest, FundFlowSeries, InstrumentDateRangeRequest, InstrumentId, LimitPoolKind,
-    LimitPoolRequest, LimitPools, NewsProvider, PopularityData, PositiveU32, ReportScope,
+    verify_serial_load, AssetClass, BlockTrades, BoardCategory, BoardFlows, DataBatch,
+    DividendPlans, DragonTigerData, Exchange, FlowInterval, FlowScope, FundFlowRequest,
+    FundFlowSeries, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
+    InstrumentSignalRequest, LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents, MarginData,
+    NewsProvider, NonEmptyText, PopularityData, PositiveU32, ProbeStatus, ReportScope,
     ResearchReports, ResearchRequest,
 };
 use std::collections::BTreeMap;
@@ -11,13 +13,29 @@ use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
 const MAX_HIGH_LEVEL_ATTEMPTS: u32 = 20;
+const SUITE_ATTEMPTS: u32 = 17;
 const MIN_PACING_MS: u64 = 1_000;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let high_level_attempts = env_u32("MAGIC_EASTMONEY_LOAD_REQUESTS", 3)?;
+    let operation =
+        std::env::var("MAGIC_EASTMONEY_LOAD_OPERATION").unwrap_or_else(|_| "suite".into());
+    let high_level_attempts = env_u32(
+        "MAGIC_EASTMONEY_LOAD_REQUESTS",
+        if operation == "suite" {
+            SUITE_ATTEMPTS
+        } else {
+            1
+        },
+    )?;
     if high_level_attempts == 0 || high_level_attempts > MAX_HIGH_LEVEL_ATTEMPTS {
         return Err(format!(
             "MAGIC_EASTMONEY_LOAD_REQUESTS must be in 1..={MAX_HIGH_LEVEL_ATTEMPTS}"
+        )
+        .into());
+    }
+    if operation == "suite" && high_level_attempts < SUITE_ATTEMPTS {
+        return Err(format!(
+            "suite requires at least {SUITE_ATTEMPTS} requests to cover every advertised family"
         )
         .into());
     }
@@ -29,9 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if pacing_ms < MIN_PACING_MS {
         return Err(format!("pacing must be at least {MIN_PACING_MS} ms").into());
     }
-    let operation =
-        std::env::var("MAGIC_EASTMONEY_LOAD_OPERATION").unwrap_or_else(|_| "mixed".into());
-    let diagnostic_mode = is_diagnostic_operation(&operation);
+    let diagnostic_mode = is_diagnostic_operation(&operation) || operation != "suite";
     let client = EastmoneyClient::new()?;
     let instrument = InstrumentId::new(
         Exchange::Shanghai,
@@ -162,7 +178,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         minimum_start_gap.unwrap_or_default().as_millis()
     );
     println!("error_categories={error_categories:?}");
-    match completion_status(diagnostic_mode, failures, diagnostic_failures) {
+    let status = completion_status(diagnostic_mode, failures, diagnostic_failures);
+    if !matches!(
+        status,
+        CompletionStatus::Failed(_) | CompletionStatus::DiagnosticFailed(_)
+    ) {
+        let snapshot = client.load_probe_snapshot()?;
+        let pacing_status = verify_serial_load(&snapshot, Duration::from_millis(MIN_PACING_MS))?;
+        println!("actual_request_starts={}", snapshot.request_starts());
+        println!(
+            "actual_minimum_start_gap_ms={}",
+            snapshot.minimum_start_gap().unwrap_or_default().as_millis()
+        );
+        println!(
+            "actual_maximum_concurrency={}",
+            snapshot.maximum_concurrency()
+        );
+        println!("pacing_probe_status={pacing_status}");
+    }
+    match status {
         CompletionStatus::DiagnosticFailed(count) => {
             println!("load_probe_status=diagnostic_failed");
             Err(format!("{count} unadmitted diagnostic attempts failed").into())
@@ -172,33 +206,65 @@ fn main() -> Result<(), Box<dyn Error>> {
             Ok(())
         }
         CompletionStatus::Failed(count) => {
+            println!("load_probe_status={}", ProbeStatus::Failed);
             Err(format!("{count} load-probe attempts failed").into())
         }
-        CompletionStatus::Passed => {
-            println!("load_probe_status=passed");
+        CompletionStatus::Admitted => {
+            println!("load_probe_status={}", ProbeStatus::Admitted);
             Ok(())
         }
     }
 }
 
 fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error>> {
-    const MIXED: &[&str] = &["research", "board-flow", "limit-pool", "popularity"];
+    const SUITE: &[&str] = &[
+        "research-instrument",
+        "research-industry",
+        "board-flow-industry",
+        "board-flow-concept",
+        "board-flow-region",
+        "dragon-tiger-entries",
+        "dragon-tiger-seats",
+        "margin",
+        "block-trades",
+        "holder-counts",
+        "dividends",
+        "lockups",
+        "limit-pool-upper",
+        "limit-pool-broken",
+        "limit-pool-lower",
+        "limit-pool-previous-upper",
+        "popularity",
+    ];
     const ALL: &[&str] = &[
-        "research",
+        "research-instrument",
+        "research-industry",
         "fund-flow",
-        "board-flow",
-        "limit-pool",
+        "board-flow-industry",
+        "board-flow-concept",
+        "board-flow-region",
+        "dragon-tiger-entries",
+        "dragon-tiger-seats",
+        "margin",
+        "block-trades",
+        "holder-counts",
+        "dividends",
+        "lockups",
+        "limit-pool-upper",
+        "limit-pool-broken",
+        "limit-pool-lower",
+        "limit-pool-previous-upper",
         "popularity",
         "news",
     ];
-    if requested == "mixed" {
-        return Ok(MIXED[attempt as usize % MIXED.len()]);
+    if requested == "suite" {
+        return Ok(SUITE[attempt as usize % SUITE.len()]);
     }
     if ALL.contains(&requested) {
         Ok(requested)
     } else {
         Err(format!(
-            "unsupported operation {requested}; expected mixed or {}",
+            "unsupported operation {requested}; expected suite or {}",
             ALL.join(",")
         )
         .into())
@@ -211,7 +277,7 @@ fn is_diagnostic_operation(operation: &str) -> bool {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompletionStatus {
-    Passed,
+    Admitted,
     Failed(u32),
     DiagnosticCompleteUnadmitted,
     DiagnosticFailed(u32),
@@ -231,7 +297,7 @@ fn completion_status(
     } else if admitted_failures > 0 {
         CompletionStatus::Failed(admitted_failures)
     } else {
-        CompletionStatus::Passed
+        CompletionStatus::Admitted
     }
 }
 
@@ -244,11 +310,19 @@ fn run_operation(
 ) -> Result<(), EastmoneyError> {
     let small = PositiveU32::new(3)?;
     match operation {
-        "research" => {
+        "research-instrument" => {
             let request = ResearchRequest::new(
                 ReportScope::Instrument(report_instrument.clone()),
                 PositiveU32::new(1)?,
                 small,
+            )?;
+            print_batch(client.research_reports(&request)?);
+        }
+        "research-industry" => {
+            let request = ResearchRequest::new(
+                ReportScope::Industry(NonEmptyText::new("*")?),
+                PositiveU32::new(1)?,
+                PositiveU32::new(1)?,
             )?;
             print_batch(client.research_reports(&request)?);
         }
@@ -260,11 +334,60 @@ fn run_operation(
             )?;
             print_batch(client.fund_flow_series(&request)?);
         }
-        "board-flow" => {
+        "board-flow-industry" => {
             print_batch(client.board_flows(BoardCategory::Industry, FlowInterval::Day1, small)?);
         }
-        "limit-pool" => {
-            let request = LimitPoolRequest::new(LimitPoolKind::Upper, pool_date.clone(), small)?;
+        "board-flow-concept" => {
+            print_batch(client.board_flows(BoardCategory::Concept, FlowInterval::Day1, small)?);
+        }
+        "board-flow-region" => {
+            print_batch(client.board_flows(BoardCategory::Region, FlowInterval::Day1, small)?);
+        }
+        "dragon-tiger-entries" => {
+            let request = InstrumentSignalRequest::new(instrument.clone(), PositiveU32::new(1)?)?;
+            print_batch(client.dragon_tiger_entries(&request)?);
+        }
+        "dragon-tiger-seats" => {
+            let request = InstrumentSignalRequest::new(instrument.clone(), PositiveU32::new(1)?)?;
+            print_batch(client.dragon_tiger_seats(&request)?);
+        }
+        "margin" => {
+            let request =
+                InstrumentDateRangeRequest::new(instrument.clone(), PositiveU32::new(1)?)?;
+            print_batch(client.margin_data(&request)?);
+        }
+        "block-trades" => {
+            let request =
+                InstrumentDateRangeRequest::new(instrument.clone(), PositiveU32::new(1)?)?;
+            print_batch(client.block_trades(&request)?);
+        }
+        "holder-counts" => {
+            let request =
+                InstrumentDateRangeRequest::new(instrument.clone(), PositiveU32::new(1)?)?;
+            print_batch(client.holder_counts(&request)?);
+        }
+        "dividends" => {
+            let request =
+                InstrumentDateRangeRequest::new(instrument.clone(), PositiveU32::new(1)?)?;
+            print_batch(client.dividend_plans(&request)?);
+        }
+        "lockups" => {
+            let request =
+                InstrumentDateRangeRequest::new(instrument.clone(), PositiveU32::new(1)?)?;
+            print_batch(client.lockup_events(&request)?);
+        }
+        "limit-pool-upper"
+        | "limit-pool-broken"
+        | "limit-pool-lower"
+        | "limit-pool-previous-upper" => {
+            let kind = match operation {
+                "limit-pool-upper" => LimitPoolKind::Upper,
+                "limit-pool-broken" => LimitPoolKind::Broken,
+                "limit-pool-lower" => LimitPoolKind::Lower,
+                "limit-pool-previous-upper" => LimitPoolKind::PreviousUpper,
+                _ => unreachable!("matched limit-pool operation"),
+            };
+            let request = LimitPoolRequest::new(kind, pool_date.clone(), small)?;
             print_batch(client.limit_pool(&request)?);
         }
         "popularity" => print_batch(client.popularity(small)?),
@@ -306,52 +429,5 @@ fn percentile(values: &[Duration], percentile: usize) -> Duration {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{completion_status, is_diagnostic_operation, select_operation, CompletionStatus};
-
-    #[test]
-    fn mixed_rotates_only_admitted_operations() {
-        let selected = (0..8)
-            .map(|attempt| select_operation("mixed", attempt).unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            selected,
-            vec![
-                "research",
-                "board-flow",
-                "limit-pool",
-                "popularity",
-                "research",
-                "board-flow",
-                "limit-pool",
-                "popularity"
-            ]
-        );
-        assert!(!selected.contains(&"fund-flow"));
-        assert!(!selected.contains(&"news"));
-    }
-
-    #[test]
-    fn unadmitted_operations_and_failure_statuses_are_explicit() {
-        assert!(is_diagnostic_operation("fund-flow"));
-        assert!(is_diagnostic_operation("news"));
-        assert!(!is_diagnostic_operation("research"));
-        assert_eq!(
-            completion_status(true, 0, 1),
-            CompletionStatus::DiagnosticFailed(1)
-        );
-        assert_eq!(
-            completion_status(true, 0, 0),
-            CompletionStatus::DiagnosticCompleteUnadmitted
-        );
-        assert_eq!(completion_status(false, 2, 0), CompletionStatus::Failed(2));
-        assert_eq!(completion_status(false, 0, 0), CompletionStatus::Passed);
-    }
-
-    #[test]
-    fn invalid_operation_message_lists_every_explicit_diagnostic() {
-        let error = select_operation("unknown", 0).unwrap_err().to_string();
-        assert!(error.contains("fund-flow"));
-        assert!(error.contains("news"));
-    }
-}
+#[path = "../tests/unit/load_probe_tests.rs"]
+mod tests;

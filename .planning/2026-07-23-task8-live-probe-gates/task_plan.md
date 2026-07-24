@@ -7,12 +7,12 @@ result without renaming production Provider APIs.
 
 ## Phases
 
-1. **Gate A + shared verifier + THS empty semantics** — in progress
-2. **Eastmoney integrity** — pending
-3. **iWencai status truthfulness** — pending
-4. **Baidu admission and CLS/CNInfo gates** — pending
-5. **Measured load coverage and docs** — pending
-6. **Scoped verification and handoff** — pending
+1. **Gate A + shared verifier + THS empty semantics** — complete
+2. **Eastmoney integrity** — complete
+3. **iWencai status truthfulness** — complete
+4. **Baidu admission and CLS/CNInfo gates** — complete
+5. **Measured load coverage and docs** — complete
+6. **Scoped verification and handoff** — complete
 
 ## Decisions
 
@@ -50,3 +50,8 @@ provider-local explicit failure checks.
 | First Core RED test build aborted with `No space left on device` before compiling the new test | Remove only this worktree's generated `target/` and reuse the existing provider worktree target cache; do not install tools |
 | A path-based test body placed directly under `tests/` was also auto-discovered by Cargo as an integration crate | Move it to nested `tests/unit/` and keep the private `#[path]` module from `src/lib.rs` |
 | Scoped strict Clippy is blocked by pre-existing `magic-market-core/src/provider.rs:1147` under Rust 1.95 (`manual_is_multiple_of`) | Record as baseline debt; do not modify unrelated provider calendar logic in Task 8. Tests/checks still run, and final handoff must not claim Clippy pass |
+| iWencai batch verification initially stopped at `cargo fmt --check` | Apply the formatter-required line folding and restart the full batch from fmt |
+| Strict iWencai Clippy was blocked by the known Core stable lint | Cherry-pick the parent's isolated Core fix `82ef7b1` as `cd23be8`; rerun strict Clippy without any lint allow |
+| Baidu/CLS/CNInfo batch initially stopped on a leading blank line in the mechanically moved Baidu test module | Remove the blank line and restart the complete batch from fmt |
+| CNInfo private test migration left fixture paths relative to the old `src/` location | Change only the moved tests from `../tests/fixtures/` to `../fixtures/` and rerun |
+| Strict Clippy found redundant closures in the new CNInfo/THS load examples | Replace the closures with the generic `print_batch` function and restart fmt/Clippy |

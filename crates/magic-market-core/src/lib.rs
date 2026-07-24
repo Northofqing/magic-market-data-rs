@@ -46,8 +46,9 @@ pub use options::{
     OptionQuote,
 };
 pub use probe::{
-    verify_admitted_batch, verify_verified_empty, ProbeAdmissionError, ProbeAdmissionPolicy,
-    ProbeStatus, VerifiedEmpty,
+    verify_admitted_batch, verify_serial_load, verify_verified_empty, LoadProbeError,
+    LoadProbeSnapshot, ProbeAdmissionError, ProbeAdmissionPolicy, ProbeRequestTracker, ProbeStatus,
+    VerifiedEmpty,
 };
 pub use provenance::Provenance;
 pub use provider::{

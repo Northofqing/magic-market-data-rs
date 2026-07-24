@@ -3,8 +3,8 @@
 
 use magic_market_core::{
     Adjustment, AssetClass, Bar, BarInterval, BarsRequest, Capabilities, DataBatch, Exchange,
-    HistoricalBars, InstrumentId, Money, Price, Provenance, ProviderId, Quantity, SourceEvidence,
-    TechnicalBar, TechnicalBarsProvider,
+    HistoricalBars, InstrumentId, LoadProbeSnapshot, Money, Price, ProbeRequestTracker, Provenance,
+    ProviderId, Quantity, SourceEvidence, TechnicalBar, TechnicalBarsProvider,
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -117,6 +117,7 @@ pub struct BaiduClient {
     transport: Arc<dyn BaiduTransport>,
     minimum_interval: Duration,
     request_gate: Arc<Mutex<Option<Instant>>>,
+    request_probe: Arc<Mutex<ProbeRequestTracker>>,
 }
 
 impl std::fmt::Debug for BaiduClient {
@@ -148,6 +149,7 @@ impl BaiduClient {
             transport,
             minimum_interval,
             request_gate: Arc::new(Mutex::new(None)),
+            request_probe: Arc::new(Mutex::new(ProbeRequestTracker::default())),
         }
     }
 
@@ -156,6 +158,13 @@ impl BaiduClient {
             bars: false,
             ..Capabilities::new()
         }
+    }
+
+    pub fn load_probe_snapshot(&self) -> Result<LoadProbeSnapshot, BaiduError> {
+        self.request_probe
+            .lock()
+            .map(|probe| probe.snapshot())
+            .map_err(|_| BaiduError::Transport("request probe lock poisoned".into()))
     }
 
     fn fetch(&self, request: &BarsRequest) -> Result<DataBatch<TechnicalBar>, BaiduError> {
@@ -182,7 +191,16 @@ impl BaiduClient {
             }
         }
         *last_started = Some(Instant::now());
+        self.request_probe
+            .lock()
+            .map_err(|_| BaiduError::Transport("request probe lock poisoned".into()))?
+            .request_started();
         let result = self.transport.get(request);
+        self.request_probe
+            .lock()
+            .map_err(|_| BaiduError::Transport("request probe lock poisoned".into()))?
+            .request_finished()
+            .map_err(|error| BaiduError::Transport(error.to_string()))?;
         drop(last_started);
         result
     }

@@ -9,10 +9,10 @@ use encoding_rs::GBK;
 use magic_market_core::{
     AssetClass, ConsensusData, ConsensusSnapshot, DataBatch, EarningsEstimate, Exchange,
     FiniteNumber, InstrumentId, InstrumentSignalRequest, LimitPoolCapabilities, LimitPoolEntry,
-    LimitPoolKind, LimitPoolRequest, LimitPools, Money, NonEmptyText, PopularityData,
-    PopularityRank, PositiveU32, Price, Provenance, ProviderId, Ratio, RatioUnit,
-    ResearchCapabilities, SignalCapabilities, SourceEvidence, StrongStockReason,
-    StrongStockReasons, VerifiedEmpty,
+    LimitPoolKind, LimitPoolRequest, LimitPools, LoadProbeSnapshot, Money, NonEmptyText,
+    PopularityData, PopularityRank, PositiveU32, Price, ProbeRequestTracker, Provenance,
+    ProviderId, Ratio, RatioUnit, ResearchCapabilities, SignalCapabilities, SourceEvidence,
+    StrongStockReason, StrongStockReasons, VerifiedEmpty,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -129,6 +129,7 @@ pub struct ThsClient {
     transport: Arc<dyn ThsTransport>,
     pacing_interval: Duration,
     request_gate: Arc<Mutex<Option<Instant>>>,
+    request_probe: Arc<Mutex<ProbeRequestTracker>>,
 }
 
 impl std::fmt::Debug for ThsClient {
@@ -173,6 +174,7 @@ impl ThsClient {
             transport,
             pacing_interval: interval,
             request_gate: Arc::new(Mutex::new(None)),
+            request_probe: Arc::new(Mutex::new(ProbeRequestTracker::default())),
         }
     }
 
@@ -207,6 +209,13 @@ impl ThsClient {
         }
     }
 
+    pub fn load_probe_snapshot(&self) -> Result<LoadProbeSnapshot, ThsError> {
+        self.request_probe
+            .lock()
+            .map(|probe| probe.snapshot())
+            .map_err(|_| ThsError::Transport("request probe mutex poisoned".into()))
+    }
+
     fn execute(&self, request: HttpRequest) -> Result<HttpResponse, ThsError> {
         validate_request(&request)?;
         let mut last_started = self
@@ -220,8 +229,18 @@ impl ThsClient {
             }
         }
         *last_started = Some(Instant::now());
-        let response = self.transport.execute(&request)?;
+        self.request_probe
+            .lock()
+            .map_err(|_| ThsError::Transport("request probe mutex poisoned".into()))?
+            .request_started();
+        let response = self.transport.execute(&request);
+        self.request_probe
+            .lock()
+            .map_err(|_| ThsError::Transport("request probe mutex poisoned".into()))?
+            .request_finished()
+            .map_err(|error| ThsError::Transport(error.to_string()))?;
         drop(last_started);
+        let response = response?;
         validate_response(&request, &response)?;
         Ok(response)
     }

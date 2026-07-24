@@ -227,4 +227,9 @@ fn cloned_clients_share_a_gate_held_through_the_complete_transport_call() {
         .join()
         .expect("second thread")
         .expect("second request");
+    let snapshot = client.load_probe_snapshot().expect("probe snapshot");
+    assert_eq!(snapshot.request_starts(), 2);
+    assert_eq!(snapshot.maximum_concurrency(), 1);
+    assert_eq!(snapshot.active_requests(), 0);
+    assert!(snapshot.minimum_start_gap().expect("two request starts") >= interval);
 }

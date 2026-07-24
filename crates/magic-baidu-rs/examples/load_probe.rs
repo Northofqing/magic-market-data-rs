@@ -1,6 +1,7 @@
 use magic_baidu_rs::BaiduClient;
 use magic_market_core::{
-    AssetClass, BarInterval, BarsRequest, Exchange, InstrumentId, TechnicalBarsProvider,
+    verify_serial_load, AssetClass, BarInterval, BarsRequest, Exchange, InstrumentId, ProbeStatus,
+    TechnicalBarsProvider,
 };
 use std::error::Error;
 use std::time::{Duration, Instant};
@@ -68,25 +69,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("load_probe_error={error}");
     }
     if failures != 0 {
+        println!("load_probe_status={}", ProbeStatus::Failed);
         return Err(format!("{failures} of {requests} requests failed").into());
     }
-    println!("load_probe_status=passed");
+    let snapshot = client.load_probe_snapshot()?;
+    let pacing_status = verify_serial_load(&snapshot, MIN_INTERVAL)?;
+    println!("actual_request_starts={}", snapshot.request_starts());
+    println!(
+        "actual_minimum_start_gap_ms={}",
+        snapshot.minimum_start_gap().unwrap_or_default().as_millis()
+    );
+    println!(
+        "observed_maximum_concurrency={}",
+        snapshot.maximum_concurrency()
+    );
+    println!("pacing_probe_status={pacing_status}");
+    println!(
+        "load_probe_status={}",
+        ProbeStatus::DiagnosticCompleteUnadmitted
+    );
     Ok(())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn load_probe_is_client_paced_and_hard_bounded() {
-        assert_eq!(MIN_INTERVAL, Duration::from_secs(1));
-        assert!(validate_load(1).is_ok());
-        assert!(validate_load(3).is_ok());
-        assert!(validate_load(0).is_err());
-        assert!(validate_load(4).is_err());
-        assert_eq!(percentile(&[1, 2, 3, 4, 5], 50), 3);
-        assert_eq!(percentile(&[1, 2, 3, 4, 5], 95), 5);
-        assert_eq!(percentile(&[1, 2, 3, 4, 5], 99), 5);
-    }
-}
+#[path = "../tests/unit/load_probe_tests.rs"]
+mod tests;

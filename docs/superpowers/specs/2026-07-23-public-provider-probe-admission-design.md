@@ -91,6 +91,27 @@ and passes it only to the Eastmoney matrix job. This keeps the probe
 reproducible and makes the evidence state which session was tested. Other
 providers do not receive a synthetic date.
 
+## Actual request-start load evidence
+
+High-level example call timestamps are not transport evidence: one family may
+perform mapping or pagination requests, and a provider's internal limiter may
+sleep after the example call has already begun. Each public provider therefore
+records load evidence immediately after its internal pacing wait and
+immediately before invoking the production transport.
+
+All clones of one client share the recorder. A read-only snapshot contains:
+
+1. total actual transport request starts;
+2. minimum gap between actual starts;
+3. maximum observed active transport calls;
+4. active calls remaining when the snapshot was taken.
+
+Serial load admission requires at least one actual start, no in-flight call at
+completion, maximum concurrency exactly one, and—when at least two starts were
+observed—a minimum start gap no shorter than the provider contract. The
+snapshot carries no URL, header, body, credential, response or wall-clock
+provider data. Missing or poisoned telemetry is an explicit load failure.
+
 ## Failure handling and rollback
 
 Ordinary empty batches, incomplete quality, issues, provenance mismatch,

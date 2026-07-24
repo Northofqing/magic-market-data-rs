@@ -1,7 +1,7 @@
 use crate::{CoreError, DataBatch, NonEmptyText, Provenance, ProviderId, SourceEvidence};
 use std::collections::HashSet;
 use std::fmt;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 /// Stable machine state emitted by public-provider probes.
@@ -67,6 +67,130 @@ impl ProbeAdmissionPolicy {
         self.max_source_age = Some(value);
         Ok(self)
     }
+}
+
+/// Clone-shared, provider-internal observation of actual transport starts.
+#[derive(Debug, Default)]
+pub struct ProbeRequestTracker {
+    last_started: Option<Instant>,
+    minimum_start_gap: Option<Duration>,
+    request_starts: u64,
+    active_requests: u32,
+    maximum_concurrency: u32,
+}
+
+impl ProbeRequestTracker {
+    /// Records one actual request immediately before the transport call.
+    pub fn request_started(&mut self) {
+        let started = Instant::now();
+        if let Some(previous) = self.last_started {
+            let gap = started.duration_since(previous);
+            self.minimum_start_gap = Some(
+                self.minimum_start_gap
+                    .map_or(gap, |current| current.min(gap)),
+            );
+        }
+        self.last_started = Some(started);
+        self.request_starts = self.request_starts.saturating_add(1);
+        self.active_requests = self.active_requests.saturating_add(1);
+        self.maximum_concurrency = self.maximum_concurrency.max(self.active_requests);
+    }
+
+    /// Records completion of one previously started transport call.
+    pub fn request_finished(&mut self) -> Result<(), LoadProbeError> {
+        if self.active_requests == 0 {
+            return Err(LoadProbeError::FinishWithoutStart);
+        }
+        self.active_requests -= 1;
+        Ok(())
+    }
+
+    pub const fn snapshot(&self) -> LoadProbeSnapshot {
+        LoadProbeSnapshot {
+            request_starts: self.request_starts,
+            minimum_start_gap: self.minimum_start_gap,
+            maximum_concurrency: self.maximum_concurrency,
+            active_requests: self.active_requests,
+        }
+    }
+}
+
+/// Secret-free evidence captured from actual provider transport calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoadProbeSnapshot {
+    request_starts: u64,
+    minimum_start_gap: Option<Duration>,
+    maximum_concurrency: u32,
+    active_requests: u32,
+}
+
+impl LoadProbeSnapshot {
+    pub const fn request_starts(self) -> u64 {
+        self.request_starts
+    }
+
+    pub const fn minimum_start_gap(self) -> Option<Duration> {
+        self.minimum_start_gap
+    }
+
+    pub const fn maximum_concurrency(self) -> u32 {
+        self.maximum_concurrency
+    }
+
+    pub const fn active_requests(self) -> u32 {
+        self.active_requests
+    }
+}
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum LoadProbeError {
+    #[error("load probe observed no actual request starts")]
+    NoRequestStarts,
+    #[error("load probe snapshot still has {active} active requests")]
+    RequestsStillActive { active: u32 },
+    #[error("load probe observed maximum concurrency {maximum}, expected exactly one")]
+    ConcurrentRequests { maximum: u32 },
+    #[error("load probe is missing a start gap for multiple requests")]
+    MissingStartGap,
+    #[error("actual request-start gap {actual:?} is shorter than required {required:?}")]
+    StartGapTooShort {
+        actual: Duration,
+        required: Duration,
+    },
+    #[error("request completion was recorded without an active request")]
+    FinishWithoutStart,
+}
+
+/// Verifies serial, internally paced load evidence.
+pub fn verify_serial_load(
+    snapshot: &LoadProbeSnapshot,
+    minimum_start_gap: Duration,
+) -> Result<ProbeStatus, LoadProbeError> {
+    if snapshot.request_starts == 0 {
+        return Err(LoadProbeError::NoRequestStarts);
+    }
+    if snapshot.active_requests != 0 {
+        return Err(LoadProbeError::RequestsStillActive {
+            active: snapshot.active_requests,
+        });
+    }
+    if snapshot.maximum_concurrency != 1 {
+        return Err(LoadProbeError::ConcurrentRequests {
+            maximum: snapshot.maximum_concurrency,
+        });
+    }
+    if snapshot.request_starts > 1 {
+        let actual = snapshot
+            .minimum_start_gap
+            .ok_or(LoadProbeError::MissingStartGap)?;
+        if actual < minimum_start_gap {
+            return Err(LoadProbeError::StartGapTooShort {
+                actual,
+                required: minimum_start_gap,
+            });
+        }
+    }
+    Ok(ProbeStatus::Admitted)
 }
 
 /// A source-proven legitimate empty response.

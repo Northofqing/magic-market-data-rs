@@ -168,11 +168,14 @@ fn consensus_observation_time_is_not_before_the_final_response() {
         include_str!("../fixtures/consensus_600519.html"),
     )]);
     let observed = transport.clone();
-    let batch = ThsClient::with_test_transport(transport)
-        .consensus(&[sh("600519")])
-        .unwrap();
+    let client = ThsClient::with_test_transport(transport);
+    let batch = client.consensus(&[sh("600519")]).unwrap();
     let completed_at = observed.completed_at.lock().unwrap().unwrap();
     assert!(timestamp_nanos(batch.provenance().fetched_at()) >= completed_at);
+    let snapshot = client.load_probe_snapshot().unwrap();
+    assert_eq!(snapshot.request_starts(), 1);
+    assert_eq!(snapshot.maximum_concurrency(), 1);
+    assert_eq!(snapshot.active_requests(), 0);
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use crate::EastmoneyError;
+use magic_market_core::{LoadProbeSnapshot, ProbeRequestTracker};
 use std::io::Read;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -30,6 +31,10 @@ pub trait EastmoneyTransport: Send + Sync {
         body: &[u8],
         max_bytes: usize,
     ) -> Result<Vec<u8>, EastmoneyError>;
+
+    fn load_probe_snapshot(&self) -> Option<LoadProbeSnapshot> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -37,6 +42,7 @@ pub(crate) struct HttpsTransport {
     agent: ureq::Agent,
     minimum_interval: Duration,
     last_request: Arc<Mutex<Option<Instant>>>,
+    request_probe: Arc<Mutex<ProbeRequestTracker>>,
 }
 
 impl HttpsTransport {
@@ -55,6 +61,7 @@ impl HttpsTransport {
                 .build(),
             minimum_interval: Duration::from_secs(1),
             last_request: Arc::new(Mutex::new(None)),
+            request_probe: Arc::new(Mutex::new(ProbeRequestTracker::default())),
         })
     }
 
@@ -70,7 +77,19 @@ impl HttpsTransport {
             }
         }
         *last_request = Some(Instant::now());
+        self.request_probe
+            .lock()
+            .map_err(|_| EastmoneyError::Transport("request probe lock poisoned".into()))?
+            .request_started();
         Ok(last_request)
+    }
+
+    fn finish_request(&self) -> Result<(), EastmoneyError> {
+        self.request_probe
+            .lock()
+            .map_err(|_| EastmoneyError::Transport("request probe lock poisoned".into()))?
+            .request_finished()
+            .map_err(|error| EastmoneyError::Transport(error.to_string()))
     }
 
     fn read_response(
@@ -108,15 +127,20 @@ impl HttpsTransport {
         max_bytes: usize,
     ) -> Result<Vec<u8>, EastmoneyError> {
         validate_endpoint(url)?;
-        let _request_gate = self.acquire_slot()?;
-        let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
-        for (name, value) in headers {
-            request = request.set(name, value);
-        }
-        let response = request
-            .call()
-            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
-        Self::read_response(response, max_bytes)
+        let request_gate = self.acquire_slot()?;
+        let result = (|| {
+            let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
+            for (name, value) in headers {
+                request = request.set(name, value);
+            }
+            let response = request
+                .call()
+                .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+            Self::read_response(response, max_bytes)
+        })();
+        self.finish_request()?;
+        drop(request_gate);
+        result
     }
 
     fn post_request(
@@ -132,19 +156,24 @@ impl HttpsTransport {
                 "JSON request body exceeds 65536 bytes".into(),
             ));
         }
-        let _request_gate = self.acquire_slot()?;
-        let mut request = self
-            .agent
-            .post(url)
-            .set("User-Agent", USER_AGENT)
-            .set("Content-Type", "application/json");
-        for (name, value) in headers {
-            request = request.set(name, value);
-        }
-        let response = request
-            .send_bytes(body)
-            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
-        Self::read_response(response, max_bytes)
+        let request_gate = self.acquire_slot()?;
+        let result = (|| {
+            let mut request = self
+                .agent
+                .post(url)
+                .set("User-Agent", USER_AGENT)
+                .set("Content-Type", "application/json");
+            for (name, value) in headers {
+                request = request.set(name, value);
+            }
+            let response = request
+                .send_bytes(body)
+                .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+            Self::read_response(response, max_bytes)
+        })();
+        self.finish_request()?;
+        drop(request_gate);
+        result
     }
 }
 
@@ -192,6 +221,10 @@ impl EastmoneyTransport for HttpsTransport {
         max_bytes: usize,
     ) -> Result<Vec<u8>, EastmoneyError> {
         self.post_request(url, headers, body, max_bytes)
+    }
+
+    fn load_probe_snapshot(&self) -> Option<LoadProbeSnapshot> {
+        self.request_probe.lock().ok().map(|probe| probe.snapshot())
     }
 }
 

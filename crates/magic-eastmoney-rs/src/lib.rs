@@ -20,8 +20,8 @@ mod transport;
 
 use magic_market_core::{
     AssetClass, CapitalCapabilities, ContentCapabilities, DataBatch, Exchange, InstrumentId,
-    LimitPoolCapabilities, Provenance, ProviderId, ResearchCapabilities, SignalCapabilities,
-    SourceEvidence,
+    LimitPoolCapabilities, LoadProbeSnapshot, Provenance, ProviderId, ResearchCapabilities,
+    SignalCapabilities, SourceEvidence,
 };
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -65,6 +65,14 @@ impl EastmoneyClient {
         Self {
             transport: Arc::new(transport),
         }
+    }
+
+    pub fn load_probe_snapshot(&self) -> Result<LoadProbeSnapshot, EastmoneyError> {
+        self.transport.load_probe_snapshot().ok_or_else(|| {
+            EastmoneyError::Unsupported(
+                "request-start telemetry is unavailable for the configured transport".into(),
+            )
+        })
     }
 
     /// Capabilities proved for research-report endpoints.
