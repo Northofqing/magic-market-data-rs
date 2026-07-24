@@ -43,6 +43,8 @@ pub enum ProviderId {
     Iwencai,
     Cninfo,
     Cailianpress,
+    Jin10,
+    ThePaper,
     Sse,
     Szse,
     Hkex,

@@ -14,11 +14,25 @@ fn intelligence_sources_have_first_class_identities() {
         ProviderId::Iwencai,
         ProviderId::Cninfo,
         ProviderId::Cailianpress,
+        ProviderId::Jin10,
+        ProviderId::ThePaper,
         ProviderId::Sse,
         ProviderId::Szse,
         ProviderId::Hkex,
         ProviderId::LocalAnalysis,
     ];
-    assert_eq!(providers.len(), 9);
+    assert_eq!(providers.len(), 11);
     assert_eq!(AssetClass::Option, AssetClass::Option);
+}
+
+#[test]
+fn financial_news_provider_identity_names_are_stable() {
+    assert_eq!(
+        serde_json::to_string(&ProviderId::Jin10).unwrap(),
+        "\"Jin10\""
+    );
+    assert_eq!(
+        serde_json::to_string(&ProviderId::ThePaper).unwrap(),
+        "\"ThePaper\""
+    );
 }

@@ -2,19 +2,19 @@ use magic_market_core::{
     Announcement, Announcements, AssetClass, ContractMonth, DataBatch, DragonTigerData,
     DragonTigerEntry, DragonTigerSeat, DragonTigerSide, Exchange, FiniteNumber, HttpsUrl,
     InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate, MarketStatistics,
-    MarketStatisticsProvider, Money, NonEmptyText, NorthboundChannel, NorthboundDailyRequest,
-    NorthboundDailyStat, NorthboundDailyStatistics, NorthboundQuotaBalance, NorthboundTopTurnover,
-    OptionContract, OptionData, OptionGreeks, OptionKind, OptionQuote, PositiveU32, PostCloseFlow,
-    PostCloseFlowRequest, PostCloseFlows, Price, Provenance, ProviderId, Quantity, Ratio,
-    RatioUnit, SourceEvidence,
+    MarketStatisticsProvider, Money, NewsItem, NewsProvider, NonEmptyText, NorthboundChannel,
+    NorthboundDailyRequest, NorthboundDailyStat, NorthboundDailyStatistics,
+    NorthboundQuotaBalance, NorthboundTopTurnover, OptionContract, OptionData, OptionGreeks,
+    OptionKind, OptionQuote, PositiveU32, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows,
+    Price, Provenance, ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
 };
 use magic_market_router::{
     announcement_source, dragon_tiger_entry_source, dragon_tiger_seat_source,
-    market_statistics_source, northbound_daily_source, option_contract_source,
+    global_news_source, market_statistics_source, northbound_daily_source, option_contract_source,
     option_greeks_source, option_quote_source, post_close_flow_source, AcceptancePolicy,
     AnnouncementRouter, AttemptStatus, DragonTigerEntryRouter, DragonTigerSeatRouter, FailureKind,
-    MarketStatisticsRouter, NorthboundDailyRouter, OptionContractRouter, OptionGreeksRouter,
-    OptionQuoteRouter, PostCloseFlowRouter, SourceError,
+    GlobalNewsRouter, MarketStatisticsRouter, NorthboundDailyRouter, OptionContractRouter,
+    OptionGreeksRouter, OptionQuoteRouter, PostCloseFlowRouter, SourceError,
 };
 use std::sync::{Arc, Mutex};
 
@@ -66,6 +66,86 @@ fn instrument() -> InstrumentId {
 
 fn classify(_: FixtureError) -> SourceError {
     SourceError::try_next(FailureKind::Transport, "fixture")
+}
+
+struct NewsFixtureProvider {
+    record_provider: ProviderId,
+    batch_source: &'static str,
+}
+
+impl NewsProvider for NewsFixtureProvider {
+    type Error = FixtureError;
+
+    fn instrument_news(
+        &self,
+        _request: &InstrumentDateRangeRequest,
+    ) -> Result<DataBatch<NewsItem>, Self::Error> {
+        unreachable!("global-news routing does not call instrument_news")
+    }
+
+    fn global_news(&self, _limit: PositiveU32) -> Result<DataBatch<NewsItem>, Self::Error> {
+        let batch_id = format!("{}-news", self.batch_source);
+        let published_at = "2026-07-24T20:00:00+08:00";
+        let evidence =
+            SourceEvidence::new(self.record_provider, "observed", &batch_id)
+                .unwrap()
+                .with_source_at(published_at)
+                .unwrap();
+        Ok(DataBatch::strict(
+            vec![NewsItem {
+                item_id: NonEmptyText::new("news-1").unwrap(),
+                title: NonEmptyText::new("fixture financial news").unwrap(),
+                summary: None,
+                content: None,
+                publisher: NonEmptyText::new(self.batch_source).unwrap(),
+                canonical_url: HttpsUrl::new("https://example.com/news/news-1").unwrap(),
+                published_at: NonEmptyText::new(published_at).unwrap(),
+                instruments: Vec::new(),
+                topics: Vec::new(),
+                language: NonEmptyText::new("zh-CN").unwrap(),
+                evidence,
+            }],
+            Provenance::new(self.batch_source, "observed")
+                .unwrap()
+                .with_source_at(published_at)
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        ))
+    }
+}
+
+#[test]
+fn global_news_router_preserves_jin10_and_thepaper_identities() {
+    let wrong = Arc::new(NewsFixtureProvider {
+        record_provider: ProviderId::ThePaper,
+        batch_source: "jin10-v1",
+    });
+    let valid = Arc::new(NewsFixtureProvider {
+        record_provider: ProviderId::ThePaper,
+        batch_source: "thepaper-finance-v1",
+    });
+    let mut router = GlobalNewsRouter::new(AcceptancePolicy::new().with_require_source_at(true));
+    router
+        .register(global_news_source(ProviderId::Jin10, wrong, classify))
+        .unwrap();
+    router
+        .register(global_news_source(ProviderId::ThePaper, valid, classify))
+        .unwrap();
+
+    let outcome = router.route(&PositiveU32::new(5).unwrap()).unwrap();
+    assert_eq!(outcome.selected_provider(), ProviderId::ThePaper);
+    assert!(matches!(
+        outcome.attempts()[0].status(),
+        AttemptStatus::Rejected {
+            kind: FailureKind::Evidence,
+            ..
+        }
+    ));
+    assert!(matches!(
+        outcome.attempts()[1].status(),
+        AttemptStatus::Selected
+    ));
 }
 
 struct AnnouncementFixtureProvider {
