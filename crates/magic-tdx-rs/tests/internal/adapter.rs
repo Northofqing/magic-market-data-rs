@@ -94,10 +94,7 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
         })
     }
 
-    fn security_quotes(
-        &self,
-        instruments: &[(u8, &str)],
-    ) -> Result<Vec<SecurityQuote>, TdxError> {
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError> {
         self.quote_calls.borrow_mut().push(
             instruments
                 .iter()
@@ -111,11 +108,7 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
         })
     }
 
-    fn minute_time_data(
-        &self,
-        market: u8,
-        code: &str,
-    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
         self.minute_calls
             .borrow_mut()
             .push((market, code.to_owned()));
@@ -468,11 +461,7 @@ impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
         ))
     }
 
-    async fn security_list(
-        &self,
-        _market: u8,
-        _start: u16,
-    ) -> Result<Vec<SecurityInfo>, TdxError> {
+    async fn security_list(&self, _market: u8, _start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
         Err(TdxError::InvalidData(
             "scripted async security list response is not configured".into(),
         ))

@@ -3,9 +3,7 @@ pub mod blocks;
 pub mod finance;
 pub mod funds;
 pub mod profile;
-use crate::adapter::{
-    normalize_order_books, order_book_pairs, AsyncTdxQuery, BlockingTdxQuery,
-};
+use crate::adapter::{normalize_order_books, order_book_pairs, AsyncTdxQuery, BlockingTdxQuery};
 use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
 use crate::{AsyncTdxHqClient, SecurityBar, SecurityQuote, TdxError, TdxSmartClient};
 pub use blocks::BlockService;
@@ -13,7 +11,8 @@ pub use finance::FinanceService;
 pub use funds::FundService;
 use magic_market_core::{
     AuctionSnapshot, BarsRequest, DataBatch, HistoricalBars, InstrumentId, MoneyFlow, OrderBook,
-    Quote, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, Trades, TradesRequest,
+    Quote, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, Trades,
+    TradesRequest,
 };
 pub use profile::ProfileService;
 use std::collections::HashMap;
@@ -28,10 +27,7 @@ fn market(id: &InstrumentId) -> Result<u8, TdxError> {
     }
 }
 
-fn security_count_with(
-    query: &impl BlockingTdxQuery,
-    market: u8,
-) -> Result<u16, TdxError> {
+fn security_count_with(query: &impl BlockingTdxQuery, market: u8) -> Result<u16, TdxError> {
     query.security_count(market)
 }
 

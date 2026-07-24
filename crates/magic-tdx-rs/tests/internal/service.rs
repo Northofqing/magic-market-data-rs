@@ -46,10 +46,7 @@ impl crate::adapter::BlockingTdxQuery for ScriptedBlockingServiceQuery {
         unconfigured("bars")
     }
 
-    fn security_quotes(
-        &self,
-        instruments: &[(u8, &str)],
-    ) -> Result<Vec<SecurityQuote>, TdxError> {
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError> {
         self.quote_calls.borrow_mut().push(
             instruments
                 .iter()
@@ -62,11 +59,7 @@ impl crate::adapter::BlockingTdxQuery for ScriptedBlockingServiceQuery {
             .unwrap_or_else(|| unconfigured("quotes"))
     }
 
-    fn minute_time_data(
-        &self,
-        market: u8,
-        code: &str,
-    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
         self.minute_calls
             .borrow_mut()
             .push((market, code.to_owned()));
@@ -284,13 +277,14 @@ fn blocking_service_raw_query_seam_preserves_all_passthrough_parameters() {
         minute_responses: RefCell::new(VecDeque::from([Ok(vec![minute("09:31")])])),
         history_minute_responses: RefCell::new(VecDeque::from([Ok(vec![minute("09:32")])])),
         transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick("09:33:00")])])),
-        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick(
-            "09:34:00",
-        )])])),
+        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick("09:34:00")])])),
         ..Default::default()
     };
 
-    assert_eq!(minute_data_with(&query, 1, "600396").unwrap()[0].time, "09:31");
+    assert_eq!(
+        minute_data_with(&query, 1, "600396").unwrap()[0].time,
+        "09:31"
+    );
     assert_eq!(
         history_minute_data_with(&query, 1, "600396", 20260723).unwrap()[0].time,
         "09:32"
@@ -411,11 +405,7 @@ impl crate::adapter::AsyncTdxQuery for ScriptedAsyncServiceQuery {
             .unwrap_or_else(|| unconfigured("async security count"))
     }
 
-    async fn security_list(
-        &self,
-        market: u8,
-        start: u16,
-    ) -> Result<Vec<SecurityInfo>, TdxError> {
+    async fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
         self.list_calls.borrow_mut().push((market, start));
         self.list_responses
             .borrow_mut()
@@ -502,9 +492,7 @@ async fn async_service_raw_query_seam_preserves_all_passthrough_parameters() {
         minute_responses: RefCell::new(VecDeque::from([Ok(vec![minute("09:31")])])),
         history_minute_responses: RefCell::new(VecDeque::from([Ok(vec![minute("09:32")])])),
         transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick("09:33:00")])])),
-        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick(
-            "09:34:00",
-        )])])),
+        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick("09:34:00")])])),
         ..Default::default()
     };
 

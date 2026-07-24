@@ -115,16 +115,9 @@ pub(crate) trait BlockingTdxQuery {
         adjust: u8,
     ) -> Result<Vec<SecurityBar>, TdxError>;
 
-    fn security_quotes(
-        &self,
-        instruments: &[(u8, &str)],
-    ) -> Result<Vec<SecurityQuote>, TdxError>;
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError>;
 
-    fn minute_time_data(
-        &self,
-        market: u8,
-        code: &str,
-    ) -> Result<Vec<MinuteTimePrice>, TdxError>;
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError>;
 
     fn history_minute_time_data(
         &self,
@@ -168,18 +161,11 @@ impl BlockingTdxQuery for TdxHqClient {
         TdxHqClient::get_security_bars(self, category, market, code, start, count, adjust)
     }
 
-    fn security_quotes(
-        &self,
-        instruments: &[(u8, &str)],
-    ) -> Result<Vec<SecurityQuote>, TdxError> {
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError> {
         TdxHqClient::get_security_quotes(self, instruments)
     }
 
-    fn minute_time_data(
-        &self,
-        market: u8,
-        code: &str,
-    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
         TdxHqClient::get_minute_time_data(self, market, code)
     }
 
@@ -232,23 +218,14 @@ impl BlockingTdxQuery for crate::TdxSmartClient {
         count: u16,
         adjust: u8,
     ) -> Result<Vec<SecurityBar>, TdxError> {
-        crate::TdxSmartClient::get_security_bars(
-            self, category, market, code, start, count, adjust,
-        )
+        crate::TdxSmartClient::get_security_bars(self, category, market, code, start, count, adjust)
     }
 
-    fn security_quotes(
-        &self,
-        instruments: &[(u8, &str)],
-    ) -> Result<Vec<SecurityQuote>, TdxError> {
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError> {
         crate::TdxSmartClient::get_security_quotes(self, instruments)
     }
 
-    fn minute_time_data(
-        &self,
-        market: u8,
-        code: &str,
-    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
         TdxHqClient::get_minute_time_data(self.inner(), market, code)
     }
 
@@ -279,14 +256,7 @@ impl BlockingTdxQuery for crate::TdxSmartClient {
         count: u16,
         date: u32,
     ) -> Result<Vec<TickData>, TdxError> {
-        TdxHqClient::get_history_transaction_data(
-            self.inner(),
-            market,
-            code,
-            start,
-            count,
-            date,
-        )
+        TdxHqClient::get_history_transaction_data(self.inner(), market, code, start, count, date)
     }
 
     fn security_count(&self, market: u8) -> Result<u16, TdxError> {
@@ -313,18 +283,11 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
         )
     }
 
-    fn security_quotes(
-        &self,
-        instruments: &[(u8, &str)],
-    ) -> Result<Vec<SecurityQuote>, TdxError> {
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError> {
         crate::TdxDirectClient::get_security_quotes(self, instruments)
     }
 
-    fn minute_time_data(
-        &self,
-        market: u8,
-        code: &str,
-    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
         crate::TdxDirectClient::get_minute_time_data(self, market, code)
     }
 
@@ -355,9 +318,7 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
         count: u16,
         date: u32,
     ) -> Result<Vec<TickData>, TdxError> {
-        crate::TdxDirectClient::get_history_transaction_data(
-            self, market, code, start, count, date,
-        )
+        crate::TdxDirectClient::get_history_transaction_data(self, market, code, start, count, date)
     }
 
     fn security_count(&self, market: u8) -> Result<u16, TdxError> {
@@ -404,11 +365,7 @@ pub(crate) trait AsyncTdxQuery {
 
     async fn security_count(&self, market: u8) -> Result<u16, TdxError>;
 
-    async fn security_list(
-        &self,
-        market: u8,
-        start: u16,
-    ) -> Result<Vec<SecurityInfo>, TdxError>;
+    async fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError>;
 
     async fn minute_time_data(
         &self,
@@ -475,11 +432,7 @@ impl AsyncTdxQuery for crate::AsyncTdxHqClient {
         crate::AsyncTdxHqClient::get_security_count(self, market).await
     }
 
-    async fn security_list(
-        &self,
-        market: u8,
-        start: u16,
-    ) -> Result<Vec<SecurityInfo>, TdxError> {
+    async fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
         crate::AsyncTdxHqClient::get_security_list(self, market, start).await
     }
 
@@ -650,10 +603,8 @@ fn minute_data_with(
             let compact = crate::net::utils::today_yyyymmdd();
             (
                 display_date(compact)?,
-                query.minute_time_data(
-                    market(request.instrument())?,
-                    request.instrument().code(),
-                )?,
+                query
+                    .minute_time_data(market(request.instrument())?, request.instrument().code())?,
             )
         }
     };
@@ -690,12 +641,7 @@ fn trades_with(
             request,
             CURRENT_TRADE_PAGE_SIZE,
             |start, count| {
-                query.transaction_data(
-                    request_market,
-                    request.instrument().code(),
-                    start,
-                    count,
-                )
+                query.transaction_data(request_market, request.instrument().code(), start, count)
             },
         ),
     }
@@ -1573,12 +1519,7 @@ impl Trades for crate::TdxDirectClient {
     type Error = TdxError;
 
     fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        trades_with(
-            self,
-            "tdx-direct-current",
-            "tdx-direct-history",
-            request,
-        )
+        trades_with(self, "tdx-direct-current", "tdx-direct-history", request)
     }
 }
 
