@@ -369,7 +369,7 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
     }
 }
 
-trait AsyncTdxQuery {
+pub(crate) trait AsyncTdxQuery {
     async fn security_bars(
         &self,
         category: u8,
@@ -401,6 +401,14 @@ trait AsyncTdxQuery {
         count: u16,
         date: u32,
     ) -> Result<Vec<TickData>, TdxError>;
+
+    async fn security_count(&self, market: u8) -> Result<u16, TdxError>;
+
+    async fn security_list(
+        &self,
+        market: u8,
+        start: u16,
+    ) -> Result<Vec<SecurityInfo>, TdxError>;
 }
 
 impl AsyncTdxQuery for crate::AsyncTdxHqClient {
@@ -448,6 +456,18 @@ impl AsyncTdxQuery for crate::AsyncTdxHqClient {
             self, market, code, start, count, date,
         )
         .await
+    }
+
+    async fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        crate::AsyncTdxHqClient::get_security_count(self, market).await
+    }
+
+    async fn security_list(
+        &self,
+        market: u8,
+        start: u16,
+    ) -> Result<Vec<SecurityInfo>, TdxError> {
+        crate::AsyncTdxHqClient::get_security_list(self, market, start).await
     }
 }
 

@@ -461,6 +461,22 @@ impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
                 ))
             })
     }
+
+    async fn security_count(&self, _market: u8) -> Result<u16, TdxError> {
+        Err(TdxError::InvalidData(
+            "scripted async security count response is not configured".into(),
+        ))
+    }
+
+    async fn security_list(
+        &self,
+        _market: u8,
+        _start: u16,
+    ) -> Result<Vec<SecurityInfo>, TdxError> {
+        Err(TdxError::InvalidData(
+            "scripted async security list response is not configured".into(),
+        ))
+    }
 }
 
 #[tokio::test]
