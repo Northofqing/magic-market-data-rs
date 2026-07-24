@@ -399,6 +399,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-jin10-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "serde_json",
+ "thiserror",
+ "ureq",
+]
+
+[[package]]
 name = "magic-market-analysis"
 version = "0.2.0"
 dependencies = [

@@ -3,14 +3,14 @@ use magic_market_core::{
     DragonTigerEntry, DragonTigerSeat, DragonTigerSide, Exchange, FiniteNumber, HttpsUrl,
     InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate, MarketStatistics,
     MarketStatisticsProvider, Money, NewsItem, NewsProvider, NonEmptyText, NorthboundChannel,
-    NorthboundDailyRequest, NorthboundDailyStat, NorthboundDailyStatistics,
-    NorthboundQuotaBalance, NorthboundTopTurnover, OptionContract, OptionData, OptionGreeks,
-    OptionKind, OptionQuote, PositiveU32, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows,
-    Price, Provenance, ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
+    NorthboundDailyRequest, NorthboundDailyStat, NorthboundDailyStatistics, NorthboundQuotaBalance,
+    NorthboundTopTurnover, OptionContract, OptionData, OptionGreeks, OptionKind, OptionQuote,
+    PositiveU32, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows, Price, Provenance,
+    ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
 };
 use magic_market_router::{
-    announcement_source, dragon_tiger_entry_source, dragon_tiger_seat_source,
-    global_news_source, market_statistics_source, northbound_daily_source, option_contract_source,
+    announcement_source, dragon_tiger_entry_source, dragon_tiger_seat_source, global_news_source,
+    market_statistics_source, northbound_daily_source, option_contract_source,
     option_greeks_source, option_quote_source, post_close_flow_source, AcceptancePolicy,
     AnnouncementRouter, AttemptStatus, DragonTigerEntryRouter, DragonTigerSeatRouter, FailureKind,
     GlobalNewsRouter, MarketStatisticsRouter, NorthboundDailyRouter, OptionContractRouter,
@@ -86,11 +86,10 @@ impl NewsProvider for NewsFixtureProvider {
     fn global_news(&self, _limit: PositiveU32) -> Result<DataBatch<NewsItem>, Self::Error> {
         let batch_id = format!("{}-news", self.batch_source);
         let published_at = "2026-07-24T20:00:00+08:00";
-        let evidence =
-            SourceEvidence::new(self.record_provider, "observed", &batch_id)
-                .unwrap()
-                .with_source_at(published_at)
-                .unwrap();
+        let evidence = SourceEvidence::new(self.record_provider, "observed", &batch_id)
+            .unwrap()
+            .with_source_at(published_at)
+            .unwrap();
         Ok(DataBatch::strict(
             vec![NewsItem {
                 item_id: NonEmptyText::new("news-1").unwrap(),

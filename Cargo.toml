@@ -11,6 +11,7 @@ members = [
     "crates/magic-cninfo-rs",
     "crates/magic-ths-rs",
     "crates/magic-cls-rs",
+    "crates/magic-jin10-rs",
     "crates/magic-baidu-rs",
     "crates/magic-iwencai-rs",
     "crates/magic-exchange-rs",
