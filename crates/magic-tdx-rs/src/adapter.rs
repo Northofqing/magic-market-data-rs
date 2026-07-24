@@ -119,6 +119,19 @@ trait BlockingTdxQuery {
         &self,
         instruments: &[(u8, &str)],
     ) -> Result<Vec<SecurityQuote>, TdxError>;
+
+    fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError>;
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError>;
 }
 
 impl BlockingTdxQuery for TdxHqClient {
@@ -139,6 +152,23 @@ impl BlockingTdxQuery for TdxHqClient {
         instruments: &[(u8, &str)],
     ) -> Result<Vec<SecurityQuote>, TdxError> {
         TdxHqClient::get_security_quotes(self, instruments)
+    }
+
+    fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        TdxHqClient::get_minute_time_data(self, market, code)
+    }
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        TdxHqClient::get_history_minute_time_data(self, market, code, date)
     }
 }
 
@@ -163,6 +193,23 @@ impl BlockingTdxQuery for crate::TdxSmartClient {
     ) -> Result<Vec<SecurityQuote>, TdxError> {
         crate::TdxSmartClient::get_security_quotes(self, instruments)
     }
+
+    fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        TdxHqClient::get_minute_time_data(self.inner(), market, code)
+    }
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        TdxHqClient::get_history_minute_time_data(self.inner(), market, code, date)
+    }
 }
 
 impl BlockingTdxQuery for crate::TdxDirectClient {
@@ -185,6 +232,23 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
         instruments: &[(u8, &str)],
     ) -> Result<Vec<SecurityQuote>, TdxError> {
         crate::TdxDirectClient::get_security_quotes(self, instruments)
+    }
+
+    fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        crate::TdxDirectClient::get_minute_time_data(self, market, code)
+    }
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        crate::TdxDirectClient::get_history_minute_time_data(self, market, code, date)
     }
 }
 
@@ -216,6 +280,34 @@ fn realtime_quotes_with(
         .collect::<Result<_, _>>()?;
     let records = query.security_quotes(&pairs)?;
     normalize_quotes(source, instruments, records)
+}
+
+fn minute_data_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &MinuteDataRequest,
+) -> Result<DataBatch<MinutePoint>, TdxError> {
+    let (date, records) = match request.date() {
+        Some(date) => (
+            date.to_owned(),
+            query.history_minute_time_data(
+                market(request.instrument())?,
+                request.instrument().code(),
+                compact_date(date)?,
+            )?,
+        ),
+        None => {
+            let compact = crate::net::utils::today_yyyymmdd();
+            (
+                display_date(compact)?,
+                query.minute_time_data(
+                    market(request.instrument())?,
+                    request.instrument().code(),
+                )?,
+            )
+        }
+    };
+    normalize_minute_records(source, request.instrument(), &date, records)
 }
 
 fn compact_date(value: &str) -> Result<u32, TdxError> {
@@ -806,27 +898,7 @@ impl MinuteData for TdxHqClient {
         &self,
         request: &MinuteDataRequest,
     ) -> Result<DataBatch<MinutePoint>, Self::Error> {
-        let (date, records) = match request.date() {
-            Some(date) => (
-                date.to_owned(),
-                self.get_history_minute_time_data(
-                    market(request.instrument())?,
-                    request.instrument().code(),
-                    compact_date(date)?,
-                )?,
-            ),
-            None => {
-                let compact = crate::net::utils::today_yyyymmdd();
-                (
-                    display_date(compact)?,
-                    self.get_minute_time_data(
-                        market(request.instrument())?,
-                        request.instrument().code(),
-                    )?,
-                )
-            }
-        };
-        normalize_minute_records("tdx", request.instrument(), &date, records)
+        minute_data_with(self, "tdx", request)
     }
 }
 
@@ -1123,7 +1195,7 @@ impl MinuteData for crate::TdxSmartClient {
         &self,
         request: &MinuteDataRequest,
     ) -> Result<DataBatch<MinutePoint>, Self::Error> {
-        <TdxHqClient as MinuteData>::minute_data(self.inner(), request)
+        minute_data_with(self, "tdx", request)
     }
 }
 
