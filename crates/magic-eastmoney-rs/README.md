@@ -77,6 +77,8 @@ network, cookies, or hidden global state.
   `HH:MM:SS` clocks.
 - Every record carries `SourceEvidence` with `ProviderId::Eastmoney`, observed
   time, batch ID, and source time when the response proves one.
+- Board-flow batches require the source-provided positive Unix update timestamp
+  `f124`; every row in one atomic batch must carry the same value.
 - Popularity ranking evidence and the optional quote-join evidence have
   different batch IDs.
 - Caller instruments must have a verified A-share code prefix matching their
