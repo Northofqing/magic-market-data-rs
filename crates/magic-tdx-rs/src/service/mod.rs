@@ -82,6 +82,71 @@ fn security_list_all_with(
     Ok(all)
 }
 
+fn quotes_chunked_with(
+    query: &impl BlockingTdxQuery,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<Quote>, TdxError> {
+    if instruments.is_empty() {
+        return Err(TdxError::InvalidData("quote request is empty".into()));
+    }
+    let mut records = Vec::with_capacity(instruments.len());
+    for chunk in instruments.chunks(60) {
+        let pairs: Vec<(u8, &str)> = chunk
+            .iter()
+            .map(|id| market(id).map(|market| (market, id.code())))
+            .collect::<Result<_, _>>()?;
+        let page = query.security_quotes(&pairs)?;
+        if page.len() != chunk.len() {
+            return Err(TdxError::InvalidData(
+                "TDX quote chunk cardinality mismatch".into(),
+            ));
+        }
+        records.extend(page);
+    }
+    let mut expected = HashMap::<(u8, String), usize>::new();
+    for id in instruments {
+        *expected
+            .entry((market(id)?, id.code().to_owned()))
+            .or_default() += 1;
+    }
+    for quote in &records {
+        let key = (quote.market, quote.code.clone());
+        let Some(remaining) = expected.get_mut(&key) else {
+            return Err(TdxError::InvalidData(
+                "TDX returned an unexpected quote".into(),
+            ));
+        };
+        if *remaining == 0 {
+            return Err(TdxError::InvalidData(
+                "TDX returned a duplicate quote".into(),
+            ));
+        }
+        *remaining -= 1;
+    }
+    if expected.values().any(|count| *count != 0) {
+        return Err(TdxError::InvalidData(
+            "TDX omitted a requested quote".into(),
+        ));
+    }
+    let mut by_key: HashMap<(u8, String), Vec<SecurityQuote>> = HashMap::new();
+    for quote in records {
+        by_key
+            .entry((quote.market, quote.code.clone()))
+            .or_default()
+            .push(quote);
+    }
+    let mut ordered = Vec::with_capacity(instruments.len());
+    for id in instruments {
+        ordered.push(
+            by_key
+                .get_mut(&(market(id)?, id.code().to_owned()))
+                .and_then(|values| values.pop())
+                .ok_or_else(|| TdxError::InvalidData("TDX quote ordering mismatch".into()))?,
+        );
+    }
+    crate::adapter::normalize_quotes("tdx-smart-chunked", instruments, ordered)
+}
+
 /// High-level TDX service using SmartClient failover semantics.
 pub struct TdxService {
     client: TdxSmartClient,
@@ -366,67 +431,7 @@ impl TdxService {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Quote>, TdxError> {
-        if instruments.is_empty() {
-            return Err(TdxError::InvalidData("quote request is empty".into()));
-        }
-        let mut records = Vec::with_capacity(instruments.len());
-        for chunk in instruments.chunks(60) {
-            let pairs: Vec<(u8, &str)> = chunk
-                .iter()
-                .map(|id| market(id).map(|market| (market, id.code())))
-                .collect::<Result<_, _>>()?;
-            let page = self.client.inner().get_security_quotes(&pairs)?;
-            if page.len() != chunk.len() {
-                return Err(TdxError::InvalidData(
-                    "TDX quote chunk cardinality mismatch".into(),
-                ));
-            }
-            records.extend(page);
-        }
-        // TDX normally preserves order; this validation also prevents silently
-        // returning a quote for a different instrument.
-        let mut expected = HashMap::<(u8, String), usize>::new();
-        for id in instruments {
-            *expected
-                .entry((market(id)?, id.code().to_owned()))
-                .or_default() += 1;
-        }
-        for quote in &records {
-            let key = (quote.market, quote.code.clone());
-            let Some(remaining) = expected.get_mut(&key) else {
-                return Err(TdxError::InvalidData(
-                    "TDX returned an unexpected quote".into(),
-                ));
-            };
-            if *remaining == 0 {
-                return Err(TdxError::InvalidData(
-                    "TDX returned a duplicate quote".into(),
-                ));
-            }
-            *remaining -= 1;
-        }
-        if expected.values().any(|count| *count != 0) {
-            return Err(TdxError::InvalidData(
-                "TDX omitted a requested quote".into(),
-            ));
-        }
-        let mut by_key: HashMap<(u8, String), Vec<SecurityQuote>> = HashMap::new();
-        for quote in records {
-            by_key
-                .entry((quote.market, quote.code.clone()))
-                .or_default()
-                .push(quote);
-        }
-        let mut ordered = Vec::with_capacity(instruments.len());
-        for id in instruments {
-            ordered.push(
-                by_key
-                    .get_mut(&(market(id)?, id.code().to_owned()))
-                    .and_then(|values| values.pop())
-                    .ok_or_else(|| TdxError::InvalidData("TDX quote ordering mismatch".into()))?,
-            );
-        }
-        crate::adapter::normalize_quotes("tdx-smart-chunked", instruments, ordered)
+        quotes_chunked_with(self.client.inner(), instruments)
     }
     /// TDX has no standardized auditable money-flow packet.
     pub fn money_flows(
