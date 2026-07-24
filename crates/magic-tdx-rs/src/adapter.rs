@@ -1188,66 +1188,84 @@ pub(crate) fn ordered_order_book_quotes<'a>(
         .collect()
 }
 
+pub(crate) fn normalize_order_books(
+    provider: &str,
+    source: &str,
+    instruments: &[InstrumentId],
+    quotes: Vec<SecurityQuote>,
+) -> Result<DataBatch<OrderBook>, TdxError> {
+    let ordered = ordered_order_book_quotes(instruments, quotes, provider)?;
+    let observed_at = fetched_at()?;
+    let batch_id = format!("{source}:{observed_at}:order-book");
+    let mut books = Vec::with_capacity(ordered.len());
+    let mut issues = Vec::new();
+    for (id, quote) in ordered {
+        let bids = [
+            book_level(quote.bid1, quote.bid_vol1)?,
+            book_level(quote.bid2, quote.bid_vol2)?,
+            book_level(quote.bid3, quote.bid_vol3)?,
+            book_level(quote.bid4, quote.bid_vol4)?,
+            book_level(quote.bid5, quote.bid_vol5)?,
+        ];
+        let asks = [
+            book_level(quote.ask1, quote.ask_vol1)?,
+            book_level(quote.ask2, quote.ask_vol2)?,
+            book_level(quote.ask3, quote.ask_vol3)?,
+            book_level(quote.ask4, quote.ask_vol4)?,
+            book_level(quote.ask5, quote.ask_vol5)?,
+        ];
+        let total_bid_quantity = book_depth(&bids)?;
+        let total_ask_quantity = book_depth(&asks)?;
+        let levels_complete = bids
+            .iter()
+            .chain(&asks)
+            .all(|level| level.price().is_some());
+        if !levels_complete {
+            issues.push(format!(
+                "{}: one or more normalized order-book fields unavailable",
+                id.code()
+            ));
+        }
+        issues.push(format!(
+            "{}: TDX order-book source timestamp format is unverified",
+            id.code()
+        ));
+        books.push(OrderBook::new(
+            id.clone(),
+            bids,
+            asks,
+            total_bid_quantity,
+            total_ask_quantity,
+            DataStatus::Unavailable,
+            None,
+            observed_at.clone(),
+            ProviderId::Tdx,
+            batch_id.clone(),
+        )?);
+    }
+    let provenance =
+        magic_market_core::Provenance::new(source, observed_at)?.with_batch_id(batch_id)?;
+    Ok(DataBatch::best_effort(books, provenance, issues)?)
+}
+
+fn order_books_with(
+    query: &impl BlockingTdxQuery,
+    provider: &str,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<OrderBook>, TdxError> {
+    let pairs = order_book_pairs(instruments, provider)?;
+    let quotes = query.security_quotes(&pairs)?;
+    normalize_order_books(provider, source, instruments, quotes)
+}
+
 impl OrderBooks for TdxHqClient {
     type Error = TdxError;
     fn order_books(
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<OrderBook>, Self::Error> {
-        let pairs = order_book_pairs(instruments, "TDX")?;
-        let quotes = self.get_security_quotes(&pairs)?;
-        let ordered = ordered_order_book_quotes(instruments, quotes, "TDX")?;
-        let observed_at = fetched_at()?;
-        let batch_id = format!("tdx:{observed_at}:order-book");
-        let mut books = Vec::with_capacity(ordered.len());
-        let mut issues = Vec::new();
-        for (id, quote) in ordered {
-            let bids = [
-                book_level(quote.bid1, quote.bid_vol1)?,
-                book_level(quote.bid2, quote.bid_vol2)?,
-                book_level(quote.bid3, quote.bid_vol3)?,
-                book_level(quote.bid4, quote.bid_vol4)?,
-                book_level(quote.bid5, quote.bid_vol5)?,
-            ];
-            let asks = [
-                book_level(quote.ask1, quote.ask_vol1)?,
-                book_level(quote.ask2, quote.ask_vol2)?,
-                book_level(quote.ask3, quote.ask_vol3)?,
-                book_level(quote.ask4, quote.ask_vol4)?,
-                book_level(quote.ask5, quote.ask_vol5)?,
-            ];
-            let total_bid_quantity = book_depth(&bids)?;
-            let total_ask_quantity = book_depth(&asks)?;
-            let levels_complete = bids
-                .iter()
-                .chain(&asks)
-                .all(|level| level.price().is_some());
-            if !levels_complete {
-                issues.push(format!(
-                    "{}: one or more normalized order-book fields unavailable",
-                    id.code()
-                ));
-            }
-            issues.push(format!(
-                "{}: TDX order-book source timestamp format is unverified",
-                id.code()
-            ));
-            books.push(OrderBook::new(
-                id.clone(),
-                bids,
-                asks,
-                total_bid_quantity,
-                total_ask_quantity,
-                magic_market_core::DataStatus::Unavailable,
-                None,
-                observed_at.clone(),
-                magic_market_core::ProviderId::Tdx,
-                batch_id.clone(),
-            )?);
-        }
-        let provenance =
-            magic_market_core::Provenance::new("tdx", observed_at)?.with_batch_id(batch_id)?;
-        Ok(DataBatch::best_effort(books, provenance, issues)?)
+        order_books_with(self, "TDX", "tdx", instruments)
     }
 }
 
@@ -1257,60 +1275,7 @@ impl OrderBooks for crate::TdxSmartClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<OrderBook>, Self::Error> {
-        let pairs = order_book_pairs(instruments, "TDX smart")?;
-        let quotes = self.get_security_quotes(&pairs)?;
-        let ordered = ordered_order_book_quotes(instruments, quotes, "TDX smart")?;
-        let observed_at = fetched_at()?;
-        let batch_id = format!("tdx-smart:{observed_at}:order-book");
-        let mut books = Vec::with_capacity(ordered.len());
-        let mut issues = Vec::new();
-        for (id, quote) in ordered {
-            let bids = [
-                book_level(quote.bid1, quote.bid_vol1)?,
-                book_level(quote.bid2, quote.bid_vol2)?,
-                book_level(quote.bid3, quote.bid_vol3)?,
-                book_level(quote.bid4, quote.bid_vol4)?,
-                book_level(quote.bid5, quote.bid_vol5)?,
-            ];
-            let asks = [
-                book_level(quote.ask1, quote.ask_vol1)?,
-                book_level(quote.ask2, quote.ask_vol2)?,
-                book_level(quote.ask3, quote.ask_vol3)?,
-                book_level(quote.ask4, quote.ask_vol4)?,
-                book_level(quote.ask5, quote.ask_vol5)?,
-            ];
-            let total_bid_quantity = book_depth(&bids)?;
-            let total_ask_quantity = book_depth(&asks)?;
-            let levels_complete = bids
-                .iter()
-                .chain(&asks)
-                .all(|level| level.price().is_some());
-            if !levels_complete {
-                issues.push(format!(
-                    "{}: one or more normalized order-book fields unavailable",
-                    id.code()
-                ));
-            }
-            issues.push(format!(
-                "{}: TDX order-book source timestamp format is unverified",
-                id.code()
-            ));
-            books.push(OrderBook::new(
-                id.clone(),
-                bids,
-                asks,
-                total_bid_quantity,
-                total_ask_quantity,
-                magic_market_core::DataStatus::Unavailable,
-                None,
-                observed_at.clone(),
-                magic_market_core::ProviderId::Tdx,
-                batch_id.clone(),
-            )?);
-        }
-        let provenance = magic_market_core::Provenance::new("tdx-smart", observed_at)?
-            .with_batch_id(batch_id)?;
-        Ok(DataBatch::best_effort(books, provenance, issues)?)
+        order_books_with(self, "TDX smart", "tdx-smart", instruments)
     }
 }
 
