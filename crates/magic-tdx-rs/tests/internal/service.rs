@@ -15,6 +15,8 @@ struct ScriptedBlockingServiceQuery {
     count_responses: RefCell<VecDeque<Result<u16, TdxError>>>,
     list_calls: RefCell<Vec<(u8, u16)>>,
     list_responses: RefCell<VecDeque<Result<Vec<SecurityInfo>, TdxError>>>,
+    quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
+    quote_responses: RefCell<VecDeque<Result<Vec<SecurityQuote>, TdxError>>>,
 }
 
 fn unconfigured<T>(operation: &str) -> Result<T, TdxError> {
@@ -38,9 +40,18 @@ impl crate::adapter::BlockingTdxQuery for ScriptedBlockingServiceQuery {
 
     fn security_quotes(
         &self,
-        _instruments: &[(u8, &str)],
+        instruments: &[(u8, &str)],
     ) -> Result<Vec<SecurityQuote>, TdxError> {
-        unconfigured("quotes")
+        self.quote_calls.borrow_mut().push(
+            instruments
+                .iter()
+                .map(|(market, code)| (*market, (*code).to_owned()))
+                .collect(),
+        );
+        self.quote_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("quotes"))
     }
 
     fn minute_time_data(
@@ -108,6 +119,56 @@ fn security(code: usize) -> SecurityInfo {
     }
 }
 
+fn source_quote(code: &str) -> SecurityQuote {
+    SecurityQuote {
+        market: 1,
+        code: code.into(),
+        active1: 0,
+        price: 10.0,
+        last_close: 9.0,
+        open: 9.5,
+        high: 10.5,
+        low: 8.5,
+        servertime: "10:00:01".into(),
+        vol: 1_000.0,
+        cur_vol: 10.0,
+        amount: 10_000.0,
+        s_vol: 400.0,
+        b_vol: 600.0,
+        bid1: 9.9,
+        bid_vol1: 10.0,
+        bid2: 9.8,
+        bid_vol2: 11.0,
+        bid3: 9.7,
+        bid_vol3: 12.0,
+        bid4: 9.6,
+        bid_vol4: 13.0,
+        bid5: 9.5,
+        bid_vol5: 14.0,
+        ask1: 10.1,
+        ask_vol1: 15.0,
+        ask2: 10.2,
+        ask_vol2: 16.0,
+        ask3: 10.3,
+        ask_vol3: 17.0,
+        ask4: 10.4,
+        ask_vol4: 18.0,
+        ask5: 10.5,
+        ask_vol5: 19.0,
+        reversed_bytes0: 0,
+        reversed_bytes1: 0,
+        reversed_bytes2: 0,
+        reversed_bytes3: 0,
+        reversed_bytes4: 0,
+        reversed_bytes5: 0,
+        reversed_bytes6: 0,
+        reversed_bytes7: 0,
+        reversed_bytes8: 0,
+        reversed_bytes9: 0,
+        active2: 0,
+    }
+}
+
 #[test]
 fn blocking_service_security_list_seam_assembles_declared_count_atomically() {
     let query = ScriptedBlockingServiceQuery {
@@ -129,6 +190,36 @@ fn blocking_service_security_list_seam_assembles_declared_count_atomically() {
         vec![(1, 0), (1, 1000), (1, 2000)]
     );
     assert_eq!(records[2000].code, "002000");
+}
+
+#[test]
+fn blocking_service_quote_seam_chunks_at_sixty_and_restores_order() {
+    let instruments: Vec<_> = (0..61)
+        .map(|index| instrument(Exchange::Shanghai, &format!("6{index:05}")))
+        .collect();
+    let mut first_page: Vec<_> = instruments[..60]
+        .iter()
+        .rev()
+        .map(|id| source_quote(id.code()))
+        .collect();
+    let second_page = vec![source_quote(instruments[60].code())];
+    let query = ScriptedBlockingServiceQuery {
+        quote_responses: RefCell::new(VecDeque::from([
+            Ok(std::mem::take(&mut first_page)),
+            Ok(second_page),
+        ])),
+        ..Default::default()
+    };
+
+    let batch = quotes_chunked_with(&query, &instruments).unwrap();
+
+    assert_eq!(query.quote_calls.borrow()[0].len(), 60);
+    assert_eq!(query.quote_calls.borrow()[1].len(), 1);
+    assert_eq!(batch.records().len(), 61);
+    for (record, expected) in batch.records().iter().zip(&instruments) {
+        assert_eq!(record.instrument(), expected);
+    }
+    assert_eq!(batch.provenance().source(), "tdx-smart-chunked");
 }
 
 #[test]
