@@ -114,6 +114,11 @@ trait BlockingTdxQuery {
         count: u16,
         adjust: u8,
     ) -> Result<Vec<SecurityBar>, TdxError>;
+
+    fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError>;
 }
 
 impl BlockingTdxQuery for TdxHqClient {
@@ -127,6 +132,13 @@ impl BlockingTdxQuery for TdxHqClient {
         adjust: u8,
     ) -> Result<Vec<SecurityBar>, TdxError> {
         TdxHqClient::get_security_bars(self, category, market, code, start, count, adjust)
+    }
+
+    fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError> {
+        TdxHqClient::get_security_quotes(self, instruments)
     }
 }
 
@@ -144,6 +156,13 @@ impl BlockingTdxQuery for crate::TdxSmartClient {
             self, category, market, code, start, count, adjust,
         )
     }
+
+    fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError> {
+        crate::TdxSmartClient::get_security_quotes(self, instruments)
+    }
 }
 
 impl BlockingTdxQuery for crate::TdxDirectClient {
@@ -159,6 +178,13 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
         crate::TdxDirectClient::get_security_bars(
             self, category, market, code, start, count, adjust,
         )
+    }
+
+    fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError> {
+        crate::TdxDirectClient::get_security_quotes(self, instruments)
     }
 }
 
@@ -177,6 +203,19 @@ fn historical_bars_with(
         0,
     )?;
     strict_bars(source, records)
+}
+
+fn realtime_quotes_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<Quote>, TdxError> {
+    let pairs: Vec<(u8, &str)> = instruments
+        .iter()
+        .map(|id| market(id).map(|market| (market, id.code())))
+        .collect::<Result<_, _>>()?;
+    let records = query.security_quotes(&pairs)?;
+    normalize_quotes(source, instruments, records)
 }
 
 fn compact_date(value: &str) -> Result<u32, TdxError> {
@@ -798,12 +837,7 @@ impl RealtimeQuotes for TdxHqClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
-        let records = self.get_security_quotes(&pairs)?;
-        normalize_quotes("tdx", instruments, records)
+        realtime_quotes_with(self, "tdx", instruments)
     }
 }
 
@@ -1100,12 +1134,7 @@ impl RealtimeQuotes for crate::TdxSmartClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
-        let records = self.get_security_quotes(&pairs)?;
-        normalize_quotes("tdx-smart", instruments, records)
+        realtime_quotes_with(self, "tdx-smart", instruments)
     }
 }
 
@@ -1132,12 +1161,7 @@ impl RealtimeQuotes for crate::TdxDirectClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
-        let records = self.get_security_quotes(&pairs)?;
-        normalize_quotes("tdx-direct", instruments, records)
+        realtime_quotes_with(self, "tdx-direct", instruments)
     }
 }
 
