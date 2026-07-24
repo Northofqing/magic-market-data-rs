@@ -18,6 +18,8 @@ required=(
   docs/integrations/cninfo-web.md
   docs/integrations/tonghuashun-web.md
   docs/integrations/cls-web.md
+  docs/integrations/jin10-web.md
+  docs/integrations/thepaper-web.md
   docs/integrations/baidu-web.md
   docs/integrations/iwencai-api.md
   docs/integrations/exchange-official.md
@@ -29,6 +31,8 @@ required=(
   crates/magic-cninfo-rs/Cargo.toml
   crates/magic-ths-rs/Cargo.toml
   crates/magic-cls-rs/Cargo.toml
+  crates/magic-jin10-rs/Cargo.toml
+  crates/magic-thepaper-rs/Cargo.toml
   crates/magic-baidu-rs/Cargo.toml
   crates/magic-iwencai-rs/Cargo.toml
   crates/magic-exchange-rs/Cargo.toml
@@ -46,6 +50,8 @@ workspace_members=(
   crates/magic-cninfo-rs
   crates/magic-ths-rs
   crates/magic-cls-rs
+  crates/magic-jin10-rs
+  crates/magic-thepaper-rs
   crates/magic-baidu-rs
   crates/magic-iwencai-rs
   crates/magic-exchange-rs
@@ -59,10 +65,12 @@ for member in "${workspace_members[@]}"; do
 done
 if rg -n 'stock_analysis' crates/*/Cargo.toml; then exit 1; fi
 router_dependencies=$(sed -n '/^\[dependencies\]/,/^\[/p' crates/magic-market-router/Cargo.toml)
-if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|baidu|iwencai|exchange)-rs' <<<"$router_dependencies"; then
+if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepaper|baidu|iwencai|exchange)-rs' <<<"$router_dependencies"; then
   echo "router production dependencies must remain provider-neutral" >&2
   exit 1
 fi
 # Imported upstream modules retain documented/test-only unwrap examples; runtime
 # hardening is tracked separately from this structural compliance gate.
-rg -q '^## BR-001 ' docs/business_rules.md; rg -q '^## Gate D ' docs/ENGINEERING_RULES.md
+rg -q '^## BR-001 ' docs/business_rules.md
+rg -q '^## BR-012 ' docs/business_rules.md
+rg -q '^## Gate D ' docs/ENGINEERING_RULES.md

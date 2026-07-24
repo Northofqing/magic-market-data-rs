@@ -40,3 +40,10 @@ as protocol failures. The only admitted exception is semantic-search output:
 rows with the same normalized security identity are collapsed to the
 source-supplied highest score, with deterministic first-seen tie breaking.
 No downstream consumer may deduplicate by display name.
+
+## BR-012 Public financial-news access boundary
+Jin10 admission is limited to unlocked public type-0 flashes and type-2
+articles from the official public stream; protected details are never
+requested or decrypted. The Paper admission is limited to native articles on
+finance channel `25951`; externally forwarded rows are omitted rather than
+relabeled. Neither source may infer structured security identity from text.

@@ -80,6 +80,10 @@ build_probe magic-ths-rs live_probe magic-ths-live-probe
 build_probe magic-ths-rs load_probe magic-ths-load-probe
 build_probe magic-cls-rs live_probe magic-cls-live-probe
 build_probe magic-cls-rs load_probe magic-cls-load-probe
+build_probe magic-jin10-rs live_probe magic-jin10-live-probe
+build_probe magic-jin10-rs load_probe magic-jin10-load-probe
+build_probe magic-thepaper-rs live_probe magic-thepaper-live-probe
+build_probe magic-thepaper-rs load_probe magic-thepaper-load-probe
 build_probe magic-baidu-rs live_probe magic-baidu-live-probe
 build_probe magic-baidu-rs load_probe magic-baidu-load-probe
 build_probe magic-iwencai-rs live_probe magic-iwencai-live-probe
