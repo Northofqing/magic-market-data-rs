@@ -59,6 +59,10 @@ struct ScriptedBarsQuery {
     response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
     quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
     quote_response: RefCell<Option<Result<Vec<SecurityQuote>, TdxError>>>,
+    minute_calls: RefCell<Vec<(u8, String)>>,
+    minute_response: RefCell<Option<Result<Vec<MinuteTimePrice>, TdxError>>>,
+    history_minute_calls: RefCell<Vec<(u8, String, u32)>>,
+    history_minute_response: RefCell<Option<Result<Vec<MinuteTimePrice>, TdxError>>>,
 }
 
 impl BlockingTdxQuery for ScriptedBarsQuery {
@@ -96,6 +100,40 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
                 "scripted quote response is not configured".into(),
             ))
         })
+    }
+
+    fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        self.minute_calls
+            .borrow_mut()
+            .push((market, code.to_owned()));
+        self.minute_response.borrow_mut().take().unwrap_or_else(|| {
+            Err(TdxError::InvalidData(
+                "scripted current minute response is not configured".into(),
+            ))
+        })
+    }
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        self.history_minute_calls
+            .borrow_mut()
+            .push((market, code.to_owned(), date));
+        self.history_minute_response
+            .borrow_mut()
+            .take()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted history minute response is not configured".into(),
+                ))
+            })
     }
 }
 
@@ -139,6 +177,36 @@ fn blocking_quote_seam_restores_order_and_preserves_source_label() {
     assert_eq!(batch.records()[0].price().get(), 101.0);
     assert_eq!(batch.records()[1].instrument().code(), "600002");
     assert_eq!(batch.provenance().source(), "tdx-smart");
+}
+
+#[test]
+fn blocking_historical_minute_seam_uses_explicit_source_date() {
+    let query = ScriptedBarsQuery {
+        history_minute_response: RefCell::new(Some(Ok(vec![MinuteTimePrice {
+            time: "09:31".into(),
+            price: 15.4,
+            avg_price: 15.4,
+            vol: 10.0,
+        }]))),
+        ..Default::default()
+    };
+    let request = MinuteDataRequest::new(instrument("600396"))
+        .with_date("2026-07-23")
+        .unwrap();
+
+    let batch = minute_data_with(&query, "tdx", &request).unwrap();
+
+    assert!(query.minute_calls.borrow().is_empty());
+    assert_eq!(
+        *query.history_minute_calls.borrow(),
+        vec![(1, "600396".into(), 20260723)]
+    );
+    assert_eq!(batch.records()[0].minute_at(), "2026-07-23 09:31");
+    assert_eq!(batch.provenance().source(), "tdx");
+    assert_eq!(
+        batch.provenance().source_at(),
+        Some("2026-07-23T09:31:00+08:00")
+    );
 }
 
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
