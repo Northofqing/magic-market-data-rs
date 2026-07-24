@@ -11,8 +11,8 @@ Read-only adapter for the public Jin10 7x24 financial flash stream.
   are omitted without requesting protected details.
 - Requires HTTP 200 JSON from the exact official HTTPS host, follows zero redirects, and
   caps responses at 2 MiB.
-- Validates the envelope, 20-row bound, IDs, duplicates, timestamps, public content,
-  tags, canonical URLs, and Core evidence.
+- Validates the envelope, caller limit of 20, independently bounded source window of 21,
+  IDs, duplicates, timestamps, public content, tags, canonical URLs, and Core evidence.
 - Client clones share a request gate held through the complete response read; production
   request starts are at least one second apart.
 - The bounded load probe is capped at three sequential requests and reports errors, RPS,

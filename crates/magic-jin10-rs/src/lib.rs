@@ -19,6 +19,7 @@ const OFFICIAL_API_VERSION: &str = "1.0.0";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PAGE_SIZE: u32 = 20;
+const MAX_SOURCE_ROWS: usize = 21;
 const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Jin10 adapter failures. Protected or malformed upstream data is never
@@ -280,9 +281,9 @@ fn parse_response(
         .get("data")
         .and_then(Value::as_array)
         .ok_or_else(|| Jin10Error::Protocol("data must be an array".into()))?;
-    if rows.len() > MAX_PAGE_SIZE as usize {
+    if rows.len() > MAX_SOURCE_ROWS {
         return Err(Jin10Error::Protocol(format!(
-            "Jin10 returned {} rows, maximum is {MAX_PAGE_SIZE}",
+            "Jin10 returned {} rows, verified source maximum is {MAX_SOURCE_ROWS}",
             rows.len()
         )));
     }
@@ -668,6 +669,25 @@ mod tests {
         }
     }
 
+    fn fixture_with_row_count(row_count: usize) -> Vec<u8> {
+        let mut root: Value = serde_json::from_str(FIXTURE).unwrap();
+        let rows = root.get_mut("data").and_then(Value::as_array_mut).unwrap();
+        let template = rows
+            .iter()
+            .find(|row| row.get("type").and_then(Value::as_i64) == Some(1))
+            .cloned()
+            .unwrap();
+        while rows.len() < row_count {
+            let mut row = template.clone();
+            row.as_object_mut().unwrap().insert(
+                "id".into(),
+                Value::String(format!("calendar-{}", rows.len())),
+            );
+            rows.push(row);
+        }
+        serde_json::to_vec(&root).unwrap()
+    }
+
     #[test]
     fn public_news_maps_all_contract_fields_and_omits_locked_rows() {
         let transport = FixtureTransport {
@@ -759,6 +779,17 @@ mod tests {
         assert!(matches!(
             Jin10Client::with_timeout(Duration::ZERO),
             Err(Jin10Error::InvalidRequest(_))
+        ));
+    }
+
+    #[test]
+    fn transient_twenty_one_row_source_window_is_bounded_separately_from_caller_limit() {
+        let twenty_one = fixture_with_row_count(21);
+        assert!(parse_response(&twenty_one, 20, "observed").is_ok());
+        let twenty_two = fixture_with_row_count(22);
+        assert!(matches!(
+            parse_response(&twenty_two, 20, "observed"),
+            Err(Jin10Error::Protocol(_))
         ));
     }
 

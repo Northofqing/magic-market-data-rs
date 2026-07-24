@@ -26,6 +26,9 @@ and other non-news row types are outside `NewsProvider::global_news`.
 ## Bounds and failure behavior
 
 - Caller limit: 1 through 20.
+- Source window: at most 21 rows. The public endpoint was observed briefly returning 21
+  during a rolling update before returning to its normal 20; 22 or more remains a
+  protocol failure.
 - Response cap: 2 MiB.
 - Redirects: disabled.
 - Production pacing: client clones share one gate; request starts are at least one second
