@@ -17,6 +17,14 @@ struct ScriptedBlockingServiceQuery {
     list_responses: RefCell<VecDeque<Result<Vec<SecurityInfo>, TdxError>>>,
     quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
     quote_responses: RefCell<VecDeque<Result<Vec<SecurityQuote>, TdxError>>>,
+    minute_calls: RefCell<Vec<(u8, String)>>,
+    minute_responses: RefCell<VecDeque<Result<Vec<MinuteTimePrice>, TdxError>>>,
+    history_minute_calls: RefCell<Vec<(u8, String, u32)>>,
+    history_minute_responses: RefCell<VecDeque<Result<Vec<MinuteTimePrice>, TdxError>>>,
+    transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
+    transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
+    history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
+    history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
 }
 
 fn unconfigured<T>(operation: &str) -> Result<T, TdxError> {
@@ -56,40 +64,68 @@ impl crate::adapter::BlockingTdxQuery for ScriptedBlockingServiceQuery {
 
     fn minute_time_data(
         &self,
-        _market: u8,
-        _code: &str,
+        market: u8,
+        code: &str,
     ) -> Result<Vec<MinuteTimePrice>, TdxError> {
-        unconfigured("current minute")
+        self.minute_calls
+            .borrow_mut()
+            .push((market, code.to_owned()));
+        self.minute_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("current minute"))
     }
 
     fn history_minute_time_data(
         &self,
-        _market: u8,
-        _code: &str,
-        _date: u32,
+        market: u8,
+        code: &str,
+        date: u32,
     ) -> Result<Vec<MinuteTimePrice>, TdxError> {
-        unconfigured("history minute")
+        self.history_minute_calls
+            .borrow_mut()
+            .push((market, code.to_owned(), date));
+        self.history_minute_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("history minute"))
     }
 
     fn transaction_data(
         &self,
-        _market: u8,
-        _code: &str,
-        _start: u16,
-        _count: u16,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
     ) -> Result<Vec<TickData>, TdxError> {
-        unconfigured("current transactions")
+        self.transaction_calls
+            .borrow_mut()
+            .push((market, code.to_owned(), start, count));
+        self.transaction_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("current transactions"))
     }
 
     fn history_transaction_data(
         &self,
-        _market: u8,
-        _code: &str,
-        _start: u16,
-        _count: u16,
-        _date: u32,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
     ) -> Result<Vec<TickData>, TdxError> {
-        unconfigured("history transactions")
+        self.history_transaction_calls.borrow_mut().push((
+            market,
+            code.to_owned(),
+            start,
+            count,
+            date,
+        ));
+        self.history_transaction_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("history transactions"))
     }
 
     fn security_count(&self, market: u8) -> Result<u16, TdxError> {
@@ -169,6 +205,26 @@ fn source_quote(code: &str) -> SecurityQuote {
     }
 }
 
+fn minute(time: &str) -> MinuteTimePrice {
+    MinuteTimePrice {
+        time: time.into(),
+        price: 10.0,
+        avg_price: 10.0,
+        vol: 100.0,
+    }
+}
+
+fn tick(time: &str) -> TickData {
+    TickData {
+        time: time.into(),
+        price: 10.0,
+        vol: 100.0,
+        num: 1,
+        buyorsell: 0,
+        reserved: 0,
+    }
+}
+
 #[test]
 fn blocking_service_security_list_seam_assembles_declared_count_atomically() {
     let query = ScriptedBlockingServiceQuery {
@@ -220,6 +276,47 @@ fn blocking_service_quote_seam_chunks_at_sixty_and_restores_order() {
         assert_eq!(record.instrument(), expected);
     }
     assert_eq!(batch.provenance().source(), "tdx-smart-chunked");
+}
+
+#[test]
+fn blocking_service_raw_query_seam_preserves_all_passthrough_parameters() {
+    let query = ScriptedBlockingServiceQuery {
+        minute_responses: RefCell::new(VecDeque::from([Ok(vec![minute("09:31")])])),
+        history_minute_responses: RefCell::new(VecDeque::from([Ok(vec![minute("09:32")])])),
+        transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick("09:33:00")])])),
+        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick(
+            "09:34:00",
+        )])])),
+        ..Default::default()
+    };
+
+    assert_eq!(minute_data_with(&query, 1, "600396").unwrap()[0].time, "09:31");
+    assert_eq!(
+        history_minute_data_with(&query, 1, "600396", 20260723).unwrap()[0].time,
+        "09:32"
+    );
+    assert_eq!(
+        transactions_with(&query, 1, "600396", 5, 10).unwrap()[0].time,
+        "09:33:00"
+    );
+    assert_eq!(
+        history_transactions_with(&query, 1, "600396", 15, 20, 20260722).unwrap()[0].time,
+        "09:34:00"
+    );
+
+    assert_eq!(*query.minute_calls.borrow(), vec![(1, "600396".into())]);
+    assert_eq!(
+        *query.history_minute_calls.borrow(),
+        vec![(1, "600396".into(), 20260723)]
+    );
+    assert_eq!(
+        *query.transaction_calls.borrow(),
+        vec![(1, "600396".into(), 5, 10)]
+    );
+    assert_eq!(
+        *query.history_transaction_calls.borrow(),
+        vec![(1, "600396".into(), 15, 20, 20260722)]
+    );
 }
 
 #[test]
