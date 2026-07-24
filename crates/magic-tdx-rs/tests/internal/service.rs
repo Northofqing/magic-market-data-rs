@@ -325,6 +325,8 @@ struct ScriptedAsyncServiceQuery {
     count_responses: RefCell<VecDeque<Result<u16, TdxError>>>,
     list_calls: RefCell<Vec<(u8, u16)>>,
     list_responses: RefCell<VecDeque<Result<Vec<SecurityInfo>, TdxError>>>,
+    quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
+    quote_responses: RefCell<VecDeque<Result<Vec<SecurityQuote>, TdxError>>>,
 }
 
 impl crate::adapter::AsyncTdxQuery for ScriptedAsyncServiceQuery {
@@ -342,9 +344,18 @@ impl crate::adapter::AsyncTdxQuery for ScriptedAsyncServiceQuery {
 
     async fn security_quotes(
         &self,
-        _instruments: &[(u8, &str)],
+        instruments: &[(u8, &str)],
     ) -> Result<Vec<SecurityQuote>, TdxError> {
-        unconfigured("async quotes")
+        self.quote_calls.borrow_mut().push(
+            instruments
+                .iter()
+                .map(|(market, code)| (*market, (*code).to_owned()))
+                .collect(),
+        );
+        self.quote_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("async quotes"))
     }
 
     async fn transaction_data(
@@ -409,6 +420,27 @@ async fn async_service_security_list_seam_assembles_declared_count_atomically() 
         *query.list_calls.borrow(),
         vec![(1, 0), (1, 1000), (1, 2000)]
     );
+}
+
+#[tokio::test]
+async fn async_service_order_book_seam_reuses_shared_normalization() {
+    let query = ScriptedAsyncServiceQuery {
+        quote_responses: RefCell::new(VecDeque::from([Ok(vec![source_quote("600396")])])),
+        ..Default::default()
+    };
+    let instruments = [instrument(Exchange::Shanghai, "600396")];
+
+    let batch = order_books_async_with(&query, &instruments).await.unwrap();
+
+    assert_eq!(
+        *query.quote_calls.borrow(),
+        vec![vec![(1, "600396".into())]]
+    );
+    let book = &batch.records()[0];
+    assert_eq!(book.total_bid_quantity().unwrap().get(), 60.0);
+    assert_eq!(book.total_ask_quantity().unwrap().get(), 85.0);
+    assert_eq!(book.provider(), magic_market_core::ProviderId::Tdx);
+    assert_eq!(batch.provenance().source(), "tdx-async");
 }
 
 #[test]
