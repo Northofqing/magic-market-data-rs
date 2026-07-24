@@ -61,8 +61,10 @@ cargo run -p magic-cninfo-rs --example load_probe --release --locked --offline
 ```
 
 live probe 默认使用华电辽能 `600396.SH` 验证映射和公告，并使用比亚迪
-`002594.SZ` 验证互动易。两个批次都打印 provenance、quality 和全部记录；任何
-一项失败都会非零退出。load probe 只压公告链路，最多五次，不代表服务 SLA。
+`002594.SZ` 验证互动易。两个批次各固定请求一条，以公共门独立校验完整质量、
+CNInfo provider、源时间、观察时间、批次 ID 和唯一业务 ID；只有两个已声明
+family 都通过才输出总状态 `admitted`，任何一项失败都输出 `failed` 并非零退
+出。load probe 只压公告链路，最多五次，不代表服务 SLA。
 
 ## 生产边界
 

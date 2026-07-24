@@ -1,12 +1,37 @@
 use magic_cls_rs::ClsClient;
-use magic_market_core::{NewsProvider, PositiveU32};
+use magic_market_core::{
+    verify_admitted_batch, NewsProvider, PositiveU32, ProbeAdmissionPolicy, ProbeStatus, ProviderId,
+};
 use std::error::Error;
+use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    match run_probe() {
+        Ok(status) => {
+            println!("admitted={}", status.satisfies_capability());
+            println!("live_probe_status={status}");
+            Ok(())
+        }
+        Err(error) => {
+            println!("live_probe_status={}", ProbeStatus::Failed);
+            Err(error)
+        }
+    }
+}
+
+fn run_probe() -> Result<ProbeStatus, Box<dyn Error>> {
     let client = ClsClient::new()?;
     let capabilities = ClsClient::content_capabilities();
     println!("provider=cls-v1 capabilities={capabilities:?}");
-    let batch = client.global_news(PositiveU32::new(5)?)?;
+    let batch = client.global_news(PositiveU32::new(1)?)?;
+    let verified = verify_admitted_batch(
+        &batch,
+        &ProbeAdmissionPolicy::new(ProviderId::Cailianpress)
+            .require_source_at()
+            .with_max_source_age(Duration::from_secs(24 * 60 * 60))?,
+        |record| &record.evidence,
+        |record| record.item_id.as_str().to_owned(),
+    )?;
     println!(
         "source={} source_at={:?} fetched_at={} batch_id={:?} complete={} records={}",
         batch.provenance().source(),
@@ -43,6 +68,23 @@ fn main() -> Result<(), Box<dyn Error>> {
             item.evidence.batch_id()
         );
     }
-    println!("live_probe_status=passed");
-    Ok(())
+    Ok(declared_admission_status(
+        capabilities.global_news,
+        verified,
+    ))
 }
+
+fn declared_admission_status(
+    capability_advertised: bool,
+    verified_status: ProbeStatus,
+) -> ProbeStatus {
+    if capability_advertised {
+        verified_status
+    } else {
+        ProbeStatus::DiagnosticCompleteUnadmitted
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/live_probe_tests.rs"]
+mod tests;

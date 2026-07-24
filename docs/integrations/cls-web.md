@@ -43,11 +43,14 @@ MAGIC_CLS_LOAD_REQUESTS=2 \
   cargo run -p magic-cls-rs --example load_probe --release --locked --offline
 ```
 
-live probe 打印批次证据和每条 `NewsItem` 的全部字段；空响应、错误码、非法 URL
-或字段错误都会非零退出。load probe 最多三次，输出成功/失败、错误、RPS 和
+live probe 固定请求一条电报，并以公共准入门校验完整质量、财联社 provider、
+24 小时内源时间、观察时间、批次 ID 和唯一电报 ID；成功输出 `admitted`，空响
+应、错误码、非法 URL、过期源时间或字段错误输出 `failed` 并非零退出。load
+probe 最多三次，输出成功/失败、错误、RPS 和
 p50/p95/p99/max。确定性 fixtures 已覆盖签名、错误码、Content-Type、URL
-白名单、严格证券/主题字段和 clone 共享门。2026-07-23 真实 probe 已返回 5 条
-完整电报并通过；真实负载结果详见 `docs/PERFORMANCE_RESULTS.md`。
+白名单、严格证券/主题字段和 clone 共享门。2026-07-23 历史真实 probe 曾返回
+5 条完整电报；该记录早于当前机器准入门，不能替代重新执行的 live admission。
+历史负载结果详见 `docs/PERFORMANCE_RESULTS.md`。
 
 ## 生产边界
 

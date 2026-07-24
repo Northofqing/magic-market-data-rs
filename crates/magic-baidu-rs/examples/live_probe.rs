@@ -1,16 +1,46 @@
 use magic_baidu_rs::BaiduClient;
 use magic_market_core::{
-    AssetClass, BarInterval, BarsRequest, Exchange, InstrumentId, TechnicalBarsProvider,
+    verify_admitted_batch, AssetClass, BarInterval, BarsRequest, Exchange, InstrumentId,
+    ProbeAdmissionPolicy, ProbeStatus, ProviderId, TechnicalBarsProvider,
 };
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    match run_probe() {
+        Ok(status) => {
+            println!("admitted={}", status.satisfies_capability());
+            println!("live_probe_status={status}");
+            Ok(())
+        }
+        Err(error) => {
+            println!("live_probe_status={}", ProbeStatus::Failed);
+            Err(error)
+        }
+    }
+}
+
+fn run_probe() -> Result<ProbeStatus, Box<dyn Error>> {
     let client = BaiduClient::new()?;
     let capabilities = BaiduClient::capabilities();
     println!("provider=baidu-pae capabilities={capabilities:?}");
     let instrument = InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)?;
-    let request = BarsRequest::new(instrument, BarInterval::Day, 5)?;
+    let request = BarsRequest::new(instrument, BarInterval::Day, 1)?;
     let batch = client.technical_bars(&request)?;
+    verify_admitted_batch(
+        &batch,
+        &ProbeAdmissionPolicy::new(ProviderId::Baidu).require_source_at(),
+        |record| record.evidence(),
+        |record| {
+            let bar = record.bar();
+            format!(
+                "{:?}:{}:{:?}:{}",
+                bar.instrument().exchange(),
+                bar.instrument().code(),
+                bar.interval(),
+                bar.bar_start()
+            )
+        },
+    )?;
     println!(
         "source={} source_at={:?} fetched_at={} batch_id={:?} complete={} records={}",
         batch.provenance().source(),
@@ -49,6 +79,28 @@ fn main() -> Result<(), Box<dyn Error>> {
             technical.evidence().batch_id()
         );
     }
-    println!("live_probe_status=passed");
-    Ok(())
+    Ok(probe_status(capabilities.bars, false, false, false, false))
 }
+
+fn probe_status(
+    capability_advertised: bool,
+    latest_session_proved: bool,
+    trading_calendar_proved: bool,
+    adjacent_change_proved: bool,
+    corporate_action_continuity_proved: bool,
+) -> ProbeStatus {
+    if capability_advertised
+        && latest_session_proved
+        && trading_calendar_proved
+        && adjacent_change_proved
+        && corporate_action_continuity_proved
+    {
+        ProbeStatus::Admitted
+    } else {
+        ProbeStatus::DiagnosticCompleteUnadmitted
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/live_probe_tests.rs"]
+mod tests;
