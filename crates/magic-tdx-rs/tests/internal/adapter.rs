@@ -68,6 +68,10 @@ struct ScriptedBarsQuery {
     transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
     history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
     history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
+    security_count_calls: RefCell<Vec<u8>>,
+    security_count_responses: RefCell<VecDeque<Result<u16, TdxError>>>,
+    security_list_calls: RefCell<Vec<(u8, u16)>>,
+    security_list_responses: RefCell<VecDeque<Result<Vec<SecurityInfo>, TdxError>>>,
 }
 
 impl BlockingTdxQuery for ScriptedBarsQuery {
@@ -185,6 +189,30 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
                 ))
             })
     }
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        self.security_count_calls.borrow_mut().push(market);
+        self.security_count_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted security count response is not configured".into(),
+                ))
+            })
+    }
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
+        self.security_list_calls.borrow_mut().push((market, start));
+        self.security_list_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted security list response is not configured".into(),
+                ))
+            })
+    }
 }
 
 #[test]
@@ -283,6 +311,40 @@ fn blocking_trade_seam_uses_historical_query_and_stops_on_short_page() {
     assert_eq!(batch.records().len(), 2);
     assert_eq!(batch.records()[0].trade_at(), "2026-07-21 10:00:00");
     assert_eq!(batch.provenance().source(), "tdx-history");
+}
+
+#[test]
+fn blocking_metadata_seam_uses_declared_count_and_source_backed_page() {
+    let query = ScriptedBarsQuery {
+        security_count_responses: RefCell::new(VecDeque::from([Ok(2)])),
+        security_list_responses: RefCell::new(VecDeque::from([Ok(vec![
+            SecurityInfo {
+                code: "600001".into(),
+                volunit: 100,
+                decimal_point: 2,
+                name: "甲公司".into(),
+                pre_close: 10.0,
+            },
+            SecurityInfo {
+                code: "600002".into(),
+                volunit: 100,
+                decimal_point: 2,
+                name: "乙公司".into(),
+                pre_close: 20.0,
+            },
+        ])])),
+        ..Default::default()
+    };
+    let instruments = [instrument("600002"), instrument("600001")];
+
+    let batch = security_metadata_with(&query, "tdx", &instruments).unwrap();
+
+    assert_eq!(*query.security_count_calls.borrow(), vec![1]);
+    assert_eq!(*query.security_list_calls.borrow(), vec![(1, 0)]);
+    assert_eq!(batch.records()[0].instrument().code(), "600002");
+    assert_eq!(batch.records()[0].name(), Some("乙公司"));
+    assert_eq!(batch.records()[1].name(), Some("甲公司"));
+    assert_eq!(batch.provenance().source(), "tdx");
 }
 
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
