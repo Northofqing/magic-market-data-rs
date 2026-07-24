@@ -57,6 +57,8 @@ fn source_bar() -> SecurityBar {
 struct ScriptedBarsQuery {
     calls: RefCell<Vec<(u8, u8, String, u32, u16, u8)>>,
     response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
+    quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
+    quote_response: RefCell<Option<Result<Vec<SecurityQuote>, TdxError>>>,
 }
 
 impl BlockingTdxQuery for ScriptedBarsQuery {
@@ -75,6 +77,23 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
         self.response.borrow_mut().take().unwrap_or_else(|| {
             Err(TdxError::InvalidData(
                 "scripted bars response is not configured".into(),
+            ))
+        })
+    }
+
+    fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError> {
+        self.quote_calls.borrow_mut().push(
+            instruments
+                .iter()
+                .map(|(market, code)| (*market, (*code).to_owned()))
+                .collect(),
+        );
+        self.quote_response.borrow_mut().take().unwrap_or_else(|| {
+            Err(TdxError::InvalidData(
+                "scripted quote response is not configured".into(),
             ))
         })
     }
@@ -97,6 +116,29 @@ fn blocking_bar_seam_uses_decoded_records_and_exact_request_parameters() {
     assert_eq!(batch.records().len(), 1);
     assert_eq!(batch.provenance().source(), "tdx");
     assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+}
+
+#[test]
+fn blocking_quote_seam_restores_order_and_preserves_source_label() {
+    let query = ScriptedBarsQuery {
+        quote_response: RefCell::new(Some(Ok(vec![
+            source_quote("600002", 102.0),
+            source_quote("600001", 101.0),
+        ]))),
+        ..Default::default()
+    };
+    let instruments = [instrument("600001"), instrument("600002")];
+
+    let batch = realtime_quotes_with(&query, "tdx-smart", &instruments).unwrap();
+
+    assert_eq!(
+        *query.quote_calls.borrow(),
+        vec![vec![(1, "600001".into()), (1, "600002".into())]]
+    );
+    assert_eq!(batch.records()[0].instrument().code(), "600001");
+    assert_eq!(batch.records()[0].price().get(), 101.0);
+    assert_eq!(batch.records()[1].instrument().code(), "600002");
+    assert_eq!(batch.provenance().source(), "tdx-smart");
 }
 
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
