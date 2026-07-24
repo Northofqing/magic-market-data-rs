@@ -327,6 +327,14 @@ struct ScriptedAsyncServiceQuery {
     list_responses: RefCell<VecDeque<Result<Vec<SecurityInfo>, TdxError>>>,
     quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
     quote_responses: RefCell<VecDeque<Result<Vec<SecurityQuote>, TdxError>>>,
+    minute_calls: RefCell<Vec<(u8, String)>>,
+    minute_responses: RefCell<VecDeque<Result<Vec<MinuteTimePrice>, TdxError>>>,
+    history_minute_calls: RefCell<Vec<(u8, String, u32)>>,
+    history_minute_responses: RefCell<VecDeque<Result<Vec<MinuteTimePrice>, TdxError>>>,
+    transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
+    transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
+    history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
+    history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
 }
 
 impl crate::adapter::AsyncTdxQuery for ScriptedAsyncServiceQuery {
@@ -360,23 +368,39 @@ impl crate::adapter::AsyncTdxQuery for ScriptedAsyncServiceQuery {
 
     async fn transaction_data(
         &self,
-        _market: u8,
-        _code: &str,
-        _start: u16,
-        _count: u16,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
     ) -> Result<Vec<TickData>, TdxError> {
-        unconfigured("async current transactions")
+        self.transaction_calls
+            .borrow_mut()
+            .push((market, code.to_owned(), start, count));
+        self.transaction_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("async current transactions"))
     }
 
     async fn history_transaction_data(
         &self,
-        _market: u8,
-        _code: &str,
-        _start: u16,
-        _count: u16,
-        _date: u32,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
     ) -> Result<Vec<TickData>, TdxError> {
-        unconfigured("async history transactions")
+        self.history_transaction_calls.borrow_mut().push((
+            market,
+            code.to_owned(),
+            start,
+            count,
+            date,
+        ));
+        self.history_transaction_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("async history transactions"))
     }
 
     async fn security_count(&self, market: u8) -> Result<u16, TdxError> {
@@ -397,6 +421,35 @@ impl crate::adapter::AsyncTdxQuery for ScriptedAsyncServiceQuery {
             .borrow_mut()
             .pop_front()
             .unwrap_or_else(|| unconfigured("async security list"))
+    }
+
+    async fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        self.minute_calls
+            .borrow_mut()
+            .push((market, code.to_owned()));
+        self.minute_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("async current minute"))
+    }
+
+    async fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        self.history_minute_calls
+            .borrow_mut()
+            .push((market, code.to_owned(), date));
+        self.history_minute_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| unconfigured("async history minute"))
     }
 }
 
@@ -441,6 +494,58 @@ async fn async_service_order_book_seam_reuses_shared_normalization() {
     assert_eq!(book.total_ask_quantity().unwrap().get(), 85.0);
     assert_eq!(book.provider(), magic_market_core::ProviderId::Tdx);
     assert_eq!(batch.provenance().source(), "tdx-async");
+}
+
+#[tokio::test]
+async fn async_service_raw_query_seam_preserves_all_passthrough_parameters() {
+    let query = ScriptedAsyncServiceQuery {
+        minute_responses: RefCell::new(VecDeque::from([Ok(vec![minute("09:31")])])),
+        history_minute_responses: RefCell::new(VecDeque::from([Ok(vec![minute("09:32")])])),
+        transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick("09:33:00")])])),
+        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![tick(
+            "09:34:00",
+        )])])),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        minute_data_async_with(&query, 1, "600396").await.unwrap()[0].time,
+        "09:31"
+    );
+    assert_eq!(
+        history_minute_data_async_with(&query, 1, "600396", 20260723)
+            .await
+            .unwrap()[0]
+            .time,
+        "09:32"
+    );
+    assert_eq!(
+        transactions_async_with(&query, 1, "600396", 5, 10)
+            .await
+            .unwrap()[0]
+            .time,
+        "09:33:00"
+    );
+    assert_eq!(
+        history_transactions_async_with(&query, 1, "600396", 15, 20, 20260722)
+            .await
+            .unwrap()[0]
+            .time,
+        "09:34:00"
+    );
+    assert_eq!(*query.minute_calls.borrow(), vec![(1, "600396".into())]);
+    assert_eq!(
+        *query.history_minute_calls.borrow(),
+        vec![(1, "600396".into(), 20260723)]
+    );
+    assert_eq!(
+        *query.transaction_calls.borrow(),
+        vec![(1, "600396".into(), 5, 10)]
+    );
+    assert_eq!(
+        *query.history_transaction_calls.borrow(),
+        vec![(1, "600396".into(), 15, 20, 20260722)]
+    );
 }
 
 #[test]
