@@ -1,5 +1,6 @@
 use super::*;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 
 #[test]
 fn rejects_bar_ranges_instead_of_silently_ignoring_them() {
@@ -63,6 +64,10 @@ struct ScriptedBarsQuery {
     minute_response: RefCell<Option<Result<Vec<MinuteTimePrice>, TdxError>>>,
     history_minute_calls: RefCell<Vec<(u8, String, u32)>>,
     history_minute_response: RefCell<Option<Result<Vec<MinuteTimePrice>, TdxError>>>,
+    transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
+    transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
+    history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
+    history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
 }
 
 impl BlockingTdxQuery for ScriptedBarsQuery {
@@ -132,6 +137,51 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
             .unwrap_or_else(|| {
                 Err(TdxError::InvalidData(
                     "scripted history minute response is not configured".into(),
+                ))
+            })
+    }
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        self.transaction_calls
+            .borrow_mut()
+            .push((market, code.to_owned(), start, count));
+        self.transaction_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted current transaction response is not configured".into(),
+                ))
+            })
+    }
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        self.history_transaction_calls.borrow_mut().push((
+            market,
+            code.to_owned(),
+            start,
+            count,
+            date,
+        ));
+        self.history_transaction_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted history transaction response is not configured".into(),
                 ))
             })
     }
@@ -207,6 +257,32 @@ fn blocking_historical_minute_seam_uses_explicit_source_date() {
         batch.provenance().source_at(),
         Some("2026-07-23T09:31:00+08:00")
     );
+}
+
+#[test]
+fn blocking_trade_seam_uses_historical_query_and_stops_on_short_page() {
+    let query = ScriptedBarsQuery {
+        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![
+            source_trade(0, 0),
+            source_trade(1, 1),
+        ])])),
+        ..Default::default()
+    };
+    let request = TradesRequest::new(instrument("600519"), 3)
+        .unwrap()
+        .with_date("2026-07-21")
+        .unwrap();
+
+    let batch = trades_with(&query, "tdx-current", "tdx-history", &request).unwrap();
+
+    assert!(query.transaction_calls.borrow().is_empty());
+    assert_eq!(
+        *query.history_transaction_calls.borrow(),
+        vec![(1, "600519".into(), 0, 3, 20260721)]
+    );
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.records()[0].trade_at(), "2026-07-21 10:00:00");
+    assert_eq!(batch.provenance().source(), "tdx-history");
 }
 
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
