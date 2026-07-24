@@ -1,4 +1,5 @@
 use super::*;
+use std::cell::RefCell;
 
 #[test]
 fn rejects_bar_ranges_instead_of_silently_ignoring_them() {
@@ -33,6 +34,69 @@ use magic_market_core::{AssetClass, Exchange};
 
 fn instrument(code: &str) -> InstrumentId {
     InstrumentId::new(Exchange::Shanghai, code, AssetClass::Equity).unwrap()
+}
+
+fn source_bar() -> SecurityBar {
+    SecurityBar {
+        open: 10.0,
+        close: 11.0,
+        high: 12.0,
+        low: 9.0,
+        vol: 100.0,
+        amount: 1_000.0,
+        year: 2026,
+        month: 7,
+        day: 23,
+        hour: 0,
+        minute: 0,
+        datetime: "2026-07-23".into(),
+    }
+}
+
+#[derive(Default)]
+struct ScriptedBarsQuery {
+    calls: RefCell<Vec<(u8, u8, String, u16, u16, u8)>>,
+    response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
+}
+
+impl BlockingTdxQuery for ScriptedBarsQuery {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        self.calls
+            .borrow_mut()
+            .push((category, market, code.to_owned(), start, count, adjust));
+        self.response.borrow_mut().take().unwrap_or_else(|| {
+            Err(TdxError::InvalidData(
+                "scripted bars response is not configured".into(),
+            ))
+        })
+    }
+}
+
+#[test]
+fn blocking_bar_seam_uses_decoded_records_and_exact_request_parameters() {
+    let query = ScriptedBarsQuery {
+        response: RefCell::new(Some(Ok(vec![source_bar()]))),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 5).unwrap();
+
+    let batch = historical_bars_with(&query, "tdx", &request).unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![(KLINE_DAILY, 1, "600396".into(), 0, 5, 0)]
+    );
+    assert_eq!(batch.records().len(), 1);
+    assert_eq!(batch.provenance().source(), "tdx");
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
 }
 
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
