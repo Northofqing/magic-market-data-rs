@@ -409,6 +409,19 @@ pub(crate) trait AsyncTdxQuery {
         market: u8,
         start: u16,
     ) -> Result<Vec<SecurityInfo>, TdxError>;
+
+    async fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError>;
+
+    async fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError>;
 }
 
 impl AsyncTdxQuery for crate::AsyncTdxHqClient {
@@ -468,6 +481,23 @@ impl AsyncTdxQuery for crate::AsyncTdxHqClient {
         start: u16,
     ) -> Result<Vec<SecurityInfo>, TdxError> {
         crate::AsyncTdxHqClient::get_security_list(self, market, start).await
+    }
+
+    async fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        crate::AsyncTdxHqClient::get_minute_time_data(self, market, code).await
+    }
+
+    async fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        crate::AsyncTdxHqClient::get_history_minute_time_data(self, market, code, date).await
     }
 }
 

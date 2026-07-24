@@ -227,6 +227,46 @@ async fn order_books_async_with(
     normalize_order_books("TDX async", "tdx-async", instruments, quotes)
 }
 
+async fn minute_data_async_with(
+    query: &impl AsyncTdxQuery,
+    market: u8,
+    code: &str,
+) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    query.minute_time_data(market, code).await
+}
+
+async fn history_minute_data_async_with(
+    query: &impl AsyncTdxQuery,
+    market: u8,
+    code: &str,
+    date: u32,
+) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    query.history_minute_time_data(market, code, date).await
+}
+
+async fn transactions_async_with(
+    query: &impl AsyncTdxQuery,
+    market: u8,
+    code: &str,
+    start: u16,
+    count: u16,
+) -> Result<Vec<TickData>, TdxError> {
+    query.transaction_data(market, code, start, count).await
+}
+
+async fn history_transactions_async_with(
+    query: &impl AsyncTdxQuery,
+    market: u8,
+    code: &str,
+    start: u16,
+    count: u16,
+    date: u32,
+) -> Result<Vec<TickData>, TdxError> {
+    query
+        .history_transaction_data(market, code, start, count, date)
+        .await
+}
+
 /// High-level TDX service using SmartClient failover semantics.
 pub struct TdxService {
     client: TdxSmartClient,
@@ -297,10 +337,7 @@ impl AsyncTdxService {
         market: u8,
         code: &str,
     ) -> Result<Vec<MinuteTimePrice>, TdxError> {
-        self.client
-            .get_minute_time_data(market, code)
-            .await
-            .map_err(Into::into)
+        minute_data_async_with(&self.client, market, code).await
     }
     /// Fetches minute data for an explicit historical date (YYYYMMDD).
     pub async fn history_minute_data(
@@ -309,10 +346,7 @@ impl AsyncTdxService {
         code: &str,
         date: u32,
     ) -> Result<Vec<MinuteTimePrice>, TdxError> {
-        self.client
-            .get_history_minute_time_data(market, code, date)
-            .await
-            .map_err(Into::into)
+        history_minute_data_async_with(&self.client, market, code, date).await
     }
     /// Fetches current transaction data.
     pub async fn transactions(
@@ -322,10 +356,7 @@ impl AsyncTdxService {
         start: u16,
         count: u16,
     ) -> Result<Vec<TickData>, TdxError> {
-        self.client
-            .get_transaction_data(market, code, start, count)
-            .await
-            .map_err(Into::into)
+        transactions_async_with(&self.client, market, code, start, count).await
     }
     /// Fetches historical transactions for an explicit date (YYYYMMDD).
     pub async fn history_transactions(
@@ -336,10 +367,7 @@ impl AsyncTdxService {
         count: u16,
         date: u32,
     ) -> Result<Vec<TickData>, TdxError> {
-        self.client
-            .get_history_transaction_data(market, code, start, count, date)
-            .await
-            .map_err(Into::into)
+        history_transactions_async_with(&self.client, market, code, start, count, date).await
     }
     /// Fetches decoded finance fields.
     pub async fn finance(&self, market: u8, code: &str) -> Result<FinanceInfo, TdxError> {

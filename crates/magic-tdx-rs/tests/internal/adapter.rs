@@ -477,6 +477,27 @@ impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
             "scripted async security list response is not configured".into(),
         ))
     }
+
+    async fn minute_time_data(
+        &self,
+        _market: u8,
+        _code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        Err(TdxError::InvalidData(
+            "scripted async minute response is not configured".into(),
+        ))
+    }
+
+    async fn history_minute_time_data(
+        &self,
+        _market: u8,
+        _code: &str,
+        _date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        Err(TdxError::InvalidData(
+            "scripted async history minute response is not configured".into(),
+        ))
+    }
 }
 
 #[tokio::test]
