@@ -104,7 +104,7 @@ fn strict_bars(
     Ok(DataBatch::strict(records, provenance))
 }
 
-trait BlockingTdxQuery {
+pub(crate) trait BlockingTdxQuery {
     fn security_bars(
         &self,
         category: u8,

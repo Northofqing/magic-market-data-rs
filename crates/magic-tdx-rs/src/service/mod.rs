@@ -3,7 +3,7 @@ pub mod blocks;
 pub mod finance;
 pub mod funds;
 pub mod profile;
-use crate::adapter::{order_book_pairs, ordered_order_book_quotes};
+use crate::adapter::{order_book_pairs, ordered_order_book_quotes, BlockingTdxQuery};
 use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
 use crate::{AsyncTdxHqClient, SecurityBar, SecurityQuote, TdxError, TdxSmartClient};
 pub use blocks::BlockService;
@@ -34,6 +34,52 @@ fn fetched_epoch() -> Result<String, TdxError> {
         .map_err(|error| {
             TdxError::InvalidData(format!("system clock is before UNIX epoch: {error}"))
         })
+}
+
+fn security_count_with(
+    query: &impl BlockingTdxQuery,
+    market: u8,
+) -> Result<u16, TdxError> {
+    query.security_count(market)
+}
+
+fn security_list_with(
+    query: &impl BlockingTdxQuery,
+    market: u8,
+    start: u16,
+) -> Result<Vec<SecurityInfo>, TdxError> {
+    query.security_list(market, start)
+}
+
+fn security_list_all_with(
+    query: &impl BlockingTdxQuery,
+    market: u8,
+) -> Result<Vec<SecurityInfo>, TdxError> {
+    const PAGE_SIZE: u16 = 1000;
+    let expected = usize::from(security_count_with(query, market)?);
+    let mut all = Vec::with_capacity(expected);
+    let mut start: u16 = 0;
+    while all.len() < expected {
+        let page = security_list_with(query, market, start)?;
+        if page.is_empty() {
+            return Err(TdxError::InvalidData(
+                "TDX security list ended before declared count".into(),
+            ));
+        }
+        all.extend(page);
+        if all.len() > expected {
+            return Err(TdxError::InvalidData(
+                "TDX security list exceeded declared count".into(),
+            ));
+        }
+        if all.len() == expected {
+            break;
+        }
+        start = start
+            .checked_add(PAGE_SIZE)
+            .ok_or_else(|| TdxError::InvalidData("TDX security list offset overflow".into()))?;
+    }
+    Ok(all)
 }
 
 /// High-level TDX service using SmartClient failover semantics.
@@ -406,42 +452,18 @@ impl TdxService {
     }
     /// Fetches a market security count.
     pub fn security_count(&self, market: u8) -> Result<u16, TdxError> {
-        self.client.inner().get_security_count(market)
+        security_count_with(self.client.inner(), market)
     }
     /// Fetches one security-list page.
     pub fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
-        self.client.inner().get_security_list(market, start)
+        security_list_with(self.client.inner(), market, start)
     }
     /// Fetches the complete market list using the server-declared count.
     ///
     /// Pages are assembled atomically: a transport or cardinality mismatch
     /// returns an error rather than a silently truncated list.
     pub fn security_list_all(&self, market: u8) -> Result<Vec<SecurityInfo>, TdxError> {
-        const PAGE_SIZE: u16 = 1000;
-        let expected = usize::from(self.security_count(market)?);
-        let mut all = Vec::with_capacity(expected);
-        let mut start: u16 = 0;
-        while all.len() < expected {
-            let page = self.security_list(market, start)?;
-            if page.is_empty() {
-                return Err(TdxError::InvalidData(
-                    "TDX security list ended before declared count".into(),
-                ));
-            }
-            all.extend(page);
-            if all.len() > expected {
-                return Err(TdxError::InvalidData(
-                    "TDX security list exceeded declared count".into(),
-                ));
-            }
-            if all.len() == expected {
-                break;
-            }
-            start = start
-                .checked_add(PAGE_SIZE)
-                .ok_or_else(|| TdxError::InvalidData("TDX security list offset overflow".into()))?;
-        }
-        Ok(all)
+        security_list_all_with(self.client.inner(), market)
     }
     /// Fetches current intraday data.
     pub fn minute_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
