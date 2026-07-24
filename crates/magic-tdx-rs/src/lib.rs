@@ -6,6 +6,7 @@ pub mod constants;
 pub mod error;
 pub use error::TdxError;
 mod adapter;
+mod board_provider;
 pub mod error_codes;
 pub mod fund;
 pub mod helpers;
@@ -18,6 +19,7 @@ pub mod service;
 /// Stable request-domain enums used by higher-level adapters.
 pub mod source;
 pub use block::TdxBlockClient;
+pub use board_provider::{TdxBoardProvider, TdxBoardSource};
 pub use fund::client::TdxHqFundClient;
 pub use fund::types::{FundBar, FundInfo, FundQuote};
 pub use net::async_client::AsyncTdxHqClient;
