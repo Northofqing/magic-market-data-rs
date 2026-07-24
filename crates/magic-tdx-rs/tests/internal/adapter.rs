@@ -368,6 +368,53 @@ fn blocking_order_book_seam_normalizes_five_levels_once() {
     assert_eq!(batch.quality().issues().len(), 1);
 }
 
+#[derive(Default)]
+struct ScriptedAsyncBarsQuery {
+    calls: RefCell<Vec<(u8, u8, String, u32, u16, u8)>>,
+    response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
+}
+
+impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
+    async fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        self.calls
+            .borrow_mut()
+            .push((category, market, code.to_owned(), start, count, adjust));
+        self.response.borrow_mut().take().unwrap_or_else(|| {
+            Err(TdxError::InvalidData(
+                "scripted async bars response is not configured".into(),
+            ))
+        })
+    }
+}
+
+#[tokio::test]
+async fn async_bar_seam_uses_decoded_records_and_exact_source_label() {
+    let query = ScriptedAsyncBarsQuery {
+        response: RefCell::new(Some(Ok(vec![source_bar()]))),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 5).unwrap();
+
+    let batch = historical_bars_async_with(&query, "tdx-async", &request)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![(KLINE_DAILY, 1, "600396".into(), 0, 5, 0)]
+    );
+    assert_eq!(batch.provenance().source(), "tdx-async");
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+}
+
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
     SecurityQuote {
         market: 1,
