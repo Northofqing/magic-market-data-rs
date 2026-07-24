@@ -132,6 +132,23 @@ trait BlockingTdxQuery {
         code: &str,
         date: u32,
     ) -> Result<Vec<MinuteTimePrice>, TdxError>;
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError>;
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError>;
 }
 
 impl BlockingTdxQuery for TdxHqClient {
@@ -169,6 +186,27 @@ impl BlockingTdxQuery for TdxHqClient {
         date: u32,
     ) -> Result<Vec<MinuteTimePrice>, TdxError> {
         TdxHqClient::get_history_minute_time_data(self, market, code, date)
+    }
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        TdxHqClient::get_transaction_data(self, market, code, start, count)
+    }
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        TdxHqClient::get_history_transaction_data(self, market, code, start, count, date)
     }
 }
 
@@ -210,6 +248,34 @@ impl BlockingTdxQuery for crate::TdxSmartClient {
     ) -> Result<Vec<MinuteTimePrice>, TdxError> {
         TdxHqClient::get_history_minute_time_data(self.inner(), market, code, date)
     }
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        TdxHqClient::get_transaction_data(self.inner(), market, code, start, count)
+    }
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        TdxHqClient::get_history_transaction_data(
+            self.inner(),
+            market,
+            code,
+            start,
+            count,
+            date,
+        )
+    }
 }
 
 impl BlockingTdxQuery for crate::TdxDirectClient {
@@ -249,6 +315,29 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
         date: u32,
     ) -> Result<Vec<MinuteTimePrice>, TdxError> {
         crate::TdxDirectClient::get_history_minute_time_data(self, market, code, date)
+    }
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        crate::TdxDirectClient::get_transaction_data(self, market, code, start, count)
+    }
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        crate::TdxDirectClient::get_history_transaction_data(
+            self, market, code, start, count, date,
+        )
     }
 }
 
@@ -308,6 +397,47 @@ fn minute_data_with(
         }
     };
     normalize_minute_records(source, request.instrument(), &date, records)
+}
+
+fn trades_with(
+    query: &impl BlockingTdxQuery,
+    current_source: &str,
+    history_source: &str,
+    request: &TradesRequest,
+) -> Result<DataBatch<Trade>, TdxError> {
+    let request_market = market(request.instrument())?;
+    match request.date() {
+        Some(date) => {
+            let date = tdx_trade_date(date)?;
+            paginate_trades(
+                history_source,
+                request,
+                HISTORICAL_TRADE_PAGE_SIZE,
+                |start, count| {
+                    query.history_transaction_data(
+                        request_market,
+                        request.instrument().code(),
+                        start,
+                        count,
+                        date,
+                    )
+                },
+            )
+        }
+        None => paginate_trades(
+            current_source,
+            request,
+            CURRENT_TRADE_PAGE_SIZE,
+            |start, count| {
+                query.transaction_data(
+                    request_market,
+                    request.instrument().code(),
+                    start,
+                    count,
+                )
+            },
+        ),
+    }
 }
 
 fn compact_date(value: &str) -> Result<u32, TdxError> {
@@ -917,39 +1047,7 @@ impl Trades for TdxHqClient {
     type Error = TdxError;
 
     fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        let request_market = market(request.instrument())?;
-        match request.date() {
-            Some(date) => {
-                let date = tdx_trade_date(date)?;
-                paginate_trades(
-                    "tdx-history",
-                    request,
-                    HISTORICAL_TRADE_PAGE_SIZE,
-                    |start, count| {
-                        self.get_history_transaction_data(
-                            request_market,
-                            request.instrument().code(),
-                            start,
-                            count,
-                            date,
-                        )
-                    },
-                )
-            }
-            None => paginate_trades(
-                "tdx-current",
-                request,
-                CURRENT_TRADE_PAGE_SIZE,
-                |start, count| {
-                    self.get_transaction_data(
-                        request_market,
-                        request.instrument().code(),
-                        start,
-                        count,
-                    )
-                },
-            ),
-        }
+        trades_with(self, "tdx-current", "tdx-history", request)
     }
 }
 
@@ -1214,7 +1312,7 @@ impl Trades for crate::TdxSmartClient {
     type Error = TdxError;
 
     fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        <TdxHqClient as Trades>::trades(self.inner(), request)
+        trades_with(self, "tdx-current", "tdx-history", request)
     }
 }
 
@@ -1241,39 +1339,12 @@ impl Trades for crate::TdxDirectClient {
     type Error = TdxError;
 
     fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        let request_market = market(request.instrument())?;
-        match request.date() {
-            Some(date) => {
-                let date = tdx_trade_date(date)?;
-                paginate_trades(
-                    "tdx-direct-history",
-                    request,
-                    HISTORICAL_TRADE_PAGE_SIZE,
-                    |start, count| {
-                        self.get_history_transaction_data(
-                            request_market,
-                            request.instrument().code(),
-                            start,
-                            count,
-                            date,
-                        )
-                    },
-                )
-            }
-            None => paginate_trades(
-                "tdx-direct-current",
-                request,
-                CURRENT_TRADE_PAGE_SIZE,
-                |start, count| {
-                    self.get_transaction_data(
-                        request_market,
-                        request.instrument().code(),
-                        start,
-                        count,
-                    )
-                },
-            ),
-        }
+        trades_with(
+            self,
+            "tdx-direct-current",
+            "tdx-direct-history",
+            request,
+        )
     }
 }
 
