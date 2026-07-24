@@ -149,6 +149,10 @@ trait BlockingTdxQuery {
         count: u16,
         date: u32,
     ) -> Result<Vec<TickData>, TdxError>;
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError>;
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError>;
 }
 
 impl BlockingTdxQuery for TdxHqClient {
@@ -207,6 +211,14 @@ impl BlockingTdxQuery for TdxHqClient {
         date: u32,
     ) -> Result<Vec<TickData>, TdxError> {
         TdxHqClient::get_history_transaction_data(self, market, code, start, count, date)
+    }
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        TdxHqClient::get_security_count(self, market)
+    }
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
+        TdxHqClient::get_security_list(self, market, start)
     }
 }
 
@@ -276,6 +288,14 @@ impl BlockingTdxQuery for crate::TdxSmartClient {
             date,
         )
     }
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        TdxHqClient::get_security_count(self.inner(), market)
+    }
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
+        TdxHqClient::get_security_list(self.inner(), market, start)
+    }
 }
 
 impl BlockingTdxQuery for crate::TdxDirectClient {
@@ -338,6 +358,14 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
         crate::TdxDirectClient::get_history_transaction_data(
             self, market, code, start, count, date,
         )
+    }
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        crate::TdxDirectClient::get_security_count(self, market)
+    }
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
+        crate::TdxDirectClient::get_security_list(self, market, start)
     }
 }
 
@@ -438,6 +466,20 @@ fn trades_with(
             },
         ),
     }
+}
+
+fn security_metadata_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<SecurityMetadata>, TdxError> {
+    validate_security_metadata_request(instruments)?;
+    let records = fetch_security_records(
+        instruments,
+        |market| query.security_count(market),
+        |market, start| query.security_list(market, start),
+    )?;
+    normalize_security_metadata(source, instruments, records)
 }
 
 fn compact_date(value: &str) -> Result<u32, TdxError> {
@@ -992,13 +1034,7 @@ impl SecurityMetadataProvider for TdxHqClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<SecurityMetadata>, Self::Error> {
-        validate_security_metadata_request(instruments)?;
-        let records = fetch_security_records(
-            instruments,
-            |value| self.get_security_count(value),
-            |value, start| self.get_security_list(value, start),
-        )?;
-        normalize_security_metadata("tdx", instruments, records)
+        security_metadata_with(self, "tdx", instruments)
     }
 }
 
@@ -1009,7 +1045,7 @@ impl SecurityMetadataProvider for crate::TdxSmartClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<SecurityMetadata>, Self::Error> {
-        <TdxHqClient as SecurityMetadataProvider>::security_metadata(self.inner(), instruments)
+        security_metadata_with(self, "tdx", instruments)
     }
 }
 
