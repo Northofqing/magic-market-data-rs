@@ -242,6 +242,36 @@ fn blocking_service_security_list_seam_assembles_declared_count_atomically() {
 }
 
 #[test]
+fn blocking_service_security_list_seam_rejects_declared_count_mismatches() {
+    let premature_end = ScriptedBlockingServiceQuery {
+        count_responses: RefCell::new(VecDeque::from([Ok(1)])),
+        list_responses: RefCell::new(VecDeque::from([Ok(Vec::new())])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        security_list_all_with(&premature_end, 1),
+        Err(TdxError::InvalidData(_))
+    ));
+
+    let oversized_page = ScriptedBlockingServiceQuery {
+        count_responses: RefCell::new(VecDeque::from([Ok(1)])),
+        list_responses: RefCell::new(VecDeque::from([Ok(vec![security(0), security(1)])])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        security_list_all_with(&oversized_page, 1),
+        Err(TdxError::InvalidData(_))
+    ));
+
+    let empty_market = ScriptedBlockingServiceQuery {
+        count_responses: RefCell::new(VecDeque::from([Ok(0)])),
+        ..Default::default()
+    };
+    assert!(security_list_all_with(&empty_market, 1).unwrap().is_empty());
+    assert!(empty_market.list_calls.borrow().is_empty());
+}
+
+#[test]
 fn blocking_service_quote_seam_chunks_at_sixty_and_restores_order() {
     let instruments: Vec<_> = (0..61)
         .map(|index| instrument(Exchange::Shanghai, &format!("6{index:05}")))
@@ -269,6 +299,34 @@ fn blocking_service_quote_seam_chunks_at_sixty_and_restores_order() {
         assert_eq!(record.instrument(), expected);
     }
     assert_eq!(batch.provenance().source(), "tdx-smart-chunked");
+}
+
+#[test]
+fn blocking_service_quote_seam_rejects_incomplete_and_duplicate_chunks_atomically() {
+    let instruments = [
+        instrument(Exchange::Shanghai, "600001"),
+        instrument(Exchange::Shanghai, "600002"),
+    ];
+    let incomplete = ScriptedBlockingServiceQuery {
+        quote_responses: RefCell::new(VecDeque::from([Ok(vec![source_quote("600001")])])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        quotes_chunked_with(&incomplete, &instruments),
+        Err(TdxError::InvalidData(_))
+    ));
+
+    let duplicate = ScriptedBlockingServiceQuery {
+        quote_responses: RefCell::new(VecDeque::from([Ok(vec![
+            source_quote("600001"),
+            source_quote("600001"),
+        ])])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        quotes_chunked_with(&duplicate, &instruments),
+        Err(TdxError::InvalidData(_))
+    ));
 }
 
 #[test]
@@ -466,6 +524,39 @@ async fn async_service_security_list_seam_assembles_declared_count_atomically() 
 }
 
 #[tokio::test]
+async fn async_service_security_list_seam_rejects_declared_count_mismatches() {
+    let premature_end = ScriptedAsyncServiceQuery {
+        count_responses: RefCell::new(VecDeque::from([Ok(1)])),
+        list_responses: RefCell::new(VecDeque::from([Ok(Vec::new())])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        security_list_all_async_with(&premature_end, 1).await,
+        Err(TdxError::InvalidData(_))
+    ));
+
+    let oversized_page = ScriptedAsyncServiceQuery {
+        count_responses: RefCell::new(VecDeque::from([Ok(1)])),
+        list_responses: RefCell::new(VecDeque::from([Ok(vec![security(0), security(1)])])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        security_list_all_async_with(&oversized_page, 1).await,
+        Err(TdxError::InvalidData(_))
+    ));
+
+    let empty_market = ScriptedAsyncServiceQuery {
+        count_responses: RefCell::new(VecDeque::from([Ok(0)])),
+        ..Default::default()
+    };
+    assert!(security_list_all_async_with(&empty_market, 1)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(empty_market.list_calls.borrow().is_empty());
+}
+
+#[tokio::test]
 async fn async_service_order_book_seam_reuses_shared_normalization() {
     let query = ScriptedAsyncServiceQuery {
         quote_responses: RefCell::new(VecDeque::from([Ok(vec![source_quote("600396")])])),
@@ -484,6 +575,24 @@ async fn async_service_order_book_seam_reuses_shared_normalization() {
     assert_eq!(book.total_ask_quantity().unwrap().get(), 85.0);
     assert_eq!(book.provider(), magic_market_core::ProviderId::Tdx);
     assert_eq!(batch.provenance().source(), "tdx-async");
+}
+
+#[tokio::test]
+async fn async_service_order_book_seam_rejects_incomplete_decoded_batches() {
+    let query = ScriptedAsyncServiceQuery {
+        quote_responses: RefCell::new(VecDeque::from([Ok(Vec::new())])),
+        ..Default::default()
+    };
+    let instruments = [instrument(Exchange::Shanghai, "600396")];
+
+    assert!(matches!(
+        order_books_async_with(&query, &instruments).await,
+        Err(TdxError::InvalidData(_))
+    ));
+    assert_eq!(
+        *query.quote_calls.borrow(),
+        vec![vec![(1, "600396".into())]]
+    );
 }
 
 #[tokio::test]
