@@ -1,7 +1,8 @@
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    AssetClass, BoardCategory, BoardFlows, DataBatch, Exchange, FlowInterval, FlowScope,
-    FundFlowRequest, FundFlowSeries, InstrumentDateRangeRequest, InstrumentId, LimitPoolKind,
+    AssetClass, BoardCategory, BoardFlows, DataBatch, DragonTigerDiscovery,
+    DragonTigerDiscoveryRequest, Exchange, FlowInterval, FlowScope, FundFlowRequest,
+    FundFlowSeries, InstrumentDateRangeRequest, InstrumentId, IsoDate, LimitPoolKind,
     LimitPoolRequest, LimitPools, NewsProvider, PopularityData, PositiveU32, ReportScope,
     ResearchReports, ResearchRequest,
 };
@@ -10,7 +11,7 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
-const MAX_HIGH_LEVEL_ATTEMPTS: u32 = 20;
+const MAX_HIGH_LEVEL_ATTEMPTS: u32 = 3;
 const MIN_PACING_MS: u64 = 1_000;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -45,6 +46,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     let pool_date = magic_market_core::IsoDate::new(
         std::env::var("MAGIC_EASTMONEY_POOL_DATE").unwrap_or_else(|_| "2026-07-23".into()),
+    )?;
+    let dragon_date = IsoDate::new(
+        std::env::var("MAGIC_EASTMONEY_DRAGON_DATE").unwrap_or_else(|_| "2026-07-24".into()),
     )?;
 
     let total_started = Instant::now();
@@ -84,6 +88,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             &instrument,
             &report_instrument,
             &pool_date,
+            &dragon_date,
             selected,
         ) {
             Ok(()) if diagnostic_mode => {
@@ -189,6 +194,7 @@ fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error
         "board-flow",
         "limit-pool",
         "popularity",
+        "dragon-tiger-discovery",
         "news",
     ];
     if requested == "mixed" {
@@ -240,6 +246,7 @@ fn run_operation(
     instrument: &InstrumentId,
     report_instrument: &InstrumentId,
     pool_date: &magic_market_core::IsoDate,
+    dragon_date: &IsoDate,
     operation: &str,
 ) -> Result<(), EastmoneyError> {
     let small = PositiveU32::new(3)?;
@@ -268,6 +275,11 @@ fn run_operation(
             print_batch(client.limit_pool(&request)?);
         }
         "popularity" => print_batch(client.popularity(small)?),
+        "dragon-tiger-discovery" => {
+            let request =
+                DragonTigerDiscoveryRequest::new(dragon_date.clone(), PositiveU32::new(10_000)?)?;
+            print_batch(client.discover_dragon_tiger(&request)?);
+        }
         "news" => {
             let request = InstrumentDateRangeRequest::new(instrument.clone(), small)?;
             print_batch(client.instrument_news(&request)?);

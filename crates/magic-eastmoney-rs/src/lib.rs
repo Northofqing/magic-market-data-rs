@@ -8,6 +8,7 @@
 mod board_flow;
 mod capital;
 mod datacenter_api;
+mod discovery;
 mod dragon_tiger;
 mod error;
 mod fund_flow;
@@ -20,8 +21,8 @@ mod transport;
 
 use magic_market_core::{
     AssetClass, CapitalCapabilities, ContentCapabilities, DataBatch, Exchange, InstrumentId,
-    LimitPoolCapabilities, Provenance, ProviderId, ResearchCapabilities, SignalCapabilities,
-    SourceEvidence,
+    LimitPoolCapabilities, MarketDiscoveryCapabilities, Provenance, ProviderId,
+    ResearchCapabilities, SignalCapabilities, SourceEvidence,
 };
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -125,6 +126,16 @@ impl EastmoneyClient {
         }
     }
 
+    /// Capabilities proved for complete market-intelligence discovery.
+    pub const fn market_discovery_capabilities() -> MarketDiscoveryCapabilities {
+        MarketDiscoveryCapabilities {
+            dragon_tiger_discovery: true,
+            board_directory: false,
+            board_memberships: false,
+            board_constituents: false,
+        }
+    }
+
     pub(crate) fn get(
         &self,
         url: &str,
@@ -195,6 +206,13 @@ impl BatchContext {
                 "Eastmoney response contains no usable records".into(),
             ));
         }
+        self.finish_allow_empty(records)
+    }
+
+    pub(crate) fn finish_allow_empty<T>(
+        &self,
+        records: Vec<T>,
+    ) -> Result<DataBatch<T>, EastmoneyError> {
         let provenance = Provenance::new(SOURCE_NAME, self.observed_at.clone())?
             .with_batch_id(self.batch_id.clone())?;
         let provenance = match &self.source_at {
