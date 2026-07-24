@@ -145,7 +145,7 @@ impl ThePaperClient {
     }
 
     pub fn with_transport(transport: impl ThePaperTransport + 'static) -> Self {
-        Self::from_parts(Arc::new(transport), Duration::ZERO)
+        Self::from_parts(Arc::new(transport), MINIMUM_REQUEST_INTERVAL)
     }
 
     fn from_parts(transport: Arc<dyn ThePaperTransport>, minimum_interval: Duration) -> Self {
@@ -227,7 +227,12 @@ fn ensure_official_url(url: &str) -> Result<(), ThePaperError> {
 }
 
 fn ensure_html_content_type(content_type: Option<&str>) -> Result<(), ThePaperError> {
-    if content_type.is_some_and(|value| value.to_ascii_lowercase().contains("text/html")) {
+    if content_type.is_some_and(|value| {
+        value
+            .split(';')
+            .next()
+            .is_some_and(|media_type| media_type.trim().eq_ignore_ascii_case("text/html"))
+    }) {
         Ok(())
     } else {
         Err(ThePaperError::Protocol(format!(
@@ -395,6 +400,11 @@ fn is_native(row: &Map<String, Value>) -> Result<bool, ThePaperError> {
     if forward != legacy_forward {
         return Err(ThePaperError::Protocol(
             "The Paper forward flags disagree".into(),
+        ));
+    }
+    if !matches!(forward, "0" | "1") {
+        return Err(ThePaperError::Protocol(
+            "The Paper forward flags must be 0 or 1".into(),
         ));
     }
     let link = match row.get("link") {
@@ -681,6 +691,13 @@ mod tests {
             parse_response(inconsistent.as_bytes(), 20, "observed"),
             Err(ThePaperError::Protocol(_))
         ));
+        let unknown = FIXTURE
+            .replace("\"isOutForward\": \"1\"", "\"isOutForward\": \"2\"")
+            .replace("\"isOutForword\": \"1\"", "\"isOutForword\": \"2\"");
+        assert!(matches!(
+            parse_response(unknown.as_bytes(), 20, "observed"),
+            Err(ThePaperError::Protocol(_))
+        ));
     }
 
     #[test]
@@ -741,6 +758,7 @@ mod tests {
     #[test]
     fn response_size_and_content_type_are_bounded() {
         assert!(ensure_html_content_type(Some("text/html; charset=utf-8")).is_ok());
+        assert!(ensure_html_content_type(Some("text/html-invalid")).is_err());
         assert!(ensure_html_content_type(Some("application/json")).is_err());
         let client = ThePaperClient::with_transport(FixtureTransport {
             response: vec![b'x'; MAX_RESPONSE_BYTES + 1],
@@ -750,5 +768,14 @@ mod tests {
             client.global_news(PositiveU32::new(1).unwrap()),
             Err(ThePaperError::Protocol(_))
         ));
+    }
+
+    #[test]
+    fn injected_transports_keep_production_pacing() {
+        let client = ThePaperClient::with_transport(FixtureTransport {
+            response: FIXTURE.as_bytes().to_vec(),
+            request: Mutex::new(None),
+        });
+        assert_eq!(client.minimum_interval, MINIMUM_REQUEST_INTERVAL);
     }
 }

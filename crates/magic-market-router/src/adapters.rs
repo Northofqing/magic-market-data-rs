@@ -758,7 +758,23 @@ where
     Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
 {
     SourceFn::new(provider_id, move |request| {
-        provider.global_news(*request).map_err(&classify)
+        let batch = provider.global_news(*request).map_err(&classify)?;
+        if batch.records().len() > request.get() as usize {
+            return Err(SourceError::try_next(
+                FailureKind::Evidence,
+                "global-news batch exceeds requested limit",
+            ));
+        }
+        let mut item_ids = HashSet::with_capacity(batch.records().len());
+        for record in batch.records() {
+            if !item_ids.insert(record.item_id.as_str()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "global-news batch contains a duplicate item ID",
+                ));
+            }
+        }
+        Ok(batch)
     })
 }
 

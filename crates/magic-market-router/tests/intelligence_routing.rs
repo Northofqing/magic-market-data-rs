@@ -71,6 +71,8 @@ fn classify(_: FixtureError) -> SourceError {
 struct NewsFixtureProvider {
     record_provider: ProviderId,
     batch_source: &'static str,
+    item_count: usize,
+    duplicate_id: bool,
 }
 
 impl NewsProvider for NewsFixtureProvider {
@@ -86,24 +88,35 @@ impl NewsProvider for NewsFixtureProvider {
     fn global_news(&self, _limit: PositiveU32) -> Result<DataBatch<NewsItem>, Self::Error> {
         let batch_id = format!("{}-news", self.batch_source);
         let published_at = "2026-07-24T20:00:00+08:00";
-        let evidence = SourceEvidence::new(self.record_provider, "observed", &batch_id)
-            .unwrap()
-            .with_source_at(published_at)
-            .unwrap();
+        let records = (0..self.item_count)
+            .map(|index| {
+                let item_id = if self.duplicate_id && index > 0 {
+                    "news-1".to_owned()
+                } else {
+                    format!("news-{}", index + 1)
+                };
+                let evidence = SourceEvidence::new(self.record_provider, "observed", &batch_id)
+                    .unwrap()
+                    .with_source_at(published_at)
+                    .unwrap();
+                NewsItem {
+                    item_id: NonEmptyText::new(item_id.clone()).unwrap(),
+                    title: NonEmptyText::new("fixture financial news").unwrap(),
+                    summary: None,
+                    content: None,
+                    publisher: NonEmptyText::new(self.batch_source).unwrap(),
+                    canonical_url: HttpsUrl::new(format!("https://example.com/news/{item_id}"))
+                        .unwrap(),
+                    published_at: NonEmptyText::new(published_at).unwrap(),
+                    instruments: Vec::new(),
+                    topics: Vec::new(),
+                    language: NonEmptyText::new("zh-CN").unwrap(),
+                    evidence,
+                }
+            })
+            .collect();
         Ok(DataBatch::strict(
-            vec![NewsItem {
-                item_id: NonEmptyText::new("news-1").unwrap(),
-                title: NonEmptyText::new("fixture financial news").unwrap(),
-                summary: None,
-                content: None,
-                publisher: NonEmptyText::new(self.batch_source).unwrap(),
-                canonical_url: HttpsUrl::new("https://example.com/news/news-1").unwrap(),
-                published_at: NonEmptyText::new(published_at).unwrap(),
-                instruments: Vec::new(),
-                topics: Vec::new(),
-                language: NonEmptyText::new("zh-CN").unwrap(),
-                evidence,
-            }],
+            records,
             Provenance::new(self.batch_source, "observed")
                 .unwrap()
                 .with_source_at(published_at)
@@ -119,10 +132,14 @@ fn global_news_router_preserves_jin10_and_thepaper_identities() {
     let wrong = Arc::new(NewsFixtureProvider {
         record_provider: ProviderId::ThePaper,
         batch_source: "jin10-v1",
+        item_count: 1,
+        duplicate_id: false,
     });
     let valid = Arc::new(NewsFixtureProvider {
         record_provider: ProviderId::ThePaper,
         batch_source: "thepaper-finance-v1",
+        item_count: 1,
+        duplicate_id: false,
     });
     let mut router = GlobalNewsRouter::new(AcceptancePolicy::new().with_require_source_at(true));
     router
@@ -144,6 +161,74 @@ fn global_news_router_preserves_jin10_and_thepaper_identities() {
     assert!(matches!(
         outcome.attempts()[1].status(),
         AttemptStatus::Selected
+    ));
+}
+
+#[test]
+fn global_news_router_rejects_oversized_and_duplicate_batches() {
+    let valid = || {
+        Arc::new(NewsFixtureProvider {
+            record_provider: ProviderId::ThePaper,
+            batch_source: "thepaper-finance-v1",
+            item_count: 1,
+            duplicate_id: false,
+        })
+    };
+
+    let mut oversized_router = GlobalNewsRouter::new(AcceptancePolicy::new());
+    oversized_router
+        .register(global_news_source(
+            ProviderId::Jin10,
+            Arc::new(NewsFixtureProvider {
+                record_provider: ProviderId::Jin10,
+                batch_source: "jin10-v1",
+                item_count: 2,
+                duplicate_id: false,
+            }),
+            classify,
+        ))
+        .unwrap();
+    oversized_router
+        .register(global_news_source(ProviderId::ThePaper, valid(), classify))
+        .unwrap();
+    let oversized = oversized_router
+        .route(&PositiveU32::new(1).unwrap())
+        .unwrap();
+    assert_eq!(oversized.selected_provider(), ProviderId::ThePaper);
+    assert!(matches!(
+        oversized.attempts()[0].status(),
+        AttemptStatus::Failed {
+            kind: FailureKind::Evidence,
+            ..
+        }
+    ));
+
+    let mut duplicate_router = GlobalNewsRouter::new(AcceptancePolicy::new());
+    duplicate_router
+        .register(global_news_source(
+            ProviderId::Jin10,
+            Arc::new(NewsFixtureProvider {
+                record_provider: ProviderId::Jin10,
+                batch_source: "jin10-v1",
+                item_count: 2,
+                duplicate_id: true,
+            }),
+            classify,
+        ))
+        .unwrap();
+    duplicate_router
+        .register(global_news_source(ProviderId::ThePaper, valid(), classify))
+        .unwrap();
+    let duplicate = duplicate_router
+        .route(&PositiveU32::new(2).unwrap())
+        .unwrap();
+    assert_eq!(duplicate.selected_provider(), ProviderId::ThePaper);
+    assert!(matches!(
+        duplicate.attempts()[0].status(),
+        AttemptStatus::Failed {
+            kind: FailureKind::Evidence,
+            ..
+        }
     ));
 }
 

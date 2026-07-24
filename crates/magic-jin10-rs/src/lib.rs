@@ -146,7 +146,7 @@ impl Jin10Client {
     }
 
     pub fn with_transport(transport: impl Jin10Transport + 'static) -> Self {
-        Self::from_parts(Arc::new(transport), Duration::ZERO)
+        Self::from_parts(Arc::new(transport), MINIMUM_REQUEST_INTERVAL)
     }
 
     fn from_parts(transport: Arc<dyn Jin10Transport>, minimum_interval: Duration) -> Self {
@@ -231,7 +231,12 @@ fn ensure_official_url(url: &str) -> Result<(), Jin10Error> {
 }
 
 fn ensure_json_content_type(content_type: Option<&str>) -> Result<(), Jin10Error> {
-    if content_type.is_some_and(|value| value.to_ascii_lowercase().contains("json")) {
+    if content_type.is_some_and(|value| {
+        value
+            .split(';')
+            .next()
+            .is_some_and(|media_type| media_type.trim().eq_ignore_ascii_case("application/json"))
+    }) {
         Ok(())
     } else {
         Err(Jin10Error::Protocol(format!(
@@ -825,6 +830,7 @@ mod tests {
     #[test]
     fn response_size_and_content_type_are_bounded() {
         assert!(ensure_json_content_type(Some("application/json; charset=utf-8")).is_ok());
+        assert!(ensure_json_content_type(Some("application/not-json")).is_err());
         assert!(ensure_json_content_type(Some("text/html")).is_err());
         let oversized = vec![b'x'; MAX_RESPONSE_BYTES + 1];
         let client = Jin10Client::with_transport(FixtureTransport {
@@ -835,5 +841,14 @@ mod tests {
             client.global_news(PositiveU32::new(1).unwrap()),
             Err(Jin10Error::Protocol(_))
         ));
+    }
+
+    #[test]
+    fn injected_transports_keep_production_pacing() {
+        let client = Jin10Client::with_transport(FixtureTransport {
+            response: FIXTURE.as_bytes().to_vec(),
+            request: Mutex::new(None),
+        });
+        assert_eq!(client.minimum_interval, MINIMUM_REQUEST_INTERVAL);
     }
 }

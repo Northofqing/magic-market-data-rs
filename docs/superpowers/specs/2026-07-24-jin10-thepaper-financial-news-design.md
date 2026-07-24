@@ -21,7 +21,8 @@ The live official web bundle calls:
 `https://flash-api.jin10.com/get_flash_list?channel=-8200&vip=1`
 
 with the official public headers `x-app-id: bVBF4FyRTn5NJF5n` and
-`x-version: 1.0.0`. A bounded live request returned an `OK` envelope with 20 rows.
+`x-version: 1.0.0`. Bounded live requests normally returned an `OK` envelope with 20
+rows; one rolling update briefly returned 21 before settling back to 20.
 Rows expose a stable ID, absolute China-local source time, type, channels, importance,
 tags, attribution, content, and optional article/source links. Locked VIP placeholders
 are explicitly marked and do not contain public content.
@@ -161,13 +162,13 @@ transport/rate-limit failure and is never retried without pacing.
 
 ## Bounds and pacing
 
-- Jin10 accepts `1..=20` requested public records because the verified endpoint returned
-  a 20-row page.
+- Jin10 accepts `1..=20` requested public records. Its independently checked source
+  window permits the observed transient 21st row and rejects 22 or more.
 - The Paper accepts `1..=20`; the current SSR page may return fewer eligible native rows,
   and the result is a bounded available subset rather than fabricated pagination.
 - Both response bodies are capped at 2 MiB.
 - Production clones share a request gate with request starts at least one second apart.
-- Load probes default to two requests, cap at three, and use at most two threads.
+- Load probes default to two requests, cap at three, and use concurrency one.
 
 ## Testing and verification
 
