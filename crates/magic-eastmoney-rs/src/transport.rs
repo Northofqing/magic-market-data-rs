@@ -96,28 +96,34 @@ impl HttpsTransport {
         response: ureq::Response,
         max_bytes: usize,
     ) -> Result<Vec<u8>, EastmoneyError> {
-        if max_bytes == 0 || max_bytes > DEFAULT_MAX_RESPONSE_BYTES {
-            return Err(EastmoneyError::InvalidRequest(format!(
-                "response limit must be in 1..={DEFAULT_MAX_RESPONSE_BYTES}"
-            )));
+        let status = response.status();
+        let content_type = response.header("Content-Type").map(str::to_owned);
+        read_http_response(
+            status,
+            content_type.as_deref(),
+            response.into_reader(),
+            max_bytes,
+        )
+    }
+
+    fn prepare_get(&self, url: &str, headers: &[(&str, &str)]) -> ureq::Request {
+        let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
+        for (name, value) in headers {
+            request = request.set(name, value);
         }
-        if response.status() != 200 {
-            return Err(EastmoneyError::Transport(format!(
-                "unexpected HTTP status {}",
-                response.status()
-            )));
+        request
+    }
+
+    fn prepare_post(&self, url: &str, headers: &[(&str, &str)]) -> ureq::Request {
+        let mut request = self
+            .agent
+            .post(url)
+            .set("User-Agent", USER_AGENT)
+            .set("Content-Type", "application/json");
+        for (name, value) in headers {
+            request = request.set(name, value);
         }
-        validate_content_type(response.header("Content-Type"))?;
-        let mut body = Vec::new();
-        response
-            .into_reader()
-            .take((max_bytes + 1) as u64)
-            .read_to_end(&mut body)
-            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
-        if body.len() > max_bytes {
-            return Err(EastmoneyError::ResponseTooLarge { limit: max_bytes });
-        }
-        Ok(body)
+        request
     }
 
     fn get_request(
@@ -127,12 +133,10 @@ impl HttpsTransport {
         max_bytes: usize,
     ) -> Result<Vec<u8>, EastmoneyError> {
         validate_endpoint(url)?;
+        validate_response_limit(max_bytes)?;
         let request_gate = self.acquire_slot()?;
         let result = (|| {
-            let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
-            for (name, value) in headers {
-                request = request.set(name, value);
-            }
+            let request = self.prepare_get(url, headers);
             let response = request
                 .call()
                 .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
@@ -151,6 +155,7 @@ impl HttpsTransport {
         max_bytes: usize,
     ) -> Result<Vec<u8>, EastmoneyError> {
         validate_endpoint(url)?;
+        validate_response_limit(max_bytes)?;
         if body.len() > 64 * 1024 {
             return Err(EastmoneyError::InvalidRequest(
                 "JSON request body exceeds 65536 bytes".into(),
@@ -158,14 +163,7 @@ impl HttpsTransport {
         }
         let request_gate = self.acquire_slot()?;
         let result = (|| {
-            let mut request = self
-                .agent
-                .post(url)
-                .set("User-Agent", USER_AGENT)
-                .set("Content-Type", "application/json");
-            for (name, value) in headers {
-                request = request.set(name, value);
-            }
+            let request = self.prepare_post(url, headers);
             let response = request
                 .send_bytes(body)
                 .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
@@ -175,6 +173,39 @@ impl HttpsTransport {
         drop(request_gate);
         result
     }
+}
+
+fn validate_response_limit(max_bytes: usize) -> Result<(), EastmoneyError> {
+    if max_bytes == 0 || max_bytes > DEFAULT_MAX_RESPONSE_BYTES {
+        return Err(EastmoneyError::InvalidRequest(format!(
+            "response limit must be in 1..={DEFAULT_MAX_RESPONSE_BYTES}"
+        )));
+    }
+    Ok(())
+}
+
+fn read_http_response(
+    status: u16,
+    content_type: Option<&str>,
+    reader: impl Read,
+    max_bytes: usize,
+) -> Result<Vec<u8>, EastmoneyError> {
+    validate_response_limit(max_bytes)?;
+    if status != 200 {
+        return Err(EastmoneyError::Transport(format!(
+            "unexpected HTTP status {status}"
+        )));
+    }
+    validate_content_type(content_type)?;
+    let mut body = Vec::new();
+    reader
+        .take((max_bytes + 1) as u64)
+        .read_to_end(&mut body)
+        .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+    if body.len() > max_bytes {
+        return Err(EastmoneyError::ResponseTooLarge { limit: max_bytes });
+    }
+    Ok(body)
 }
 
 fn validate_content_type(content_type: Option<&str>) -> Result<(), EastmoneyError> {

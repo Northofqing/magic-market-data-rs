@@ -1,6 +1,9 @@
-use super::{join_popularity, parse_quotes, parse_rankings};
+use super::{join_popularity, parse_quotes, parse_rankings, QuoteWire, RankingWire};
 use crate::{EastmoneyClient, EastmoneyError, EastmoneyTransport};
-use magic_market_core::{PopularityData, PositiveU32, RatioUnit};
+use magic_market_core::{
+    AssetClass, Exchange, InstrumentId, PopularityData, PositiveU32, RatioUnit,
+};
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 struct FixtureTransport {
@@ -147,4 +150,112 @@ fn source_cannot_return_more_rankings_than_requested() {
         client.popularity(PositiveU32::new(1).unwrap()),
         Err(EastmoneyError::Protocol(message)) if message.contains("limit")
     ));
+}
+
+#[test]
+fn public_limit_empty_rankings_and_transport_failures_are_explicit() {
+    let client = EastmoneyClient::with_transport(FixtureTransport {
+        post_body: br#"{"code":0,"data":[]}"#.to_vec(),
+        get_body: Vec::new(),
+        seen: Mutex::new(Vec::new()),
+    });
+    assert!(client.popularity(PositiveU32::new(101).unwrap()).is_err());
+    assert!(matches!(
+        client.popularity(PositiveU32::new(1).unwrap()),
+        Err(EastmoneyError::Protocol(message)) if message.contains("no usable records")
+    ));
+}
+
+#[test]
+fn ranking_parser_covers_all_verified_prefixes_and_schema_failures() {
+    let rankings = parse_rankings(
+        br#"{"code":0,"data":[
+          {"sc":"SH600396","rk":1,"rc":"2.5"},
+          {"sc":"SZ002475","rk":2},
+          {"sc":"BJ430001","rk":3}
+        ]}"#,
+    )
+    .unwrap();
+    assert_eq!(rankings.len(), 3);
+    assert_eq!(rankings[0].secid, "1.600396");
+    assert_eq!(rankings[1].secid, "0.002475");
+    assert_eq!(rankings[2].secid, "0.430001");
+    assert_eq!(rankings[0].rank_change, Some(2.5));
+
+    for body in [
+        &b"not-json"[..],
+        &br#"{"code":1,"data":[]}"#[..],
+        &br#"{"code":0}"#[..],
+        &br#"{"code":0,"data":[{"sc":"HK000001","rk":1}]}"#[..],
+        &br#"{"code":0,"data":[{"sc":"SH600396"}]}"#[..],
+        &br#"{"code":0,"data":[{"sc":"SH600396","rk":0}]}"#[..],
+        &br#"{"code":0,"data":[{"sc":"SH600396","rk":1,"rc":true}]}"#[..],
+    ] {
+        assert!(parse_rankings(body).is_err());
+    }
+}
+
+#[test]
+fn quote_parser_covers_array_object_null_and_every_required_field() {
+    let object = parse_quotes(
+        r#"{"rc":0,"data":{"diff":{"0":{
+          "f12":"600396","f13":1,"f14":"华电辽能","f2":"13.08","f3":"9.97"
+        }}}}"#
+            .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(object.len(), 1);
+    assert!(parse_quotes(br#"{"rc":0,"data":{"diff":null}}"#)
+        .unwrap()
+        .is_empty());
+    for body in [
+        &b"not-json"[..],
+        &br#"{"rc":1,"data":{"diff":[]}}"#[..],
+        &br#"{"rc":0,"data":{}}"#[..],
+        &br#"{"rc":0,"data":{"diff":"bad"}}"#[..],
+        &br#"{"rc":0,"data":{"diff":[{"f13":1}]}}"#[..],
+        &br#"{"rc":0,"data":{"diff":[{"f12":"600396"}]}}"#[..],
+        &br#"{"rc":0,"data":{"diff":[{"f12":"600396","f13":1.5}]}}"#[..],
+        &br#"{"rc":0,"data":{"diff":[{"f12":"600396","f13":1,"f2":true}]}}"#[..],
+    ] {
+        assert!(parse_quotes(body).is_err());
+    }
+}
+
+#[test]
+fn join_rejects_unrequested_quotes_and_preserves_absent_quote_fields() {
+    let instrument = InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity).unwrap();
+    let ranking = RankingWire {
+        instrument: instrument.clone(),
+        secid: "1.600396".into(),
+        rank: PositiveU32::new(1).unwrap(),
+        rank_change: None,
+    };
+    let batch = join_popularity(vec![ranking], &HashMap::new()).unwrap();
+    let record = &batch.records()[0];
+    assert!(record.price.is_none());
+    assert!(record.name.is_none());
+    assert!(record.rank_change.is_none());
+    assert!(record.return_ratio.is_none());
+    assert!(record.quote_evidence.is_none());
+
+    let ranking = RankingWire {
+        instrument,
+        secid: "1.600396".into(),
+        rank: PositiveU32::new(1).unwrap(),
+        rank_change: None,
+    };
+    let quotes = HashMap::from([("1.600703".into(), QuoteWire::default())]);
+    assert!(matches!(
+        join_popularity(vec![ranking], &quotes),
+        Err(EastmoneyError::Protocol(message)) if message.contains("not requested")
+    ));
+
+    let bad_ranking = RankingWire {
+        instrument: InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity).unwrap(),
+        secid: "1.600396".into(),
+        rank: PositiveU32::new(1).unwrap(),
+        rank_change: Some(f64::INFINITY),
+    };
+    assert!(join_popularity(vec![bad_ranking], &HashMap::new()).is_err());
 }
