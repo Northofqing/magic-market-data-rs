@@ -347,6 +347,27 @@ fn blocking_metadata_seam_uses_declared_count_and_source_backed_page() {
     assert_eq!(batch.provenance().source(), "tdx");
 }
 
+#[test]
+fn blocking_order_book_seam_normalizes_five_levels_once() {
+    let query = ScriptedBarsQuery {
+        quote_response: RefCell::new(Some(Ok(vec![source_quote("600001", 101.0)]))),
+        ..Default::default()
+    };
+    let instruments = [instrument("600001")];
+
+    let batch = order_books_with(&query, "TDX smart", "tdx-smart", &instruments).unwrap();
+
+    let book = &batch.records()[0];
+    assert_eq!(book.bids()[0].price().unwrap().get(), 101.9);
+    assert_eq!(book.asks()[4].quantity().unwrap().get(), 19.0);
+    assert_eq!(book.total_bid_quantity().unwrap().get(), 60.0);
+    assert_eq!(book.total_ask_quantity().unwrap().get(), 85.0);
+    assert_eq!(book.status(), DataStatus::Unavailable);
+    assert_eq!(book.provider(), ProviderId::Tdx);
+    assert_eq!(batch.provenance().source(), "tdx-smart");
+    assert_eq!(batch.quality().issues().len(), 1);
+}
+
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
     SecurityQuote {
         market: 1,
