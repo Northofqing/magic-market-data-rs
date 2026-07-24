@@ -65,8 +65,13 @@ typed error。
 `diagnostic_complete_unadmitted` 或 `failed`，不能冒充能力成功：
 
 ```bash
+MAGIC_EASTMONEY_POOL_DATE=2026-07-24 \
 cargo run -p magic-eastmoney-rs --example live_probe --release --locked --offline
 ```
+
+`MAGIC_EASTMONEY_POOL_DATE` 必须由操作者或调度器提供，表示本次验证的源交易
+会话；缺失、空值或非法 ISO 日期会显式失败。探针不会用系统日期、工作日猜测或
+仓库内硬编码日期代替源会话。手动 GitHub Actions 工作流也将其设为必填输入。
 
 有界 load probe 支持 `research`、`fund-flow`、`board-flow`、`limit-pool`、
 `popularity`、`news` 和 `mixed`：

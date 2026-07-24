@@ -77,6 +77,20 @@ test bodies as production-file coverage.
 - Every advertised family gets a bounded load case that measures actual
   request-start spacing and observed concurrency.
 
+## Source-session input
+
+Eastmoney limit-pool endpoints require a source trading date. The live probe
+must not guess this date from wall-clock time, weekdays, a stale checked-in
+default, or a downstream calendar. The operator or scheduled workflow must
+provide `MAGIC_EASTMONEY_POOL_DATE` as the exact source session being verified.
+The probe validates it as an `IsoDate` and fails before the limit-pool requests
+when it is absent or malformed.
+
+The manual live workflow exposes the same value as a required dispatch input
+and passes it only to the Eastmoney matrix job. This keeps the probe
+reproducible and makes the evidence state which session was tested. Other
+providers do not receive a synthetic date.
+
 ## Failure handling and rollback
 
 Ordinary empty batches, incomplete quality, issues, provenance mismatch,
@@ -87,4 +101,3 @@ Changes are split by design, shared verifier/THS, Eastmoney, iWencai, Baidu,
 load evidence, and documentation. Each slice can be reverted independently
 with `git revert <sha>`. Real network probes are run separately and no offline
 test is described as live evidence.
-

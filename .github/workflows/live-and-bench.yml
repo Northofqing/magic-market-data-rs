@@ -1,6 +1,11 @@
 name: Live diagnostic and benchmark
 on:
   workflow_dispatch:
+    inputs:
+      eastmoney_pool_date:
+        description: Eastmoney source trading session (YYYY-MM-DD)
+        required: true
+        type: string
 jobs:
   parser-benchmark:
     runs-on: ubuntu-latest
@@ -40,12 +45,23 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: dtolnay/rust-toolchain@stable
       - name: Run unauthenticated public-web probes
+        if: ${{ matrix.provider != 'eastmoney' }}
         run: |
           set -o pipefail
           cargo run -p magic-${{ matrix.provider }}-rs --example live_probe --release --locked |
             tee live-${{ matrix.provider }}.txt
           cargo run -p magic-${{ matrix.provider }}-rs --example load_probe --release --locked |
             tee -a live-${{ matrix.provider }}.txt
+      - name: Run Eastmoney source-session probes
+        if: ${{ matrix.provider == 'eastmoney' }}
+        env:
+          MAGIC_EASTMONEY_POOL_DATE: ${{ inputs.eastmoney_pool_date }}
+        run: |
+          set -o pipefail
+          cargo run -p magic-eastmoney-rs --example live_probe --release --locked |
+            tee live-eastmoney.txt
+          cargo run -p magic-eastmoney-rs --example load_probe --release --locked |
+            tee -a live-eastmoney.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

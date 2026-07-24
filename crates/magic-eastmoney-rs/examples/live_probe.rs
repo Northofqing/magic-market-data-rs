@@ -11,6 +11,7 @@ use std::error::Error;
 use std::fmt::Debug;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let pool_date = IsoDate::new(required_env("MAGIC_EASTMONEY_POOL_DATE")?)?;
     let client = EastmoneyClient::new()?;
     let mut failures = Vec::new();
     let primary = instrument(Exchange::Shanghai, env("MAGIC_EASTMONEY_CODE", "600396"))?;
@@ -221,7 +222,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         &mut failures,
     );
 
-    let pool_date = IsoDate::new(env("MAGIC_EASTMONEY_POOL_DATE", "2026-07-23"))?;
     for kind in [
         LimitPoolKind::Upper,
         LimitPoolKind::Broken,
@@ -295,6 +295,22 @@ fn instrument(exchange: Exchange, code: String) -> Result<InstrumentId, Box<dyn 
 
 fn env(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.to_owned())
+}
+
+fn required_env(name: &str) -> Result<String, std::io::Error> {
+    let value = std::env::var(name).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{name} is required and must identify the source trading session"),
+        )
+    })?;
+    if value.trim().is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{name} must not be empty"),
+        ));
+    }
+    Ok(value)
 }
 
 fn instrument_identity(instrument: &InstrumentId) -> String {
