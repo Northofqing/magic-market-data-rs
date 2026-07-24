@@ -372,6 +372,8 @@ fn blocking_order_book_seam_normalizes_five_levels_once() {
 struct ScriptedAsyncBarsQuery {
     calls: RefCell<Vec<(u8, u8, String, u32, u16, u8)>>,
     response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
+    quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
+    quote_response: RefCell<Option<Result<Vec<SecurityQuote>, TdxError>>>,
 }
 
 impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
@@ -390,6 +392,23 @@ impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
         self.response.borrow_mut().take().unwrap_or_else(|| {
             Err(TdxError::InvalidData(
                 "scripted async bars response is not configured".into(),
+            ))
+        })
+    }
+
+    async fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError> {
+        self.quote_calls.borrow_mut().push(
+            instruments
+                .iter()
+                .map(|(market, code)| (*market, (*code).to_owned()))
+                .collect(),
+        );
+        self.quote_response.borrow_mut().take().unwrap_or_else(|| {
+            Err(TdxError::InvalidData(
+                "scripted async quote response is not configured".into(),
             ))
         })
     }
@@ -413,6 +432,30 @@ async fn async_bar_seam_uses_decoded_records_and_exact_source_label() {
     );
     assert_eq!(batch.provenance().source(), "tdx-async");
     assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+}
+
+#[tokio::test]
+async fn async_quote_seam_reorders_decoded_records() {
+    let query = ScriptedAsyncBarsQuery {
+        quote_response: RefCell::new(Some(Ok(vec![
+            source_quote("600002", 102.0),
+            source_quote("600001", 101.0),
+        ]))),
+        ..Default::default()
+    };
+    let instruments = [instrument("600001"), instrument("600002")];
+
+    let batch = realtime_quotes_async_with(&query, "tdx-async", &instruments)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        *query.quote_calls.borrow(),
+        vec![vec![(1, "600001".into()), (1, "600002".into())]]
+    );
+    assert_eq!(batch.records()[0].instrument().code(), "600001");
+    assert_eq!(batch.records()[1].instrument().code(), "600002");
+    assert_eq!(batch.provenance().source(), "tdx-async");
 }
 
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
