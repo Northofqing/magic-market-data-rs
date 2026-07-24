@@ -1,5 +1,6 @@
 use super::*;
-use magic_market_core::{Exchange, TechnicalBarsProvider};
+use magic_market_core::{Exchange, HistoricalBars, TechnicalBarsProvider};
+use std::io::{self, Read};
 use std::sync::{mpsc, Mutex};
 
 const FIXTURE: &str = r#"{
@@ -39,6 +40,15 @@ struct BlockingTransport {
     response: Vec<u8>,
     starts: mpsc::Sender<Instant>,
     releases: Mutex<mpsc::Receiver<()>>,
+}
+
+#[derive(Debug)]
+struct FailingReader;
+
+impl Read for FailingReader {
+    fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::other("fixture read failed"))
+    }
 }
 
 impl BaiduTransport for BlockingTransport {
@@ -232,4 +242,239 @@ fn cloned_clients_share_a_gate_held_through_the_complete_transport_call() {
     assert_eq!(snapshot.maximum_concurrency(), 1);
     assert_eq!(snapshot.active_requests(), 0);
     assert!(snapshot.minimum_start_gap().expect("two request starts") >= interval);
+}
+
+#[test]
+fn constructors_debug_capabilities_and_historical_projection_are_covered() {
+    assert!(matches!(
+        BaiduClient::with_timeout(Duration::ZERO),
+        Err(BaiduError::InvalidRequest(_))
+    ));
+    let network_client = BaiduClient::with_timeout(Duration::from_millis(1))
+        .expect("positive timeout builds an offline client");
+    assert!(format!("{network_client:?}").contains("BaiduClient"));
+    assert!(!BaiduClient::capabilities().bars);
+    assert!(BaiduClient::new().is_ok());
+
+    let invalid_request = HttpRequest {
+        url: "https://evil.test/x".into(),
+        headers: Vec::new(),
+    };
+    let transport =
+        HttpsTransport::new(Duration::from_millis(1)).expect("positive timeout builds transport");
+    assert!(matches!(
+        transport.get(&invalid_request),
+        Err(BaiduError::InvalidRequest(_))
+    ));
+
+    let client = BaiduClient::with_transport(FixtureTransport {
+        response: FIXTURE.as_bytes().to_vec(),
+        request: Mutex::new(None),
+    });
+    let batch = client
+        .historical_bars(&request(1))
+        .expect("technical bars project to ordinary bars");
+    assert_eq!(batch.records().len(), 1);
+    assert_eq!(batch.records()[0].close().get(), 16.41);
+    assert_eq!(batch.provenance().source(), "baidu-pae");
+}
+
+#[test]
+fn bounded_http_reader_preserves_status_content_type_size_and_io_failures() {
+    assert_eq!(
+        read_http_response(200, Some("application/json"), &b"{}"[..])
+            .expect("valid bounded response"),
+        b"{}"
+    );
+    assert!(matches!(
+        read_http_response(503, Some("application/json"), &b"{}"[..]),
+        Err(BaiduError::Transport(_))
+    ));
+    assert!(matches!(
+        read_http_response(200, Some("text/html"), &b"{}"[..]),
+        Err(BaiduError::Protocol(_))
+    ));
+    assert!(matches!(
+        read_http_response(200, Some("application/json"), FailingReader),
+        Err(BaiduError::Transport(_))
+    ));
+    assert!(matches!(
+        read_http_response(
+            200,
+            Some("application/json"),
+            vec![b'x'; MAX_RESPONSE_BYTES + 1].as_slice()
+        ),
+        Err(BaiduError::Protocol(_))
+    ));
+}
+
+#[test]
+fn request_validation_covers_asset_limit_range_identity_and_request_shape() {
+    let non_equity = BarsRequest::new(
+        InstrumentId::new(Exchange::Shanghai, "000001", AssetClass::Index).expect("index identity"),
+        BarInterval::Day,
+        1,
+    )
+    .expect("request");
+    assert!(matches!(
+        validate_request(&non_equity),
+        Err(BaiduError::Unsupported(_))
+    ));
+
+    assert!(matches!(
+        validate_request(&request(MAX_ROWS + 1)),
+        Err(BaiduError::InvalidRequest(_))
+    ));
+    let ranged = request(1)
+        .with_range("2026-07-01", "2026-07-23")
+        .expect("valid core range");
+    assert!(matches!(
+        validate_request(&ranged),
+        Err(BaiduError::Unsupported(_))
+    ));
+
+    for (exchange, code) in [
+        (Exchange::Shanghai, "600396"),
+        (Exchange::Shenzhen, "000001"),
+        (Exchange::Shenzhen, "300001"),
+        (Exchange::Beijing, "430001"),
+        (Exchange::Beijing, "830001"),
+        (Exchange::Beijing, "920001"),
+    ] {
+        let instrument =
+            InstrumentId::new(exchange, code, AssetClass::Equity).expect("verified identity");
+        assert!(validate_instrument_identity(&instrument).is_ok());
+        let built = build_request(&instrument).expect("verified request");
+        assert!(built.url().contains(&format!("code={code}")));
+        assert_eq!(built.headers().len(), 4);
+    }
+
+    let short = InstrumentId::new(Exchange::Shanghai, "60039", AssetClass::Equity)
+        .expect("core accepts provider-specific identity");
+    assert!(matches!(
+        validate_instrument_identity(&short),
+        Err(BaiduError::InvalidRequest(_))
+    ));
+    assert!(ensure_official_url("https://finance.pae.baidu.com/").is_err());
+    assert!(ensure_official_url("https://finance.pae.baidu.com//x").is_err());
+    assert!(ensure_official_url("https://finance.pae.baidu.com/x\n").is_err());
+}
+
+#[test]
+fn response_structure_and_row_integrity_fail_closed() {
+    for body in [
+        "{",
+        r#"{"Result":{"newMarketData":{}}}"#,
+        r#"{"ResultCode":"0","Result":null}"#,
+        r#"{"ResultCode":"0","Result":{"newMarketData":{"keys":null}}}"#,
+        r#"{"ResultCode":"0","Result":{"newMarketData":{"keys":[],"marketData":null}}}"#,
+        r#"{"ResultCode":"0","Result":{"newMarketData":{"keys":["time","open","close","high","low","volume","amount","ma5avgprice","ma10avgprice","ma20avgprice"],"marketData":""}}}"#,
+    ] {
+        assert!(parse_response(body.as_bytes(), &request(1), "observed").is_err());
+    }
+
+    let missing_field = FIXTURE.replace(
+        "1784736000,2026-07-23,15.30,16.41,341780059,16.41,14.85,5352355411.00,13.87,13.02,13.40",
+        "1784736000,2026-07-23,15.30",
+    );
+    assert!(parse_response(missing_field.as_bytes(), &request(2), "observed").is_err());
+
+    let duplicate = FIXTURE.replace("2026-07-23", "2026-07-22");
+    assert!(parse_response(duplicate.as_bytes(), &request(2), "observed").is_err());
+    let unordered = FIXTURE
+        .replace("2026-07-22", "2026-07-24")
+        .replace("2026-07-23", "2026-07-22");
+    assert!(parse_response(unordered.as_bytes(), &request(2), "observed").is_err());
+    let invalid_date = FIXTURE.replace("2026-07-23", "20260723xx");
+    assert!(parse_response(invalid_date.as_bytes(), &request(1), "observed").is_err());
+    let bad_ohlc = FIXTURE.replace(
+        "15.30,16.41,341780059,16.41,14.85",
+        "15.30,16.41,341780059,16.00,14.85",
+    );
+    assert!(parse_response(bad_ohlc.as_bytes(), &request(1), "observed").is_err());
+    let negative_volume = FIXTURE.replace("341780059", "-1");
+    assert!(parse_response(negative_volume.as_bytes(), &request(1), "observed").is_err());
+    let negative_amount = FIXTURE.replace("5352355411.00", "-1");
+    assert!(parse_response(negative_amount.as_bytes(), &request(1), "observed").is_err());
+}
+
+#[test]
+fn key_and_numeric_helpers_reject_every_untrusted_shape() {
+    let non_text = vec![Value::from(7)];
+    assert!(build_key_index(&non_text).is_err());
+    let duplicate = vec![
+        Value::from("time"),
+        Value::from("time"),
+        Value::from("open"),
+        Value::from("close"),
+        Value::from("high"),
+        Value::from("low"),
+        Value::from("volume"),
+        Value::from("amount"),
+        Value::from("ma5avgprice"),
+        Value::from("ma10avgprice"),
+        Value::from("ma20avgprice"),
+    ];
+    assert!(build_key_index(&duplicate).is_err());
+    let missing = vec![
+        Value::from("time"),
+        Value::from("open"),
+        Value::from("close"),
+    ];
+    assert!(build_key_index(&missing).is_err());
+    assert!(field(&["value"], &HashMap::new(), "open").is_err());
+
+    assert!(positive("0", "open").is_err());
+    assert!(positive("not-a-number", "open").is_err());
+    assert!(positive("NaN", "open").is_err());
+    assert!(nonnegative("-0.1", "volume").is_err());
+    assert_eq!(
+        optional_positive(" -- ", "ma5avgprice").expect("missing MA"),
+        None
+    );
+    assert_eq!(
+        optional_positive("1.5", "ma5avgprice").expect("positive MA"),
+        Some(1.5)
+    );
+    assert!(optional_positive("-1", "ma5avgprice").is_err());
+    assert!(validate_date("2026/07/23").is_err());
+    assert!(validate_date("2026-7-023").is_err());
+    assert!(now().expect("clock after epoch").contains('.'));
+}
+
+#[test]
+fn server_row_cap_and_sequential_client_pacing_are_enforced() {
+    let row = "2026-07-23,15.30,16.41,341780059,16.41,14.85,5352355411.00,13.87,13.02,13.40";
+    let encoded = std::iter::repeat_n(row, usize::from(MAX_ROWS) + 1)
+        .collect::<Vec<_>>()
+        .join(";");
+    let body = serde_json::to_vec(&serde_json::json!({
+        "ResultCode": "0",
+        "Result": {"newMarketData": {
+            "keys": ["time","open","close","volume","high","low","amount","ma5avgprice","ma10avgprice","ma20avgprice"],
+            "marketData": encoded
+        }}
+    }))
+    .expect("JSON fixture");
+    assert!(matches!(
+        parse_response(&body, &request(1), "observed"),
+        Err(BaiduError::Protocol(message)) if message.contains("maximum")
+    ));
+
+    let interval = Duration::from_millis(20);
+    let client = BaiduClient::from_parts(
+        Arc::new(FixtureTransport {
+            response: FIXTURE.as_bytes().to_vec(),
+            request: Mutex::new(None),
+        }),
+        interval,
+    );
+    client
+        .technical_bars(&request(1))
+        .expect("first fixture request");
+    let second_started = Instant::now();
+    client
+        .technical_bars(&request(1))
+        .expect("second fixture request");
+    assert!(second_started.elapsed() >= interval);
 }

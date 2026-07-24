@@ -133,21 +133,8 @@ impl IwencaiTransport for HttpsTransport {
             Err(error) => return Err(IwencaiError::Transport(error.to_string())),
         };
         let status = response.status();
-        if status == 200 {
-            ensure_json_content_type(response.header("Content-Type"))?;
-        }
-        let mut body = Vec::new();
-        response
-            .into_reader()
-            .take((MAX_RESPONSE_BYTES + 1) as u64)
-            .read_to_end(&mut body)
-            .map_err(|error| IwencaiError::Transport(error.to_string()))?;
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(IwencaiError::Protocol(format!(
-                "response exceeds {MAX_RESPONSE_BYTES} bytes"
-            )));
-        }
-        Ok(HttpResponse::new(status, body))
+        let content_type = response.header("Content-Type").map(str::to_owned);
+        read_http_response(status, content_type.as_deref(), response.into_reader())
     }
 }
 
@@ -371,6 +358,27 @@ fn ensure_json_content_type(content_type: Option<&str>) -> Result<(), IwencaiErr
             "expected a JSON response, received content type {content_type:?}"
         )))
     }
+}
+
+fn read_http_response(
+    status: u16,
+    content_type: Option<&str>,
+    reader: impl Read,
+) -> Result<HttpResponse, IwencaiError> {
+    if status == 200 {
+        ensure_json_content_type(content_type)?;
+    }
+    let mut body = Vec::new();
+    reader
+        .take((MAX_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut body)
+        .map_err(|error| IwencaiError::Transport(error.to_string()))?;
+    if body.len() > MAX_RESPONSE_BYTES {
+        return Err(IwencaiError::Protocol(format!(
+            "response exceeds {MAX_RESPONSE_BYTES} bytes"
+        )));
+    }
+    Ok(HttpResponse::new(status, body))
 }
 
 fn channel_name(channel: SemanticChannel) -> &'static str {
