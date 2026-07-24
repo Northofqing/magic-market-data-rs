@@ -1,5 +1,10 @@
-use super::parse_fund_flow;
-use magic_market_core::{AssetClass, Exchange, FlowInterval, FlowScope, InstrumentId, RatioUnit};
+use super::{parse_fund_flow, parse_number, parse_row};
+use crate::test_support::ScriptedTransport;
+use crate::{EastmoneyClient, EastmoneyError};
+use magic_market_core::{
+    AssetClass, BoardCategory, Exchange, FlowInterval, FlowScope, FundFlowRequest, FundFlowSeries,
+    InstrumentId, NonEmptyText, PositiveU32, RatioUnit,
+};
 
 fn scope() -> FlowScope {
     FlowScope::Instrument(
@@ -80,4 +85,109 @@ fn period_at_rejects_malformed_or_impossible_date_and_time() {
             "{interval:?} {period_at}"
         );
     }
+}
+
+#[test]
+fn public_fund_flow_contract_routes_minute_and_daily_source_shapes() {
+    for (interval, body, expected_klt) in [
+        (
+            FlowInterval::Minute1,
+            &br#"{"rc":0,"data":{"klines":[
+              "2026-07-23 15:00,100,-10,20,30,60,1.25"
+            ],"code":"600396","market":1}}"#[..],
+            "klt=1",
+        ),
+        (
+            FlowInterval::Day1,
+            &br#"{"rc":0,"data":{"klines":[
+              "2026-07-23,100,-10,20,30,60,1.25"
+            ],"code":"600396","market":1}}"#[..],
+            "klt=101",
+        ),
+    ] {
+        let transport = ScriptedTransport::from_bodies([body]);
+        let requests = transport.requests();
+        let client = EastmoneyClient::with_transport(transport);
+        let request =
+            FundFlowRequest::new(scope(), interval, PositiveU32::new(1).unwrap()).unwrap();
+        let batch = client.fund_flow_series(&request).unwrap();
+        assert_eq!(batch.records().len(), 1);
+        assert!(
+            requests.lock().unwrap()[0].contains(expected_klt),
+            "{:?}",
+            requests.lock().unwrap()
+        );
+    }
+}
+
+#[test]
+fn public_fund_flow_contract_rejects_board_and_unverified_intervals() {
+    let client = EastmoneyClient::with_transport(ScriptedTransport::from_bodies([]));
+    let board_request = FundFlowRequest::new(
+        FlowScope::Board {
+            code: NonEmptyText::new("BK1200").unwrap(),
+            name: NonEmptyText::new("电力设备").unwrap(),
+            category: BoardCategory::Industry,
+        },
+        FlowInterval::Day1,
+        PositiveU32::new(1).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        client.fund_flow_series(&board_request),
+        Err(EastmoneyError::Unsupported(_))
+    ));
+    let interval_request =
+        FundFlowRequest::new(scope(), FlowInterval::Day5, PositiveU32::new(1).unwrap()).unwrap();
+    assert!(matches!(
+        client.fund_flow_series(&interval_request),
+        Err(EastmoneyError::Unsupported(_))
+    ));
+}
+
+#[test]
+fn fund_flow_protocol_shape_and_number_failures_are_explicit() {
+    let board_scope = FlowScope::Board {
+        code: NonEmptyText::new("BK1200").unwrap(),
+        name: NonEmptyText::new("电力设备").unwrap(),
+        category: BoardCategory::Industry,
+    };
+    assert!(matches!(
+        parse_fund_flow(b"{", scope(), FlowInterval::Day1),
+        Err(EastmoneyError::Decode(_))
+    ));
+    assert!(matches!(
+        parse_fund_flow(
+            br#"{"rc":0,"data":{"code":"600396","market":1,"klines":[]}}"#,
+            board_scope,
+            FlowInterval::Day1
+        ),
+        Err(EastmoneyError::Unsupported(_))
+    ));
+    for fixture in [
+        r#"{"rc":0,"data":{"market":1,"klines":[]}}"#,
+        r#"{"rc":0,"data":{"code":"600396","klines":[]}}"#,
+        r#"{"rc":0,"data":{"code":"600396","market":1.5,"klines":[]}}"#,
+        r#"{"rc":0,"data":{"code":"600396","market":1,"klines":{}}}"#,
+        r#"{"rc":0,"data":{"code":"600396","market":1,"klines":[1]}}"#,
+    ] {
+        assert!(
+            parse_fund_flow(fixture.as_bytes(), scope(), FlowInterval::Day1).is_err(),
+            "{fixture}"
+        );
+    }
+    for row in [
+        "",
+        "2026-07-23,1,2,3,4",
+        "2026-07-23,nope,2,3,4,5",
+        "2026-07-23,NaN,2,3,4,5",
+    ] {
+        assert!(parse_row(row, FlowInterval::Day1).is_err(), "{row}");
+    }
+    assert!(matches!(
+        parse_row("2026-07-23,1,2,3,4,5", FlowInterval::Day120),
+        Err(EastmoneyError::Unsupported(_))
+    ));
+    assert_eq!(parse_number(" -- ").unwrap(), None);
+    assert_eq!(parse_number(" - ").unwrap(), None);
 }

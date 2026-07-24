@@ -18,6 +18,10 @@ mod popularity;
 mod reports;
 mod transport;
 
+#[cfg(test)]
+#[path = "../tests/internal/support.rs"]
+mod test_support;
+
 use magic_market_core::{
     AssetClass, CapitalCapabilities, ContentCapabilities, DataBatch, Exchange, InstrumentId,
     LimitPoolCapabilities, LoadProbeSnapshot, Provenance, ProviderId, ResearchCapabilities,

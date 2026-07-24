@@ -1,7 +1,9 @@
 use super::{map_block_trade, map_dividend, map_holder_count, map_lockup, map_margin};
-use crate::BatchContext;
+use crate::test_support::ScriptedTransport;
+use crate::{BatchContext, EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    AssetClass, Exchange, InstrumentDateRangeRequest, InstrumentId, PositiveU32, RatioUnit,
+    AssetClass, BlockTrades, DividendPlans, Exchange, HolderCounts, InstrumentDateRangeRequest,
+    InstrumentId, LockupEvents, MarginData, PositiveU32, RatioUnit,
 };
 use serde_json::json;
 
@@ -267,4 +269,117 @@ fn every_capital_row_requires_its_real_code_and_secucode_identity() {
     ] {
         assert!(matches!(result, Err(crate::EastmoneyError::Protocol(_))));
     }
+}
+
+fn client_for_row(row: serde_json::Value) -> EastmoneyClient {
+    let body = serde_json::to_vec(&json!({
+        "success": true,
+        "code": 0,
+        "result": {"data": [row], "pages": 1}
+    }))
+    .unwrap();
+    EastmoneyClient::with_transport(ScriptedTransport::from_results([Ok(body)]))
+}
+
+#[test]
+fn public_capital_contract_maps_each_verified_datacenter_family() {
+    let margin = client_for_row(json!({
+        "SCODE":"600519","SECUCODE":"600519.SH","DATE":"2026-07-23",
+        "RZYE":1,"RZMRE":2,"RZCHE":3,"RQYE":4,"RQMCL":5,"RQCHL":6,"RZRQYE":7
+    }))
+    .margin_data(&request())
+    .unwrap();
+    assert_eq!(margin.records()[0].financing_balance.unwrap().get(), 1.0);
+
+    let trade = client_for_row(json!({
+        "SECURITY_CODE":"600519","SECUCODE":"600519.SH","TRADE_DATE":"2026-07-23",
+        "TRADE_TIME":"14:55:01","DEAL_PRICE":1500,"DEAL_VOLUME":1000
+    }))
+    .block_trades(&request())
+    .unwrap();
+    assert_eq!(trade.records()[0].price.get(), 1500.0);
+
+    let holders = client_for_row(json!({
+        "SECURITY_CODE":"600519","SECUCODE":"600519.SH","END_DATE":"2026-06-30",
+        "HOLDER_NUM":12345
+    }))
+    .holder_counts(&request())
+    .unwrap();
+    assert_eq!(holders.records()[0].holders.get(), 12345.0);
+
+    let lockups = client_for_row(json!({
+        "SECURITY_CODE":"600519","SECUCODE":"600519.SH","FREE_DATE":"2026-08-01",
+        "FREE_SHARES_TYPE":"首发原股东限售股份","FREE_SHARES":12.5
+    }))
+    .lockup_events(&request())
+    .unwrap();
+    assert_eq!(lockups.records()[0].shares.get(), 125000.0);
+
+    let dividends = client_for_row(json!({
+        "SECURITY_CODE":"600519","SECUCODE":"600519.SH","REPORT_DATE":"2025-12-31",
+        "ASSIGN_PROGRESS":"实施"
+    }))
+    .dividend_plans(&request())
+    .unwrap();
+    assert_eq!(dividends.records()[0].state.as_str(), "实施");
+}
+
+#[test]
+fn capital_public_contract_propagates_source_transport_and_empty_errors() {
+    let client = EastmoneyClient::with_transport(ScriptedTransport::from_results([Err(
+        EastmoneyError::Transport("fixture boundary failed".into()),
+    )]));
+    assert!(matches!(
+        client.margin_data(&request()),
+        Err(EastmoneyError::Transport(_))
+    ));
+
+    let empty = serde_json::to_vec(&json!({
+        "success": true,
+        "code": 0,
+        "result": {"data": [], "pages": 1}
+    }))
+    .unwrap();
+    let client = EastmoneyClient::with_transport(ScriptedTransport::from_results([Ok(empty)]));
+    assert!(matches!(
+        client.holder_counts(&request()),
+        Err(EastmoneyError::Protocol(_))
+    ));
+}
+
+#[test]
+fn capital_date_range_checks_both_bounds_and_required_numbers() {
+    let context = BatchContext::new("fixture", None).unwrap();
+    let ranged = InstrumentDateRangeRequest::new(
+        InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity).unwrap(),
+        PositiveU32::new(10).unwrap(),
+    )
+    .unwrap()
+    .with_range(
+        magic_market_core::IsoDate::new("2026-06-01").unwrap(),
+        magic_market_core::IsoDate::new("2026-06-30").unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        map_margin(
+            &json!({
+                "SCODE":"600519","SECUCODE":"600519.SH",
+                "DATE":"2026-05-31","RZYE":1
+            }),
+            &ranged,
+            &context
+        ),
+        Err(EastmoneyError::Protocol(_))
+    ));
+    assert!(matches!(
+        map_block_trade(
+            &json!({
+                "SECURITY_CODE":"600519","SECUCODE":"600519.SH",
+                "TRADE_DATE":"2026-06-20","DEAL_VOLUME":1
+            }),
+            &ranged,
+            &context
+        ),
+        Err(EastmoneyError::Protocol(_))
+    ));
 }

@@ -1,5 +1,10 @@
 use super::parse_reports;
-use magic_market_core::{AssetClass, Exchange, InstrumentId, ReportScope};
+use crate::test_support::ScriptedTransport;
+use crate::{EastmoneyClient, EastmoneyError};
+use magic_market_core::{
+    AssetClass, Exchange, InstrumentId, NonEmptyText, PositiveU32, ReportScope, ResearchReports,
+    ResearchRequest,
+};
 
 #[test]
 fn maps_every_available_report_contract_field() {
@@ -159,4 +164,64 @@ fn report_publish_date_must_be_a_real_date_and_time() {
             "{published_at}"
         );
     }
+}
+
+#[test]
+fn public_research_contract_routes_instrument_and_industry_scopes() {
+    let instrument = InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity).unwrap();
+    let instrument_fixture = r#"{"data":[{
+      "infoCode":"AP1","title":"x","publishDate":"2026-07-23",
+      "orgName":"x","stockCode":"600396","market":"SHANGHAI"
+    }]}"#;
+    let industry_fixture = r#"{"data":[{
+      "infoCode":"AP2","title":"y","publishDate":"2026-07-23",
+      "orgName":"x","industryCode":"481"
+    }]}"#;
+    for (scope, fixture, query_marker) in [
+        (
+            ReportScope::Instrument(instrument),
+            instrument_fixture,
+            "qType=0",
+        ),
+        (
+            ReportScope::Industry(NonEmptyText::new("481").unwrap()),
+            industry_fixture,
+            "qType=1",
+        ),
+    ] {
+        let transport = ScriptedTransport::from_bodies([fixture.as_bytes()]);
+        let requests = transport.requests();
+        let client = EastmoneyClient::with_transport(transport);
+        let request = ResearchRequest::new(
+            scope,
+            PositiveU32::new(2).unwrap(),
+            PositiveU32::new(20).unwrap(),
+        )
+        .unwrap();
+        let batch = client.research_reports(&request).unwrap();
+        assert_eq!(batch.records().len(), 1);
+        let source_request = requests.lock().unwrap()[0].clone();
+        assert!(source_request.contains(query_marker), "{source_request}");
+        assert!(source_request.contains("pageNo=2"), "{source_request}");
+        assert!(source_request.contains("pageSize=20"), "{source_request}");
+    }
+}
+
+#[test]
+fn report_ids_and_json_decode_fail_before_url_construction() {
+    let scope = ReportScope::Industry(NonEmptyText::new("*").unwrap());
+    assert!(matches!(
+        parse_reports(b"{", &scope),
+        Err(EastmoneyError::Decode(_))
+    ));
+    assert!(matches!(
+        parse_reports(
+            br#"{"data":[{
+              "infoCode":"unsafe/id","title":"x","publishDate":"2026-07-23",
+              "orgName":"x","industryCode":"481"
+            }]}"#,
+            &scope
+        ),
+        Err(EastmoneyError::Protocol(_))
+    ));
 }

@@ -1,5 +1,9 @@
 use super::{format_time, parse_limit_pool};
-use magic_market_core::{IsoDate, LimitPoolKind, LimitPoolRequest, PositiveU32, RatioUnit};
+use crate::test_support::ScriptedTransport;
+use crate::{EastmoneyClient, EastmoneyError};
+use magic_market_core::{
+    IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools, PositiveU32, RatioUnit,
+};
 
 fn request(kind: LimitPoolKind) -> LimitPoolRequest {
     LimitPoolRequest::new(
@@ -83,4 +87,61 @@ fn null_pool_and_nonzero_rc_fail() {
     assert!(
         parse_limit_pool(br#"{"rc":-1,"data":null}"#, &request(LimitPoolKind::Broken)).is_err()
     );
+}
+
+#[test]
+fn public_limit_pool_contract_routes_every_verified_pool_kind() {
+    const FIXTURE: &str = r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+      "c":"600396","m":1,"p":1308000,"zdp":9.97
+    }]}}"#;
+    for (kind, path, sort) in [
+        (LimitPoolKind::Upper, "getTopicZTPool", "sort=fbt%3Aasc"),
+        (LimitPoolKind::Broken, "getTopicZBPool", "sort=fbt%3Aasc"),
+        (LimitPoolKind::Lower, "getTopicDTPool", "sort=fund%3Aasc"),
+        (
+            LimitPoolKind::PreviousUpper,
+            "getYesterdayZTPool",
+            "sort=zs%3Adesc",
+        ),
+    ] {
+        let transport = ScriptedTransport::from_bodies([FIXTURE.as_bytes()]);
+        let requests = transport.requests();
+        let client = EastmoneyClient::with_transport(transport);
+        let batch = client.limit_pool(&request(kind)).unwrap();
+        assert_eq!(batch.records()[0].kind, kind);
+        let source_request = requests.lock().unwrap()[0].clone();
+        assert!(source_request.contains(path), "{source_request}");
+        assert!(source_request.contains(sort), "{source_request}");
+        assert!(source_request.contains("date=20260723"), "{source_request}");
+    }
+}
+
+#[test]
+fn limit_pool_decode_shape_market_and_price_failures_are_explicit() {
+    assert!(matches!(
+        parse_limit_pool(b"{", &request(LimitPoolKind::Upper)),
+        Err(EastmoneyError::Decode(_))
+    ));
+    for fixture in [
+        r#"{"rc":0,"data":{"qdate":20260723,"pool":{}}}"#,
+        r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+          "c":"600396","p":1308000,"zdp":9.97
+        }]}}"#,
+        r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+          "c":"600396","m":1.5,"p":1308000,"zdp":9.97
+        }]}}"#,
+        r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+          "c":"600396","m":1,"zdp":9.97
+        }]}}"#,
+        r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+          "c":"600396","m":1,"p":1308000
+        }]}}"#,
+    ] {
+        assert!(
+            parse_limit_pool(fixture.as_bytes(), &request(LimitPoolKind::Upper)).is_err(),
+            "{fixture}"
+        );
+    }
+    assert_eq!(format_time(None).unwrap(), None);
+    assert!(format_time(Some("not-a-clock".into())).is_err());
 }
