@@ -379,6 +379,11 @@ trait AsyncTdxQuery {
         count: u16,
         adjust: u8,
     ) -> Result<Vec<SecurityBar>, TdxError>;
+
+    async fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError>;
 }
 
 impl AsyncTdxQuery for crate::AsyncTdxHqClient {
@@ -395,6 +400,13 @@ impl AsyncTdxQuery for crate::AsyncTdxHqClient {
             self, category, market, code, start, count, adjust,
         )
         .await
+    }
+
+    async fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError> {
+        crate::AsyncTdxHqClient::get_security_quotes(self, instruments).await
     }
 }
 
@@ -432,6 +444,19 @@ async fn historical_bars_async_with(
         )
         .await?;
     strict_bars(source, records)
+}
+
+async fn realtime_quotes_async_with(
+    query: &impl AsyncTdxQuery,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<Quote>, TdxError> {
+    let pairs: Vec<(u8, &str)> = instruments
+        .iter()
+        .map(|id| market(id).map(|market| (market, id.code())))
+        .collect::<Result<_, _>>()?;
+    let records = query.security_quotes(&pairs).await?;
+    normalize_quotes(source, instruments, records)
 }
 
 fn realtime_quotes_with(
@@ -1415,12 +1440,7 @@ impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
-        let records = self.get_security_quotes(&pairs).await?;
-        normalize_quotes("tdx-async", instruments, records)
+        realtime_quotes_async_with(self, "tdx-async", instruments).await
     }
 }
 
