@@ -66,3 +66,17 @@ fn finishing_without_an_active_request_is_rejected() {
         LoadProbeError::FinishWithoutStart
     );
 }
+
+#[test]
+fn one_serial_request_needs_no_inter_request_gap() {
+    let mut tracker = ProbeRequestTracker::default();
+    tracker.request_started();
+    tracker.request_finished().unwrap();
+
+    let snapshot = tracker.snapshot();
+    assert_eq!(snapshot.minimum_start_gap(), None);
+    assert_eq!(
+        verify_serial_load(&snapshot, Duration::from_secs(60)).unwrap(),
+        ProbeStatus::Admitted
+    );
+}

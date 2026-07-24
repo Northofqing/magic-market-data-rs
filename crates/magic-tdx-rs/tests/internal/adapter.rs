@@ -1112,6 +1112,7 @@ fn order_book_helpers_validate_levels_depth_and_request_identity() {
 #[test]
 fn disconnected_clients_still_execute_all_deterministic_preflight_failures() {
     let client = TdxHqClient::new();
+    client.set_auto_retry(false);
     let ranged = BarsRequest::new(instrument("600396"), BarInterval::Day, 1)
         .unwrap()
         .with_range("2026-07-01", "2026-07-23")
@@ -1138,6 +1139,7 @@ fn disconnected_clients_still_execute_all_deterministic_preflight_failures() {
     ));
 
     let smart = crate::TdxSmartClient::new();
+    smart.inner().set_auto_retry(false);
     assert!(matches!(
         <crate::TdxSmartClient as HistoricalBars>::historical_bars(&smart, &ranged),
         Err(TdxError::Unsupported(_))
@@ -1152,11 +1154,91 @@ fn disconnected_clients_still_execute_all_deterministic_preflight_failures() {
         Err(TdxError::Unsupported(_))
     ));
 
-    let direct = crate::TdxDirectClient::new("127.0.0.1", 7709, 0.1);
+    let direct = crate::TdxDirectClient::new("127.0.0.1", 9, 0.001);
     assert!(matches!(
         <crate::TdxDirectClient as HistoricalBars>::historical_bars(&direct, &ranged),
         Err(TdxError::Unsupported(_))
     ));
+}
+
+fn assert_blocking_query_rejects_block_codes(query: &impl BlockingTdxQuery) {
+    assert!(query
+        .security_bars(KLINE_DAILY, 1, "880001", 0, 1, 0)
+        .is_err());
+    assert!(query.security_quotes(&[(1, "880001")]).is_err());
+    let _ = query.minute_time_data(1, "880001");
+    let _ = query.history_minute_time_data(1, "880001", 20260723);
+    let _ = query.transaction_data(1, "880001", 0, 1);
+    let _ = query.history_transaction_data(1, "880001", 0, 1, 20260723);
+    let _ = query.security_count(9);
+    let _ = query.security_list(9, 0);
+}
+
+#[test]
+fn concrete_blocking_query_delegates_every_family_and_preserves_preflight_errors() {
+    let client = TdxHqClient::new();
+    client.set_auto_retry(false);
+    assert_blocking_query_rejects_block_codes(&client);
+
+    let direct = crate::TdxDirectClient::new("127.0.0.1", 9, 0.001);
+    assert_blocking_query_rejects_block_codes(&direct);
+}
+
+#[test]
+fn every_blocking_provider_facade_returns_real_batches_or_explicit_errors() {
+    fn assert_real_or_explicit<T>(result: Result<DataBatch<T>, TdxError>, expected_source: &str) {
+        match result {
+            Ok(batch) => {
+                assert!(!batch.records().is_empty());
+                assert_eq!(batch.provenance().source(), expected_source);
+            }
+            Err(error) => assert!(!error.to_string().trim().is_empty()),
+        }
+    }
+
+    let id = instrument("600396");
+    let bars = BarsRequest::new(id.clone(), BarInterval::Day, 1).unwrap();
+    let minute = MinuteDataRequest::new(id.clone());
+    let trades = TradesRequest::new(id.clone(), 1).unwrap();
+
+    let client = TdxHqClient::new();
+    client.set_auto_retry(false);
+    assert_real_or_explicit(
+        <TdxHqClient as HistoricalBars>::historical_bars(&client, &bars),
+        "tdx",
+    );
+    assert_real_or_explicit(
+        <TdxHqClient as MinuteData>::minute_data(&client, &minute),
+        "tdx",
+    );
+    assert_real_or_explicit(
+        <TdxHqClient as RealtimeQuotes>::realtime_quotes(&client, std::slice::from_ref(&id)),
+        "tdx",
+    );
+    assert_real_or_explicit(
+        <TdxHqClient as Trades>::trades(&client, &trades),
+        "tdx-current",
+    );
+    assert_real_or_explicit(
+        <TdxHqClient as SecurityMetadataProvider>::security_metadata(
+            &client,
+            std::slice::from_ref(&id),
+        ),
+        "tdx",
+    );
+    assert_real_or_explicit(
+        <TdxHqClient as OrderBooks>::order_books(&client, std::slice::from_ref(&id)),
+        "tdx",
+    );
+
+    let direct = crate::TdxDirectClient::new("127.0.0.1", 9, 0.001);
+    assert!(<crate::TdxDirectClient as HistoricalBars>::historical_bars(&direct, &bars).is_err());
+    assert!(<crate::TdxDirectClient as RealtimeQuotes>::realtime_quotes(
+        &direct,
+        std::slice::from_ref(&id)
+    )
+    .is_err());
+    assert!(<crate::TdxDirectClient as Trades>::trades(&direct, &trades).is_err());
 }
 
 #[tokio::test]

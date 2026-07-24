@@ -1,4 +1,53 @@
 use super::*;
+use std::cell::Cell;
+
+fn context_bar(year: u32, month: u32, day: u32) -> SecurityBar {
+    SecurityBar {
+        open: 1.0,
+        close: 1.0,
+        high: 1.0,
+        low: 1.0,
+        vol: 1.0,
+        amount: 1.0,
+        year,
+        month,
+        day,
+        hour: 0,
+        minute: 0,
+        datetime: format!("{year:04}-{month:02}-{day:02}"),
+    }
+}
+
+fn context_event(year: u32, month: u32, day: u32, category: u32) -> XdXrInfo {
+    XdXrInfo {
+        year,
+        month,
+        day,
+        category,
+        name: "除权除息".to_owned(),
+        fenhong: None,
+        peigujia: None,
+        songzhuangu: None,
+        peigu: None,
+        suogu: None,
+        panqianliutong: None,
+        panhouliutong: None,
+        qianzongguben: None,
+        houzongguben: None,
+        fenshu: None,
+        xingquanjia: None,
+    }
+}
+
+fn one_daily_bar_packet(date: u32) -> Vec<u8> {
+    let mut packet = Vec::with_capacity(18);
+    packet.extend_from_slice(&1u16.to_le_bytes());
+    packet.extend_from_slice(&date.to_le_bytes());
+    packet.extend_from_slice(&[0; 4]);
+    packet.extend_from_slice(&0u32.to_le_bytes());
+    packet.extend_from_slice(&0u32.to_le_bytes());
+    packet
+}
 
 #[test]
 fn test_code_bytes_full() {
@@ -69,6 +118,25 @@ fn test_fetch_context_empty_bars() {
 }
 
 #[test]
+fn fq_context_tiers_have_stable_page_counts() {
+    assert_eq!(FqContextTier::Low.pages(), 3);
+    assert_eq!(FqContextTier::Mid.pages(), 6);
+    assert_eq!(FqContextTier::High.pages(), 9);
+    assert_eq!(FqContextTier::default(), FqContextTier::Mid);
+}
+
+#[test]
+fn today_uses_a_valid_china_local_calendar_encoding() {
+    let date = today_yyyymmdd();
+    let year = date / 10_000;
+    let month = date / 100 % 100;
+    let day = date % 100;
+    assert!((2020..=2200).contains(&year));
+    assert!((1..=12).contains(&month));
+    assert!((1..=31).contains(&day));
+}
+
+#[test]
 fn test_auto_market() {
     assert_eq!(auto_market("600519").unwrap(), MARKET_SH);
     assert_eq!(auto_market("000858").unwrap(), MARKET_SZ);
@@ -94,6 +162,12 @@ fn test_encode_gbk_padded() {
     assert_eq!(bytes.len(), 10);
     assert_eq!(&bytes[..4], b"test");
     assert_eq!(&bytes[4..], &[0, 0, 0, 0, 0, 0]);
+}
+
+#[test]
+fn test_encode_gbk_padded_truncates_to_exact_protocol_width() {
+    let bytes = encode_gbk_padded("abcdef", 3).unwrap();
+    assert_eq!(bytes, b"abc");
 }
 
 // --- RateLimiter ---
@@ -135,6 +209,26 @@ fn test_rate_limiter_wait_no_delay_when_disabled() {
     let start = Instant::now();
     limiter.wait();
     assert!(start.elapsed() < Duration::from_millis(10));
+}
+
+#[test]
+fn enabled_rate_limiter_waits_and_exposes_phase_controls() {
+    let limiter = RateLimiter::new(3);
+    limiter.wait();
+    let start = Instant::now();
+    limiter.wait();
+    assert!(start.elapsed() >= Duration::from_millis(1));
+
+    limiter.set_enabled(false);
+    let start = Instant::now();
+    limiter.wait();
+    assert!(start.elapsed() < Duration::from_millis(10));
+
+    limiter.set_enabled(true);
+    limiter.set_phase(TradingPhase::Closed);
+    assert_eq!(limiter.phase(), TradingPhase::Closed);
+    let detected = limiter.auto_detect_phase();
+    assert_eq!(limiter.phase(), detected);
 }
 
 // --- TradingPhase ---
@@ -188,4 +282,110 @@ fn test_detect_trading_phase_uses_china_local_date_and_boundaries() {
     assert_eq!(detect_trading_phase_at(111_601), TradingPhase::PrePost); // 15:00:01
     assert_eq!(detect_trading_phase_at(187_200), TradingPhase::Closed); // Saturday noon
     assert_eq!(detect_trading_phase_at(318_600), TradingPhase::PrePost); // Monday 00:30
+}
+
+#[test]
+fn context_fetch_skips_irrelevant_or_already_covered_actions() {
+    let bars = vec![context_bar(2024, 1, 1)];
+    let irrelevant = vec![context_event(2023, 1, 1, 2)];
+    let calls = Cell::new(0);
+    let context = fetch_context_bars_for_adjust_with_tier(
+        |_| {
+            calls.set(calls.get() + 1);
+            Ok(one_daily_bar_packet(20220101))
+        },
+        KLINE_DAILY,
+        MARKET_SZ,
+        "000001",
+        &bars,
+        &irrelevant,
+        FqContextTier::Low,
+    );
+    assert!(context.is_empty());
+    assert_eq!(calls.get(), 0);
+
+    let covered = vec![context_event(2024, 1, 2, 1)];
+    let context = fetch_context_bars_for_adjust_with_tier(
+        |_| {
+            calls.set(calls.get() + 1);
+            Ok(one_daily_bar_packet(20220101))
+        },
+        KLINE_DAILY,
+        MARKET_SZ,
+        "000001",
+        &bars,
+        &covered,
+        FqContextTier::Low,
+    );
+    assert!(context.is_empty());
+    assert_eq!(calls.get(), 0);
+}
+
+#[test]
+fn context_fetch_stops_after_reaching_the_earliest_action() {
+    let bars = vec![context_bar(2024, 1, 1)];
+    let actions = vec![context_event(2023, 1, 2, 1), context_event(2023, 1, 1, 1)];
+    let calls = Cell::new(0);
+    let context = fetch_context_bars_for_adjust_with_tier(
+        |packet| {
+            calls.set(calls.get() + 1);
+            assert_eq!(
+                u16::from_le_bytes([packet[24], packet[25]]),
+                MAX_KLINE_COUNT
+            );
+            assert_eq!(
+                u16::from_le_bytes([packet[26], packet[27]]),
+                MAX_KLINE_COUNT
+            );
+            Ok(one_daily_bar_packet(20230101))
+        },
+        KLINE_DAILY,
+        MARKET_SZ,
+        "000001",
+        &bars,
+        &actions,
+        FqContextTier::High,
+    );
+    assert_eq!(calls.get(), 1);
+    assert_eq!(context.len(), 1);
+    assert_eq!(context[0].datetime, "2023-01-01");
+}
+
+#[test]
+fn context_fetch_fails_closed_on_transport_parse_and_empty_pages() {
+    let bars = vec![context_bar(2024, 1, 1)];
+    let actions = vec![context_event(2020, 1, 1, 1)];
+
+    let transport = fetch_context_bars_for_adjust_with_tier(
+        |_| Err(crate::error::TdxError::Connection("offline".to_owned())),
+        KLINE_DAILY,
+        MARKET_SZ,
+        "000001",
+        &bars,
+        &actions,
+        FqContextTier::Low,
+    );
+    assert!(transport.is_empty());
+
+    let malformed = fetch_context_bars_for_adjust_with_tier(
+        |_| Ok(vec![1]),
+        KLINE_DAILY,
+        MARKET_SZ,
+        "000001",
+        &bars,
+        &actions,
+        FqContextTier::Low,
+    );
+    assert!(malformed.is_empty());
+
+    let empty = fetch_context_bars_for_adjust_with_tier(
+        |_| Ok(0u16.to_le_bytes().to_vec()),
+        KLINE_DAILY,
+        MARKET_SZ,
+        "000001",
+        &bars,
+        &actions,
+        FqContextTier::Low,
+    );
+    assert!(empty.is_empty());
 }

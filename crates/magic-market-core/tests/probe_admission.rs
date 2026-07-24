@@ -56,6 +56,7 @@ fn stable_machine_states_do_not_conflate_diagnostics_with_admission() {
     assert!(!ProbeStatus::DiagnosticCompleteUnadmitted.satisfies_capability());
     assert!(!ProbeStatus::SkippedMissingSecret.satisfies_capability());
     assert!(!ProbeStatus::Failed.satisfies_capability());
+    assert_eq!(ProbeStatus::Admitted.to_string(), "admitted");
 }
 
 #[test]
@@ -287,4 +288,307 @@ fn source_proven_verified_empty_is_the_only_empty_success() {
     );
     assert_eq!(empty.family(), "consensus");
     assert_eq!(empty.request_identity(), "600396.SH");
+    assert_eq!(
+        empty.reason(),
+        "source explicitly reports no current institutional forecast"
+    );
+    assert_eq!(empty.evidence().provider(), ProviderId::Tonghuashun);
+    assert_eq!(empty.provenance().batch_id(), Some(batch_id));
+    assert_eq!(
+        empty.to_string(),
+        "family=consensus request_identity=600396.SH reason=source explicitly reports no current institutional forecast"
+    );
+}
+
+#[test]
+fn policy_and_verified_empty_reject_invalid_configuration_and_evidence() {
+    assert!(matches!(
+        ProbeAdmissionPolicy::new(ProviderId::Tonghuashun).with_max_source_age(Duration::ZERO),
+        Err(magic_market_core::CoreError::InvalidRequest(_))
+    ));
+
+    let observed = "2026-07-23T10:00:00+08:00";
+    let source = "2026-07-23T09:59:30+08:00";
+    let batch_id = "ths:consensus:empty";
+    for (family, request_identity, reason) in [
+        ("", "600396.SH", "source empty"),
+        ("consensus", "", "source empty"),
+        ("consensus", "600396.SH", ""),
+    ] {
+        assert!(VerifiedEmpty::new(
+            family,
+            request_identity,
+            reason,
+            evidence(ProviderId::Tonghuashun, observed, source, batch_id),
+            provenance(observed, source, batch_id),
+        )
+        .is_err());
+    }
+
+    let mismatched = VerifiedEmpty::new(
+        "consensus",
+        "600396.SH",
+        "source empty",
+        evidence(
+            ProviderId::Tonghuashun,
+            observed,
+            source,
+            "ths:consensus:other",
+        ),
+        provenance(observed, source, batch_id),
+    );
+    assert!(matches!(
+        mismatched,
+        Err(ProbeAdmissionError::BatchIdMismatch { .. })
+    ));
+}
+
+#[test]
+fn every_evidence_mismatch_is_rejected_explicitly() {
+    let observed = "2026-07-23T10:00:00+08:00";
+    let source = "2026-07-23T09:59:30+08:00";
+    let batch_id = "ths:consensus:1";
+
+    let cases = [
+        (
+            DataBatch::strict(
+                vec![Record {
+                    identity: "600519.SH",
+                    evidence: evidence(ProviderId::Eastmoney, observed, source, batch_id),
+                }],
+                provenance(observed, source, batch_id),
+            ),
+            "provider",
+        ),
+        (
+            DataBatch::strict(
+                vec![Record {
+                    identity: "600519.SH",
+                    evidence: evidence(
+                        ProviderId::Tonghuashun,
+                        "2026-07-23T10:00:01+08:00",
+                        source,
+                        batch_id,
+                    ),
+                }],
+                provenance(observed, source, batch_id),
+            ),
+            "observed",
+        ),
+        (
+            DataBatch::strict(
+                vec![Record {
+                    identity: "600519.SH",
+                    evidence: evidence(
+                        ProviderId::Tonghuashun,
+                        observed,
+                        "2026-07-23T09:59:29+08:00",
+                        batch_id,
+                    ),
+                }],
+                provenance(observed, source, batch_id),
+            ),
+            "source",
+        ),
+    ];
+
+    for (batch, expected) in cases {
+        let error = verify_admitted_batch(
+            &batch,
+            &policy(),
+            |record| &record.evidence,
+            |record| record.identity.to_owned(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                (&error, expected),
+                (ProbeAdmissionError::ProviderMismatch { .. }, "provider")
+                    | (ProbeAdmissionError::ObservedAtMismatch { .. }, "observed")
+                    | (ProbeAdmissionError::SourceAtMismatch { .. }, "source")
+            ),
+            "unexpected {expected} mismatch error: {error}"
+        );
+    }
+
+    let provenance_without_batch_id: Provenance = serde_json::from_value(serde_json::json!({
+        "source": "fixture",
+        "source_at": source,
+        "fetched_at": observed,
+        "batch_id": null
+    }))
+    .unwrap();
+    let missing_batch_id = DataBatch::strict(
+        vec![Record {
+            identity: "600519.SH",
+            evidence: evidence(ProviderId::Tonghuashun, observed, source, batch_id),
+        }],
+        provenance_without_batch_id,
+    );
+    let error = verify_admitted_batch(
+        &missing_batch_id,
+        &policy(),
+        |record| &record.evidence,
+        |record| record.identity.to_owned(),
+    )
+    .unwrap_err();
+    assert_eq!(error, ProbeAdmissionError::MissingBatchId);
+}
+
+#[test]
+fn missing_source_time_and_invalid_identities_are_not_admitted() {
+    let observed = "2026-07-23T10:00:00+08:00";
+    let batch_id = "ths:consensus:1";
+    let no_source = DataBatch::strict(
+        vec![Record {
+            identity: "600519.SH",
+            evidence: SourceEvidence::new(ProviderId::Tonghuashun, observed, batch_id).unwrap(),
+        }],
+        Provenance::new("fixture", observed)
+            .unwrap()
+            .with_batch_id(batch_id)
+            .unwrap(),
+    );
+    assert!(matches!(
+        verify_admitted_batch(
+            &no_source,
+            &policy(),
+            |record| &record.evidence,
+            |record| record.identity.to_owned()
+        ),
+        Err(ProbeAdmissionError::MissingSourceTime)
+    ));
+    assert_eq!(
+        verify_admitted_batch(
+            &no_source,
+            &ProbeAdmissionPolicy::new(ProviderId::Tonghuashun),
+            |record| &record.evidence,
+            |record| record.identity.to_owned()
+        )
+        .unwrap(),
+        ProbeStatus::Admitted
+    );
+
+    for identity in [" ", "600519.SH\ncontrol"] {
+        let batch = DataBatch::strict(
+            vec![Record {
+                identity,
+                evidence: SourceEvidence::new(ProviderId::Tonghuashun, observed, batch_id).unwrap(),
+            }],
+            Provenance::new("fixture", observed)
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        );
+        assert!(matches!(
+            verify_admitted_batch(
+                &batch,
+                &ProbeAdmissionPolicy::new(ProviderId::Tonghuashun),
+                |record| &record.evidence,
+                |record| record.identity.to_owned()
+            ),
+            Err(ProbeAdmissionError::EmptyIdentity)
+        ));
+    }
+}
+
+#[test]
+fn supported_timestamp_forms_and_calendar_edges_are_verified() {
+    let batch_id = "eastmoney:reports:timestamp";
+    let accepted = [
+        ("1784786400", "1784786400"),
+        ("1784786400.123", "1784786400.999"),
+        ("2024-02-29", "2024-02-29"),
+        ("2026-07-23 10:00:00", "2026-07-23T10:00:00Z"),
+        ("2026-07-23T10:00:00.123+08:00", "2026-07-23T10:00:00+08:00"),
+        ("2026-07-23T10:00:00-08:00", "2026-07-24T02:00:00Z"),
+    ];
+    for (source, observed) in accepted {
+        let batch = DataBatch::strict(
+            vec![Record {
+                identity: "AP-1",
+                evidence: evidence(ProviderId::Eastmoney, observed, source, batch_id),
+            }],
+            provenance(observed, source, batch_id),
+        );
+        assert_eq!(
+            verify_admitted_batch(
+                &batch,
+                &ProbeAdmissionPolicy::new(ProviderId::Eastmoney).require_source_at(),
+                |record| &record.evidence,
+                |record| record.identity.to_owned()
+            )
+            .unwrap(),
+            ProbeStatus::Admitted,
+            "source={source} observed={observed}"
+        );
+    }
+
+    for invalid in [
+        "unix-ms:",
+        "unix-ms:1x",
+        "2023-02-29",
+        "2026-13-01",
+        "2026-07-23T10:00",
+        "2026-07-23X10:00:00Z",
+        "2026-07-23T24:00:00Z",
+        "2026-07-23T10:60:00Z",
+        "2026-07-23T10:00:60Z",
+        "2026-07-23T10:00:00+24:00",
+        "2026-07-23T10:00:00+08:60",
+        "2026-07-23T10:00:00+0800",
+    ] {
+        let batch = DataBatch::strict(
+            vec![Record {
+                identity: "AP-1",
+                evidence: evidence(
+                    ProviderId::Eastmoney,
+                    "2026-07-24T10:00:00+08:00",
+                    invalid,
+                    batch_id,
+                ),
+            }],
+            provenance("2026-07-24T10:00:00+08:00", invalid, batch_id),
+        );
+        assert!(
+            matches!(
+                verify_admitted_batch(
+                    &batch,
+                    &ProbeAdmissionPolicy::new(ProviderId::Eastmoney).require_source_at(),
+                    |record| &record.evidence,
+                    |record| record.identity.to_owned()
+                ),
+                Err(ProbeAdmissionError::InvalidTimestamp {
+                    field: "source_at",
+                    ..
+                })
+            ),
+            "invalid timestamp admitted: {invalid}"
+        );
+    }
+
+    let invalid_observed = DataBatch::strict(
+        vec![Record {
+            identity: "AP-1",
+            evidence: evidence(
+                ProviderId::Eastmoney,
+                "invalid-observed",
+                "2026-07-23",
+                batch_id,
+            ),
+        }],
+        provenance("invalid-observed", "2026-07-23", batch_id),
+    );
+    assert!(matches!(
+        verify_admitted_batch(
+            &invalid_observed,
+            &ProbeAdmissionPolicy::new(ProviderId::Eastmoney).require_source_at(),
+            |record| &record.evidence,
+            |record| record.identity.to_owned()
+        ),
+        Err(ProbeAdmissionError::InvalidTimestamp {
+            field: "observed_at",
+            ..
+        })
+    ));
 }

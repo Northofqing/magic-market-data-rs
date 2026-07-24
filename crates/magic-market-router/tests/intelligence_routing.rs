@@ -7,7 +7,8 @@ use magic_market_core::{
 use magic_market_router::{
     market_statistics_source, option_contract_source, option_greeks_source, option_quote_source,
     post_close_flow_source, AcceptancePolicy, AttemptStatus, FailureKind, MarketStatisticsRouter,
-    OptionContractRouter, OptionGreeksRouter, OptionQuoteRouter, PostCloseFlowRouter, SourceError,
+    OptionContractRouter, OptionGreeksRouter, OptionQuoteRouter, PostCloseFlowRouter, RoutedSource,
+    SourceError,
 };
 use std::sync::{Arc, Mutex};
 
@@ -254,6 +255,115 @@ fn post_close_adapter_rejects_wrong_dates_and_duplicate_ranks() {
             ..
         }
     ));
+}
+
+#[derive(Clone, Copy)]
+enum PostCloseFault {
+    MissingBatchSourceTime,
+    InvalidBatchSourceDateSuffix,
+    ExceedsLimit,
+    WrongRecordDate,
+    DuplicateInstrument,
+}
+
+struct FaultyPostCloseProvider(PostCloseFault);
+
+impl PostCloseFlows for FaultyPostCloseProvider {
+    type Error = FixtureError;
+
+    fn post_close_flows(
+        &self,
+        request: &PostCloseFlowRequest,
+    ) -> Result<DataBatch<PostCloseFlow>, Self::Error> {
+        let requested = request.trading_date().as_str();
+        let record_date = if matches!(self.0, PostCloseFault::WrongRecordDate) {
+            "2026-07-22"
+        } else {
+            requested
+        };
+        let source_at = format!("{requested} 15:35:00");
+        let record_source_at = format!("{record_date} 15:35:00");
+        let batch_id = format!("post-close-fault-{requested}");
+        let make_record = |code: &str, rank: u32| {
+            PostCloseFlow::new(
+                InstrumentId::new(Exchange::Shanghai, code, AssetClass::Equity).unwrap(),
+                None,
+                magic_market_core::IsoDate::new(record_date).unwrap(),
+                magic_market_core::PositiveU32::new(rank).unwrap(),
+                Price::new(16.41).unwrap(),
+                Ratio::new(9.99, RatioUnit::Percent).unwrap(),
+                Money::new(100_000_000.0).unwrap(),
+                None,
+                None,
+                SourceEvidence::new(ProviderId::Eastmoney, "observed", &batch_id)
+                    .unwrap()
+                    .with_source_at(&record_source_at)
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        let records = match self.0 {
+            PostCloseFault::ExceedsLimit => {
+                vec![make_record("600396", 1), make_record("600397", 2)]
+            }
+            PostCloseFault::DuplicateInstrument => {
+                vec![make_record("600396", 1), make_record("600396", 2)]
+            }
+            _ => vec![make_record("600396", 1)],
+        };
+        let mut provenance = Provenance::new("eastmoney", "observed")
+            .unwrap()
+            .with_batch_id(batch_id)
+            .unwrap();
+        if !matches!(self.0, PostCloseFault::MissingBatchSourceTime) {
+            provenance = provenance
+                .with_source_at(
+                    if matches!(self.0, PostCloseFault::InvalidBatchSourceDateSuffix) {
+                        format!("{requested}x15:35:00")
+                    } else {
+                        source_at
+                    },
+                )
+                .unwrap();
+        }
+        Ok(DataBatch::strict(records, provenance))
+    }
+}
+
+#[test]
+fn post_close_adapter_rejects_every_batch_and_record_contract_violation() {
+    for (fault, limit, expected_kind) in [
+        (
+            PostCloseFault::MissingBatchSourceTime,
+            10,
+            FailureKind::Evidence,
+        ),
+        (
+            PostCloseFault::InvalidBatchSourceDateSuffix,
+            10,
+            FailureKind::Evidence,
+        ),
+        (PostCloseFault::ExceedsLimit, 1, FailureKind::Quality),
+        (PostCloseFault::WrongRecordDate, 10, FailureKind::Evidence),
+        (
+            PostCloseFault::DuplicateInstrument,
+            10,
+            FailureKind::Quality,
+        ),
+    ] {
+        let request = PostCloseFlowRequest::new(
+            magic_market_core::IsoDate::new("2026-07-23").unwrap(),
+            magic_market_core::PositiveU32::new(limit).unwrap(),
+        )
+        .unwrap();
+        let source = post_close_flow_source(
+            ProviderId::Eastmoney,
+            Arc::new(FaultyPostCloseProvider(fault)),
+            classify,
+        );
+        let error = source.fetch(&request).unwrap_err();
+        assert_eq!(error.kind(), expected_kind);
+    }
 }
 
 #[test]

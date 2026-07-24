@@ -668,6 +668,7 @@ fn service_market_mapping_and_construction_are_explicit() {
 #[test]
 fn blocking_service_rejects_requests_before_any_transport_call() {
     let service = TdxService::new();
+    service.client().inner().set_auto_retry(false);
     let ranged = BarsRequest::new(
         instrument(Exchange::Shanghai, "600396"),
         BarInterval::Day,
