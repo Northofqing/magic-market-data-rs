@@ -137,20 +137,23 @@ pub struct BoardDefinition {
     evidence: SourceEvidence,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(try_from = "DragonTigerDiscoveryRequestWire")]
 pub struct DragonTigerDiscoveryRequest {
     trading_date: IsoDate,
     exchange: Option<Exchange>,
     limit: PositiveU32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(try_from = "BoardDirectoryRequestWire")]
 pub struct BoardDirectoryRequest {
     category: BoardCategory,
     limit: PositiveU32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(try_from = "BoardConstituentRequestWire")]
 pub struct BoardConstituentRequest {
     board_code: NonEmptyText,
     limit: PositiveU32,
@@ -166,6 +169,9 @@ pub struct MarketDiscoveryCapabilities {
 ```
 
 Give every request a checked constructor with a `10_000` maximum and read-only accessors.
+For each request, define a private deserialization wire with the same fields and implement
+`TryFrom<...Wire>` by calling the public constructor (then applying optional exchange).
+This ensures JSON cannot bypass the limit or identity checks.
 Give `BoardDefinition` a checked constructor/accessors, checked deserialization and
 `SourcedRecord`. Its private `BoardDefinitionWire` mirrors all five fields, and
 `TryFrom<BoardDefinitionWire>` calls `BoardDefinition::new` so deserialization cannot
