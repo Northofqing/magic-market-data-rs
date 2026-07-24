@@ -4,6 +4,7 @@ mod batch;
 mod capital;
 mod company;
 mod content;
+mod discovery;
 mod enrichment;
 mod error;
 mod evidence;
@@ -32,6 +33,11 @@ pub use company::{
 pub use content::{
     Announcement, Announcements, ContentCapabilities, InvestorQuestion, InvestorQuestions,
     NewsItem, NewsProvider,
+};
+pub use discovery::{
+    BoardConstituentProvider, BoardConstituentRequest, BoardDefinition, BoardDirectoryProvider,
+    BoardDirectoryRequest, DragonTigerDiscovery, DragonTigerDiscoveryRequest,
+    MarketDiscoveryCapabilities,
 };
 pub use enrichment::{
     MarketStatistics, MarketStatisticsProvider, TechnicalBar, TechnicalBarsProvider,

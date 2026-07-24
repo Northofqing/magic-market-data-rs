@@ -1,11 +1,11 @@
 use magic_market_core::{
-    Announcement, AuctionSnapshot, Bar, BlockTrade, BoardFlow, BoardMembership, ConceptHit,
-    ConsensusSnapshot, DividendPlan, DragonTigerEntry, DragonTigerSeat, FinancialStatement,
-    FundFlowPoint, HolderCount, InvestorQuestion, LimitPoolEntry, LockupEvent, MarginBalance,
-    MarketRankingEntry, MarketStatistics, MinutePoint, MoneyFlow, NewsItem, NorthboundDailyStat,
-    OptionContract, OptionGreeks, OptionQuote, OrderBook, PopularityRank, PostCloseFlow,
-    ProviderId, Quote, ResearchReport, SecurityMetadata, SecurityProfile, SemanticSearchDocument,
-    SourcedRecord, StrongStockReason, TechnicalBar, Trade,
+    Announcement, AuctionSnapshot, Bar, BlockTrade, BoardDefinition, BoardFlow, BoardMembership,
+    ConceptHit, ConsensusSnapshot, DividendPlan, DragonTigerEntry, DragonTigerSeat,
+    FinancialStatement, FundFlowPoint, HolderCount, InvestorQuestion, LimitPoolEntry, LockupEvent,
+    MarginBalance, MarketRankingEntry, MarketStatistics, MinutePoint, MoneyFlow, NewsItem,
+    NorthboundDailyStat, OptionContract, OptionGreeks, OptionQuote, OrderBook, PopularityRank,
+    PostCloseFlow, ProviderId, Quote, ResearchReport, SecurityMetadata, SecurityProfile,
+    SemanticSearchDocument, SourcedRecord, StrongStockReason, TechnicalBar, Trade,
 };
 
 fn assert_sourced<T: SourcedRecord>() {}
@@ -25,6 +25,7 @@ fn every_normalized_record_exposes_common_evidence() {
     assert_sourced::<ResearchReport>();
     assert_sourced::<ConsensusSnapshot>();
     assert_sourced::<SemanticSearchDocument>();
+    assert_sourced::<BoardDefinition>();
     assert_sourced::<BoardMembership>();
     assert_sourced::<StrongStockReason>();
     assert_sourced::<DragonTigerEntry>();
