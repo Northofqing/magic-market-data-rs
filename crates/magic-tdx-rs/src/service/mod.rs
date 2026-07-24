@@ -147,6 +147,44 @@ fn quotes_chunked_with(
     crate::adapter::normalize_quotes("tdx-smart-chunked", instruments, ordered)
 }
 
+fn minute_data_with(
+    query: &impl BlockingTdxQuery,
+    market: u8,
+    code: &str,
+) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    query.minute_time_data(market, code)
+}
+
+fn history_minute_data_with(
+    query: &impl BlockingTdxQuery,
+    market: u8,
+    code: &str,
+    date: u32,
+) -> Result<Vec<MinuteTimePrice>, TdxError> {
+    query.history_minute_time_data(market, code, date)
+}
+
+fn transactions_with(
+    query: &impl BlockingTdxQuery,
+    market: u8,
+    code: &str,
+    start: u16,
+    count: u16,
+) -> Result<Vec<TickData>, TdxError> {
+    query.transaction_data(market, code, start, count)
+}
+
+fn history_transactions_with(
+    query: &impl BlockingTdxQuery,
+    market: u8,
+    code: &str,
+    start: u16,
+    count: u16,
+    date: u32,
+) -> Result<Vec<TickData>, TdxError> {
+    query.history_transaction_data(market, code, start, count, date)
+}
+
 /// High-level TDX service using SmartClient failover semantics.
 pub struct TdxService {
     client: TdxSmartClient,
@@ -472,7 +510,7 @@ impl TdxService {
     }
     /// Fetches current intraday data.
     pub fn minute_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
-        self.client.inner().get_minute_time_data(market, code)
+        minute_data_with(self.client.inner(), market, code)
     }
     /// Fetches minute data for an explicit historical date (YYYYMMDD).
     pub fn history_minute_data(
@@ -481,9 +519,7 @@ impl TdxService {
         code: &str,
         date: u32,
     ) -> Result<Vec<MinuteTimePrice>, TdxError> {
-        self.client
-            .inner()
-            .get_history_minute_time_data(market, code, date)
+        history_minute_data_with(self.client.inner(), market, code, date)
     }
     /// Fetches current transaction data.
     pub fn transactions(
@@ -493,9 +529,7 @@ impl TdxService {
         start: u16,
         count: u16,
     ) -> Result<Vec<TickData>, TdxError> {
-        self.client
-            .inner()
-            .get_transaction_data(market, code, start, count)
+        transactions_with(self.client.inner(), market, code, start, count)
     }
     /// Fetches historical transactions for an explicit date (YYYYMMDD).
     pub fn history_transactions(
@@ -506,9 +540,7 @@ impl TdxService {
         count: u16,
         date: u32,
     ) -> Result<Vec<TickData>, TdxError> {
-        self.client
-            .inner()
-            .get_history_transaction_data(market, code, start, count, date)
+        history_transactions_with(self.client.inner(), market, code, start, count, date)
     }
     /// Fetches decoded finance fields.
     pub fn finance(&self, market: u8, code: &str) -> Result<FinanceInfo, TdxError> {
