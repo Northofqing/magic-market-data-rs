@@ -39,6 +39,37 @@
 - This does not prove that the Rust TLS transport will fail, but it prevents a
   capability claim until the production client completes a bounded live probe.
 
+## Implementation Mapping
+
+- No XML or general date/time parser is present in the current lockfile.
+- `quick-xml` 0.41.0 is the current documented streaming release and exposes
+  explicit `Event::DocType` and `Event::GeneralRef` variants, allowing the
+  Provider to reject DTD/entity constructs before mapping.
+- `time` 0.3.54 provides checked RFC 2822 parsing and explicit-offset
+  formatting behind `parsing` and `formatting`; `std` is enabled explicitly
+  for the Provider runtime. Using it avoids a hand-written calendar/timezone
+  parser.
+- The Provider manifest should pin `quick-xml = "=0.41.0"` with default
+  features disabled and `time = "=0.3.54"` with `std`, `parsing`, and
+  `formatting`, alongside the workspace's existing exact `ureq` TLS version.
+- Release registration touches root workspace membership, Core Provider
+  identity tests, Router fixture identity, `tools/compliance/check.sh`,
+  `tools/release/package.sh`, root README, deployment docs, business rules,
+  and a dedicated integration document.
+- Strict coverage automatically discovers every production `.rs` source from
+  workspace manifests, so the new crate must add enough deterministic
+  behavior tests to keep the existing 80% overall gate green.
+- The detailed plan uses a hard two-state admission rule: two consecutive
+  successful production-client live fetches admit `NewsProvider::global_news`;
+  any DNS, TLS, HTTP, MIME, parser, or provenance failure leaves the public
+  capability false and preserves only the explicitly named diagnostic method.
+- Router integration requires only `ProviderId::Yonhap` fixture evidence.
+  Adding `magic-yonhap-rs` to Router production dependencies would violate the
+  current architecture and compliance boundary.
+- `tools/release/package.sh` derives no probe count automatically, so the two
+  new Yonhap binaries must be added explicitly and every prose count must be
+  reconciled against the actual `build_probe` call count.
+
 ## Official References
 
 - RSS guide: <https://cn.yna.co.kr/channel/rss>

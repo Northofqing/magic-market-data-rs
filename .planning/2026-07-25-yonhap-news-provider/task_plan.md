@@ -7,7 +7,7 @@ news metadata without fetching, storing, or redistributing article bodies.
 
 ## Current Phase
 
-Phase 1
+Phase 2
 
 ## Phases
 
@@ -20,16 +20,16 @@ Phase 1
 - [x] Create an isolated worktree and pass the workspace baseline.
 - [x] Write and self-review the approved design.
 - [x] Commit the approved design.
-- [ ] Obtain user review of the written specification.
-- **Status:** in_progress
+- [x] Obtain user review of the written specification.
+- **Status:** complete
 
 ### Phase 2: Detailed Implementation Plan
 
-- [ ] Map exact files and dependency changes.
-- [ ] Write a TDD-oriented implementation plan.
-- [ ] Self-review the plan against the approved specification.
+- [x] Map exact files and dependency changes.
+- [x] Write a TDD-oriented implementation plan.
+- [x] Self-review the plan against the approved specification.
 - [ ] Obtain execution approval.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 3: Provider Implementation
 
