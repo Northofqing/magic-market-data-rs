@@ -4,7 +4,7 @@
 
 ### Phase 1: Approved Design and Baseline
 
-- **Status:** in_progress
+- **Status:** complete
 - **Started:** 2026-07-25
 - Actions taken:
   - Verified the audit claims against current source and rejected false claims.
@@ -16,6 +16,7 @@
   - Created an isolated linked worktree.
   - Wrote and self-reviewed the design specification.
   - Built and tested the complete workspace in the isolated worktree.
+  - Committed the design and planning baseline as `9486621`.
 - Files created/modified:
   - `.planning/2026-07-25-audit-correctness-gates/task_plan.md`
   - `.planning/2026-07-25-audit-correctness-gates/findings.md`

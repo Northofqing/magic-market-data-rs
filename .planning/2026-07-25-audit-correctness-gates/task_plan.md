@@ -8,7 +8,7 @@ artifacts without weakening public data contracts or quality thresholds.
 
 ## Current Phase
 
-Phase 1
+Awaiting written-spec review
 
 ## Phases
 
@@ -18,8 +18,8 @@ Phase 1
 - [x] Measure targeted test, Clippy, and real llvm-cov baselines.
 - [x] Present alternatives and obtain user approval for strict remediation.
 - [x] Write and self-review the approved design.
-- [ ] Commit the approved design.
-- **Status:** in_progress
+- [x] Commit the approved design.
+- **Status:** complete
 
 ### Phase 2: Detailed Implementation Plan
 
