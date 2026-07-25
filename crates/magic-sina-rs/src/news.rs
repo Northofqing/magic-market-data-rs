@@ -5,7 +5,6 @@ use magic_market_core::{
     IsoDate, NewsItem, NewsProvider, NonEmptyText, PositiveU32, Provenance, ProviderId,
     SourceEvidence,
 };
-use scraper::{Html, Selector};
 use std::collections::HashMap;
 use url::Url;
 
@@ -31,6 +30,23 @@ struct RawNews {
 struct ParsedPage {
     records: Vec<RawNews>,
     has_next: bool,
+}
+
+#[derive(Debug)]
+struct HtmlTag {
+    start: usize,
+    end: usize,
+    name: String,
+    closing: bool,
+    self_closing: bool,
+    attributes: HashMap<String, String>,
+}
+
+#[derive(Debug)]
+struct PageAnchor {
+    published_text: String,
+    href: String,
+    title: String,
 }
 
 impl SinaClient {
@@ -215,45 +231,23 @@ fn parse_page(
     }
     let html = decoded.as_ref();
     validate_page_identity(html, symbol, page_number)?;
-    let document = Html::parse_document(html);
-    let list_selector = Selector::parse("div.datelist > ul")
-        .map_err(|error| SinaError::Protocol(error.to_string()))?;
-    let anchor_selector =
-        Selector::parse("a").map_err(|error| SinaError::Protocol(error.to_string()))?;
-    let mut lists = document.select(&list_selector);
-    let list = lists.next().ok_or_else(|| {
-        SinaError::Protocol("empty instrument-news datelist: list is missing".into())
-    })?;
-    if lists.next().is_some() {
-        return Err(SinaError::Protocol(
-            "instrument-news page has multiple datelists".into(),
-        ));
-    }
+    let anchors = parse_page_anchors(html)?;
     let observed_unix = i64::try_from(response.observed_unix_seconds())
         .map_err(|_| SinaError::Protocol("news observation time is out of range".into()))?;
     let observed_at = format_observed(response.observed_unix_seconds())?;
     let mut records = Vec::new();
-    for anchor in list.select(&anchor_selector) {
-        let timestamp = anchor
-            .prev_sibling()
-            .and_then(|node| node.value().as_text())
-            .ok_or_else(|| {
-                SinaError::Protocol("instrument-news row is missing provider published time".into())
-            })?;
-        let (published_at, published_date, published_unix) = parse_published(timestamp.as_ref())?;
+    for anchor in anchors {
+        let (published_at, published_date, published_unix) =
+            parse_published(&anchor.published_text)?;
         if published_unix > observed_unix {
             return Err(SinaError::Protocol(format!(
                 "future instrument-news provider time {published_at}"
             )));
         }
-        let source_url = anchor.value().attr("href").ok_or_else(|| {
-            SinaError::Protocol("instrument-news row is missing canonical URL".into())
-        })?;
-        let canonical_url = normalize_sina_url(source_url)?;
-        let title = anchor.text().collect::<String>();
-        NonEmptyText::new(title.clone())?;
+        let canonical_url = normalize_sina_url(&anchor.href)?;
+        NonEmptyText::new(anchor.title.clone())?;
         records.push(RawNews {
-            title,
+            title: anchor.title,
             canonical_url,
             published_at,
             published_date,
@@ -288,6 +282,359 @@ fn parse_page(
     Ok(ParsedPage {
         records,
         has_next: html.contains(&next_marker) || html.contains(&raw_next_marker),
+    })
+}
+
+fn parse_page_anchors(html: &str) -> Result<Vec<PageAnchor>, SinaError> {
+    let mut cursor = 0;
+    let mut datelist = None::<&str>;
+    while let Some(tag) = next_html_tag(html, cursor)? {
+        cursor = tag.end;
+        if tag.closing || tag.self_closing || tag.name != "div" {
+            continue;
+        }
+        let is_datelist = tag
+            .attributes
+            .get("class")
+            .is_some_and(|class| class.split_whitespace().any(|value| value == "datelist"));
+        if !is_datelist {
+            continue;
+        }
+        if datelist.is_some() {
+            return Err(SinaError::Protocol(
+                "instrument-news page has multiple datelists".into(),
+            ));
+        }
+        let (content_end, close_end) = matching_close(html, &tag, "div")?;
+        datelist = Some(&html[tag.end..content_end]);
+        cursor = close_end;
+    }
+
+    let content = datelist.ok_or_else(|| {
+        SinaError::Protocol("empty instrument-news datelist: list is missing".into())
+    })?;
+    let ul = direct_datelist_ul(content)?;
+    parse_anchor_rows(ul)
+}
+
+fn direct_datelist_ul(content: &str) -> Result<&str, SinaError> {
+    let open = next_html_tag(content, 0)?.ok_or_else(|| {
+        SinaError::Protocol("empty instrument-news datelist: list is missing".into())
+    })?;
+    if !content[..open.start].trim().is_empty()
+        || open.closing
+        || open.self_closing
+        || open.name != "ul"
+    {
+        return Err(SinaError::Protocol(
+            "instrument-news datelist must contain one direct ul".into(),
+        ));
+    }
+    let (content_end, close_end) = matching_close(content, &open, "ul")?;
+    if !content[close_end..].trim().is_empty() {
+        return Err(SinaError::Protocol(
+            "instrument-news datelist contains trailing structure".into(),
+        ));
+    }
+    Ok(&content[open.end..content_end])
+}
+
+fn parse_anchor_rows(content: &str) -> Result<Vec<PageAnchor>, SinaError> {
+    let mut records = Vec::new();
+    let mut cursor = 0;
+    let mut text_start = 0;
+    while let Some(tag) = next_html_tag(content, cursor)? {
+        if tag.name == "a" && !tag.closing {
+            if tag.self_closing {
+                return Err(SinaError::Protocol(
+                    "instrument-news anchor must not be self-closing".into(),
+                ));
+            }
+            let published_text = decode_html_entities(&content[text_start..tag.start])?;
+            let href = tag
+                .attributes
+                .get("href")
+                .ok_or_else(|| {
+                    SinaError::Protocol("instrument-news row is missing canonical URL".into())
+                })
+                .and_then(|value| decode_html_entities(value))?;
+            let (title_end, close_end) = matching_close(content, &tag, "a")?;
+            let title = visible_text(&content[tag.end..title_end])?;
+            records.push(PageAnchor {
+                published_text,
+                href,
+                title,
+            });
+            if records.len() > MAX_PAGE_ROWS {
+                return Err(SinaError::Protocol(format!(
+                    "instrument-news page exceeds {MAX_PAGE_ROWS} rows"
+                )));
+            }
+            cursor = close_end;
+            text_start = close_end;
+            continue;
+        }
+        if tag.name == "a" && tag.closing {
+            return Err(SinaError::Protocol(
+                "instrument-news page has an unmatched anchor".into(),
+            ));
+        }
+        cursor = tag.end;
+        text_start = tag.end;
+    }
+    Ok(records)
+}
+
+fn visible_text(content: &str) -> Result<String, SinaError> {
+    let mut output = String::new();
+    let mut cursor = 0;
+    while let Some(tag) = next_html_tag(content, cursor)? {
+        output.push_str(&decode_html_entities(&content[cursor..tag.start])?);
+        if tag.name == "a" {
+            return Err(SinaError::Protocol(
+                "instrument-news title contains a nested anchor".into(),
+            ));
+        }
+        cursor = tag.end;
+    }
+    output.push_str(&decode_html_entities(&content[cursor..])?);
+    Ok(output)
+}
+
+fn matching_close(
+    html: &str,
+    open: &HtmlTag,
+    expected_name: &str,
+) -> Result<(usize, usize), SinaError> {
+    let mut depth = 1_u32;
+    let mut cursor = open.end;
+    while let Some(tag) = next_html_tag(html, cursor)? {
+        cursor = tag.end;
+        if tag.name != expected_name || tag.self_closing {
+            continue;
+        }
+        if tag.closing {
+            depth = depth.checked_sub(1).ok_or_else(|| {
+                SinaError::Protocol(format!(
+                    "instrument-news page has unmatched </{expected_name}>"
+                ))
+            })?;
+            if depth == 0 {
+                return Ok((tag.start, tag.end));
+            }
+        } else {
+            if expected_name == "a" {
+                return Err(SinaError::Protocol(
+                    "instrument-news title contains a nested anchor".into(),
+                ));
+            }
+            depth = depth.checked_add(1).ok_or_else(|| {
+                SinaError::Protocol("instrument-news HTML nesting overflow".into())
+            })?;
+        }
+    }
+    Err(SinaError::Protocol(format!(
+        "instrument-news page is missing </{expected_name}>"
+    )))
+}
+
+fn next_html_tag(html: &str, mut cursor: usize) -> Result<Option<HtmlTag>, SinaError> {
+    loop {
+        let Some(relative_start) = html[cursor..].find('<') else {
+            return Ok(None);
+        };
+        let start = cursor + relative_start;
+        if html[start..].starts_with("<!--") {
+            let relative_end = html[start + 4..].find("-->").ok_or_else(|| {
+                SinaError::Protocol("instrument-news HTML comment is not closed".into())
+            })?;
+            cursor = start + 4 + relative_end + 3;
+            continue;
+        }
+        let end = html_tag_end(html, start)?;
+        let raw = html[start + 1..end - 1].trim();
+        if raw.starts_with('!') || raw.starts_with('?') {
+            cursor = end;
+            continue;
+        }
+        return parse_html_tag(raw, start, end).map(Some);
+    }
+}
+
+fn html_tag_end(html: &str, start: usize) -> Result<usize, SinaError> {
+    let mut quote = None::<char>;
+    for (relative, character) in html[start + 1..].char_indices() {
+        match (quote, character) {
+            (Some(expected), current) if current == expected => quote = None,
+            (None, '\'' | '"') => quote = Some(character),
+            (None, '>') => return Ok(start + 1 + relative + 1),
+            _ => {}
+        }
+    }
+    Err(SinaError::Protocol(
+        "instrument-news HTML tag is not closed".into(),
+    ))
+}
+
+fn parse_html_tag(raw: &str, start: usize, end: usize) -> Result<HtmlTag, SinaError> {
+    let closing = raw.starts_with('/');
+    let body = raw.strip_prefix('/').unwrap_or(raw).trim_start();
+    let name_end = body
+        .find(|character: char| character.is_ascii_whitespace() || character == '/')
+        .unwrap_or(body.len());
+    let name = body[..name_end].to_ascii_lowercase();
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        return Err(SinaError::Protocol(
+            "instrument-news HTML tag name is invalid".into(),
+        ));
+    }
+    let self_closing = !closing && body.trim_end().ends_with('/');
+    let attributes = if closing {
+        if !body[name_end..].trim().is_empty() {
+            return Err(SinaError::Protocol(format!(
+                "instrument-news closing tag </{name}> has trailing input"
+            )));
+        }
+        HashMap::new()
+    } else {
+        parse_html_attributes(&body[name_end..], &name)?
+    };
+    Ok(HtmlTag {
+        start,
+        end,
+        name,
+        closing,
+        self_closing,
+        attributes,
+    })
+}
+
+fn parse_html_attributes(
+    input: &str,
+    tag_name: &str,
+) -> Result<HashMap<String, String>, SinaError> {
+    let bytes = input.as_bytes();
+    let mut attributes = HashMap::new();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if cursor == bytes.len() || bytes[cursor] == b'/' {
+            break;
+        }
+        let name_start = cursor;
+        while cursor < bytes.len()
+            && (bytes[cursor].is_ascii_alphanumeric()
+                || matches!(bytes[cursor], b'-' | b'_' | b':' | b'.'))
+        {
+            cursor += 1;
+        }
+        if cursor == name_start {
+            return Err(SinaError::Protocol(format!(
+                "instrument-news <{tag_name}> attribute name is invalid"
+            )));
+        }
+        let name = input[name_start..cursor].to_ascii_lowercase();
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        let value = if cursor < bytes.len() && bytes[cursor] == b'=' {
+            cursor += 1;
+            while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+                cursor += 1;
+            }
+            if cursor == bytes.len() {
+                return Err(SinaError::Protocol(format!(
+                    "instrument-news <{tag_name}> attribute {name} has no value"
+                )));
+            }
+            let quote = bytes[cursor];
+            if quote == b'\'' || quote == b'"' {
+                cursor += 1;
+                let value_start = cursor;
+                while cursor < bytes.len() && bytes[cursor] != quote {
+                    cursor += 1;
+                }
+                if cursor == bytes.len() {
+                    return Err(SinaError::Protocol(format!(
+                        "instrument-news <{tag_name}> attribute {name} is not closed"
+                    )));
+                }
+                let value = input[value_start..cursor].to_owned();
+                cursor += 1;
+                value
+            } else {
+                let value_start = cursor;
+                while cursor < bytes.len()
+                    && !bytes[cursor].is_ascii_whitespace()
+                    && bytes[cursor] != b'/'
+                {
+                    cursor += 1;
+                }
+                input[value_start..cursor].to_owned()
+            }
+        } else {
+            String::new()
+        };
+        if attributes.insert(name.clone(), value).is_some() {
+            return Err(SinaError::Protocol(format!(
+                "instrument-news <{tag_name}> repeats attribute {name}"
+            )));
+        }
+    }
+    Ok(attributes)
+}
+
+fn decode_html_entities(value: &str) -> Result<String, SinaError> {
+    let mut output = String::with_capacity(value.len());
+    let mut cursor = 0;
+    while let Some(relative_start) = value[cursor..].find('&') {
+        let start = cursor + relative_start;
+        output.push_str(&value[cursor..start]);
+        let relative_end = value[start + 1..].find(';').ok_or_else(|| {
+            SinaError::Protocol("instrument-news HTML entity is not closed".into())
+        })?;
+        let end = start + 1 + relative_end;
+        let entity = &value[start + 1..end];
+        let decoded = match entity {
+            "amp" => '&',
+            "lt" => '<',
+            "gt" => '>',
+            "quot" => '"',
+            "apos" | "#39" => '\'',
+            "nbsp" => '\u{00a0}',
+            _ => decode_numeric_entity(entity)?,
+        };
+        output.push(decoded);
+        cursor = end + 1;
+    }
+    output.push_str(&value[cursor..]);
+    Ok(output)
+}
+
+fn decode_numeric_entity(entity: &str) -> Result<char, SinaError> {
+    let value = if let Some(hex) = entity
+        .strip_prefix("#x")
+        .or_else(|| entity.strip_prefix("#X"))
+    {
+        u32::from_str_radix(hex, 16)
+    } else if let Some(decimal) = entity.strip_prefix('#') {
+        decimal.parse::<u32>()
+    } else {
+        return Err(SinaError::Protocol(format!(
+            "instrument-news HTML entity &{entity}; is unsupported"
+        )));
+    }
+    .map_err(|_| {
+        SinaError::Protocol(format!("instrument-news HTML entity &{entity}; is invalid"))
+    })?;
+    char::from_u32(value).ok_or_else(|| {
+        SinaError::Protocol(format!("instrument-news HTML entity &{entity}; is invalid"))
     })
 }
 

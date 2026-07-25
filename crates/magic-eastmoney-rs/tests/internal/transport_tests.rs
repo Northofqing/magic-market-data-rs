@@ -1,6 +1,7 @@
 use super::{
-    read_http_response, validate_content_type, validate_endpoint, validate_html_content_type,
-    validate_response_limit, EastmoneyTransport, HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES,
+    map_ureq_error, read_http_response, validate_content_type, validate_endpoint,
+    validate_html_content_type, validate_response_limit, EastmoneyTransport, HttpsTransport,
+    DEFAULT_MAX_RESPONSE_BYTES,
 };
 use std::io::{self, Read};
 use std::sync::mpsc;
@@ -121,6 +122,25 @@ fn response_reader_enforces_status_media_type_io_and_size_bounds() {
         .parse()
         .unwrap();
     assert_eq!(HttpsTransport::read_response(response, 8).unwrap(), b"{}");
+}
+
+#[test]
+fn redirect_transport_error_exposes_bounded_location_without_following_it() {
+    let response: ureq::Response = concat!(
+        "HTTP/1.1 302 Found\r\n",
+        "Location: https://push2.eastmoney.com/redirect-target\r\n",
+        "\r\n"
+    )
+    .parse()
+    .unwrap();
+    let error = map_ureq_error(ureq::Error::Status(302, response));
+    assert!(matches!(
+        error,
+        super::EastmoneyError::Transport(message)
+            if message.contains("302")
+                && message.contains("Location")
+                && message.contains("https://push2.eastmoney.com/redirect-target")
+    ));
 }
 
 #[test]

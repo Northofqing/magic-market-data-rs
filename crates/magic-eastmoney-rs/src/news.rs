@@ -282,9 +282,9 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
     let (host, path) = remainder
         .split_once('/')
         .ok_or_else(|| EastmoneyError::Protocol("Eastmoney news article URL has no path".into()))?;
-    if host != "finance.eastmoney.com" {
+    if !matches!(host, "finance.eastmoney.com" | "global.eastmoney.com") {
         return Err(EastmoneyError::Protocol(format!(
-            "Eastmoney news article host {host:?} is not finance.eastmoney.com"
+            "Eastmoney news article host {host:?} is not an admitted global-news host"
         )));
     }
     let path = format!("/{path}");
@@ -301,10 +301,7 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
             "Eastmoney news article ID must contain only digits".into(),
         ));
     }
-    Ok((
-        item_id.to_owned(),
-        format!("https://finance.eastmoney.com{path}"),
-    ))
+    Ok((item_id.to_owned(), format!("https://{host}{path}")))
 }
 
 fn normalize_html_text(value: &str) -> String {

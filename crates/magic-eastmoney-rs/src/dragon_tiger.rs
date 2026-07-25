@@ -304,7 +304,6 @@ fn map_seats(
     let context = BatchContext::new("dragon-tiger-seats", Some(source_date))?;
     let mut buy_rank = 0_u32;
     let mut sell_rank = 0_u32;
-    let mut seat_identities = HashSet::with_capacity(rows.len());
     let records = rows
         .iter()
         .map(|(side, row)| {
@@ -332,12 +331,6 @@ fn map_seats(
             let sell_amount = opt_money(row, "SELL")?;
             let net_amount = opt_money(row, "NET")?;
             let seat_name = NonEmptyText::new(required_string(row, "OPERATEDEPT_NAME")?)?;
-            let seat_identity = format!("{source_date}:{side:?}:{seat_name}");
-            if !seat_identities.insert(seat_identity.clone()) {
-                return Err(EastmoneyError::Protocol(format!(
-                    "duplicate dragon-tiger seat business identity {seat_identity}"
-                )));
-            }
             Ok(DragonTigerSeat::new(
                 entry_id(request.instrument().code(), source_date, &trade_id(row)?)?,
                 request.instrument().clone(),
@@ -380,7 +373,6 @@ fn map_market_seats(
     let expected_trade_id = entry_trade_id(entry)?;
     let mut buy_rank = 0_u32;
     let mut sell_rank = 0_u32;
-    let mut seat_identities = HashSet::with_capacity(rows.len());
     rows.iter()
         .map(|(side, row)| {
             let instrument = source_signal_instrument(row)?;
@@ -410,20 +402,6 @@ fn map_market_seats(
             let buy_amount = opt_money(row, "BUY")?;
             let sell_amount = opt_money(row, "SELL")?;
             let net_amount = opt_money(row, "NET")?;
-            let seat_identity = (
-                *side,
-                seat_name.as_str().to_owned(),
-                amount.get().to_bits(),
-                buy_amount.map(|value| value.get().to_bits()),
-                sell_amount.map(|value| value.get().to_bits()),
-                net_amount.map(|value| value.get().to_bits()),
-            );
-            if !seat_identities.insert(seat_identity) {
-                return Err(EastmoneyError::Protocol(format!(
-                    "duplicate dragon-tiger seat row for entry {} side {side:?}",
-                    entry.entry_id()
-                )));
-            }
             let rank = match side {
                 DragonTigerSide::Buy => {
                     buy_rank = buy_rank

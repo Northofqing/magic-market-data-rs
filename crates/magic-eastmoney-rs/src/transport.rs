@@ -8,6 +8,7 @@ pub(crate) const DEFAULT_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) const MAX_HTML_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 pub(crate) const MAX_PDF_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
+const MAX_REDIRECT_LOCATION_CHARS: usize = 512;
 const ALLOWED_HOSTS: &[&str] = &[
     "datacenter-web.eastmoney.com",
     "emappdata.eastmoney.com",
@@ -159,9 +160,7 @@ impl HttpsTransport {
         let request_gate = self.acquire_slot()?;
         let result = (|| {
             let request = self.prepare_get(url, headers);
-            let response = request
-                .call()
-                .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+            let response = request.call().map_err(map_ureq_error)?;
             Self::read_response(response, max_bytes)
         })();
         self.finish_request()?;
@@ -186,9 +185,7 @@ impl HttpsTransport {
         let request_gate = self.acquire_slot()?;
         let result = (|| {
             let request = self.prepare_post(url, headers);
-            let response = request
-                .send_bytes(body)
-                .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+            let response = request.send_bytes(body).map_err(map_ureq_error)?;
             Self::read_response(response, max_bytes)
         })();
         self.finish_request()?;
@@ -208,31 +205,28 @@ impl HttpsTransport {
                 "PDF response limit must be in 1..={MAX_PDF_RESPONSE_BYTES}"
             )));
         }
-        let _request_gate = self.acquire_slot()?;
-        let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
-        for (name, value) in headers {
-            request = request.set(name, value);
-        }
-        let response = request
-            .call()
-            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
-        if response.status() != 200 {
-            return Err(EastmoneyError::Transport(format!(
-                "unexpected HTTP status {}",
-                response.status()
-            )));
-        }
-        validate_pdf_content_type(response.header("Content-Type"))?;
-        let mut body = Vec::new();
-        response
-            .into_reader()
-            .take((max_bytes + 1) as u64)
-            .read_to_end(&mut body)
-            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
-        if body.len() > max_bytes {
-            return Err(EastmoneyError::ResponseTooLarge { limit: max_bytes });
-        }
-        Ok(body)
+        let request_gate = self.acquire_slot()?;
+        let result = (|| {
+            let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
+            for (name, value) in headers {
+                request = request.set(name, value);
+            }
+            let response = request.call().map_err(map_ureq_error)?;
+            validate_pdf_content_type(response.header("Content-Type"))?;
+            let mut body = Vec::new();
+            response
+                .into_reader()
+                .take((max_bytes + 1) as u64)
+                .read_to_end(&mut body)
+                .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+            if body.len() > max_bytes {
+                return Err(EastmoneyError::ResponseTooLarge { limit: max_bytes });
+            }
+            Ok(body)
+        })();
+        self.finish_request()?;
+        drop(request_gate);
+        result
     }
 
     fn get_html_request(
@@ -247,31 +241,51 @@ impl HttpsTransport {
                 "HTML response limit must be in 1..={MAX_HTML_RESPONSE_BYTES}"
             )));
         }
-        let _request_gate = self.acquire_slot()?;
-        let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
-        for (name, value) in headers {
-            request = request.set(name, value);
+        let request_gate = self.acquire_slot()?;
+        let result = (|| {
+            let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
+            for (name, value) in headers {
+                request = request.set(name, value);
+            }
+            let response = request.call().map_err(map_ureq_error)?;
+            validate_html_content_type(response.header("Content-Type"))?;
+            let mut body = Vec::new();
+            response
+                .into_reader()
+                .take((max_bytes + 1) as u64)
+                .read_to_end(&mut body)
+                .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+            if body.len() > max_bytes {
+                return Err(EastmoneyError::ResponseTooLarge { limit: max_bytes });
+            }
+            Ok(body)
+        })();
+        self.finish_request()?;
+        drop(request_gate);
+        result
+    }
+}
+
+fn map_ureq_error(error: ureq::Error) -> EastmoneyError {
+    match error {
+        ureq::Error::Status(status, response) => {
+            let mut message = format!("unexpected HTTP status {status}");
+            if (300..400).contains(&status) {
+                match response.header("Location") {
+                    Some(location) => {
+                        let bounded = location
+                            .chars()
+                            .take(MAX_REDIRECT_LOCATION_CHARS)
+                            .collect::<String>();
+                        message
+                            .push_str(&format!("; redirects are disabled; Location={bounded:?}"));
+                    }
+                    None => message.push_str("; redirects are disabled; Location missing"),
+                }
+            }
+            EastmoneyError::Transport(message)
         }
-        let response = request
-            .call()
-            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
-        if response.status() != 200 {
-            return Err(EastmoneyError::Transport(format!(
-                "unexpected HTTP status {}",
-                response.status()
-            )));
-        }
-        validate_html_content_type(response.header("Content-Type"))?;
-        let mut body = Vec::new();
-        response
-            .into_reader()
-            .take((max_bytes + 1) as u64)
-            .read_to_end(&mut body)
-            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
-        if body.len() > max_bytes {
-            return Err(EastmoneyError::ResponseTooLarge { limit: max_bytes });
-        }
-        Ok(body)
+        ureq::Error::Transport(error) => EastmoneyError::Transport(error.to_string()),
     }
 }
 

@@ -20,6 +20,7 @@ fn probe_admits_normalized_records_and_exact_verified_empty() {
     let record = Announcement {
         announcement_id: NonEmptyText::new("ann-1").unwrap(),
         instrument: InstrumentId::new(Exchange::Beijing, "920189", AssetClass::Equity).unwrap(),
+        instrument_name: None,
         category: None,
         title: NonEmptyText::new("公告").unwrap(),
         published_at: NonEmptyText::new(published).unwrap(),

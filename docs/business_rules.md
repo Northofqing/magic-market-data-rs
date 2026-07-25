@@ -88,9 +88,12 @@ identity fail the atomic batch. Entries sort by present net amount descending,
 then security identity and entry ID; missing net amount sorts last. The caller
 limit is applied only after deduplication and sorting. Every admitted entry
 must carry exactly five buy and five sell seats filtered by that entry's source
-identity. Missing, extra, duplicated or cross-entry seats fail explicitly;
-missing numeric fields are never rendered, coerced to zero or replaced with
-textual numeric placeholders.
+identity. A normalized seat's business identity is entry ID, side and source
+order rank 1 through 5. Repeated display labels such as `机构专用`, and equal
+source amounts, remain distinct when their side/rank differs; display text and
+amounts are facts, not identity fields. Missing, extra, duplicate side/rank or
+cross-entry seats fail explicitly; missing numeric fields are never rendered,
+coerced to zero or replaced with textual numeric placeholders.
 
 ## BR-025 Sina official instrument-news admission
 One Sina instrument-news request accepts one validated Shanghai or Shenzhen
@@ -279,6 +282,7 @@ Eastmoney global latest news is admitted only from the exact first page at
 `#artList` before applying a caller limit of at most 20. Every row must be in
 the source `财经` category, use a calendar-valid newest-first minute timestamp,
 have matching attribute/visible titles, and use a unique numeric article ID at
-the canonical `finance.eastmoney.com/a/<id>.html` path. The public page does
+the canonical `/a/<id>.html` path on exactly `finance.eastmoney.com` or
+`global.eastmoney.com`. The public page does
 not provide structured security identity, so records keep an empty instrument
 list and may not be presented as instrument news.

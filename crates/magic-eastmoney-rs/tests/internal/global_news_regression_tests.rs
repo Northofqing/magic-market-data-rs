@@ -157,6 +157,22 @@ fn global_news_rejects_duplicate_id_url_and_noncanonical_urls() {
 }
 
 #[test]
+fn global_news_accepts_exact_global_host_and_preserves_it_in_canonical_url() {
+    let (item_id, canonical_url) =
+        normalize_global_article_url("http://global.eastmoney.com/a/202607253821086055.html")
+            .unwrap();
+    assert_eq!(item_id, "202607253821086055");
+    assert_eq!(
+        canonical_url,
+        "https://global.eastmoney.com/a/202607253821086055.html"
+    );
+    assert!(normalize_global_article_url(
+        "https://global.eastmoney.com.example/a/202607253821086055.html"
+    )
+    .is_err());
+}
+
+#[test]
 fn global_news_html_boundaries_fail_closed_for_every_incomplete_shape() {
     let valid = global_fixture();
     let malformed_pages = [

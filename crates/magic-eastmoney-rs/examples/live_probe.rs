@@ -274,7 +274,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         LimitPoolKind::Lower,
         LimitPoolKind::PreviousUpper,
     ] {
-        let request = LimitPoolRequest::new(kind, pool_date.clone(), small)?;
+        let request = complete_limit_pool_request(kind, pool_date.clone())?;
         probe_batch(
             &format!("limit_pool.{kind:?}"),
             client.limit_pool(&request),
@@ -408,6 +408,13 @@ fn required_env(name: &str) -> Result<String, std::io::Error> {
     Ok(value)
 }
 
+fn complete_limit_pool_request(
+    kind: LimitPoolKind,
+    trading_date: IsoDate,
+) -> Result<LimitPoolRequest, magic_market_core::CoreError> {
+    LimitPoolRequest::new(kind, trading_date, PositiveU32::new(1_000)?)
+}
+
 fn instrument_identity(instrument: &InstrumentId) -> String {
     let suffix = match instrument.exchange() {
         Exchange::Shanghai => "SH",
@@ -456,5 +463,20 @@ fn probe_batch<T: Debug, E: std::fmt::Display>(
             println!("error={error}");
             failures.push(failure);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_limit_pool_probe_requests_the_complete_source_page() {
+        let request = complete_limit_pool_request(
+            LimitPoolKind::PreviousUpper,
+            IsoDate::new("2026-07-23").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(request.limit().get(), 1_000);
     }
 }

@@ -9,6 +9,18 @@ use std::sync::{Arc, Mutex};
 
 const OBSERVED_UNIX: u64 = 1_784_912_800;
 
+#[test]
+fn instrument_news_has_no_unmaintained_general_html_parser_dependency() {
+    let manifest = include_str!("../Cargo.toml");
+    assert!(
+        !manifest.lines().any(|line| {
+            line.split_once('=')
+                .is_some_and(|(name, _)| name.trim() == "scraper")
+        }),
+        "BR-025 requires the bounded Sina page parser; scraper is not release-admitted"
+    );
+}
+
 #[derive(Clone)]
 struct FixtureTransport {
     pages: Arc<HashMap<String, DocumentResponse>>,

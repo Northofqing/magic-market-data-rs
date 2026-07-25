@@ -59,6 +59,14 @@ HTTP 必须：
 文档响应方法；生产 `HttpsTransport` 返回状态、Content-Type、body 和观测时刻。
 现有 `get`/`get_with_referer` 行为保持不变。
 
+发布安全审计不得依赖通用 CSS selector 引擎。当前页面合同只需要一个有界的
+`div.datelist > ul` 和其中的 anchor，因此实现使用本 crate 的严格结构解析器：
+只定位唯一的 `datelist` 容器及其直接 `ul`，逐个读取 anchor 的 `href`、可见文本
+和直接前置发布时间文本，并仅解码页面合同所需的标准 HTML 字符引用。未知实体、
+嵌套/未闭合 anchor、重复 `href`、缺失直接前置时间或容器边界矛盾均显式失败。
+这样删除 `scraper` 及其已停止维护和未获许可的传递依赖，不通过忽略安全公告或
+扩大 copyleft 许可白名单绕过发布门禁。
+
 ## 4. 页面身份与记录解析
 
 每页必须且只能有一个公司资讯 `div.datelist > ul`，并包含与请求完全一致的
@@ -130,8 +138,16 @@ TDD 夹具覆盖 URL 身份、沪深、北京拒绝、MIME/状态/空体/超 lim
 canonical URL 和 provenance。通过 crate fmt/test、strict Clippy、文档和合规检查
 后才声明能力可用。
 
+发布 CI 还必须执行 `cargo test --workspace --all-targets`，确保共享到 example 的
+探针测试夹具也随 Core 结构演进；`cargo deny check` 必须无 advisory ignore。
+TLS 客户端所需的公开根证书数据可显式允许其宽松
+`CDLA-Permissive-2.0` 许可，但不得借此允许 `scraper` 的 MPL 解析器链。
+
 ## 8. 回滚
 
 回滚只删除 `magic-sina-rs` 新闻模块、增量 transport 方法、测试/探针和本设计/BR，
 恢复内容能力为未声明；Quote、K 线、财务、期权及其他 Provider 不变。不得恢复已
 实证失效的 `feed.mix` 个股参数。
+
+若严格页面解析器不能覆盖真实页面，回滚本次 parser 变更并把
+`instrument_news` 能力恢复为未声明；不得恢复安全审计失败的 `scraper` 依赖。

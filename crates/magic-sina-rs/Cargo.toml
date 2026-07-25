@@ -7,7 +7,6 @@ license.workspace = true
 [dependencies]
 encoding_rs = "0.8"
 magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
-scraper = "0.24"
 serde = { workspace = true }
 serde_json = "1"
 thiserror = { workspace = true }

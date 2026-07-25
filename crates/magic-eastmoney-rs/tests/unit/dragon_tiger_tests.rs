@@ -347,7 +347,7 @@ fn market_trait_filters_each_complete_seat_group_by_exact_trade_id() {
 }
 
 #[test]
-fn market_disclosure_rejects_incomplete_mismatched_and_duplicate_seat_rows() {
+fn market_disclosure_rejects_incomplete_and_mismatched_seat_rows() {
     let entry_batch = map_market_entries(
         &[market_entry_row(
             "600396",
@@ -380,13 +380,41 @@ fn market_disclosure_rejects_incomplete_mismatched_and_duplicate_seat_rows() {
     let mut mismatched = rows.clone();
     mismatched[0].1["TRADE_ID"] = json!(999);
     assert!(map_market_seats(&mismatched, entry).is_err());
+}
 
+#[test]
+fn market_disclosure_preserves_repeated_seat_facts_at_distinct_source_ranks() {
+    let entry_batch = map_market_entries(
+        &[market_entry_row(
+            "600396",
+            100380465,
+            "日振幅值达到15%",
+            283_241_830.92,
+        )],
+        &market_request(1),
+    )
+    .unwrap();
+    let entry = &entry_batch.records()[0];
+    let mut rows = Vec::new();
+    for rank in 1..=5 {
+        rows.push((
+            DragonTigerSide::Buy,
+            market_seat_row(DragonTigerSide::Buy, rank, 100380465),
+        ));
+    }
+    for rank in 1..=5 {
+        rows.push((
+            DragonTigerSide::Sell,
+            market_seat_row(DragonTigerSide::Sell, rank, 100380465),
+        ));
+    }
     rows[1].1 = rows[0].1.clone();
-    assert!(matches!(
-        map_market_seats(&rows, entry),
-        Err(EastmoneyError::Protocol(message))
-            if message.contains("duplicate dragon-tiger seat")
-    ));
+
+    let seats = map_market_seats(&rows, entry).unwrap();
+    assert_eq!(seats.len(), 10);
+    assert_eq!(seats[0].seat_name(), seats[1].seat_name());
+    assert_eq!(seats[0].rank().get(), 1);
+    assert_eq!(seats[1].rank().get(), 2);
 }
 
 #[test]
@@ -625,7 +653,7 @@ fn seat_gross_amounts_must_be_non_negative_and_net_must_reconcile() {
 }
 
 #[test]
-fn duplicate_entry_and_seat_business_identities_are_rejected() {
+fn duplicate_entry_business_identities_are_rejected() {
     let entry = json!({
         "SECURITY_CODE":"002475",
         "SECUCODE":"002475.SZ",
@@ -639,13 +667,21 @@ fn duplicate_entry_and_seat_business_identities_are_rejected() {
         map_entries(&[entry.clone(), entry], &request()),
         Err(EastmoneyError::Protocol(message)) if message.contains("duplicate")
     ));
+}
 
+#[test]
+fn repeated_seat_labels_are_preserved_at_distinct_source_ranks() {
     let mut rows = complete_seat_rows();
     rows[1].1["OPERATEDEPT_NAME"] = rows[0].1["OPERATEDEPT_NAME"].clone();
-    assert!(matches!(
-        map_seats(&rows, &request(), "2026-07-23"),
-        Err(EastmoneyError::Protocol(message)) if message.contains("duplicate")
-    ));
+
+    let batch = map_seats(&rows, &request(), "2026-07-23").unwrap();
+    assert_eq!(batch.records().len(), 10);
+    assert_eq!(
+        batch.records()[0].seat_name(),
+        batch.records()[1].seat_name()
+    );
+    assert_eq!(batch.records()[0].rank().get(), 1);
+    assert_eq!(batch.records()[1].rank().get(), 2);
 }
 
 fn datacenter_page(rows: serde_json::Value) -> Vec<u8> {

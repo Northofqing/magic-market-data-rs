@@ -57,8 +57,10 @@ several independent top-five groups.
    then entry ID. Missing net amount sorts after present values.
 7. The caller limit is applied only after rules 1 through 6.
 8. Every admitted entry must have exactly ranks 1 through 5 on both buy and
-   sell sides. Missing, extra, duplicated, or mismatched seat rows fail the
-   whole operation.
+   sell sides. Entry ID + side + source-order rank is the normalized seat
+   identity. Repeated display labels (including several `机构专用` rows) and
+   equal amounts remain distinct at different ranks. Missing, extra, duplicate
+   side/rank, or mismatched seat rows fail the whole operation.
 9. Missing optional buy/sell/net fields remain `None`. A missing side amount
    required for that seat is an explicit protocol error.
 10. Entry, seats, and batch carry Eastmoney provider identity, source trading
