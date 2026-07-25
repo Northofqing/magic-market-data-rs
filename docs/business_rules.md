@@ -93,8 +93,10 @@ Economic releases preserve source indicator identity, country, schedule,
 release time, previous/consensus/actual/revised values and importance; numeric
 zero is not absence. CFFEX delivery events are admitted only from an official
 notice naming the requested contract month, all four IF/IH/IC/IM products,
-their exact date and cash-settlement wording. Formula-only calendar inference
-is prohibited.
+their exact date and delivery-settlement-price wording. If that event notice
+does not independently state the settlement method, the normalized method must
+remain `NotProvided`; it must not be inferred from the existence of a
+settlement price. Formula-only calendar inference is prohibited.
 
 ## BR-019 Strict 15:35 post-close ranking
 The post-close fund-flow ranking accepts only the current China trading date

@@ -125,9 +125,21 @@
     `cloned_ref_to_slice_refs` findings in new TDX tests. Replaced only those
     singleton slices with `std::slice::from_ref`, passed targeted TDX Clippy,
     and then passed the complete clean release preflight.
+  - Final review identified that the CFFEX notice proves a delivery settlement
+    price but not cash settlement. Added `FuturesDeliveryMethod::NotProvided`,
+    changed the provider and tests, and updated BR-018 plus current docs.
+  - Deleted dormant, unregistered `protocol/packet.rs` rather than allowing
+    executable-looking source to remain outside compilation/coverage.
+  - Re-ran the isolated CFFEX live command inside and outside the sandbox; both
+    returned typed TLS initialization `unexpected end of file`. Current docs
+    now mark live verification blocked rather than passed.
+  - Regenerated the complete coverage artifact after the CFFEX and dormant-file
+    corrections; the strict result remains 22355/27922 (80.06%) overall and
+    1881/1960 (95.97%) critical.
 - Remaining:
-  - Obtain post-fix independent review and integrate without overwriting the
-    primary worktree's user-owned changes.
+  - Regenerate final strict coverage, rerun the complete preflight, obtain
+    final independent review, and integrate without overwriting the primary
+    worktree's user-owned changes.
 
 ## Test Results
 
@@ -147,6 +159,8 @@
 | Final overall coverage | scheduled-CI llvm-cov command plus strict segment checker | At least 80% | 22355/27922 = 80.06% | ✓ |
 | Final critical coverage | same final report | At least 95% | 1881/1960 = 95.97% | ✓ |
 | Full post-review release preflight | `bash tools/release/preflight.sh` | Every local release gate passes | `release preflight: passed` | ✓ |
+| CFFEX provenance correction | Core + exchange targeted tests | Method is not inferred from event notice | Four events use `NotProvided`; targeted suites pass | ✓ |
+| CFFEX current live rerun | isolated official probe, sandboxed and unsandboxed | Four official events or explicit failure | TLS initialization unexpected EOF both times | ⚠ external |
 | Dependency policy registration | inspect push/PR and scheduled workflows | cargo-deny is enforced remotely | Pinned `cargo-deny-action@v2` in both workflows | ✓ |
 
 ## Error Log
@@ -163,13 +177,14 @@
 | 2026-07-25 | Local `cargo deny check` command was unavailable | 1 | Verified enforcement in both CI workflows and recorded the local-tool limitation. |
 | 2026-07-25 | Independent review rejected placeholder codec and permissive coverage accounting | 1 | Removed the module and replaced the checker with complete, canonical, production-segment accounting plus 16 contract tests. |
 | 2026-07-25 | First post-review preflight found four cloned singleton slices | 1 | Used `std::slice::from_ref`, passed targeted TDX Clippy, then reran the complete preflight successfully. |
+| 2026-07-25 | CFFEX live probe received TLS initialization EOF | 2 | Repeated outside the sandbox, preserved the failure, and corrected live-status documentation. |
 
 ## 5-Question Reboot Check
 
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 5, with post-review fixes, truthful coverage, and final preflight complete; re-review remains. |
-| Where am I going? | Obtain post-fix review, then integrate without touching user-owned changes. |
+| Where am I? | Phase 5, resolving final-review CFFEX provenance and dormant-source findings. |
+| Where am I going? | Regenerate evidence, pass every release gate, obtain final review, then integrate without touching user-owned changes. |
 | What's the goal? | Correct verified defects and make release gates truthful without weakening contracts. |
 | What have I learned? | See `findings.md`; coverage debt is larger than the original report indicated. |
 | What have I done? | Completed correctness, panic safety, strict Clippy, truthful 80%/95% segment coverage, release compilation, CFFEX/README updates, and review remediations. |

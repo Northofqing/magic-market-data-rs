@@ -34,7 +34,6 @@ NON_EXECUTABLE_SOURCE_PATHS = frozenset(
         "crates/magic-tdx-rs/src/profile/mod.rs",
         "crates/magic-tdx-rs/src/protocol/constants.rs",
         "crates/magic-tdx-rs/src/protocol/mod.rs",
-        "crates/magic-tdx-rs/src/protocol/packet.rs",
         "crates/magic-tdx-rs/src/reader/mod.rs",
         "crates/magic-tdx-rs/src/source/enums.rs",
         "crates/magic-tdx-rs/src/source/mod.rs",

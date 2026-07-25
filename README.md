@@ -10,7 +10,9 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 
 > 当前状态（2026-07-25）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS、Jin10、The Paper、Baidu，以及 SSE/SZSE 官方公告与龙虎榜、SZSE Quote/五档和 HKEX
-> 北向日统计、CFFEX 官方 IF/IH/IC/IM 交割通知已通过真实网络验收；Eastmoney 已声明能力的
+> 北向日统计已通过真实网络验收；CFFEX 官方 IF/IH/IC/IM 交割通知实现及确定性合同
+> 测试通过，但 2026-07-25 的沙箱内外 live 复验均在官方目录 TLS 初始化时收到
+> unexpected EOF，当前不声明 live 通过。Eastmoney 已声明能力的
 > live/load 探针全部通过，
 > 分钟/日级资金流因当前网络返回 empty reply 而保持未声明能力；关键词新闻响应没有
 > 结构化证券身份，也不伪装成个股新闻。东财财经滚动页已作为独立全局最新资讯实现，
@@ -195,7 +197,7 @@ Router 适配器已经通过确定性测试。
 | 经济日历 | Jin10 | 仅公开未锁 type-1；保留前值/预期/实际/修正值和重要性 |
 | 官方政策 | State Council | 仅国务院官方搜索与 `www.gov.cn` 规范链接，页面上限 50 |
 | 研报 PDF 正文 | Eastmoney | 精确研报身份、`application/pdf`、`%PDF-`、最大 32 MiB |
-| 期货交割日历 | CFFEX | 有界扫描官方交易通知目录及同站详情；通知必须同时明确 IF/IH/IC/IM、请求月份的实际交割日与现金交割结算措辞；节假日顺延不使用公式推算 |
+| 期货交割日历 | CFFEX | 有界扫描官方交易通知目录及同站详情；通知必须同时明确 IF/IH/IC/IM、请求月份的实际交割日与交割结算价；通知未独立证明交割方式时保留 `NotProvided`，节假日顺延不使用公式推算 |
 | 15:35 资金榜 | Eastmoney | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称 |
 
 ### TDX
@@ -466,7 +468,8 @@ cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
 
 CFFEX 可以单独验收，默认示例月份为 `2026-02`；成功必须精确返回 IF/IH/IC/IM
-四条由同一官方通知证明的现金交割事件：
+四条由同一官方通知证明的交割事件。通知未独立说明交割方式，因此标准化
+`method=NotProvided`，不会从“交割结算价”推导现金交割：
 
 ```bash
 MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
@@ -704,7 +707,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | The Paper live | 通过 | 财经频道原生文章 5 条；栏目/标签、来源时间和原生 canonical URL 完整 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 公告、SSE/SZSE 龙虎榜与完整席位、SZSE Quote/五档、HKEX 两通道 Top10；mixed load 8/8、最小 attempt 起始间隔 1000 ms |
-| CFFEX official delivery live | 通过 | 官方通知精确返回 IF2602/IH2602/IC2602/IM2602 四条现金交割事件；日期来自通知原文，不按公式推算 |
+| CFFEX official delivery | 实现通过；live 当前阻塞 | 确定性生产 trait 测试精确返回 IF2602/IH2602/IC2602/IM2602 四条事件；日期来自通知原文、方式为 `NotProvided`；2026-07-25 沙箱内外 live 均在官方目录 TLS 初始化时收到 unexpected EOF |
 | iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
 | Release package | 每个提交独立构建 | 二十五个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 

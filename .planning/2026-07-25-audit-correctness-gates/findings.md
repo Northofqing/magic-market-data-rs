@@ -106,6 +106,18 @@
 - The public TDX `codec` module was an uncalled placeholder whose decompression
   function copied input unchanged. It was removed; actual zlib handling remains
   in the real blocking, direct, async, F10, and finance network paths.
+- The official CFFEX event notice says `交割结算价` but does not independently
+  state cash settlement. Inferring `Cash` from that phrase violated record-level
+  provenance; the provider now emits `NotProvided` while preserving the proved
+  contracts and actual date.
+- `crates/magic-tdx-rs/src/protocol/packet.rs` contained a minified
+  `PacketBuilder` but was never registered by `protocol/mod.rs` or compiled.
+  Deleting it is more truthful than treating executable-looking dormant source
+  as permanently non-executable coverage input.
+- The isolated CFFEX live probe failed at the official directory TLS handshake
+  with `unexpected end of file` both inside and outside the sandbox on
+  2026-07-25. This is current external-state evidence, so live success is no
+  longer claimed.
 - The reported absence of cargo-deny enforcement is false for the current
   repository: both `.github/workflows/ci.yml` and
   `.github/workflows/security.yml` run the pinned cargo-deny action. Only the

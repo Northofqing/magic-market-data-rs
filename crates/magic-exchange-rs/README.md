@@ -34,8 +34,11 @@ counts, ETF turnover, exact Top10 ranks and the quota `999,999,999` sentinel as
 CFFEX scans at most 120 official notice-list pages for the requested contract
 month. A detail is admitted only when its title, delivery-settlement wording,
 IF/IH/IC/IM contract identities, actual delivery date, requested month, and
-cash-settlement semantics agree. Holiday shifts come from the notice text;
-the Provider never substitutes a “third Friday” formula.
+delivery-settlement-price wording agree. The notice does not independently
+state the settlement method, so normalized records use
+`FuturesDeliveryMethod::NotProvided`. Holiday shifts come from the notice text;
+the Provider never substitutes a “third Friday” formula or infers cash
+settlement from the existence of a settlement price.
 
 All transports enforce credential-free HTTPS host/path allowlists, port 443,
 zero redirects, exact final URLs, bounded content types, an 8 MiB response
@@ -91,10 +94,13 @@ attempt_latency_max_ms=1201 minimum_attempt_start_gap_ms=1000
 load_probe_status=passed
 ```
 
-The isolated CFFEX production-trait probe also returned exactly four
-cash-delivery events for IF2602, IH2602, IC2602, and IM2602 from the official
-notice; the actual date was parsed from the notice rather than derived from a
-calendar formula.
+The deterministic CFFEX production-trait test returns exactly four delivery
+events for IF2602, IH2602, IC2602, and IM2602 from one official-notice fixture.
+The actual date is parsed from the notice rather than derived from a calendar
+formula, and the unproved method remains `NotProvided`. On 2026-07-25, the
+isolated live command failed both inside and outside the sandbox while
+initializing TLS to `https://www.cffex.com.cn/jystz/` (`unexpected end of
+file`), so current live availability is not claimed.
 
 These are bounded connectivity/validation measurements, not exchange SLA or
 permission for sustained collection. One high-level attempt can issue

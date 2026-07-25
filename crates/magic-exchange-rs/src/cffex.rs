@@ -388,7 +388,7 @@ fn parse_delivery_notice(
             contract_code: NonEmptyText::new(format!("{prefix}{suffix}"))?,
             last_trading_date: delivery_date.clone(),
             delivery_date: delivery_date.clone(),
-            method: FuturesDeliveryMethod::Cash,
+            method: FuturesDeliveryMethod::NotProvided,
             notice_url: url.clone(),
             evidence,
         });
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn scans_official_list_and_parses_holiday_adjusted_delivery_notice() {
+    fn parses_holiday_adjusted_notice_without_inventing_delivery_method() {
         let list = r#"
           <ul><li><a href="/jystz/20260224/46999.html">
           关于股指期货和股指期权合约交割的通知</a><span>2026-02-24</span></li></ul>
@@ -545,7 +545,10 @@ mod tests {
         assert_eq!(batch.records().len(), 4);
         assert_eq!(batch.records()[0].contract_code.as_str(), "IF2602");
         assert_eq!(batch.records()[0].delivery_date.as_str(), "2026-02-24");
-        assert_eq!(batch.records()[0].method, FuturesDeliveryMethod::Cash);
+        assert_eq!(
+            batch.records()[0].method,
+            FuturesDeliveryMethod::NotProvided
+        );
     }
 
     #[test]
