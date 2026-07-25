@@ -229,6 +229,18 @@ mod tests {
         assert_eq!(cat.start, 0);
         assert_eq!(cat.length, 36830);
         assert!((cat.size_kb() - 35.97).abs() < 0.1);
+        assert!((cat.size_mb() - (36830.0 / 1_048_576.0)).abs() < f64::EPSILON);
+        assert!(cat.to_string().contains("公司概况"));
+
+        let raw = F10Category::new_with_raw(
+            "股东研究".into(),
+            "holder.dat".into(),
+            vec![1, 2, 3],
+            10,
+            2048,
+        );
+        assert_eq!(raw.filename_raw, vec![1, 2, 3]);
+        assert_eq!(raw.size_kb(), 2.0);
     }
 
     #[test]
@@ -239,6 +251,9 @@ mod tests {
         assert_eq!(content.char_count(), 11);
         assert!(content.contains("hello"));
         assert!(!content.contains("不存在"));
+        assert_eq!(content.summary(100), "hello world");
+        assert_eq!(content.lines(), vec!["hello world"]);
+        assert!(content.to_string().contains("11 chars"));
     }
 
     #[test]
@@ -269,5 +284,8 @@ mod tests {
 
         let names = data.category_names();
         assert_eq!(names, vec!["公司概况", "财务分析"]);
+        assert_eq!(data.total_chars(), 6);
+        assert_eq!(data.total_bytes(), 14);
+        assert!(data.to_string().contains("2 categories"));
     }
 }

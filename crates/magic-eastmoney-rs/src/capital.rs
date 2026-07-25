@@ -352,11 +352,35 @@ fn required_scaled_quantity(
 #[cfg(test)]
 mod tests {
     use super::{map_block_trade, map_dividend, map_holder_count, map_lockup, map_margin};
-    use crate::BatchContext;
+    use crate::{BatchContext, EastmoneyClient, EastmoneyError, EastmoneyTransport};
     use magic_market_core::{
-        AssetClass, Exchange, InstrumentDateRangeRequest, InstrumentId, PositiveU32, RatioUnit,
+        AssetClass, BlockTrades, DividendPlans, Exchange, HolderCounts, InstrumentDateRangeRequest,
+        InstrumentId, LockupEvents, MarginData, PositiveU32, RatioUnit,
     };
     use serde_json::json;
+
+    struct EmptyDatacenter;
+
+    impl EastmoneyTransport for EmptyDatacenter {
+        fn get(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            Ok(br#"{"success":true,"result":{"data":[],"pages":1,"count":0}}"#.to_vec())
+        }
+
+        fn post_json(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: &[u8],
+            _max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            Err(EastmoneyError::Transport("unexpected fixture POST".into()))
+        }
+    }
 
     fn request() -> InstrumentDateRangeRequest {
         InstrumentDateRangeRequest::new(
@@ -620,5 +644,16 @@ mod tests {
         ] {
             assert!(matches!(result, Err(crate::EastmoneyError::Protocol(_))));
         }
+    }
+
+    #[test]
+    fn every_capital_provider_path_rejects_an_empty_source_batch() {
+        let client = EastmoneyClient::with_transport(EmptyDatacenter);
+        let request = request();
+        assert!(client.margin_data(&request).is_err());
+        assert!(client.block_trades(&request).is_err());
+        assert!(client.holder_counts(&request).is_err());
+        assert!(client.lockup_events(&request).is_err());
+        assert!(client.dividend_plans(&request).is_err());
     }
 }

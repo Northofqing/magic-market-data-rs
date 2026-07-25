@@ -157,7 +157,26 @@ fn range_requests_are_bounded_and_calendar_checked() {
             IsoDate::new("2026-07-23").unwrap(),
         )
         .unwrap();
+    assert_eq!(request.instrument(), &instrument());
+    assert_eq!(request.start().unwrap().as_str(), "2026-01-01");
+    assert_eq!(request.end().unwrap().as_str(), "2026-07-23");
     assert_eq!(request.limit().get(), 100);
+    assert_eq!(
+        serde_json::from_str::<InstrumentDateRangeRequest>(
+            &serde_json::to_string(&request).unwrap()
+        )
+        .unwrap(),
+        request
+    );
+    let unbounded =
+        InstrumentDateRangeRequest::new(instrument(), PositiveU32::new(1).unwrap()).unwrap();
+    assert!(serde_json::from_str::<InstrumentDateRangeRequest>(
+        &serde_json::to_string(&unbounded).unwrap()
+    )
+    .is_ok());
+    let mut one_sided = serde_json::to_value(&unbounded).unwrap();
+    one_sided["start"] = serde_json::json!("2026-01-01");
+    assert!(serde_json::from_value::<InstrumentDateRangeRequest>(one_sided).is_err());
     assert!(
         InstrumentDateRangeRequest::new(instrument(), PositiveU32::new(10_001).unwrap()).is_err()
     );
@@ -176,6 +195,19 @@ fn range_requests_are_bounded_and_calendar_checked() {
         PositiveU32::new(10_001).unwrap()
     )
     .is_err());
+    let flow = FundFlowRequest::new(
+        FlowScope::Instrument(instrument()),
+        FlowInterval::Day5,
+        PositiveU32::new(5).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(flow.scope(), FlowScope::Instrument(_)));
+    assert_eq!(flow.interval(), FlowInterval::Day5);
+    assert_eq!(flow.limit().get(), 5);
+    assert_eq!(
+        serde_json::from_str::<FundFlowRequest>(&serde_json::to_string(&flow).unwrap()).unwrap(),
+        flow
+    );
     assert!(serde_json::from_str::<FundFlowRequest>(
         r#"{"scope":{"Instrument":{"exchange":"Shanghai","code":"600396","asset_class":"Equity"}},"interval":"Day120","limit":10001}"#
     )
@@ -215,9 +247,25 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
     assert_eq!(request.limit().get(), 10);
     assert_eq!(request.trading_date().as_str(), "2026-07-23");
     assert_eq!(
+        serde_json::from_str::<PostCloseFlowRequest>(&serde_json::to_string(&request).unwrap())
+            .unwrap(),
+        request
+    );
+    assert_eq!(
         serde_json::from_str::<PostCloseFlow>(&serde_json::to_string(&record).unwrap()).unwrap(),
         record
     );
+    assert_eq!(record.instrument(), &instrument());
+    assert_eq!(record.name().unwrap().as_str(), "华电辽能");
+    assert_eq!(record.trading_date().as_str(), "2026-07-23");
+    assert_eq!(record.rank().get(), 1);
+    assert_eq!(record.close().get(), 4.36);
+    assert_eq!(record.change().get(), 2.1);
+    assert_eq!(record.main_net().get(), 12_000_000.0);
+    assert_eq!(record.main_net_ratio().get(), 3.2);
+    assert_eq!(record.board(), Some(Board::Main));
+    assert!(record.price_limit_rule().is_some());
+    assert_eq!(record.evidence().provider(), ProviderId::Eastmoney);
     let mut missing_source_time = serde_json::to_value(&record).unwrap();
     missing_source_time["evidence"]["source_at"] = serde_json::Value::Null;
     assert!(serde_json::from_value::<PostCloseFlow>(missing_source_time).is_err());
@@ -233,6 +281,45 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
         None,
         None,
         post_close_evidence(),
+    )
+    .is_err());
+    for observed_at in [
+        "2026-07-23T15:35+08:00",
+        "2026-07-23Taa:35:00+08:00",
+        "2026-07-23T25:00:00+08:00",
+    ] {
+        assert!(PostCloseFlow::new(
+            instrument(),
+            None,
+            IsoDate::new("2026-07-23").unwrap(),
+            PositiveU32::new(1).unwrap(),
+            Price::new(4.36).unwrap(),
+            Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+            Money::new(12_000_000.0).unwrap(),
+            Ratio::new(3.2, RatioUnit::Percent).unwrap(),
+            None,
+            None,
+            SourceEvidence::new(ProviderId::Eastmoney, observed_at, "batch")
+                .unwrap()
+                .with_source_at("2026-07-23 15:00:00")
+                .unwrap(),
+        )
+        .is_err());
+    }
+    assert!(PostCloseFlow::new(
+        instrument(),
+        None,
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        Price::new(4.36).unwrap(),
+        Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+        Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
+        None,
+        None,
+        post_close_evidence()
+            .with_source_at("2026-07-23X15:00:00")
+            .unwrap(),
     )
     .is_err());
     assert!(PostCloseFlow::new(
@@ -321,6 +408,11 @@ fn northbound_daily_statistics_are_lossless_checked_and_serde_safe() {
     assert_eq!(record.quota_balance(), NorthboundQuotaBalance::Unavailable);
     assert_eq!(record.etf_turnover().get(), 4_839_470_000.0);
     assert_eq!(record.top_turnover().len(), 10);
+    assert_eq!(record.top_turnover()[0].rank().get(), 1);
+    assert_eq!(record.top_turnover()[0].instrument().code(), "600001");
+    assert_eq!(record.top_turnover()[0].name().as_str(), "stock-1");
+    assert_eq!(record.top_turnover()[0].total_turnover().get(), 1_000_000.0);
+    assert_eq!(record.evidence().batch_id(), "hkex-20260722");
     assert_eq!(record.provider_id(), ProviderId::Hkex);
     assert_eq!(request.trading_date(), &trading_date);
     assert_eq!(request.channel(), NorthboundChannel::Shanghai);
@@ -335,6 +427,36 @@ fn northbound_daily_statistics_are_lossless_checked_and_serde_safe() {
         request
     );
     assert!(serde_json::from_str::<NorthboundQuotaBalance>(r#"{"Amount":-1.0}"#).is_err());
+    assert_eq!(
+        serde_json::from_str::<NorthboundQuotaBalance>(r#"{"Amount":1.0}"#).unwrap(),
+        NorthboundQuotaBalance::Amount(Money::new(1.0).unwrap())
+    );
+    assert_eq!(
+        serde_json::from_str::<NorthboundQuotaBalance>(r#""Unavailable""#).unwrap(),
+        NorthboundQuotaBalance::Unavailable
+    );
+
+    assert!(NorthboundTopTurnover::new(
+        PositiveU32::new(11).unwrap(),
+        instrument(),
+        NonEmptyText::new("too-low").unwrap(),
+        Money::new(1.0).unwrap(),
+    )
+    .is_err());
+    assert!(NorthboundTopTurnover::new(
+        PositiveU32::new(1).unwrap(),
+        InstrumentId::new(Exchange::Shanghai, "110001", AssetClass::Bond).unwrap(),
+        NonEmptyText::new("bond").unwrap(),
+        Money::new(1.0).unwrap(),
+    )
+    .is_err());
+    assert!(NorthboundTopTurnover::new(
+        PositiveU32::new(1).unwrap(),
+        instrument(),
+        NonEmptyText::new("negative").unwrap(),
+        Money::new(-1.0).unwrap(),
+    )
+    .is_err());
 
     let mut duplicate_rank = northbound_top_ten(NorthboundChannel::Shanghai);
     duplicate_rank[9] = duplicate_rank[0].clone();
@@ -352,6 +474,84 @@ fn northbound_daily_statistics_are_lossless_checked_and_serde_safe() {
             .unwrap(),
     )
     .is_err());
+    let mut duplicate_instrument = northbound_top_ten(NorthboundChannel::Shanghai);
+    duplicate_instrument[9] = NorthboundTopTurnover::new(
+        PositiveU32::new(10).unwrap(),
+        duplicate_instrument[0].instrument().clone(),
+        NonEmptyText::new("duplicate").unwrap(),
+        Money::new(10.0).unwrap(),
+    )
+    .unwrap();
+    assert!(NorthboundDailyStat::new(
+        trading_date.clone(),
+        NorthboundChannel::Shanghai,
+        Money::new(1.0).unwrap(),
+        Quantity::new(1.0).unwrap(),
+        NorthboundQuotaBalance::Unavailable,
+        Money::new(0.0).unwrap(),
+        duplicate_instrument,
+        SourceEvidence::new(ProviderId::Hkex, "observed", "batch")
+            .unwrap()
+            .with_source_at("2026-07-22")
+            .unwrap(),
+    )
+    .is_err());
+    for (turnover, etf, quota) in [
+        (-1.0, 0.0, NorthboundQuotaBalance::Unavailable),
+        (1.0, -1.0, NorthboundQuotaBalance::Unavailable),
+        (
+            1.0,
+            0.0,
+            NorthboundQuotaBalance::Amount(Money::new(-1.0).unwrap()),
+        ),
+    ] {
+        assert!(NorthboundDailyStat::new(
+            trading_date.clone(),
+            NorthboundChannel::Shanghai,
+            Money::new(turnover).unwrap(),
+            Quantity::new(1.0).unwrap(),
+            quota,
+            Money::new(etf).unwrap(),
+            northbound_top_ten(NorthboundChannel::Shanghai),
+            SourceEvidence::new(ProviderId::Hkex, "observed", "batch")
+                .unwrap()
+                .with_source_at("2026-07-22")
+                .unwrap(),
+        )
+        .is_err());
+    }
+    assert!(NorthboundDailyStat::new(
+        trading_date.clone(),
+        NorthboundChannel::Shanghai,
+        Money::new(1.0).unwrap(),
+        Quantity::new(1.0).unwrap(),
+        NorthboundQuotaBalance::Unavailable,
+        Money::new(0.0).unwrap(),
+        Vec::new(),
+        SourceEvidence::new(ProviderId::Hkex, "observed", "batch")
+            .unwrap()
+            .with_source_at("2026-07-22")
+            .unwrap(),
+    )
+    .is_err());
+    for source_at in [None, Some("x"), Some("2026-07-22X"), Some("not-a-date")] {
+        let base = SourceEvidence::new(ProviderId::Hkex, "observed", "batch").unwrap();
+        let source = match source_at {
+            Some(value) => base.with_source_at(value).unwrap(),
+            None => base,
+        };
+        assert!(NorthboundDailyStat::new(
+            trading_date.clone(),
+            NorthboundChannel::Shanghai,
+            Money::new(1.0).unwrap(),
+            Quantity::new(1.0).unwrap(),
+            NorthboundQuotaBalance::Unavailable,
+            Money::new(0.0).unwrap(),
+            northbound_top_ten(NorthboundChannel::Shanghai),
+            source,
+        )
+        .is_err());
+    }
     assert!(NorthboundDailyStat::new(
         trading_date.clone(),
         NorthboundChannel::Shanghai,

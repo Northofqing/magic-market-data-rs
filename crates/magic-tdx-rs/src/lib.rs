@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 //! Pure-Rust TDX market-data driver.
 pub mod block;
-pub mod codec;
 pub mod constants;
 pub mod error;
 pub use error::TdxError;

@@ -277,4 +277,62 @@ mod tests {
         assert!(sections.contains_key("1.基本资料"));
         assert!(sections.contains_key("2.发行上市"));
     }
+
+    #[test]
+    fn complete_parser_maps_basic_listing_aliases_and_field_boundaries() {
+        let text = r#"
+【1.公司资料】
+|公司名称|示例股份|
+｜英文全称｜Example Corp｜
+│证券代码│600001│
+│证券简称│示例│
+│所属行业│制造业│
+│上市日期│2020-01-02│
+│注册资本│1000万元│
+│法定代表人│张三│
+│注册地址│上海│
+│办公地址│深圳│
+│主营业务│制造│
+│经营范围│研发│
+│公司简介│简介│
+│联系电话│123│
+│电子邮箱│a@example.com│
+│公司网址│https://example.com│
+【2.发行上市】
+│网上发行日期│2019-12-01│
+│发行方式│网下│
+│发行量(万股)│100│
+│发行价格(元)│10│
+│募集资金净额(万)│900│
+│上市首日收盘价│12│
+│主承销商│承销商│
+│保荐人│保荐机构│
+【3.其他】
+│公司名称│不应覆盖│
+"#;
+
+        let parsed = parse_f10_text(text);
+        assert_eq!(parsed.get("公司名称"), Some("示例股份"));
+        assert_eq!(parsed.get("英文名称"), Some("Example Corp"));
+        assert_eq!(parsed.get("行业类别"), Some("制造业"));
+        assert_eq!(parsed.get("法人代表"), Some("张三"));
+        assert_eq!(parsed.get("发行量(股)"), Some("100"));
+        assert_eq!(parsed.get("每股发行价(元)"), Some("10"));
+        assert_eq!(parsed.get("募集资金净额(元)"), Some("900"));
+        assert_eq!(parsed.get("上市首日收盘价(元)"), Some("12"));
+        assert_eq!(parsed.get("不存在"), None);
+        assert_eq!(parsed.all_fields().len(), 24);
+        assert_eq!(parsed.sections.len(), 3);
+
+        assert_eq!(
+            extract_basic_info(text).get("证券简称").map(String::as_str),
+            Some("示例")
+        );
+        assert!(extract_basic_info("【2.发行上市】无").is_empty());
+
+        let parser = F10TextParser::new(
+            "【1.基本资料】\n│公司名称│---│\n公司名称                      │太远│",
+        );
+        assert!(parser.parse().get("公司名称").is_none());
+    }
 }

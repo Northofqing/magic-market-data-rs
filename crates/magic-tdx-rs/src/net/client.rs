@@ -546,6 +546,10 @@ impl TdxHqClient {
 
     /// 发送请求并接收响应 (指定限流器)
     fn send_and_recv_limited(&self, packet: &[u8], limiter: &RateLimiter) -> Result<Vec<u8>> {
+        if !self.connected.load(Ordering::SeqCst) && !self.auto_retry.load(Ordering::SeqCst) {
+            return Err(ErrorCode::DISCONNECTED.err("client is not connected"));
+        }
+
         // 限流
         limiter.wait();
 

@@ -341,4 +341,140 @@ mod tests {
         };
         assert_eq!(quote.price, 49.840);
     }
+
+    #[test]
+    fn source_records_convert_without_dropping_fund_fields() {
+        let bar = crate::protocol::types::SecurityBar {
+            open: 1.0,
+            close: 2.0,
+            high: 3.0,
+            low: 0.5,
+            vol: 4.0,
+            amount: 5.0,
+            year: 2026,
+            month: 7,
+            day: 25,
+            hour: 15,
+            minute: 0,
+            datetime: "2026-07-25 15:00".into(),
+        };
+        let converted = FundBar::from_security_bar(&bar);
+        assert_eq!(converted.datetime, bar.datetime);
+        assert_eq!(converted.amount, bar.amount);
+
+        let quote = crate::protocol::types::SecurityQuote {
+            market: 1,
+            code: "510300".into(),
+            active1: 0,
+            price: 1.0,
+            last_close: 2.0,
+            open: 3.0,
+            high: 4.0,
+            low: 5.0,
+            servertime: "15:00:00".into(),
+            vol: 6.0,
+            cur_vol: 7.0,
+            amount: 8.0,
+            s_vol: 9.0,
+            b_vol: 10.0,
+            bid1: 11.0,
+            bid_vol1: 12.0,
+            bid2: 13.0,
+            bid_vol2: 14.0,
+            bid3: 15.0,
+            bid_vol3: 16.0,
+            bid4: 17.0,
+            bid_vol4: 18.0,
+            bid5: 19.0,
+            bid_vol5: 20.0,
+            ask1: 21.0,
+            ask_vol1: 22.0,
+            ask2: 23.0,
+            ask_vol2: 24.0,
+            ask3: 25.0,
+            ask_vol3: 26.0,
+            ask4: 27.0,
+            ask_vol4: 28.0,
+            ask5: 29.0,
+            ask_vol5: 30.0,
+            reversed_bytes0: 0,
+            reversed_bytes1: 0,
+            reversed_bytes2: 0,
+            reversed_bytes3: 0,
+            reversed_bytes4: 0,
+            reversed_bytes5: 0,
+            reversed_bytes6: 0,
+            reversed_bytes7: 0,
+            reversed_bytes8: 0,
+            reversed_bytes9: 0,
+            active2: 0,
+        };
+        let converted = FundQuote::from_security_quote(&quote);
+        assert_eq!(converted.code, quote.code);
+        assert_eq!(converted.ask_vol5, quote.ask_vol5);
+
+        let action = crate::protocol::types::XdXrInfo {
+            year: 2026,
+            month: 7,
+            day: 25,
+            category: 1,
+            name: "fixture".into(),
+            fenhong: Some(1.0),
+            peigujia: Some(2.0),
+            songzhuangu: Some(3.0),
+            peigu: Some(4.0),
+            suogu: Some(5.0),
+            panqianliutong: None,
+            panhouliutong: None,
+            qianzongguben: None,
+            houzongguben: None,
+            fenshu: None,
+            xingquanjia: None,
+        };
+        let converted = FundXdXrInfo::from_xdxr_info(&action);
+        assert_eq!(converted.fenhong, action.fenhong);
+        assert_eq!(converted.suogu, action.suogu);
+
+        let finance = crate::protocol::types::FinanceInfo {
+            market: 1,
+            code: "510300".into(),
+            liutongguben: 1.0,
+            province: 0,
+            industry: 0,
+            updated_date: 0,
+            ipo_date: 0,
+            zongguben: 2.0,
+            guojiagu: 0.0,
+            faqirenfarengu: 0.0,
+            farengu: 0.0,
+            bgu: 0.0,
+            hgu: 0.0,
+            zhigonggu: 0.0,
+            zongzichan: 3.0,
+            liudongzichan: 0.0,
+            gudingzichan: 0.0,
+            wuxingzichan: 0.0,
+            gudongrenshu: 0.0,
+            liudongfuzhai: 0.0,
+            changqifuzhai: 0.0,
+            zibengongjijin: 0.0,
+            jingzichan: 4.0,
+            zhuyingshouru: 0.0,
+            zhuyinglirun: 0.0,
+            yingshouzhangkuan: 0.0,
+            yingyelirun: 0.0,
+            touzishouyu: 0.0,
+            jingyingxianjinliu: 0.0,
+            zongxianjinliu: 0.0,
+            cunhuo: 0.0,
+            lirunzonghe: 0.0,
+            shuihoulirun: 0.0,
+            jinglirun: 0.0,
+            weifenpeilirun: 0.0,
+            meigujingzichan: 5.0,
+        };
+        let converted = FundFinanceInfo::from_finance_info(&finance);
+        assert_eq!(converted.code, finance.code);
+        assert_eq!(converted.meigujingzichan, finance.meigujingzichan);
+    }
 }

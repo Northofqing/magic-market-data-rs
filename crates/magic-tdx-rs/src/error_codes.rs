@@ -457,4 +457,45 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn every_registered_error_code_and_code_type_has_stable_text() {
+        let ranges = [
+            1001..=1004,
+            1101..=1104,
+            1201..=1207,
+            2001..=2006,
+            2101..=2103,
+            3001..=3005,
+            4001..=4004,
+        ];
+        for value in ranges.into_iter().flatten() {
+            let code = ErrorCode::from_code(value).unwrap();
+            assert_eq!(code.code(), value);
+            assert_ne!(code.description(), "unknown error");
+            assert_ne!(code.description_zh(), "未知错误");
+            assert!(code.to_string().starts_with("[E"));
+            let coded = CodedError::new(code, "fixture");
+            assert!(coded.to_string().contains("fixture"));
+            assert!(coded.format_zh().contains("fixture"));
+            assert!(code.err("fixture").to_string().contains("fixture"));
+        }
+        for value in [0, 1000, 1005, 1199, 5000] {
+            assert_eq!(ErrorCode::from_code(value), None);
+            assert_eq!(ErrorCode(value).description(), "unknown error");
+            assert_eq!(ErrorCode(value).description_zh(), "未知错误");
+        }
+
+        for code_type in [
+            CodeType::Stock,
+            CodeType::Index,
+            CodeType::Block,
+            CodeType::Bond,
+            CodeType::Fund,
+            CodeType::Unknown,
+        ] {
+            assert!(!code_type.description().is_empty());
+            assert!(!code_type.description_zh().is_empty());
+        }
+    }
 }

@@ -414,6 +414,7 @@ mod tests {
 
         let service = TdxService::default();
         let _ = service.client();
+        service.client().inner().set_auto_retry(false);
         let ranged = BarsRequest::new(
             instrument(Exchange::Shanghai, "600001"),
             BarInterval::Day,
@@ -430,6 +431,31 @@ mod tests {
         assert!(service
             .quotes_chunked(&[instrument(Exchange::Beijing, "920001")])
             .is_err());
+        let equity = instrument(Exchange::Shanghai, "600001");
+        assert!(service
+            .quotes_chunked(std::slice::from_ref(&equity))
+            .is_err());
+        let current = TradesRequest::new(equity.clone(), 1).unwrap();
+        assert!(service.trades(&current).is_err());
+        assert!(service
+            .trades(&current.with_date("2026-07-25").unwrap())
+            .is_err());
+        assert!(service
+            .security_metadata(std::slice::from_ref(&equity))
+            .is_err());
+        assert!(service.security_count(1).is_err());
+        assert!(service.security_list(1, 0).is_err());
+        assert!(service.security_list_all(1).is_err());
+        assert!(service.minute_data(1, "600001").is_err());
+        assert!(service
+            .history_minute_data(1, "600001", 20_260_725)
+            .is_err());
+        assert!(service.transactions(1, "600001", 0, 5).is_err());
+        assert!(service
+            .history_transactions(1, "600001", 0, 5, 20_260_725)
+            .is_err());
+        assert!(service.finance(1, "600001").is_err());
+        assert!(service.corporate_actions(1, "600001").is_err());
         assert!(matches!(
             service.money_flows(&[]),
             Err(TdxError::Unsupported(_))

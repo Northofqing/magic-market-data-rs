@@ -15,6 +15,7 @@ fn request_validates_date_range() {
     assert!(req.clone().with_range("2026-02-31", "2026-03-01").is_err());
     assert!(req.clone().with_range("0000-01-01", "2026-03-01").is_err());
     assert!(req.clone().with_range("1899-12-31", "2026-03-01").is_err());
+    assert!(req.clone().with_range("2026/01/01", "2026-03-01").is_err());
     assert!(req.with_range("2024-02-29", "2024-03-01").is_ok());
 }
 
@@ -31,4 +32,17 @@ fn request_exposes_validated_values_through_accessors() {
     assert_eq!(req.start(), Some("2026-07-21"));
     assert_eq!(req.end(), Some("2026-07-22"));
     assert_eq!(req.limit(), 5);
+    assert_eq!(
+        serde_json::from_str::<BarsRequest>(&serde_json::to_string(&req).unwrap()).unwrap(),
+        req
+    );
+
+    let unbounded = BarsRequest::new(id, BarInterval::Day, 1).unwrap();
+    assert_eq!(
+        serde_json::from_str::<BarsRequest>(&serde_json::to_string(&unbounded).unwrap()).unwrap(),
+        unbounded
+    );
+    let mut one_sided = serde_json::to_value(&unbounded).unwrap();
+    one_sided["start"] = serde_json::json!("2026-07-21");
+    assert!(serde_json::from_value::<BarsRequest>(one_sided).is_err());
 }

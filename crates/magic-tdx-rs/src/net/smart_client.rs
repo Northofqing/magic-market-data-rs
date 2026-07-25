@@ -620,6 +620,29 @@ impl Default for TdxSmartClient {
 mod tests {
     use super::*;
 
+    fn blacklist_known_servers(client: &TdxSmartClient) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut cache = sync::lock(&client.cache, "test smart cache").unwrap();
+        cache.last_success = None;
+        cache.blacklist.clear();
+        cache
+            .blacklist
+            .extend(
+                PRIMARY_SERVERS
+                    .iter()
+                    .chain(ALL_KNOWN_SERVERS)
+                    .map(|(_, ip, port)| BlacklistEntry {
+                        ip: (*ip).to_owned(),
+                        port: *port,
+                        reason: "offline-test".into(),
+                        timestamp: now,
+                    }),
+            );
+    }
+
     #[test]
     fn test_server_cache_blacklist() {
         let mut cache = ServerCache::new();
@@ -642,5 +665,42 @@ mod tests {
         assert_eq!(stats.success, 2);
         assert_eq!(stats.fail, 1);
         assert_eq!(stats.avg_latency, 150); // (100 + 200) / 2
+    }
+
+    #[test]
+    fn smart_client_offline_paths_preserve_cache_and_retry_failures() {
+        let mut expired = ServerCache::new();
+        expired.blacklist.push(BlacklistEntry {
+            ip: "1.2.3.4".into(),
+            port: 7709,
+            reason: "expired".into(),
+            timestamp: 0,
+        });
+        assert!(!expired.is_blacklisted("1.2.3.4", 7709));
+
+        let client = TdxSmartClient::default();
+        client.inner().set_auto_retry(false);
+        assert!(client.cache_stats().contains("blacklist:"));
+        client.clear_cache();
+        blacklist_known_servers(&client);
+
+        assert!(client.connect_to_any(Some(0.001)).is_err());
+        assert!(client.try_next_server().is_err());
+        assert!(!client.lazy_health_check());
+        client.health_checked.store(true, Ordering::SeqCst);
+        assert!(client.lazy_health_check());
+        client.health_checked.store(false, Ordering::SeqCst);
+
+        *sync::lock(&client.current_server, "test smart current server").unwrap() =
+            Some(("127.0.0.1".into(), 1, "offline".into()));
+        assert!(!client.lazy_health_check());
+        blacklist_known_servers(&client);
+
+        assert!(client
+            .get_security_bars(KLINE_DAILY, MARKET_SH, "600001", 0, 5, 0)
+            .is_err());
+        assert!(client
+            .get_security_quotes(&[(MARKET_SH, "600001")])
+            .is_err());
     }
 }

@@ -1,6 +1,7 @@
 use magic_market_core::{
-    Announcement, AssetClass, Exchange, HttpsUrl, InstrumentId, InvestorQuestion, NewsItem,
-    NonEmptyText, ProviderId, SourceEvidence, SourcedRecord,
+    Announcement, AnnouncementDiscoveryRequest, AssetClass, Exchange, HttpsUrl, InstrumentId,
+    InvestorQuestion, IsoDate, NewsItem, NonEmptyText, PositiveU32, ProviderId, SourceEvidence,
+    SourcedRecord,
 };
 
 fn instrument() -> InstrumentId {
@@ -61,7 +62,39 @@ fn unanswered_investor_question_is_not_fabricated() {
         evidence(ProviderId::Cninfo),
     )
     .unwrap();
+    assert_eq!(question.question_id().as_str(), "q-1");
+    assert_eq!(question.instrument(), &instrument());
+    assert_eq!(question.company().as_str(), "公司");
+    assert_eq!(question.question().as_str(), "请问项目进展？");
+    assert_eq!(question.question_at().as_str(), "2026-07-23 09:00:00");
     assert!(question.answer().is_none());
+    assert!(question.answer_at().is_none());
+    assert!(question.source_question_id().is_none());
+    assert!(question.answerer().is_none());
+    assert_eq!(question.evidence().provider(), ProviderId::Cninfo);
+
+    let answered = InvestorQuestion::new_with_metadata(
+        NonEmptyText::new("q-answered").unwrap(),
+        instrument(),
+        NonEmptyText::new("公司").unwrap(),
+        NonEmptyText::new("问题").unwrap(),
+        NonEmptyText::new("2026-07-23").unwrap(),
+        Some(NonEmptyText::new("回答").unwrap()),
+        Some(NonEmptyText::new("2026-07-24").unwrap()),
+        Some(NonEmptyText::new("source-q").unwrap()),
+        Some(NonEmptyText::new("董秘").unwrap()),
+        evidence(ProviderId::Cninfo),
+    )
+    .unwrap();
+    assert_eq!(answered.answer().unwrap().as_str(), "回答");
+    assert_eq!(answered.answer_at().unwrap().as_str(), "2026-07-24");
+    assert_eq!(answered.source_question_id().unwrap().as_str(), "source-q");
+    assert_eq!(answered.answerer().unwrap().as_str(), "董秘");
+    assert_eq!(
+        serde_json::from_str::<InvestorQuestion>(&serde_json::to_string(&answered).unwrap())
+            .unwrap(),
+        answered
+    );
 
     assert!(InvestorQuestion::new(
         NonEmptyText::new("q-2").unwrap(),
@@ -85,6 +118,40 @@ fn unanswered_investor_question_is_not_fabricated() {
         Some(NonEmptyText::new("source-3").unwrap()),
         Some(NonEmptyText::new("董秘").unwrap()),
         evidence(ProviderId::Cninfo),
+    )
+    .is_err());
+}
+
+#[test]
+fn announcement_discovery_request_revalidates_all_bounds_and_accessors() {
+    let request = AnnouncementDiscoveryRequest::new(
+        IsoDate::new("2026-01-01").unwrap(),
+        IsoDate::new("2026-07-25").unwrap(),
+        PositiveU32::new(10_000).unwrap(),
+    )
+    .unwrap()
+    .with_exchange(Exchange::Shanghai);
+    assert_eq!(request.start().as_str(), "2026-01-01");
+    assert_eq!(request.end().as_str(), "2026-07-25");
+    assert_eq!(request.exchange(), Some(Exchange::Shanghai));
+    assert_eq!(request.limit().get(), 10_000);
+    assert_eq!(
+        serde_json::from_str::<AnnouncementDiscoveryRequest>(
+            &serde_json::to_string(&request).unwrap()
+        )
+        .unwrap(),
+        request
+    );
+    assert!(AnnouncementDiscoveryRequest::new(
+        IsoDate::new("2026-07-25").unwrap(),
+        IsoDate::new("2026-01-01").unwrap(),
+        PositiveU32::new(1).unwrap(),
+    )
+    .is_err());
+    assert!(AnnouncementDiscoveryRequest::new(
+        IsoDate::new("2026-01-01").unwrap(),
+        IsoDate::new("2026-07-25").unwrap(),
+        PositiveU32::new(10_001).unwrap(),
     )
     .is_err());
 }

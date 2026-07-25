@@ -1964,12 +1964,23 @@ mod tests {
         InstrumentId::new(Exchange::Shanghai, "880001", AssetClass::Equity).unwrap()
     }
 
+    fn disable_network_recovery(client: &TdxHqClient) {
+        client.set_auto_retry(false);
+        for &(_, ip, port) in crate::protocol::constants::PRIMARY_SERVERS
+            .iter()
+            .chain(crate::protocol::constants::ALL_KNOWN_SERVERS)
+        {
+            client.block_server(ip, port);
+        }
+    }
+
     #[test]
     fn blocking_adapter_entry_points_preserve_pre_transport_failures() {
         let client = TdxHqClient::new();
-        client.set_auto_retry(false);
+        disable_network_recovery(&client);
+        let primary = instrument("600001");
 
-        let ranged = BarsRequest::new(instrument("600001"), BarInterval::Day, 5)
+        let ranged = BarsRequest::new(primary.clone(), BarInterval::Day, 5)
             .unwrap()
             .with_range("2026-07-01", "2026-07-25")
             .unwrap();
@@ -1992,7 +2003,49 @@ mod tests {
             Err(TdxError::Coded { .. })
         ));
 
-        let duplicate = [instrument("600001"), instrument("600001")];
+        for interval in [
+            BarInterval::Minute1,
+            BarInterval::Minute5,
+            BarInterval::Minute15,
+            BarInterval::Minute30,
+            BarInterval::Hour1,
+            BarInterval::Day,
+            BarInterval::Week,
+            BarInterval::Month,
+            BarInterval::Year,
+        ] {
+            let request = BarsRequest::new(primary.clone(), interval, 5).unwrap();
+            assert!(<TdxHqClient as HistoricalBars>::historical_bars(&client, &request).is_err());
+        }
+
+        let current_minute = MinuteDataRequest::new(primary.clone());
+        assert!(<TdxHqClient as MinuteData>::minute_data(&client, &current_minute).is_err());
+        let historical_minute = current_minute.with_date("2026-07-25").unwrap();
+        assert!(<TdxHqClient as MinuteData>::minute_data(&client, &historical_minute).is_err());
+
+        assert!(<TdxHqClient as RealtimeQuotes>::realtime_quotes(
+            &client,
+            std::slice::from_ref(&primary)
+        )
+        .is_err());
+        assert!(
+            <TdxHqClient as OrderBooks>::order_books(&client, std::slice::from_ref(&primary))
+                .is_err()
+        );
+        assert!(
+            <TdxHqClient as SecurityMetadataProvider>::security_metadata(
+                &client,
+                std::slice::from_ref(&primary)
+            )
+            .is_err()
+        );
+
+        let current_trades = TradesRequest::new(primary.clone(), 1).unwrap();
+        assert!(<TdxHqClient as Trades>::trades(&client, &current_trades).is_err());
+        let historical_trades = current_trades.with_date("2026-07-25").unwrap();
+        assert!(<TdxHqClient as Trades>::trades(&client, &historical_trades).is_err());
+
+        let duplicate = [primary.clone(), primary];
         assert!(
             <TdxHqClient as SecurityMetadataProvider>::security_metadata(&client, &duplicate)
                 .is_err()
@@ -2002,7 +2055,9 @@ mod tests {
     #[test]
     fn smart_adapter_entry_points_preserve_request_validation() {
         let client = crate::TdxSmartClient::new();
-        let ranged = BarsRequest::new(instrument("600001"), BarInterval::Day, 5)
+        disable_network_recovery(client.inner());
+        let primary = instrument("600001");
+        let ranged = BarsRequest::new(primary.clone(), BarInterval::Day, 5)
             .unwrap()
             .with_range("2026-07-01", "2026-07-25")
             .unwrap();
@@ -2012,7 +2067,23 @@ mod tests {
         ));
         assert!(<crate::TdxSmartClient as OrderBooks>::order_books(&client, &[]).is_err());
 
-        let duplicate = [instrument("600001"), instrument("600001")];
+        assert!(<crate::TdxSmartClient as MinuteData>::minute_data(
+            &client,
+            &MinuteDataRequest::new(primary.clone())
+        )
+        .is_err());
+
+        let trades = TradesRequest::new(primary.clone(), 1).unwrap();
+        assert!(<crate::TdxSmartClient as Trades>::trades(&client, &trades).is_err());
+        assert!(
+            <crate::TdxSmartClient as SecurityMetadataProvider>::security_metadata(
+                &client,
+                std::slice::from_ref(&primary)
+            )
+            .is_err()
+        );
+
+        let duplicate = [primary.clone(), primary];
         assert!(
             <crate::TdxSmartClient as SecurityMetadataProvider>::security_metadata(
                 &client, &duplicate

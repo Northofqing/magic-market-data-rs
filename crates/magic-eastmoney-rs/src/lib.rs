@@ -420,9 +420,40 @@ fn observed_at() -> Result<String, EastmoneyError> {
 mod tests {
     use super::{
         instrument_from_market, query_url, secid, validate_instrument, BatchContext,
-        EastmoneyClient,
+        EastmoneyClient, EastmoneyError, EastmoneyTransport,
     };
-    use magic_market_core::{AssetClass, Exchange, InstrumentId, ProviderId};
+    use magic_market_core::{
+        AssetClass, BlockTrades, BoardCategory, BoardFlows, DividendPlans, DragonTigerData,
+        DragonTigerDiscovery, DragonTigerDiscoveryRequest, Exchange, FlowInterval, FlowScope,
+        FundFlowRequest, FundFlowSeries, HolderCounts, HttpsUrl, InstrumentDateRangeRequest,
+        InstrumentId, InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest,
+        LimitPools, LockupEvents, MarginData, NewsProvider, NonEmptyText, PopularityData,
+        PositiveU32, ProviderId, ReportScope, ResearchDocumentRequest, ResearchDocuments,
+        ResearchReports, ResearchRequest,
+    };
+
+    struct RejectingTransport;
+
+    impl EastmoneyTransport for RejectingTransport {
+        fn get(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            Err(EastmoneyError::Transport("offline fixture".into()))
+        }
+
+        fn post_json(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: &[u8],
+            _max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            Err(EastmoneyError::Transport("offline fixture".into()))
+        }
+    }
 
     #[test]
     fn query_values_are_utf8_percent_encoded() {
@@ -508,5 +539,86 @@ mod tests {
     fn empty_batches_are_explicit_protocol_failures() {
         let context = BatchContext::new("fixture", None).unwrap();
         assert!(context.finish::<u8>(Vec::new()).is_err());
+    }
+
+    #[test]
+    fn every_public_provider_entry_builds_a_bounded_request_before_transport() {
+        assert!(EastmoneyClient::with_timeout(std::time::Duration::ZERO).is_err());
+        assert!(format!("{:?}", EastmoneyClient::new().unwrap()).contains("EastmoneyClient"));
+
+        let client = EastmoneyClient::with_transport(RejectingTransport);
+        let instrument =
+            InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity).unwrap();
+        let date = IsoDate::new("2026-07-25").unwrap();
+        let one = PositiveU32::new(1).unwrap();
+
+        for category in [
+            BoardCategory::Industry,
+            BoardCategory::Concept,
+            BoardCategory::Region,
+        ] {
+            for interval in [FlowInterval::Day1, FlowInterval::Day5, FlowInterval::Day10] {
+                assert!(client.board_flows(category, interval, one).is_err());
+            }
+        }
+
+        for interval in [FlowInterval::Minute1, FlowInterval::Day1] {
+            let request =
+                FundFlowRequest::new(FlowScope::Instrument(instrument.clone()), interval, one)
+                    .unwrap();
+            assert!(client.fund_flow_series(&request).is_err());
+        }
+
+        let capital =
+            InstrumentDateRangeRequest::new(instrument.clone(), PositiveU32::new(10).unwrap())
+                .unwrap();
+        assert!(client.margin_data(&capital).is_err());
+        assert!(client.block_trades(&capital).is_err());
+        assert!(client.holder_counts(&capital).is_err());
+        assert!(client.lockup_events(&capital).is_err());
+        assert!(client.dividend_plans(&capital).is_err());
+
+        for kind in [
+            LimitPoolKind::Upper,
+            LimitPoolKind::Broken,
+            LimitPoolKind::Lower,
+            LimitPoolKind::PreviousUpper,
+        ] {
+            let request = LimitPoolRequest::new(kind, date.clone(), one).unwrap();
+            assert!(client.limit_pool(&request).is_err());
+        }
+
+        let signal =
+            InstrumentSignalRequest::new(instrument.clone(), PositiveU32::new(10).unwrap())
+                .unwrap()
+                .with_trading_date(date.clone());
+        assert!(client.dragon_tiger_entries(&signal).is_err());
+        assert!(client.dragon_tiger_seats(&signal).is_err());
+        let discovery =
+            DragonTigerDiscoveryRequest::new(date, PositiveU32::new(10).unwrap()).unwrap();
+        assert!(client.discover_dragon_tiger(&discovery).is_err());
+
+        assert!(client.popularity(one).is_err());
+        assert!(client.global_news(one).is_err());
+        let report = ResearchRequest::new(
+            ReportScope::Instrument(instrument),
+            one,
+            PositiveU32::new(20).unwrap(),
+        )
+        .unwrap();
+        assert!(client.research_reports(&report).is_err());
+        let industry = ResearchRequest::new(
+            ReportScope::Industry(NonEmptyText::new("bank").unwrap()),
+            one,
+            PositiveU32::new(20).unwrap(),
+        )
+        .unwrap();
+        assert!(client.research_reports(&industry).is_err());
+
+        let document = ResearchDocumentRequest {
+            report_id: NonEmptyText::new("ABC").unwrap(),
+            pdf_url: HttpsUrl::new("https://pdf.dfcfw.com/pdf/H3_ABC_1.pdf").unwrap(),
+        };
+        assert!(client.research_document(&document).is_err());
     }
 }

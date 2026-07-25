@@ -8,7 +8,7 @@ fn unavailable_fields_are_explicit() {
     assert_eq!(DataStatus::Unavailable, DataStatus::Unavailable);
     let level = BookLevel::unavailable();
     assert!(level.price().is_none());
-    let _flow = MoneyFlow::new(
+    let flow = MoneyFlow::new(
         magic_market_core::InstrumentId::new(
             magic_market_core::Exchange::Shanghai,
             "600519",
@@ -27,6 +27,17 @@ fn unavailable_fields_are_explicit() {
         "batch-1",
     )
     .unwrap();
+    assert_eq!(flow.instrument().code(), "600519");
+    assert!(flow.main_net().is_none());
+    assert!(flow.super_large_net().is_none());
+    assert!(flow.large_net().is_none());
+    assert!(flow.medium_net().is_none());
+    assert!(flow.small_net().is_none());
+    assert_eq!(flow.status(), DataStatus::Unavailable);
+    assert!(flow.source_at().is_none());
+    assert_eq!(flow.observed_at(), "observed");
+    assert_eq!(flow.provider(), ProviderId::Eastmoney);
+    assert_eq!(flow.batch_id(), "batch-1");
 }
 
 #[test]
@@ -110,6 +121,44 @@ fn order_book_has_fixed_five_level_shape() {
     assert_eq!(book.asks().len(), 5);
     assert_eq!(book.observed_at(), "observed");
     assert_eq!(book.batch_id(), "batch-1");
+    assert_eq!(book.instrument().code(), "000001");
+    assert!(book.total_bid_quantity().is_none());
+    assert!(book.total_ask_quantity().is_none());
+    assert_eq!(book.status(), DataStatus::Unsupported);
+    assert!(book.source_at().is_none());
+    assert_eq!(book.provider(), ProviderId::Tdx);
+
+    let complete = BookLevel::new(
+        Some(Price::new(1.0).unwrap()),
+        Some(Quantity::new(2.0).unwrap()),
+    )
+    .unwrap();
+    assert!(OrderBook::new(
+        book.instrument().clone(),
+        [complete; 5],
+        [complete; 5],
+        None,
+        Some(Quantity::new(10.0).unwrap()),
+        DataStatus::Unavailable,
+        None,
+        "observed",
+        ProviderId::Tdx,
+        "batch",
+    )
+    .is_err());
+    assert!(OrderBook::new(
+        book.instrument().clone(),
+        [complete; 5],
+        [complete; 5],
+        Some(Quantity::new(9.0).unwrap()),
+        Some(Quantity::new(10.0).unwrap()),
+        DataStatus::Available,
+        Some("source".into()),
+        "observed",
+        ProviderId::Tdx,
+        "batch",
+    )
+    .is_err());
 }
 
 #[test]
@@ -163,6 +212,18 @@ fn auction_contract_preserves_missing_fields_and_evidence() {
     )
     .unwrap();
     assert_eq!(snapshot.status(), DataStatus::Unavailable);
+    assert_eq!(snapshot.instrument().code(), "600519");
+    assert!(snapshot.name().is_none());
+    assert!(snapshot.matched_price().is_none());
+    assert!(snapshot.previous_close().is_none());
+    assert!(snapshot.change_percent().is_none());
+    assert!(snapshot.matched_quantity().is_none());
+    assert!(snapshot.matched_amount().is_none());
     assert!(snapshot.unmatched_bid_quantity().is_none());
+    assert!(snapshot.unmatched_ask_quantity().is_none());
+    assert!(snapshot.volume_ratio().is_none());
+    assert!(snapshot.source_at().is_none());
+    assert_eq!(snapshot.observed_at(), "observed");
+    assert_eq!(snapshot.provider(), ProviderId::Eastmoney);
     assert_eq!(snapshot.batch_id(), "batch-1");
 }

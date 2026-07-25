@@ -500,6 +500,44 @@ pub fn fetch_context_bars_for_adjust_with_tier<F: Fn(&[u8]) -> Result<Vec<u8>>>(
 mod tests {
     use super::*;
 
+    fn source_bar(date: (u32, u32, u32)) -> SecurityBar {
+        SecurityBar {
+            open: 10.0,
+            close: 10.5,
+            high: 11.0,
+            low: 9.5,
+            vol: 100.0,
+            amount: 1_000.0,
+            year: date.0,
+            month: date.1,
+            day: date.2,
+            hour: 0,
+            minute: 0,
+            datetime: format!("{:04}-{:02}-{:02}", date.0, date.1, date.2),
+        }
+    }
+
+    fn source_xdxr(date: (u32, u32, u32), category: u32) -> XdXrInfo {
+        XdXrInfo {
+            year: date.0,
+            month: date.1,
+            day: date.2,
+            category,
+            name: "fixture".into(),
+            fenhong: None,
+            peigujia: None,
+            songzhuangu: None,
+            peigu: None,
+            suogu: None,
+            panqianliutong: None,
+            panhouliutong: None,
+            qianzongguben: None,
+            houzongguben: None,
+            fenshu: None,
+            xingquanjia: None,
+        }
+    }
+
     #[test]
     fn test_code_bytes_full() {
         let b = code_bytes("600519");
@@ -594,6 +632,7 @@ mod tests {
         assert_eq!(bytes.len(), 10);
         assert_eq!(&bytes[..4], b"test");
         assert_eq!(&bytes[4..], &[0, 0, 0, 0, 0, 0]);
+        assert_eq!(encode_gbk_padded("abcdef", 3).unwrap(), b"abc");
     }
 
     // --- RateLimiter ---
@@ -635,6 +674,80 @@ mod tests {
         let start = Instant::now();
         limiter.wait();
         assert!(start.elapsed() < Duration::from_millis(10));
+    }
+
+    #[test]
+    fn rate_limiter_accessors_and_tier_pages_cover_runtime_configuration() {
+        assert_eq!(FqContextTier::Low.pages(), 3);
+        assert_eq!(FqContextTier::Mid.pages(), 6);
+        assert_eq!(FqContextTier::High.pages(), 9);
+
+        let limiter = RateLimiter::new(1);
+        limiter.wait();
+        limiter.wait();
+        limiter.set_enabled(false);
+        limiter.wait();
+        limiter.set_enabled(true);
+        limiter.set_phase(TradingPhase::Closed);
+        assert_eq!(limiter.phase(), TradingPhase::Closed);
+        assert!(matches!(
+            limiter.auto_detect_phase(),
+            TradingPhase::Trading | TradingPhase::PrePost | TradingPhase::Closed
+        ));
+        assert_ne!(today_yyyymmdd(), 0);
+    }
+
+    #[test]
+    fn factor_context_exits_are_explicit_for_each_source_boundary() {
+        let bars = vec![source_bar((2026, 7, 25))];
+        assert!(fetch_context_bars_for_adjust(
+            |_| Ok(Vec::new()),
+            KLINE_DAILY,
+            MARKET_SH,
+            "600001",
+            &bars,
+            &[source_xdxr((2026, 7, 1), 2)]
+        )
+        .is_empty());
+        assert!(fetch_context_bars_for_adjust(
+            |_| Ok(Vec::new()),
+            KLINE_DAILY,
+            MARKET_SH,
+            "600001",
+            &bars,
+            &[source_xdxr((2026, 7, 25), 1)]
+        )
+        .is_empty());
+        assert!(fetch_context_bars_for_adjust_with_tier(
+            |_| Err(crate::error_codes::ErrorCode::DISCONNECTED.err("offline")),
+            KLINE_DAILY,
+            MARKET_SH,
+            "600001",
+            &bars,
+            &[source_xdxr((2026, 7, 1), 1)],
+            FqContextTier::Low
+        )
+        .is_empty());
+        assert!(fetch_context_bars_for_adjust_with_tier(
+            |_| Ok(vec![0xff]),
+            KLINE_DAILY,
+            MARKET_SH,
+            "600001",
+            &bars,
+            &[source_xdxr((2026, 7, 1), 1)],
+            FqContextTier::Low
+        )
+        .is_empty());
+        assert!(fetch_context_bars_for_adjust_with_tier(
+            |_| Ok(vec![0, 0]),
+            KLINE_DAILY,
+            MARKET_SH,
+            "600001",
+            &bars,
+            &[source_xdxr((2026, 7, 1), 1)],
+            FqContextTier::Low
+        )
+        .is_empty());
     }
 
     // --- TradingPhase ---

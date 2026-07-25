@@ -25,8 +25,16 @@ fn minute_point_round_trips_through_checked_serde() {
     let json = serde_json::to_string(&point).unwrap();
     let decoded: MinutePoint = serde_json::from_str(&json).unwrap();
     assert_eq!(decoded, point);
+    assert_eq!(decoded.instrument(), &instrument());
     assert_eq!(decoded.minute_at(), "2026-07-23 09:31");
+    assert_eq!(decoded.price().get(), 15.5);
     assert_eq!(decoded.cumulative_quantity().get(), 100.0);
+    assert_eq!(decoded.cumulative_amount().unwrap().get(), 155_000.0);
+    assert_eq!(decoded.status(), DataStatus::Available);
+    assert_eq!(decoded.source_at(), Some("2026-07-23T09:31:00+08:00"));
+    assert_eq!(decoded.observed_at(), "observed");
+    assert_eq!(decoded.provider(), ProviderId::Tencent);
+    assert_eq!(decoded.batch_id(), "batch");
 }
 
 #[test]
@@ -63,6 +71,7 @@ fn minute_request_validates_and_round_trips_date() {
         .with_date("2026-07-23")
         .unwrap();
     assert_eq!(request.date(), Some("2026-07-23"));
+    assert_eq!(request.instrument(), &instrument());
     let json = serde_json::to_string(&request).unwrap();
     let decoded: MinuteDataRequest = serde_json::from_str(&json).unwrap();
     assert_eq!(decoded, request);
@@ -73,4 +82,10 @@ fn minute_request_validates_and_round_trips_date() {
         r#"{"instrument":{"exchange":"Shanghai","code":"600396","asset_class":"Equity"},"date":"2026-02-30"}"#
     )
     .is_err());
+    let current = MinuteDataRequest::new(instrument());
+    assert_eq!(
+        serde_json::from_str::<MinuteDataRequest>(&serde_json::to_string(&current).unwrap())
+            .unwrap(),
+        current
+    );
 }

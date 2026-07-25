@@ -12,7 +12,14 @@ fn document(body: &[u8]) -> Result<ResearchDocument, magic_market_core::CoreErro
 #[test]
 fn research_document_accepts_terminal_eof_with_pdf_trailing_whitespace() {
     let body = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\nstartxref\n9\n%%EOF\0\t\n\x0c\r ";
-    assert!(document(body).is_ok());
+    let record = document(body).unwrap();
+    assert_eq!(
+        serde_json::from_str::<ResearchDocument>(&serde_json::to_string(&record).unwrap()).unwrap(),
+        record
+    );
+    let mut wrong_type = serde_json::to_value(&record).unwrap();
+    wrong_type["content_type"] = serde_json::json!("text/plain");
+    assert!(serde_json::from_value::<ResearchDocument>(wrong_type).is_err());
 }
 
 #[test]
@@ -31,4 +38,10 @@ fn research_document_rejects_non_whitespace_after_eof() {
 fn research_document_rejects_terminal_eof_without_startxref() {
     let body = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n";
     assert!(document(body).is_err());
+}
+
+#[test]
+fn research_document_rejects_non_pdf_and_empty_bodies() {
+    assert!(document(b"not a pdf").is_err());
+    assert!(document(b"").is_err());
 }

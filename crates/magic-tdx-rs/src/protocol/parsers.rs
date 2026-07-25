@@ -1515,9 +1515,19 @@ mod tests {
     fn xdxr_categories_preserve_optional_payload_semantics_and_names() {
         let categories = [
             (1, [1.0, 2.0, 3.0, 4.0]),
-            (11, [0.0, 0.0, 5.0, 0.0]),
-            (13, [6.0, 0.0, 7.0, 0.0]),
             (2, [0.0, 0.0, 0.0, 0.0]),
+            (3, [0.0, 0.0, 0.0, 0.0]),
+            (4, [0.0, 0.0, 0.0, 0.0]),
+            (5, [0.0, 0.0, 0.0, 0.0]),
+            (6, [0.0, 0.0, 0.0, 0.0]),
+            (7, [0.0, 0.0, 0.0, 0.0]),
+            (8, [0.0, 0.0, 0.0, 0.0]),
+            (9, [0.0, 0.0, 0.0, 0.0]),
+            (10, [0.0, 0.0, 0.0, 0.0]),
+            (11, [0.0, 0.0, 5.0, 0.0]),
+            (12, [0.0, 0.0, 5.0, 0.0]),
+            (13, [6.0, 0.0, 7.0, 0.0]),
+            (14, [6.0, 0.0, 7.0, 0.0]),
             (99, [1.0, 2.0, 3.0, 4.0]),
         ];
         let mut body = vec![0; 9];
@@ -1526,18 +1536,41 @@ mod tests {
             body.extend_from_slice(&xdxr_record(category, values));
         }
         let records = parse_xdxr_info(&body).unwrap();
-        assert_eq!(records.len(), 5);
+        assert_eq!(records.len(), 15);
         assert_eq!(records[0].name, "除权除息");
         assert_eq!(records[0].fenhong, Some(1.0));
         assert_eq!(records[0].peigujia, Some(2.0));
         assert_eq!(records[0].songzhuangu, Some(3.0));
         assert_eq!(records[0].peigu, Some(4.0));
-        assert_eq!(records[1].suogu, Some(5.0));
-        assert_eq!(records[2].xingquanjia, Some(6.0));
-        assert_eq!(records[2].fenshu, Some(7.0));
-        assert_eq!(records[3].panqianliutong, Some(0.0));
-        assert_eq!(records[4].name, "未知");
-        assert!(records[4].panqianliutong.unwrap().is_finite());
+        let expected_names = [
+            "除权除息",
+            "送配股上市",
+            "非流通股上市",
+            "未知股本变动",
+            "股本变化",
+            "增发新股",
+            "股份回购",
+            "增发新股上市",
+            "转配股上市",
+            "可转债上市",
+            "扩缩股",
+            "非流通股缩股",
+            "送认购权证",
+            "送认沽权证",
+            "未知",
+        ];
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| record.name.as_str())
+                .collect::<Vec<_>>(),
+            expected_names
+        );
+        assert_eq!(records[10].suogu, Some(5.0));
+        assert_eq!(records[12].xingquanjia, Some(6.0));
+        assert_eq!(records[12].fenshu, Some(7.0));
+        assert_eq!(records[1].panqianliutong, Some(0.0));
+        assert!(records[14].panqianliutong.unwrap().is_finite());
     }
 
     // --- parse_block_info_meta ---
