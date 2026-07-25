@@ -16,6 +16,7 @@
 - Passed `cargo test --workspace --all-targets --locked --offline --quiet`.
 - Wrote the approved design specification, scanned it for placeholders and
   contradictions, and passed documentation links plus `git diff --check`.
+- Committed the reviewed design as `723ad69`.
 
 ## Test Results
 

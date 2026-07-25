@@ -19,7 +19,7 @@ Phase 1
 - [x] Present alternatives and receive approval for metadata-only Chinese RSS.
 - [x] Create an isolated worktree and pass the workspace baseline.
 - [x] Write and self-review the approved design.
-- [ ] Commit the approved design.
+- [x] Commit the approved design.
 - [ ] Obtain user review of the written specification.
 - **Status:** in_progress
 
