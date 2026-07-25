@@ -16,7 +16,7 @@ fn request(kind: LimitPoolKind) -> LimitPoolRequest {
 
 #[test]
 fn maps_verified_limit_pool_units_and_metadata() {
-    let fixture = r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+    let fixture = r#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":[{
       "c":"600396","m":1,"n":"华电辽能","p":1308000,"zdp":9.97,
       "hs":4.2,"fund":12345678,"fbt":93100,"lbt":145501,
       "zbc":2,"lbc":3,"hybk":"电力行业"
@@ -48,16 +48,16 @@ fn maps_verified_limit_pool_units_and_metadata() {
 #[test]
 fn source_qdate_is_required_calendar_valid_and_matches_the_request() {
     for fixture in [
-        r#"{"rc":0,"data":{"pool":[{
+        r#"{"rc":0,"data":{"tc":1,"pool":[{
           "c":"600396","m":1,"p":1308000,"zdp":9.97
         }]}}"#,
-        r#"{"rc":0,"data":{"qdate":20260722,"pool":[{
+        r#"{"rc":0,"data":{"tc":1,"qdate":20260722,"pool":[{
           "c":"600396","m":1,"p":1308000,"zdp":9.97
         }]}}"#,
-        r#"{"rc":0,"data":{"qdate":20260230,"pool":[{
+        r#"{"rc":0,"data":{"tc":1,"qdate":20260230,"pool":[{
           "c":"600396","m":1,"p":1308000,"zdp":9.97
         }]}}"#,
-        r#"{"rc":0,"data":{"qdate":"2026-07-23","pool":[{
+        r#"{"rc":0,"data":{"tc":1,"qdate":"2026-07-23","pool":[{
           "c":"600396","m":1,"p":1308000,"zdp":9.97
         }]}}"#,
     ] {
@@ -90,8 +90,61 @@ fn null_pool_and_nonzero_rc_fail() {
 }
 
 #[test]
+fn br019_source_total_controls_complete_truncated_and_verified_empty_states() {
+    let complete = parse_limit_pool(
+        br#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":[{
+          "c":"600396","m":1,"p":1308000,"zdp":9.97
+        }]}}"#,
+        &request(LimitPoolKind::Upper),
+    )
+    .expect("complete source total");
+    assert!(complete.quality().is_complete());
+
+    let truncated = parse_limit_pool(
+        br#"{"rc":0,"data":{"tc":2,"qdate":20260723,"pool":[{
+          "c":"600396","m":1,"p":1308000,"zdp":9.97
+        }]}}"#,
+        &request(LimitPoolKind::Upper),
+    )
+    .expect("bounded source page remains inspectable");
+    assert!(!truncated.quality().is_complete());
+    assert_eq!(truncated.quality().issues().len(), 1);
+    assert!(truncated.quality().issues()[0].contains("source_total=2"));
+
+    let empty = parse_limit_pool(
+        br#"{"rc":0,"data":{"tc":0,"qdate":20260723,"pool":[]}}"#,
+        &request(LimitPoolKind::Upper),
+    )
+    .expect("source-proven empty");
+    assert!(empty.records().is_empty());
+    assert!(empty.quality().is_complete());
+    assert_eq!(empty.provenance().source_at(), Some("2026-07-23"));
+}
+
+#[test]
+fn br019_missing_contradictory_totals_and_duplicate_identities_fail_atomically() {
+    for fixture in [
+        r#"{"rc":0,"data":{"qdate":20260723,"pool":[]}}"#,
+        r#"{"rc":0,"data":{"tc":-1,"qdate":20260723,"pool":[]}}"#,
+        r#"{"rc":0,"data":{"tc":0,"qdate":20260723,"pool":[{
+          "c":"600396","m":1,"p":1308000,"zdp":9.97
+        }]}}"#,
+        r#"{"rc":0,"data":{"tc":2,"qdate":20260723,"pool":[{
+          "c":"600396","m":1,"p":1308000,"zdp":9.97
+        },{
+          "c":"600396","m":1,"p":1308000,"zdp":9.97
+        }]}}"#,
+    ] {
+        assert!(
+            parse_limit_pool(fixture.as_bytes(), &request(LimitPoolKind::Upper)).is_err(),
+            "{fixture}"
+        );
+    }
+}
+
+#[test]
 fn public_limit_pool_contract_routes_every_verified_pool_kind() {
-    const FIXTURE: &str = r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+    const FIXTURE: &str = r#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":[{
       "c":"600396","m":1,"p":1308000,"zdp":9.97
     }]}}"#;
     for (kind, path, sort) in [
@@ -123,17 +176,17 @@ fn limit_pool_decode_shape_market_and_price_failures_are_explicit() {
         Err(EastmoneyError::Decode(_))
     ));
     for fixture in [
-        r#"{"rc":0,"data":{"qdate":20260723,"pool":{}}}"#,
-        r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+        r#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":{}}}"#,
+        r#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":[{
           "c":"600396","p":1308000,"zdp":9.97
         }]}}"#,
-        r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+        r#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":[{
           "c":"600396","m":1.5,"p":1308000,"zdp":9.97
         }]}}"#,
-        r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+        r#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":[{
           "c":"600396","m":1,"zdp":9.97
         }]}}"#,
-        r#"{"rc":0,"data":{"qdate":20260723,"pool":[{
+        r#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":[{
           "c":"600396","m":1,"p":1308000
         }]}}"#,
     ] {

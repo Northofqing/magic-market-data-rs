@@ -9,6 +9,7 @@ mod error;
 mod evidence;
 mod instrument;
 mod limit_pool;
+mod market_announcements;
 mod options;
 mod probe;
 mod provenance;
@@ -43,6 +44,7 @@ pub use instrument::{AssetClass, Exchange, InstrumentId};
 pub use limit_pool::{
     LimitPoolCapabilities, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools,
 };
+pub use market_announcements::{MarketAnnouncementRequest, MarketAnnouncements};
 pub use options::{
     ContractMonth, OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind,
     OptionQuote,
@@ -67,9 +69,10 @@ pub use research::{
 };
 pub use signals::{
     BoardCategory, BoardMembership, BoardMembershipProvider, ConceptHit, ConceptHits,
-    DragonTigerData, DragonTigerEntry, DragonTigerSeat, DragonTigerSide, InstrumentSignalRequest,
-    MarketRankingEntry, MarketRankingKind, MarketRankings, PopularityData, PopularityRank,
-    SignalCapabilities, StrongStockReason, StrongStockReasons,
+    DragonTigerData, DragonTigerDisclosure, DragonTigerEntry, DragonTigerSeat, DragonTigerSide,
+    InstrumentSignalRequest, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingEntry,
+    MarketRankingKind, MarketRankings, PopularityData, PopularityRank, SignalCapabilities,
+    StrongStockReason, StrongStockReasons,
 };
 pub use validated::{FiniteNumber, HttpsUrl, IsoDate, NonEmptyText, PositiveU32};
 pub use value::{Money, Price, Quantity, Ratio, RatioUnit};

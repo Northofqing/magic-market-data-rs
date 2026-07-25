@@ -6,16 +6,18 @@ use crate::protocol::constants::{
 use crate::protocol::types::{MinuteTimePrice, SecurityInfo, TickData};
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use magic_market_core::{
-    AsyncHistoricalBars, AsyncRealtimeQuotes, AsyncTrades, AuctionSnapshot, Auctions, BarInterval,
-    BarsRequest, Board, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId, MinuteData,
-    MinuteDataRequest, MinutePoint, Money, MoneyFlow, MoneyFlows, OrderBook, OrderBooks, Price,
-    PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
-    SecurityMetadata, SecurityMetadataProvider, Trade, TradeSide, Trades, TradesRequest,
+    Adjustment, AsyncHistoricalBars, AsyncRealtimeQuotes, AsyncTrades, AuctionSnapshot, Auctions,
+    Bar, BarInterval, BarsRequest, Board, BookLevel, DataBatch, DataStatus, HistoricalBars,
+    InstrumentId, IsoDate, MinuteData, MinuteDataRequest, MinutePoint, Money, MoneyFlow,
+    MoneyFlows, OrderBook, OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio,
+    RatioUnit, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, TradeSide,
+    Trades, TradesRequest,
 };
 use std::collections::{HashMap, HashSet};
 
 const CURRENT_TRADE_PAGE_SIZE: u16 = 1_800;
 const HISTORICAL_TRADE_PAGE_SIZE: u16 = 2_000;
+const SHARES_PER_LOT: f64 = 100.0;
 
 impl TdxHqClient {
     /// Returns the data families exposed through the core provider boundary.
@@ -85,23 +87,203 @@ fn fetched_at() -> Result<String, TdxError> {
             TdxError::InvalidData(format!("system clock is before UNIX epoch: {error}"))
         })
 }
-fn bars_provenance(
-    source: &str,
-    records: &[SecurityBar],
-) -> Result<magic_market_core::Provenance, TdxError> {
-    let p = magic_market_core::Provenance::new(source, fetched_at()?)?;
-    match records.first() {
-        Some(bar) => Ok(p.with_source_at(bar.datetime.clone())?),
-        None => Ok(p),
+fn ensure_current_session_at(unix_seconds: u64, family: &str) -> Result<(), TdxError> {
+    const SECONDS_PER_DAY: u64 = 86_400;
+    const CHINA_OFFSET_SECONDS: u64 = 8 * 60 * 60;
+
+    let local_seconds = unix_seconds
+        .checked_add(CHINA_OFFSET_SECONDS)
+        .ok_or_else(|| TdxError::InvalidData("TDX current-session clock overflow".into()))?;
+    let local_days = local_seconds / SECONDS_PER_DAY;
+    let local_day_seconds = local_seconds % SECONDS_PER_DAY;
+    // 1970-01-01 was Thursday. Sunday=0 and Saturday=6.
+    let weekday = (local_days + 4) % 7;
+    let is_weekday = !matches!(weekday, 0 | 6);
+    let morning = (9 * 3_600 + 30 * 60..=11 * 3_600 + 30 * 60).contains(&local_day_seconds);
+    let afternoon = (13 * 3_600..=15 * 3_600).contains(&local_day_seconds);
+
+    if is_weekday && (morning || afternoon) {
+        Ok(())
+    } else {
+        Err(TdxError::InvalidData(format!(
+            "TDX normalized current {family} is unavailable outside an active A-share weekday session"
+        )))
     }
 }
-fn strict_bars(
+
+fn ensure_current_session(family: &str) -> Result<(), TdxError> {
+    let unix_seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| {
+            TdxError::InvalidData(format!("system clock is before UNIX epoch: {error}"))
+        })?
+        .as_secs();
+    ensure_current_session_at(unix_seconds, family)
+}
+fn normalized_bar_time(
+    interval: BarInterval,
+    record: &SecurityBar,
+) -> Result<(String, String, i64), TdxError> {
+    let date = format!("{:04}-{:02}-{:02}", record.year, record.month, record.day);
+    IsoDate::new(date.clone()).map_err(|error| {
+        TdxError::InvalidData(format!(
+            "TDX bar has invalid calendar components for {}: {error}",
+            record.datetime
+        ))
+    })?;
+    let intraday = matches!(
+        interval,
+        BarInterval::Minute1
+            | BarInterval::Minute5
+            | BarInterval::Minute15
+            | BarInterval::Minute30
+            | BarInterval::Hour1
+    );
+    let (expected_source_at, bar_time) = if intraday {
+        if record.hour > 23 || record.minute > 59 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar has invalid intraday components for {}",
+                record.datetime
+            )));
+        }
+        let source_at = format!("{date} {:02}:{:02}", record.hour, record.minute);
+        let bar_time = format!("{source_at}:00");
+        (source_at, bar_time)
+    } else {
+        if record.hour != 0 || record.minute != 0 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX non-intraday bar has unexpected time components for {}",
+                record.datetime
+            )));
+        }
+        (date.clone(), date)
+    };
+    if record.datetime != expected_source_at {
+        return Err(TdxError::InvalidData(format!(
+            "TDX bar datetime {:?} contradicts decoded components {expected_source_at:?}",
+            record.datetime
+        )));
+    }
+
+    let adjusted_year = i64::from(record.year) - i64::from(record.month <= 2);
+    let era = adjusted_year.div_euclid(400);
+    let year_of_era = adjusted_year - era * 400;
+    let month = i64::from(record.month);
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + i64::from(record.day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days_since_epoch = era * 146_097 + day_of_era - 719_468;
+    let source_epoch = days_since_epoch
+        .checked_mul(86_400)
+        .and_then(|value| value.checked_add(i64::from(record.hour) * 3_600))
+        .and_then(|value| value.checked_add(i64::from(record.minute) * 60))
+        // TDX A-share timestamps are Asia/Shanghai source time.
+        .and_then(|value| value.checked_sub(8 * 3_600))
+        .ok_or_else(|| TdxError::InvalidData("TDX bar timestamp overflow".into()))?;
+    Ok((expected_source_at, bar_time, source_epoch))
+}
+
+fn validate_bar_jump(previous: &SecurityBar, current: &SecurityBar) -> Result<(), TdxError> {
+    let change = current.close / previous.close - 1.0;
+    if change.abs() > 0.20 {
+        return Err(TdxError::InvalidData(format!(
+            "TDX bar close change {:.4}% from {} to {} exceeds 20%; manual corporate-action confirmation required",
+            change * 100.0,
+            previous.datetime,
+            current.datetime
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn normalize_bars(
     source: &str,
+    request: &BarsRequest,
     records: Vec<SecurityBar>,
-) -> Result<DataBatch<SecurityBar>, TdxError> {
+) -> Result<DataBatch<Bar>, TdxError> {
     ensure_nonempty(&records)?;
-    let provenance = bars_provenance(source, &records)?;
-    Ok(DataBatch::strict(records, provenance))
+    if records.len() != usize::from(request.limit()) {
+        return Err(TdxError::InvalidData(format!(
+            "TDX returned {} bars for strict request limit {}",
+            records.len(),
+            request.limit()
+        )));
+    }
+    if !matches!(source, "tdx" | "tdx-smart" | "tdx-direct" | "tdx-async") {
+        return Err(TdxError::InvalidData(format!(
+            "unexpected TDX bar source {source:?}"
+        )));
+    }
+
+    let observed_at = fetched_at()?;
+    let observed_epoch = observed_at.parse::<i64>().map_err(|error| {
+        TdxError::InvalidData(format!("invalid TDX observation timestamp: {error}"))
+    })?;
+    let mut times = Vec::with_capacity(records.len());
+    let mut previous_source_at: Option<String> = None;
+    for record in &records {
+        let (source_at, bar_time, source_epoch) = normalized_bar_time(request.interval(), record)?;
+        if source_epoch > observed_epoch {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar source time {source_at} is newer than observation {observed_at}"
+            )));
+        }
+        if previous_source_at
+            .as_deref()
+            .is_some_and(|previous| previous >= source_at.as_str())
+        {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar times are duplicate or non-increasing at {source_at}"
+            )));
+        }
+        if !record.amount.is_finite() || record.amount < 0.0 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar amount is invalid at {source_at}"
+            )));
+        }
+        if record.vol > 0.0 && record.amount == 0.0 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar has positive volume with zero amount at {source_at}"
+            )));
+        }
+        previous_source_at = Some(source_at.clone());
+        times.push((source_at, bar_time));
+    }
+    for pair in records.windows(2) {
+        validate_bar_jump(&pair[0], &pair[1])?;
+    }
+
+    let latest_source_at = times
+        .last()
+        .map(|(source_at, _)| source_at.clone())
+        .ok_or_else(|| TdxError::InvalidData("TDX bar batch has no source time".into()))?;
+    let provenance = magic_market_core::Provenance::new(source, observed_at)?
+        .with_source_at(latest_source_at)?;
+    let batch_id = provenance
+        .batch_id()
+        .ok_or_else(|| TdxError::InvalidData("TDX bar batch has no batch ID".into()))?
+        .to_owned();
+    let mut normalized = Vec::with_capacity(records.len());
+    for (record, (source_at, bar_time)) in records.into_iter().zip(times) {
+        let bar = Bar::new(
+            request.instrument().clone(),
+            request.interval(),
+            bar_time.clone(),
+            bar_time,
+            Price::new(record.open)?,
+            Price::new(record.high)?,
+            Price::new(record.low)?,
+            Price::new(record.close)?,
+            Quantity::new(record.vol / SHARES_PER_LOT)?,
+            Some(Money::new(record.amount)?),
+            Adjustment::Unadjusted,
+            ProviderId::Tdx,
+            batch_id.clone(),
+        )?
+        .with_source_at(source_at)?;
+        normalized.push(bar);
+    }
+    Ok(DataBatch::strict(normalized, provenance))
 }
 
 pub(crate) trait BlockingTdxQuery {
@@ -458,7 +640,7 @@ fn historical_bars_with(
     query: &impl BlockingTdxQuery,
     source: &str,
     request: &BarsRequest,
-) -> Result<DataBatch<SecurityBar>, TdxError> {
+) -> Result<DataBatch<Bar>, TdxError> {
     reject_unsupported_bar_range(request)?;
     let records = query.security_bars(
         category(request.interval())?,
@@ -468,14 +650,14 @@ fn historical_bars_with(
         request.limit(),
         0,
     )?;
-    strict_bars(source, records)
+    normalize_bars(source, request, records)
 }
 
 async fn historical_bars_async_with(
     query: &impl AsyncTdxQuery,
     source: &str,
     request: &BarsRequest,
-) -> Result<DataBatch<SecurityBar>, TdxError> {
+) -> Result<DataBatch<Bar>, TdxError> {
     reject_unsupported_bar_range(request)?;
     let records = query
         .security_bars(
@@ -487,7 +669,7 @@ async fn historical_bars_async_with(
             0,
         )
         .await?;
-    strict_bars(source, records)
+    normalize_bars(source, request, records)
 }
 
 async fn realtime_quotes_async_with(
@@ -507,7 +689,18 @@ async fn trades_async_with(
     query: &impl AsyncTdxQuery,
     request: &TradesRequest,
 ) -> Result<DataBatch<Trade>, TdxError> {
+    trades_async_with_session(query, request, ensure_current_session).await
+}
+
+async fn trades_async_with_session(
+    query: &impl AsyncTdxQuery,
+    request: &TradesRequest,
+    session_check: impl FnOnce(&str) -> Result<(), TdxError>,
+) -> Result<DataBatch<Trade>, TdxError> {
     let historical_date = request.date().map(tdx_trade_date).transpose()?;
+    if historical_date.is_none() {
+        session_check("trades")?;
+    }
     let request_market = market(request.instrument())?;
     let page_size = if historical_date.is_some() {
         HISTORICAL_TRADE_PAGE_SIZE
@@ -590,6 +783,15 @@ fn minute_data_with(
     source: &str,
     request: &MinuteDataRequest,
 ) -> Result<DataBatch<MinutePoint>, TdxError> {
+    minute_data_with_session(query, source, request, ensure_current_session)
+}
+
+fn minute_data_with_session(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &MinuteDataRequest,
+    session_check: impl FnOnce(&str) -> Result<(), TdxError>,
+) -> Result<DataBatch<MinutePoint>, TdxError> {
     let (date, records) = match request.date() {
         Some(date) => (
             date.to_owned(),
@@ -600,6 +802,7 @@ fn minute_data_with(
             )?,
         ),
         None => {
+            session_check("minute data")?;
             let compact = crate::net::utils::today_yyyymmdd();
             (
                 display_date(compact)?,
@@ -616,6 +819,22 @@ fn trades_with(
     current_source: &str,
     history_source: &str,
     request: &TradesRequest,
+) -> Result<DataBatch<Trade>, TdxError> {
+    trades_with_session(
+        query,
+        current_source,
+        history_source,
+        request,
+        ensure_current_session,
+    )
+}
+
+fn trades_with_session(
+    query: &impl BlockingTdxQuery,
+    current_source: &str,
+    history_source: &str,
+    request: &TradesRequest,
+    session_check: impl FnOnce(&str) -> Result<(), TdxError>,
 ) -> Result<DataBatch<Trade>, TdxError> {
     let request_market = market(request.instrument())?;
     match request.date() {
@@ -636,14 +855,22 @@ fn trades_with(
                 },
             )
         }
-        None => paginate_trades(
-            current_source,
-            request,
-            CURRENT_TRADE_PAGE_SIZE,
-            |start, count| {
-                query.transaction_data(request_market, request.instrument().code(), start, count)
-            },
-        ),
+        None => {
+            session_check("trades")?;
+            paginate_trades(
+                current_source,
+                request,
+                CURRENT_TRADE_PAGE_SIZE,
+                |start, count| {
+                    query.transaction_data(
+                        request_market,
+                        request.instrument().code(),
+                        start,
+                        count,
+                    )
+                },
+            )
+        }
     }
 }
 
@@ -1229,7 +1456,7 @@ impl SecurityMetadataProvider for crate::TdxSmartClient {
 }
 
 impl HistoricalBars for TdxHqClient {
-    type Bar = SecurityBar;
+    type Bar = Bar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
         historical_bars_with(self, "tdx", request)
@@ -1459,7 +1686,7 @@ impl OrderBooks for crate::TdxSmartClient {
 }
 
 impl HistoricalBars for crate::TdxSmartClient {
-    type Bar = SecurityBar;
+    type Bar = Bar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
         historical_bars_with(self, "tdx-smart", request)
@@ -1497,7 +1724,7 @@ impl Trades for crate::TdxSmartClient {
 }
 
 impl HistoricalBars for crate::TdxDirectClient {
-    type Bar = SecurityBar;
+    type Bar = Bar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
         historical_bars_with(self, "tdx-direct", request)
@@ -1524,7 +1751,7 @@ impl Trades for crate::TdxDirectClient {
 }
 
 impl AsyncHistoricalBars for crate::AsyncTdxHqClient {
-    type Bar = SecurityBar;
+    type Bar = Bar;
     type Error = TdxError;
     async fn historical_bars_async(
         &self,

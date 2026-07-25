@@ -96,10 +96,11 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
     let mut result = Vec::with_capacity(count);
     let mut pre_diff_base: i64 = 0;
 
-    for _ in 0..count {
+    for row_index in 0..count {
         // Bounds check: datetime(4) + 4*price(var) + vol(4) + amount(4) = min 16
         if pos + 16 > body.len() {
-            break;
+            return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH
+                .err(format!("security bar row {row_index} is truncated")));
         }
 
         let mut bar = SecurityBar {
@@ -120,10 +121,11 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
         // 日期时间
         let (year, month, day, hour, minute, new_pos) = get_datetime(category, body, pos);
         // 校验日期合法性 — 服务器可能返回损坏数据或无效代码的垃圾数据
-        // 无效日期时截断返回已有结果，而非报错
         if year < 1980 || year > max_valid_year() || month < 1 || month > 12 || day < 1 || day > 31
         {
-            break;
+            return Err(ErrorCode::INVALID_DATE.err(format!(
+                "security bar row {row_index} has invalid date {year:04}-{month:02}-{day:02}"
+            )));
         }
         bar.year = year;
         bar.month = month;
@@ -191,10 +193,11 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
     let mut result = Vec::with_capacity(count);
     let mut pre_diff_base: i64 = 0;
 
-    for _ in 0..count {
+    for row_index in 0..count {
         // datetime(4) + 4*price(var) + vol(4) + amount(4) + up_count(2) + down_count(2) = min 24
         if pos + 24 > body.len() {
-            break;
+            return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH
+                .err(format!("index bar row {row_index} is truncated")));
         }
         let mut bar = IndexBar {
             open: 0.0,
@@ -216,10 +219,11 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
         // 日期时间
         let (year, month, day, hour, minute, new_pos) = get_datetime(category, body, pos);
         // 校验日期合法性 — 服务器可能返回损坏数据或无效代码的垃圾数据
-        // 无效日期时截断返回已有结果，而非报错
         if year < 1980 || year > max_valid_year() || month < 1 || month > 12 || day < 1 || day > 31
         {
-            break;
+            return Err(ErrorCode::INVALID_DATE.err(format!(
+                "index bar row {row_index} has invalid date {year:04}-{month:02}-{day:02}"
+            )));
         }
         bar.year = year;
         bar.month = month;

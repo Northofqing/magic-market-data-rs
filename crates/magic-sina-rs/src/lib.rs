@@ -8,6 +8,7 @@
 mod bars;
 mod financials;
 mod minute;
+mod news;
 mod options;
 
 use encoding_rs::GB18030;
@@ -45,12 +46,60 @@ pub enum SinaError {
     Core(#[from] magic_market_core::CoreError),
 }
 
+/// One bounded HTTP document returned with the metadata needed by strict
+/// presentation-page adapters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentResponse {
+    status: u16,
+    content_type: String,
+    body: Vec<u8>,
+    observed_unix_seconds: u64,
+}
+
+impl DocumentResponse {
+    pub fn new(
+        status: u16,
+        content_type: impl Into<String>,
+        body: Vec<u8>,
+        observed_unix_seconds: u64,
+    ) -> Self {
+        Self {
+            status,
+            content_type: content_type.into(),
+            body,
+            observed_unix_seconds,
+        }
+    }
+
+    pub fn status(&self) -> u16 {
+        self.status
+    }
+
+    pub fn content_type(&self) -> &str {
+        &self.content_type
+    }
+
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+
+    pub fn observed_unix_seconds(&self) -> u64 {
+        self.observed_unix_seconds
+    }
+}
+
 /// Bounded byte transport used by the adapter and deterministic fixtures.
 pub trait SnapshotTransport: Send + Sync {
     fn get(&self, url: &str) -> Result<Vec<u8>, SinaError>;
 
     fn get_with_referer(&self, url: &str, _referer: &str) -> Result<Vec<u8>, SinaError> {
         self.get(url)
+    }
+
+    fn get_document(&self, _url: &str) -> Result<DocumentResponse, SinaError> {
+        Err(SinaError::Unsupported(
+            "transport does not expose HTTP document metadata".into(),
+        ))
     }
 }
 
@@ -76,7 +125,7 @@ impl HttpsTransport {
         })
     }
 
-    fn request(&self, url: &str, referer: &str) -> Result<Vec<u8>, SinaError> {
+    fn request_document(&self, url: &str, referer: &str) -> Result<DocumentResponse, SinaError> {
         if !url.starts_with("https://") {
             return Err(SinaError::InvalidRequest(
                 "Sina endpoint must use HTTPS".into(),
@@ -100,6 +149,17 @@ impl HttpsTransport {
                 response.status()
             )));
         }
+        let status = response.status();
+        let content_type = response
+            .header("Content-Type")
+            .unwrap_or_default()
+            .to_owned();
+        let observed_unix_seconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| {
+                SinaError::Protocol(format!("system clock precedes UNIX epoch: {error}"))
+            })?
+            .as_secs();
         let mut body = Vec::new();
         response
             .into_reader()
@@ -111,7 +171,16 @@ impl HttpsTransport {
                 "response exceeds {MAX_RESPONSE_BYTES} bytes"
             )));
         }
-        Ok(body)
+        Ok(DocumentResponse::new(
+            status,
+            content_type,
+            body,
+            observed_unix_seconds,
+        ))
+    }
+
+    fn request(&self, url: &str, referer: &str) -> Result<Vec<u8>, SinaError> {
+        Ok(self.request_document(url, referer)?.body)
     }
 }
 
@@ -122,6 +191,10 @@ impl SnapshotTransport for HttpsTransport {
 
     fn get_with_referer(&self, url: &str, referer: &str) -> Result<Vec<u8>, SinaError> {
         self.request(url, referer)
+    }
+
+    fn get_document(&self, url: &str) -> Result<DocumentResponse, SinaError> {
+        self.request_document(url, "https://finance.sina.com.cn/")
     }
 }
 

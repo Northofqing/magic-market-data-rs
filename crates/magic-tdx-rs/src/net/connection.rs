@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
+use std::time::Duration;
 
 use crate::error::{Result, TdxError};
 
@@ -9,14 +10,23 @@ pub struct TcpConnection {
 
 impl TcpConnection {
     pub fn connect(ip: &str, port: u16, timeout_secs: f64) -> Result<Self> {
+        if !timeout_secs.is_finite() || timeout_secs <= 0.0 {
+            return Err(TdxError::Connection(
+                "timeout must be a positive finite number of seconds".into(),
+            ));
+        }
         let addr = format!("{}:{}", ip, port);
-        let stream = TcpStream::connect(&addr)
+        let socket_addr = addr.parse::<SocketAddr>().map_err(|error| {
+            TdxError::Connection(format!("invalid TDX server address {addr}: {error}"))
+        })?;
+        let timeout = Duration::from_secs_f64(timeout_secs);
+        let stream = TcpStream::connect_timeout(&socket_addr, timeout)
             .map_err(|e| TdxError::Connection(format!("Failed to connect to {}: {}", addr, e)))?;
         stream
-            .set_read_timeout(Some(std::time::Duration::from_secs_f64(timeout_secs)))
+            .set_read_timeout(Some(timeout))
             .map_err(|e| TdxError::Connection(format!("set_read_timeout: {}", e)))?;
         stream
-            .set_write_timeout(Some(std::time::Duration::from_secs_f64(timeout_secs)))
+            .set_write_timeout(Some(timeout))
             .map_err(|e| TdxError::Connection(format!("set_write_timeout: {}", e)))?;
         Ok(Self { stream })
     }

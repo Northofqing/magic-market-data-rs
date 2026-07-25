@@ -207,13 +207,27 @@ impl BatchContext {
                 "Eastmoney response contains no usable records".into(),
             ));
         }
+        self.finish_with_issues(records, Vec::new())
+    }
+
+    /// Finishes a source-counted family that can prove an empty response and
+    /// can explicitly report a caller-truncated page.
+    pub(crate) fn finish_with_issues<T>(
+        &self,
+        records: Vec<T>,
+        issues: Vec<String>,
+    ) -> Result<DataBatch<T>, EastmoneyError> {
         let provenance = Provenance::new(SOURCE_NAME, self.observed_at.clone())?
             .with_batch_id(self.batch_id.clone())?;
         let provenance = match &self.source_at {
             Some(source_at) => provenance.with_source_at(source_at.clone())?,
             None => provenance,
         };
-        Ok(DataBatch::strict(records, provenance))
+        if issues.is_empty() {
+            Ok(DataBatch::strict(records, provenance))
+        } else {
+            Ok(DataBatch::best_effort(records, provenance, issues)?)
+        }
     }
 }
 

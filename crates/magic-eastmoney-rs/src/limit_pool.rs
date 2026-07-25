@@ -7,6 +7,7 @@ use magic_market_core::{
     IsoDate, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools, PositiveU32, Price,
 };
 use serde_json::Value;
+use std::collections::HashSet;
 
 const BASE: &str = "https://push2ex.eastmoney.com";
 const TOKEN: &str = "7eea3edcaed734bea9cbfc24409ed989";
@@ -59,22 +60,64 @@ fn parse_limit_pool(
             root.get("rc").unwrap_or(&Value::Null)
         )));
     }
+    let source_total = root
+        .pointer("/data/tc")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            EastmoneyError::Protocol(
+                "limit-pool source total data.tc must be a non-negative integer".into(),
+            )
+        })
+        .and_then(|value| {
+            usize::try_from(value).map_err(|_| {
+                EastmoneyError::Protocol("limit-pool source total data.tc exceeds usize".into())
+            })
+        })?;
     let rows: &[Value] = match root.pointer("/data/pool") {
         Some(Value::Array(rows)) => rows,
-        None | Some(Value::Null) if root.get("data").is_none_or(Value::is_null) => &[],
         _ => {
             return Err(EastmoneyError::Protocol(
                 "limit-pool data.pool is not an array".into(),
             ))
         }
     };
+    if source_total < rows.len() {
+        return Err(EastmoneyError::Protocol(format!(
+            "limit-pool source total {source_total} is smaller than returned rows {}",
+            rows.len()
+        )));
+    }
     let source_date = parse_qdate(&root, request.trading_date())?;
     let context = BatchContext::new("limit-pool", Some(source_date.as_str()))?;
     let records = rows
         .iter()
         .map(|row| map_entry(row, request, &source_date, &context))
         .collect::<Result<Vec<_>, _>>()?;
-    context.finish(records)
+    let mut identities = HashSet::with_capacity(records.len());
+    for record in &records {
+        let identity = (
+            record.instrument.exchange(),
+            record.instrument.code().to_owned(),
+            record.instrument.asset_class(),
+        );
+        if !identities.insert(identity) {
+            return Err(EastmoneyError::Protocol(format!(
+                "limit-pool contains duplicate source instrument {:?}:{}",
+                record.instrument.exchange(),
+                record.instrument.code()
+            )));
+        }
+    }
+    let issues = (source_total > records.len())
+        .then(|| {
+            format!(
+                "limit-pool caller page is incomplete: source_total={source_total} returned_rows={}",
+                records.len()
+            )
+        })
+        .into_iter()
+        .collect();
+    context.finish_with_issues(records, issues)
 }
 
 fn parse_qdate(root: &Value, expected: &IsoDate) -> Result<IsoDate, EastmoneyError> {

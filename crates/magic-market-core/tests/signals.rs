@@ -1,8 +1,9 @@
 use magic_market_core::{
-    AssetClass, BoardCategory, BoardMembership, ConceptHit, DragonTigerEntry, DragonTigerSeat,
-    DragonTigerSide, Exchange, FiniteNumber, InstrumentId, InstrumentSignalRequest, IsoDate,
-    MarketRankingEntry, MarketRankingKind, Money, NonEmptyText, PopularityRank, PositiveU32,
-    ProviderId, SourceEvidence, SourcedRecord, StrongStockReason,
+    AssetClass, BoardCategory, BoardMembership, ConceptHit, DragonTigerDisclosure,
+    DragonTigerEntry, DragonTigerSeat, DragonTigerSide, Exchange, FiniteNumber, InstrumentId,
+    InstrumentSignalRequest, IsoDate, MarketDragonTigerRequest, MarketRankingEntry,
+    MarketRankingKind, Money, NonEmptyText, PopularityRank, PositiveU32, ProviderId,
+    SourceEvidence, SourcedRecord, StrongStockReason,
 };
 
 fn instrument() -> InstrumentId {
@@ -211,4 +212,81 @@ fn signal_request_round_trip_preserves_optional_trading_date() {
         request
     );
     assert!(InstrumentSignalRequest::new(instrument(), PositiveU32::new(10_001).unwrap()).is_err());
+}
+
+fn disclosure_entry() -> DragonTigerEntry {
+    DragonTigerEntry::new(
+        NonEmptyText::new("600396:2026-07-23:1001").unwrap(),
+        instrument(),
+        IsoDate::new("2026-07-23").unwrap(),
+        Some(NonEmptyText::new("日涨幅偏离值达到7%").unwrap()),
+        Some(Money::new(100.0).unwrap()),
+        Some(Money::new(40.0).unwrap()),
+        Some(Money::new(60.0).unwrap()),
+        None,
+        dated_evidence(ProviderId::Eastmoney, "market-lhb"),
+    )
+    .unwrap()
+}
+
+fn disclosure_seats(side: DragonTigerSide, count: u32) -> Vec<DragonTigerSeat> {
+    (1..=count)
+        .map(|rank| {
+            let amount = Money::new(f64::from(rank) * 10.0).unwrap();
+            let (buy, sell) = match side {
+                DragonTigerSide::Buy => (Some(amount), None),
+                DragonTigerSide::Sell => (None, Some(amount)),
+            };
+            DragonTigerSeat::new(
+                NonEmptyText::new("600396:2026-07-23:1001").unwrap(),
+                instrument(),
+                IsoDate::new("2026-07-23").unwrap(),
+                side,
+                PositiveU32::new(rank).unwrap(),
+                NonEmptyText::new(format!("seat-{side:?}-{rank}")).unwrap(),
+                amount,
+                buy,
+                sell,
+                None,
+                dated_evidence(ProviderId::Eastmoney, "market-lhb"),
+            )
+            .unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn market_dragon_tiger_disclosure_requires_exact_buy_five_sell_five() {
+    let request = MarketDragonTigerRequest::new(
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(5).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(request.trading_date().as_str(), "2026-07-23");
+    assert_eq!(request.limit().get(), 5);
+    assert!(MarketDragonTigerRequest::new(
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(101).unwrap()
+    )
+    .is_err());
+
+    let mut complete = disclosure_seats(DragonTigerSide::Buy, 5);
+    complete.extend(disclosure_seats(DragonTigerSide::Sell, 5));
+    let disclosure = DragonTigerDisclosure::new(disclosure_entry(), complete.clone()).unwrap();
+    assert_eq!(
+        disclosure.entry().entry_id().as_str(),
+        "600396:2026-07-23:1001"
+    );
+    assert_eq!(disclosure.seats().len(), 10);
+    assert_eq!(disclosure.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(disclosure.evidence_batch_id(), "market-lhb");
+
+    let mut mismatched = complete.clone();
+    let mut mismatched_seat = serde_json::to_value(&mismatched[0]).unwrap();
+    mismatched_seat["evidence"]["observed_at"] = serde_json::json!("different-observation");
+    mismatched[0] = serde_json::from_value(mismatched_seat).unwrap();
+    assert!(DragonTigerDisclosure::new(disclosure_entry(), mismatched).is_err());
+
+    complete.pop();
+    assert!(DragonTigerDisclosure::new(disclosure_entry(), complete).is_err());
 }

@@ -4,14 +4,16 @@ use magic_market_core::{
     DividendPlans, DragonTigerData, Exchange, FlowInterval, FlowScope, FundFlowRequest,
     FundFlowSeries, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
     InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents,
-    MarginData, NewsProvider, PopularityData, PositiveU32, ProbeAdmissionPolicy, ProbeStatus,
-    ProviderId, ReportScope, ResearchReports, ResearchRequest, SourceEvidence,
+    MarginData, MarketDragonTigerData, MarketDragonTigerRequest, NewsProvider, PopularityData,
+    PositiveU32, ProbeAdmissionPolicy, ProbeStatus, ProviderId, ReportScope, ResearchReports,
+    ResearchRequest, SourceEvidence,
 };
 use std::error::Error;
 use std::fmt::Debug;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let pool_date = IsoDate::new(required_env("MAGIC_EASTMONEY_POOL_DATE")?)?;
+    let dragon_tiger_date = IsoDate::new(required_env("MAGIC_EASTMONEY_DRAGON_TIGER_DATE")?)?;
     let client = EastmoneyClient::new()?;
     let mut failures = Vec::new();
     let primary = instrument(Exchange::Shanghai, env("MAGIC_EASTMONEY_CODE", "600396"))?;
@@ -139,6 +141,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                 record.side(),
                 record.rank().get(),
                 record.seat_name()
+            )
+        },
+        &mut failures,
+    );
+    probe_batch(
+        "dragon_tiger.market",
+        client.market_dragon_tiger(&MarketDragonTigerRequest::new(dragon_tiger_date, small)?),
+        &source_policy,
+        |record| record.entry().evidence(),
+        |record| {
+            format!(
+                "{}:seats={}",
+                record.entry().entry_id(),
+                record.seats().len()
             )
         },
         &mut failures,

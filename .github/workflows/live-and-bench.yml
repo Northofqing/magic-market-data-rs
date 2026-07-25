@@ -57,6 +57,7 @@ jobs:
         if: ${{ matrix.provider == 'eastmoney' }}
         env:
           MAGIC_EASTMONEY_POOL_DATE: ${{ inputs.eastmoney_pool_date }}
+          MAGIC_EASTMONEY_DRAGON_TIGER_DATE: ${{ inputs.eastmoney_pool_date }}
         run: |
           set -o pipefail
           cargo run -p magic-eastmoney-rs --example live_probe --release --locked |

@@ -17,7 +17,7 @@ sessions, credentials, portfolios, or order data.
 | Instrument and industry reports | `ResearchReports` | `reportapi.eastmoney.com` | title, institution, author, rating, industry, publication time, EPS forecasts, PDF URL |
 | Instrument fund flow | `FundFlowSeries` | `push2.eastmoney.com`, `push2his.eastmoney.com` | minute and daily parsers/mapping implemented, but `fund_flow_series=false` until a successful live admission probe |
 | Board fund flow | `BoardFlows` | `push2.eastmoney.com` | industry/concept/region; 1/5/10-day ranking, return, main flow, daily tiers, leader when supplied |
-| Dragon-tiger list | `DragonTigerData` | `datacenter-web.eastmoney.com` | entries plus one atomic buy-five/sell-five seat group, amounts, reason, turnover and independent side ranks; seat limit must be at least 10 |
+| Dragon-tiger list | `DragonTigerData`, `MarketDragonTigerData` | `datacenter-web.eastmoney.com` | per-instrument entries plus explicit-date whole-A-share discovery; source `TRADE_ID` keeps same-stock reasons distinct and binds each entry to one atomic buy-five/sell-five group |
 | Margin | `MarginData` | `datacenter-web.eastmoney.com` | financing and securities-lending balances, buys, repayments and quantities |
 | Block trades | `BlockTrades` | `datacenter-web.eastmoney.com` | price, close, premium, volume, amount, buyer and seller |
 | Holder counts | `HolderCounts` | `datacenter-web.eastmoney.com` | holders, change, ratio and average free shares |
@@ -139,7 +139,13 @@ MAGIC_EASTMONEY_EVENT_CODE=002475
 MAGIC_EASTMONEY_REPORT_CODE=688017
 MAGIC_EASTMONEY_INDUSTRY=*
 MAGIC_EASTMONEY_POOL_DATE=2026-07-23
+MAGIC_EASTMONEY_DRAGON_TIGER_DATE=2026-07-23
 ```
+
+The two source-session dates are required by the full live probe. For an
+isolated whole-market dragon-tiger check, set
+`MAGIC_EASTMONEY_DRAGON_TIGER_LIMIT` (default `5`, maximum `100`) and run the
+`market_dragon_tiger_probe` example.
 
 The load probe is deliberately serial. It rejects concurrency other than one
 and pacing below one second, prints every returned record, and reports success

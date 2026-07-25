@@ -5,9 +5,7 @@ use magic_market_core::{
 use magic_tdx_rs::{TdxDirectClient, TdxHqClient, TdxSmartClient};
 #[test]
 fn tdx_client_implements_core_bars_contract() {
-    fn accepts<
-        P: HistoricalBars<Bar = magic_tdx_rs::SecurityBar, Error = magic_tdx_rs::TdxError>,
-    >(
+    fn accepts<P: HistoricalBars<Bar = magic_market_core::Bar, Error = magic_tdx_rs::TdxError>>(
         _: &P,
     ) {
     }
@@ -38,7 +36,7 @@ fn tdx_client_implements_core_bars_contract() {
 #[test]
 fn async_tdx_client_implements_core_contracts() {
     fn accepts_bars<
-        P: AsyncHistoricalBars<Bar = magic_tdx_rs::SecurityBar, Error = magic_tdx_rs::TdxError>,
+        P: AsyncHistoricalBars<Bar = magic_market_core::Bar, Error = magic_tdx_rs::TdxError>,
     >(
         _: &P,
     ) {

@@ -86,8 +86,12 @@ fn test_security_bars_truncated() {
     // count=1 but only 5 bytes (need at least 16)
     let mut data = vec![0x01, 0x00];
     data.extend_from_slice(&[0u8; 5]);
-    let result = parse_security_bars(&data, 4).unwrap();
-    assert!(result.is_empty());
+    let error = parse_security_bars(&data, 4).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains("row 0"));
 }
 
 #[test]
@@ -121,8 +125,12 @@ fn test_index_bars_zero_count() {
 fn test_index_bars_truncated() {
     let mut data = vec![0x01, 0x00];
     data.extend_from_slice(&[0u8; 10]);
-    let result = parse_index_bars(&data, 4).unwrap();
-    assert!(result.is_empty());
+    let error = parse_index_bars(&data, 4).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains("row 0"));
 }
 
 // --- parse_minute_time_data ---

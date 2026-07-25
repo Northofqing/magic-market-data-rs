@@ -1,3 +1,4 @@
+use magic_tdx_rs::error_codes::ErrorCode;
 use magic_tdx_rs::protocol::adjuster::{
     adjust_index_bars, adjust_security_bars, calc_fq_factors, FqType,
 };
@@ -13,7 +14,6 @@ use magic_tdx_rs::protocol::parsers::{
 use magic_tdx_rs::protocol::types::{
     get_security_coefficient, get_security_type, IndexBar, SecurityBar, XdXrInfo,
 };
-
 fn bar(year: u32, month: u32, day: u32, close: f64) -> SecurityBar {
     SecurityBar {
         open: close,
@@ -205,6 +205,74 @@ fn bar_parsers_decode_daily_and_intraday_records_with_explicit_units() {
     assert_eq!(parsed[0].datetime, "2026-07-23");
     assert_eq!(parsed[0].up_count, 3);
     assert_eq!(parsed[0].down_count, 4);
+}
+
+#[test]
+fn security_bar_parser_rejects_a_declared_row_missing_from_the_payload() {
+    let mut packet = vec![2, 0];
+    packet.extend_from_slice(&20260723u32.to_le_bytes());
+    packet.extend_from_slice(&[10, 1, 2, 0]);
+    packet.extend_from_slice(&100u32.to_le_bytes());
+    packet.extend_from_slice(&1_000u32.to_le_bytes());
+
+    let error = parse_security_bars(&packet, 4).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains("row 1"));
+}
+
+#[test]
+fn security_bar_parser_rejects_an_invalid_later_row_date() {
+    let mut packet = vec![2, 0];
+    for date in [20260723u32, 20261301u32] {
+        packet.extend_from_slice(&date.to_le_bytes());
+        packet.extend_from_slice(&[10, 1, 2, 0]);
+        packet.extend_from_slice(&100u32.to_le_bytes());
+        packet.extend_from_slice(&1_000u32.to_le_bytes());
+    }
+
+    let error = parse_security_bars(&packet, 4).unwrap_err();
+    assert_eq!(error.error_code(), Some(ErrorCode::INVALID_DATE));
+    assert!(error.to_string().contains("row 1"));
+}
+
+#[test]
+fn index_bar_parser_rejects_a_declared_row_missing_from_the_payload() {
+    let mut packet = vec![2, 0];
+    packet.extend_from_slice(&20260723u32.to_le_bytes());
+    packet.extend_from_slice(&[10, 1, 2, 0]);
+    packet.extend_from_slice(&100u32.to_le_bytes());
+    packet.extend_from_slice(&1_000u32.to_le_bytes());
+    packet.extend_from_slice(&3u16.to_le_bytes());
+    packet.extend_from_slice(&4u16.to_le_bytes());
+    packet.extend_from_slice(&[0; 4]);
+
+    let error = parse_index_bars(&packet, 4).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains("row 1"));
+}
+
+#[test]
+fn index_bar_parser_rejects_an_invalid_later_row_date() {
+    let mut packet = vec![2, 0];
+    for date in [20260723u32, 20261301u32] {
+        packet.extend_from_slice(&date.to_le_bytes());
+        packet.extend_from_slice(&[10, 1, 2, 0]);
+        packet.extend_from_slice(&100u32.to_le_bytes());
+        packet.extend_from_slice(&1_000u32.to_le_bytes());
+        packet.extend_from_slice(&3u16.to_le_bytes());
+        packet.extend_from_slice(&4u16.to_le_bytes());
+    }
+    packet.extend_from_slice(&[0; 4]);
+
+    let error = parse_index_bars(&packet, 4).unwrap_err();
+    assert_eq!(error.error_code(), Some(ErrorCode::INVALID_DATE));
+    assert!(error.to_string().contains("row 1"));
 }
 
 #[test]

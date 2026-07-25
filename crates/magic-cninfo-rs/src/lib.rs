@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Bounded read-only adapter for CNInfo announcements and investor interaction.
 
+mod market_announcements;
 mod transport;
 
 pub use transport::{CninfoTransport, HttpMethod, HttpRequest, HttpResponse};

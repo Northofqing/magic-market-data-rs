@@ -1,7 +1,9 @@
 use super::*;
 use crate::transport::{read_http_response, HttpsTransport};
 use std::collections::VecDeque;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
+use std::net::TcpListener;
+use std::thread;
 
 #[derive(Clone)]
 struct FixtureTransport {
@@ -629,6 +631,52 @@ fn bounded_https_reader_and_transport_constructor_fail_explicitly() {
         Err(ThsError::InvalidRequest(_))
     ));
     HttpsTransport::new(Duration::from_millis(1)).unwrap();
+}
+
+#[test]
+fn concrete_https_transport_preserves_success_status_and_transport_failures() {
+    fn serve_once(status: &'static str, body: &'static str) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        (format!("http://{address}/fixture"), handle)
+    }
+
+    let transport = HttpsTransport::new(Duration::from_secs(1)).unwrap();
+    for (status_line, expected_status) in [("200 OK", 200), ("403 Forbidden", 403)] {
+        let (url, server) = serve_once(status_line, "{}");
+        let response = transport
+            .execute(&HttpRequest {
+                method: HttpMethod::Get,
+                url: url.clone(),
+                headers: vec![("X-Test".into(), "wire".into())],
+            })
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(response.status, expected_status);
+        assert_eq!(response.final_url, url);
+        assert_eq!(response.content_type.as_deref(), Some("application/json"));
+        assert_eq!(response.body, b"{}");
+    }
+
+    assert!(matches!(
+        transport.execute(&HttpRequest {
+            method: HttpMethod::Get,
+            url: "://".into(),
+            headers: Vec::new(),
+        }),
+        Err(ThsError::Transport(_))
+    ));
 }
 
 #[test]

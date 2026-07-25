@@ -79,7 +79,8 @@ For each normalized record:
 - instrument and interval come only from the validated `BarsRequest`;
 - TDX `adjust=0` maps only to `Adjustment::Unadjusted`;
 - OHLC pass through checked `Price::new`;
-- `SecurityBar.vol` is already in lots and maps unchanged to `Quantity`;
+- `SecurityBar.vol` is source shares and is divided by 100 at the Provider
+  boundary to produce Core `Quantity` in lots;
 - `SecurityBar.amount` is CNY yuan and maps unchanged to `Money`;
 - provider is `ProviderId::Tdx`;
 - record batch ID equals batch provenance batch ID;
@@ -92,12 +93,15 @@ For each normalized record:
 The unit admission probe verifies positive-volume rows with:
 
 ```text
-vwap = amount_yuan / (volume_lots * 100)
+vwap = amount_yuan / volume_shares
 ```
 
 and requires VWAP to lie within the bar low/high range within a documented
-rounding tolerance. The check is evidence only; it never fills or changes a
-record.
+rounding tolerance. This unit was proven by the 2026-07-24 live probe:
+`600396` returned `volume_shares=291,485,664`,
+`amount_yuan=4,508,951,040`, giving `vwap≈15.47` inside
+`low=14.77/high=16.41`. Treating the raw value as lots gives an impossible
+`vwap≈0.1547`. The check is evidence only; it never fills or changes a record.
 
 ## 5. Strict failure policy
 
@@ -174,4 +178,3 @@ documentation checks. Gate D requires:
 - router selection and failover evidence;
 - downstream `monitor --review` and normal `monitor` logs showing the new
   Gateway route rather than the deleted local fallback.
-

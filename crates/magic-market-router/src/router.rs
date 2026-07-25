@@ -7,6 +7,7 @@ use thiserror::Error;
 pub struct AcceptancePolicy {
     require_complete: bool,
     require_source_at: bool,
+    accept_complete_empty: bool,
 }
 
 impl AcceptancePolicy {
@@ -14,6 +15,7 @@ impl AcceptancePolicy {
         Self {
             require_complete: false,
             require_source_at: false,
+            accept_complete_empty: false,
         }
     }
 
@@ -33,6 +35,19 @@ impl AcceptancePolicy {
 
     pub const fn require_source_at(self) -> bool {
         self.require_source_at
+    }
+
+    /// Allows a source contract to select a complete, evidence-bearing empty batch.
+    ///
+    /// This is default-off because most routes use an empty batch as a failover
+    /// signal. Providers opting in must prove their empty semantics separately.
+    pub const fn with_accept_complete_empty(mut self, accepted: bool) -> Self {
+        self.accept_complete_empty = accepted;
+        self
+    }
+
+    pub const fn accept_complete_empty(self) -> bool {
+        self.accept_complete_empty
     }
 }
 
@@ -241,7 +256,7 @@ fn rejected_batch<Record: SourcedRecord>(
     provider_id: ProviderId,
     batch: &DataBatch<Record>,
 ) -> Option<(FailureKind, String)> {
-    if batch.records().is_empty() {
+    if batch.records().is_empty() && !policy.accept_complete_empty() {
         return Some((
             FailureKind::NoData,
             "provider returned an empty successful batch".into(),

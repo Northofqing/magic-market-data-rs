@@ -47,7 +47,7 @@
   `normalize_bars(source, request, Vec<SecurityBar>) ->
   Result<DataBatch<Bar>, TdxError>`.
 - [ ] Add failing tests covering daily and five-minute timestamps, OHLC,
-  unchanged lots/yuan, `Unadjusted`, `ProviderId::Tdx`, latest batch
+  shares-to-lots conversion, unchanged yuan, `Unadjusted`, `ProviderId::Tdx`, latest batch
   `source_at`, and identical record/provenance batch IDs.
 - [ ] Add failing tests for empty/oversized batches, invalid component/time
   identity, duplicate/non-increasing time, NaN/Inf, non-positive prices,
@@ -92,8 +92,9 @@
   provider, source time, fetched time, non-empty batch ID and per-record batch
   equality.
 - [ ] For positive-volume rows, assert
-  `amount / (volume * 100)` lies within low/high plus the documented rounding
-  tolerance; fail non-zero on mismatch.
+  `amount / raw_volume_shares` lies within low/high plus the documented
+  rounding tolerance, and assert normalized lots equal shares divided by 100;
+  fail non-zero on mismatch.
 - [ ] Probe Shanghai, Shenzhen and Beijing daily bars plus a completed
   five-minute interval.
 - [ ] Run `cargo run -p magic-tdx-rs --example live_probe`; expect
@@ -113,4 +114,3 @@
   configured TDX critical paths at least 95%.
 - [ ] Record exact outputs in release evidence; commit only generated,
   repository-tracked evidence required by policy.
-

@@ -1,6 +1,7 @@
 use magic_market_core::{
-    AssetClass, Exchange, InstrumentId, MinuteData, MinuteDataRequest, OrderBooks, RealtimeQuotes,
-    SecurityMetadataProvider, Trades, TradesRequest,
+    AssetClass, BarInterval, BarsRequest, Exchange, HistoricalBars, InstrumentId, MinuteData,
+    MinuteDataRequest, OrderBooks, ProviderId, RealtimeQuotes, SecurityMetadataProvider, Trades,
+    TradesRequest,
 };
 use magic_tdx_rs::{
     net::utils::today_yyyymmdd,
@@ -41,6 +42,7 @@ enum CurrentSession {
     Weekend,
     PreOpen,
     Intraday,
+    Midday,
     Complete,
 }
 
@@ -50,16 +52,27 @@ impl CurrentSession {
             Self::Weekend => "expected_unavailable_weekend",
             Self::PreOpen => "expected_unavailable_before_open",
             Self::Intraday => "available_intraday",
-            Self::Complete => "available_complete_after_close",
+            Self::Midday => "expected_unavailable_midday",
+            Self::Complete => "expected_unavailable_after_close",
         }
+    }
+
+    fn diagnostic_label(self) -> &'static str {
+        match self {
+            Self::Weekend => "diagnostic_unadmitted_weekend",
+            Self::PreOpen => "diagnostic_unadmitted_before_open",
+            Self::Intraday => "admitted_intraday",
+            Self::Midday => "diagnostic_unadmitted_midday",
+            Self::Complete => "diagnostic_unadmitted_after_close",
+        }
+    }
+
+    const fn is_active(self) -> bool {
+        matches!(self, Self::Intraday)
     }
 }
 
-fn is_preopen_trade_time(value: &str) -> bool {
-    value.len() >= 5 && ("09:15".."09:30").contains(&&value[..5])
-}
-
-fn validate_current_trades(
+fn validate_raw_current_trades(
     errors: &mut Vec<String>,
     label: &str,
     times: &[&str],
@@ -73,45 +86,75 @@ fn validate_current_trades(
         ));
         return;
     }
-    match session {
-        CurrentSession::Weekend if actual == 0 => {
-            println!("{label}_status={}", session.label());
-        }
-        CurrentSession::Weekend => errors.push(format!(
-            "{label}: received {actual} records during {}",
-            session.label()
-        )),
-        CurrentSession::PreOpen if actual == 0 => {
-            println!("{label}_status={}", session.label());
-        }
-        CurrentSession::PreOpen if times.iter().all(|time| is_preopen_trade_time(time)) => {
-            println!("{label}_status=available_preopen count={actual}");
-        }
-        CurrentSession::PreOpen => errors.push(format!(
-            "{label}: one or more pre-open records have a time outside 09:15-09:29"
-        )),
-        CurrentSession::Intraday => require_nonempty(errors, label, actual),
-        CurrentSession::Complete => require_count(errors, label, actual, request_limit),
+    if session.is_active() {
+        require_nonempty(errors, label, actual);
+    } else {
+        println!(
+            "{label}_status={} count={actual}",
+            session.diagnostic_label()
+        );
     }
 }
 
-fn record_current_error(
+fn validate_normalized_current_trades(
+    errors: &mut Vec<String>,
+    label: &str,
+    times: &[&str],
+    request_limit: usize,
+    session: CurrentSession,
+) {
+    if !session.is_active() {
+        errors.push(format!(
+            "{label}: normalized provider admitted {} records during {}",
+            times.len(),
+            session.label()
+        ));
+        return;
+    }
+    if times.len() > request_limit {
+        errors.push(format!(
+            "{label}: received {} records for request limit {request_limit}",
+            times.len()
+        ));
+    } else {
+        require_nonempty(errors, label, times.len());
+    }
+}
+
+fn record_raw_current_diagnostic(
     errors: &mut Vec<String>,
     label: &str,
     error: TdxError,
     session: CurrentSession,
 ) {
-    let expected_empty = matches!(
-        &error,
-        TdxError::InvalidData(message) if message == "TDX returned an empty successful response"
+    if session.is_active() {
+        record_error(errors, label, error);
+    } else {
+        println!(
+            "{label}_status={} diagnostic_error={error}",
+            session.diagnostic_label()
+        );
+    }
+}
+
+fn record_normalized_current_error(
+    errors: &mut Vec<String>,
+    label: &str,
+    error: TdxError,
+    session: CurrentSession,
+    family: &str,
+) {
+    let expected_message = format!(
+        "TDX normalized current {family} is unavailable outside an active A-share weekday session"
     );
-    match (session, expected_empty) {
-        (CurrentSession::Weekend | CurrentSession::PreOpen, true) => {
-            println!("{label}_status={} expected_error={error}", session.label());
-        }
-        _ => {
-            record_error(errors, label, error);
-        }
+    let expected_unavailable = matches!(
+        &error,
+        TdxError::InvalidData(message) if message == &expected_message
+    );
+    if !session.is_active() && expected_unavailable {
+        println!("{label}_status={} expected_error={error}", session.label());
+    } else {
+        record_error(errors, label, error);
     }
 }
 
@@ -132,7 +175,8 @@ fn china_clock() -> Result<(u8, u64), String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| format!("system clock is before UNIX epoch: {error}"))?
         .as_secs()
-        .saturating_add(8 * 3600);
+        .checked_add(8 * 3600)
+        .ok_or_else(|| "China-local probe clock overflow".to_string())?;
     let weekday = ((seconds / 86_400 + 4) % 7) as u8;
     Ok((weekday, seconds % 86_400))
 }
@@ -142,10 +186,14 @@ fn current_session(china_weekday: u8, china_day_seconds: u64) -> CurrentSession 
         CurrentSession::Weekend
     } else if china_day_seconds < 9 * 3600 + 30 * 60 {
         CurrentSession::PreOpen
-    } else if china_day_seconds >= 15 * 3600 {
-        CurrentSession::Complete
-    } else {
+    } else if china_day_seconds <= 11 * 3600 + 30 * 60 {
         CurrentSession::Intraday
+    } else if china_day_seconds < 13 * 3600 {
+        CurrentSession::Midday
+    } else if china_day_seconds <= 15 * 3600 {
+        CurrentSession::Intraday
+    } else {
+        CurrentSession::Complete
     }
 }
 
@@ -159,7 +207,7 @@ fn completed_session_date(dates: &[u32], today: u32, session: CurrentSession) ->
 
 fn session_date_is_complete(date: u32, today: u32, session: CurrentSession) -> bool {
     match session {
-        CurrentSession::PreOpen | CurrentSession::Intraday => date < today,
+        CurrentSession::PreOpen | CurrentSession::Intraday | CurrentSession::Midday => date < today,
         CurrentSession::Weekend | CurrentSession::Complete => date <= today,
     }
 }
@@ -182,24 +230,14 @@ fn classify_current_minute(
         ));
     }
     let session = current_session(china_weekday, china_day_seconds);
-    match session {
-        CurrentSession::Weekend if current_count == 0 => Ok(session.label()),
-        CurrentSession::Weekend => Err(format!(
-            "current endpoint returned {current_count} records on a weekend"
-        )),
-        CurrentSession::PreOpen if current_count == 0 => Ok(session.label()),
-        CurrentSession::PreOpen if current_count == 1 => Ok("available_preopen"),
-        CurrentSession::PreOpen => Err(format!(
-            "current endpoint returned {current_count} pre-open records, maximum is 1"
-        )),
-        CurrentSession::Intraday if current_count > 0 => Ok(session.label()),
-        CurrentSession::Intraday => {
-            Err("current endpoint returned no records after the market opened".to_string())
+    if session.is_active() {
+        if current_count > 0 {
+            Ok(session.label())
+        } else {
+            Err("current endpoint returned no records during an active session".to_string())
         }
-        CurrentSession::Complete if current_count == 240 => Ok(session.label()),
-        CurrentSession::Complete => Err(format!(
-            "current endpoint returned {current_count} records after close, expected 240"
-        )),
+    } else {
+        Ok(session.diagnostic_label())
     }
 }
 
@@ -338,6 +376,96 @@ fn probe_minute_data(market: u8, code: &str) -> Result<MinuteProbe, String> {
     ))
 }
 
+fn probe_normalized_bars(
+    errors: &mut Vec<String>,
+    client: &TdxSmartClient,
+    label: &str,
+    instrument: InstrumentId,
+    interval: BarInterval,
+) {
+    let request = match BarsRequest::new(instrument, interval, 1) {
+        Ok(request) => request,
+        Err(error) => {
+            record_error(errors, label, error);
+            return;
+        }
+    };
+    let batch = match client.historical_bars(&request) {
+        Ok(batch) => batch,
+        Err(error) => {
+            record_error(errors, label, error);
+            return;
+        }
+    };
+    require_count(errors, label, batch.records().len(), 1);
+    if batch.provenance().source() != "tdx-smart" {
+        errors.push(format!(
+            "{label}: unexpected provenance source {:?}",
+            batch.provenance().source()
+        ));
+    }
+    if batch.provenance().source_at().is_none() {
+        errors.push(format!("{label}: provenance source_at is missing"));
+    }
+    if batch.provenance().fetched_at().parse::<u64>().is_err() {
+        errors.push(format!(
+            "{label}: provenance fetched_at is not an epoch timestamp"
+        ));
+    }
+    let Some(batch_id) = batch.provenance().batch_id() else {
+        errors.push(format!("{label}: provenance batch_id is missing"));
+        return;
+    };
+    for bar in batch.records() {
+        println!(
+            "{label} provider={:?} source={} source_at={:?} fetched_at={} batch_id={} code={} interval={:?} start={} end={} open={} high={} low={} close={} volume_lots={} amount_yuan={:?} adjustment={:?} record_source_at={:?} record_batch_id={}",
+            bar.provider(),
+            batch.provenance().source(),
+            batch.provenance().source_at(),
+            batch.provenance().fetched_at(),
+            batch_id,
+            bar.instrument().code(),
+            bar.interval(),
+            bar.bar_start(),
+            bar.bar_end(),
+            bar.open().get(),
+            bar.high().get(),
+            bar.low().get(),
+            bar.close().get(),
+            bar.volume().get(),
+            bar.amount().map(|value| value.get()),
+            bar.adjustment(),
+            bar.source_at(),
+            bar.batch_id()
+        );
+        if bar.provider() != ProviderId::Tdx {
+            errors.push(format!("{label}: record provider is not TDX"));
+        }
+        if bar.batch_id() != batch_id {
+            errors.push(format!("{label}: record batch_id differs from provenance"));
+        }
+        if bar.source_at().is_none() {
+            errors.push(format!("{label}: record source_at is missing"));
+        }
+        let volume_lots = bar.volume().get();
+        if volume_lots > 0.0 {
+            let Some(amount_yuan) = bar.amount().map(|value| value.get()) else {
+                errors.push(format!("{label}: positive-volume bar has no amount"));
+                continue;
+            };
+            let vwap = amount_yuan / (volume_lots * 100.0);
+            let tolerance = ((bar.high().get() - bar.low().get()).abs() * 0.02).max(0.02);
+            if vwap < bar.low().get() - tolerance || vwap > bar.high().get() + tolerance {
+                errors.push(format!(
+                    "{label}: volume unit evidence failed; vwap={vwap} low={} high={} tolerance={tolerance}",
+                    bar.low().get(),
+                    bar.high().get()
+                ));
+            }
+        }
+    }
+}
+
 fn main() {
     let mut errors = Vec::new();
     let session = match china_clock() {
@@ -438,6 +566,33 @@ fn main() {
                 }
                 Err(error) => record_error(&mut errors, "beijing_bars", error),
             }
+            for (label, instrument) in [
+                (
+                    "normalized_shanghai_daily",
+                    InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
+                        .expect("valid Shanghai probe instrument"),
+                ),
+                (
+                    "normalized_shenzhen_daily",
+                    InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity)
+                        .expect("valid Shenzhen probe instrument"),
+                ),
+                (
+                    "normalized_beijing_daily",
+                    InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity)
+                        .expect("valid Beijing probe instrument"),
+                ),
+            ] {
+                probe_normalized_bars(&mut errors, &client, label, instrument, BarInterval::Day);
+            }
+            probe_normalized_bars(
+                &mut errors,
+                &client,
+                "normalized_shanghai_five_minute",
+                InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
+                    .expect("valid Shanghai probe instrument"),
+                BarInterval::Minute5,
+            );
             let inner = client.inner();
             println!("full_probe_server={:?}", inner.connected_server());
             for category in 0_u8..=11 {
@@ -633,11 +788,21 @@ fn main() {
                         batch.provenance(),
                         batch.quality()
                     );
-                    require_nonempty(
-                        &mut errors,
-                        "beijing_normalized_minute",
-                        batch.records().len(),
-                    );
+                    if let Some(session) = session {
+                        if session.is_active() {
+                            require_nonempty(
+                                &mut errors,
+                                "beijing_normalized_minute",
+                                batch.records().len(),
+                            );
+                        } else {
+                            errors.push(format!(
+                                "beijing_normalized_minute: normalized provider admitted {} records during {}",
+                                batch.records().len(),
+                                session.label()
+                            ));
+                        }
+                    }
                     for point in batch.records() {
                         println!(
                             "beijing_minute at={} price={} cumulative_quantity={} cumulative_amount={:?} status={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
@@ -653,7 +818,19 @@ fn main() {
                         );
                     }
                 }
-                Err(error) => record_error(&mut errors, "beijing_normalized_minute", error),
+                Err(error) => {
+                    if let Some(session) = session {
+                        record_normalized_current_error(
+                            &mut errors,
+                            "beijing_normalized_minute",
+                            error,
+                            session,
+                            "minute data",
+                        );
+                    } else {
+                        record_error(&mut errors, "beijing_normalized_minute", error);
+                    }
+                }
             }
             match inner.get_transaction_data(1, "600396", 0, 20) {
                 Ok(items) => {
@@ -663,12 +840,18 @@ fn main() {
                             .iter()
                             .map(|item| item.time.as_str())
                             .collect::<Vec<_>>();
-                        validate_current_trades(&mut errors, "transactions", &times, 20, session);
+                        validate_raw_current_trades(
+                            &mut errors,
+                            "transactions",
+                            &times,
+                            20,
+                            session,
+                        );
                     }
                 }
                 Err(error) => {
                     if let Some(session) = session {
-                        record_current_error(&mut errors, "transactions", error, session);
+                        record_raw_current_diagnostic(&mut errors, "transactions", error, session);
                     }
                 }
             }
@@ -712,7 +895,7 @@ fn main() {
                             .iter()
                             .map(|trade| trade.trade_at())
                             .collect::<Vec<_>>();
-                        validate_current_trades(
+                        validate_normalized_current_trades(
                             &mut errors,
                             "normalized_trades_current",
                             &times,
@@ -723,11 +906,12 @@ fn main() {
                 }
                 Err(error) => {
                     if let Some(session) = session {
-                        record_current_error(
+                        record_normalized_current_error(
                             &mut errors,
                             "normalized_trades_current",
                             error,
                             session,
+                            "trades",
                         );
                     }
                 }
@@ -763,7 +947,7 @@ fn main() {
                             .iter()
                             .map(|trade| trade.trade_at())
                             .collect::<Vec<_>>();
-                        validate_current_trades(
+                        validate_normalized_current_trades(
                             &mut errors,
                             "beijing_normalized_trades_current",
                             &times,
@@ -774,11 +958,12 @@ fn main() {
                 }
                 Err(error) => {
                     if let Some(session) = session {
-                        record_current_error(
+                        record_normalized_current_error(
                             &mut errors,
                             "beijing_normalized_trades_current",
                             error,
                             session,
+                            "trades",
                         );
                     }
                 }
@@ -836,7 +1021,7 @@ fn main() {
                             .iter()
                             .map(|trade| trade.trade_at())
                             .collect::<Vec<_>>();
-                        validate_current_trades(
+                        validate_normalized_current_trades(
                             &mut errors,
                             "trade_pagination_current",
                             &times,
@@ -847,11 +1032,12 @@ fn main() {
                 }
                 Err(error) => {
                     if let Some(session) = session {
-                        record_current_error(
+                        record_normalized_current_error(
                             &mut errors,
                             "trade_pagination_current",
                             error,
                             session,
+                            "trades",
                         );
                     }
                 }
@@ -1022,8 +1208,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_current_minute, completed_session_date, record_current_error,
-        session_date_is_complete, validate_current_trades, CurrentSession,
+        classify_current_minute, completed_session_date, record_normalized_current_error,
+        session_date_is_complete, validate_raw_current_trades, CurrentSession,
     };
     use magic_tdx_rs::TdxError;
 
@@ -1031,29 +1217,33 @@ mod tests {
     fn current_minute_is_classified_independently_from_history() {
         assert_eq!(
             classify_current_minute(20260722, 20260723, 4, 30 * 60, 0).unwrap(),
-            "expected_unavailable_before_open"
+            "diagnostic_unadmitted_before_open"
         );
         assert_eq!(
             classify_current_minute(20260722, 20260723, 4, 9 * 3600, 1).unwrap(),
-            "available_preopen"
+            "diagnostic_unadmitted_before_open"
         );
-        assert!(classify_current_minute(20260722, 20260723, 4, 9 * 3600, 2).is_err());
-        assert!(classify_current_minute(20260722, 20260723, 4, 9 * 3600, 240).is_err());
+        assert_eq!(
+            classify_current_minute(20260722, 20260723, 4, 9 * 3600, 240).unwrap(),
+            "diagnostic_unadmitted_before_open"
+        );
         assert!(classify_current_minute(20260722, 20260723, 4, 10 * 3600, 0).is_err());
         assert_eq!(
             classify_current_minute(20260723, 20260723, 4, 12 * 3600, 120).unwrap(),
-            "available_intraday"
+            "diagnostic_unadmitted_midday"
         );
-        assert!(classify_current_minute(20260722, 20260723, 4, 15 * 3600, 239).is_err());
         assert_eq!(
-            classify_current_minute(20260723, 20260723, 4, 15 * 3600, 240).unwrap(),
-            "available_complete_after_close"
+            classify_current_minute(20260723, 20260723, 4, 15 * 3600 + 1, 240).unwrap(),
+            "diagnostic_unadmitted_after_close"
         );
         assert_eq!(
             classify_current_minute(20260725, 20260725, 6, 10 * 3600, 0).unwrap(),
-            "expected_unavailable_weekend"
+            "diagnostic_unadmitted_weekend"
         );
-        assert!(classify_current_minute(20260725, 20260725, 6, 10 * 3600, 1).is_err());
+        assert_eq!(
+            classify_current_minute(20260725, 20260725, 6, 10 * 3600, 1).unwrap(),
+            "diagnostic_unadmitted_weekend"
+        );
         let dates = [20260722, 20260723];
         assert_eq!(
             completed_session_date(&dates, 20260723, CurrentSession::PreOpen),
@@ -1071,9 +1261,9 @@ mod tests {
     }
 
     #[test]
-    fn pre_open_current_contracts_reject_excess_records_and_transport_errors() {
+    fn off_session_raw_packets_are_diagnostic_but_normalized_errors_are_exact() {
         let mut errors = Vec::new();
-        validate_current_trades(
+        validate_raw_current_trades(
             &mut errors,
             "trades",
             &["09:15", "09:29"],
@@ -1081,28 +1271,43 @@ mod tests {
             CurrentSession::PreOpen,
         );
         assert!(errors.is_empty());
-        validate_current_trades(
+        validate_raw_current_trades(
             &mut errors,
             "trades",
             &["09:15", "15:00"],
             20,
             CurrentSession::PreOpen,
         );
-        assert_eq!(errors.len(), 1);
+        assert!(errors.is_empty());
 
         let mut errors = Vec::new();
-        record_current_error(
+        record_normalized_current_error(
             &mut errors,
             "trades",
             TdxError::InvalidData("TDX returned an empty successful response".to_string()),
             CurrentSession::PreOpen,
+            "trades",
+        );
+        assert_eq!(errors.len(), 1);
+
+        let mut errors = Vec::new();
+        record_normalized_current_error(
+            &mut errors,
+            "trades",
+            TdxError::InvalidData(
+                "TDX normalized current trades is unavailable outside an active A-share weekday session"
+                    .to_string(),
+            ),
+            CurrentSession::PreOpen,
+            "trades",
         );
         assert!(errors.is_empty());
-        record_current_error(
+        record_normalized_current_error(
             &mut errors,
             "trades",
             TdxError::Connection("network down".to_string()),
             CurrentSession::PreOpen,
+            "trades",
         );
         assert_eq!(errors.len(), 1);
     }

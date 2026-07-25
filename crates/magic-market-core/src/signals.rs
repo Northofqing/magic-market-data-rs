@@ -3,6 +3,7 @@ use crate::{
     RatioUnit, SourceEvidence, SourcedRecord,
 };
 use serde::{de, Deserialize, Deserializer, Serialize};
+use std::collections::HashSet;
 
 /// Classification supplied for a board membership.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,7 +46,7 @@ pub struct DragonTigerEntry {
     evidence: SourceEvidence,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DragonTigerSide {
     Buy,
     Sell,
@@ -231,6 +232,86 @@ impl DragonTigerSeat {
 
     pub fn evidence(&self) -> &SourceEvidence {
         &self.evidence
+    }
+}
+
+/// One source entry plus its complete buy-five and sell-five disclosure.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DragonTigerDisclosure {
+    entry: DragonTigerEntry,
+    seats: Vec<DragonTigerSeat>,
+}
+
+impl DragonTigerDisclosure {
+    pub fn new(
+        entry: DragonTigerEntry,
+        seats: Vec<DragonTigerSeat>,
+    ) -> Result<Self, crate::CoreError> {
+        if seats.len() != 10 {
+            return Err(crate::CoreError::InvalidRequest(format!(
+                "dragon-tiger disclosure must contain exactly 10 seats, got {}",
+                seats.len()
+            )));
+        }
+        let mut identities = HashSet::with_capacity(seats.len());
+        for seat in &seats {
+            if seat.entry_id() != entry.entry_id()
+                || seat.instrument() != entry.instrument()
+                || seat.trading_date() != entry.trading_date()
+            {
+                return Err(crate::CoreError::InvalidRequest(
+                    "dragon-tiger disclosure seat identity must match its entry".into(),
+                ));
+            }
+            if seat.evidence().provider() != entry.evidence().provider()
+                || seat.evidence().batch_id() != entry.evidence().batch_id()
+                || seat.evidence().source_at() != entry.evidence().source_at()
+                || seat.evidence().observed_at() != entry.evidence().observed_at()
+            {
+                return Err(crate::CoreError::InvalidRequest(
+                    "dragon-tiger disclosure entry and seats must share source evidence".into(),
+                ));
+            }
+            if !identities.insert((seat.side(), seat.rank().get())) {
+                return Err(crate::CoreError::InvalidRequest(
+                    "dragon-tiger disclosure contains a duplicate side/rank".into(),
+                ));
+            }
+        }
+        for side in [DragonTigerSide::Buy, DragonTigerSide::Sell] {
+            for rank in 1..=5 {
+                if !identities.contains(&(side, rank)) {
+                    return Err(crate::CoreError::InvalidRequest(
+                        "dragon-tiger disclosure requires ranks 1 through 5 on both sides".into(),
+                    ));
+                }
+            }
+        }
+        Ok(Self { entry, seats })
+    }
+
+    pub fn entry(&self) -> &DragonTigerEntry {
+        &self.entry
+    }
+
+    pub fn seats(&self) -> &[DragonTigerSeat] {
+        &self.seats
+    }
+}
+
+#[derive(Deserialize)]
+struct DragonTigerDisclosureWire {
+    entry: DragonTigerEntry,
+    seats: Vec<DragonTigerSeat>,
+}
+
+impl<'de> Deserialize<'de> for DragonTigerDisclosure {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = DragonTigerDisclosureWire::deserialize(deserializer)?;
+        Self::new(wire.entry, wire.seats).map_err(de::Error::custom)
     }
 }
 
@@ -431,6 +512,61 @@ impl_sourced!(
     ConceptHit,
 );
 
+impl SourcedRecord for DragonTigerDisclosure {
+    fn provider_id(&self) -> crate::ProviderId {
+        self.entry.evidence().provider()
+    }
+
+    fn evidence_batch_id(&self) -> &str {
+        self.entry.evidence().batch_id()
+    }
+}
+
+/// Bounded whole-market dragon-tiger request for one trading date.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MarketDragonTigerRequest {
+    trading_date: IsoDate,
+    limit: PositiveU32,
+}
+
+impl MarketDragonTigerRequest {
+    pub fn new(trading_date: IsoDate, limit: PositiveU32) -> Result<Self, crate::CoreError> {
+        if limit.get() > 100 {
+            return Err(crate::CoreError::InvalidRequest(
+                "market dragon-tiger limit must be at most 100".into(),
+            ));
+        }
+        Ok(Self {
+            trading_date,
+            limit,
+        })
+    }
+
+    pub fn trading_date(&self) -> &IsoDate {
+        &self.trading_date
+    }
+
+    pub fn limit(&self) -> PositiveU32 {
+        self.limit
+    }
+}
+
+#[derive(Deserialize)]
+struct MarketDragonTigerRequestWire {
+    trading_date: IsoDate,
+    limit: PositiveU32,
+}
+
+impl<'de> Deserialize<'de> for MarketDragonTigerRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = MarketDragonTigerRequestWire::deserialize(deserializer)?;
+        Self::new(wire.trading_date, wire.limit).map_err(de::Error::custom)
+    }
+}
+
 /// Bounded request for an instrument signal family.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InstrumentSignalRequest {
@@ -528,6 +664,14 @@ pub trait DragonTigerData {
         &self,
         request: &InstrumentSignalRequest,
     ) -> Result<DataBatch<DragonTigerSeat>, Self::Error>;
+}
+
+pub trait MarketDragonTigerData {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn market_dragon_tiger(
+        &self,
+        request: &MarketDragonTigerRequest,
+    ) -> Result<DataBatch<DragonTigerDisclosure>, Self::Error>;
 }
 
 pub trait MarketRankings {

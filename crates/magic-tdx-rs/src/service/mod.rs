@@ -5,13 +5,15 @@ pub mod funds;
 pub mod profile;
 use crate::adapter::{normalize_order_books, order_book_pairs, AsyncTdxQuery, BlockingTdxQuery};
 use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
-use crate::{AsyncTdxHqClient, SecurityBar, SecurityQuote, TdxError, TdxSmartClient};
+#[cfg(test)]
+use crate::SecurityBar;
+use crate::{AsyncTdxHqClient, SecurityQuote, TdxError, TdxSmartClient};
 pub use blocks::BlockService;
 pub use finance::FinanceService;
 pub use funds::FundService;
 use magic_market_core::{
-    AuctionSnapshot, BarsRequest, DataBatch, HistoricalBars, InstrumentId, MoneyFlow, OrderBook,
-    Quote, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, Trades,
+    AuctionSnapshot, Bar, BarsRequest, DataBatch, HistoricalBars, InstrumentId, MoneyFlow,
+    OrderBook, Quote, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, Trades,
     TradesRequest,
 };
 pub use profile::ProfileService;
@@ -284,7 +286,7 @@ impl AsyncTdxService {
         &self.client
     }
     /// Fetches strict historical bars concurrently through the async client.
-    pub async fn bars(&self, request: &BarsRequest) -> Result<DataBatch<SecurityBar>, TdxError> {
+    pub async fn bars(&self, request: &BarsRequest) -> Result<DataBatch<Bar>, TdxError> {
         <AsyncTdxHqClient as magic_market_core::AsyncHistoricalBars>::historical_bars_async(
             &self.client,
             request,
@@ -401,7 +403,7 @@ impl TdxService {
         &self.client
     }
     /// Fetches strict historical bars.
-    pub fn bars(&self, request: &BarsRequest) -> Result<DataBatch<SecurityBar>, TdxError> {
+    pub fn bars(&self, request: &BarsRequest) -> Result<DataBatch<Bar>, TdxError> {
         self.client.historical_bars(request)
     }
     /// Fetches strict realtime quotes.

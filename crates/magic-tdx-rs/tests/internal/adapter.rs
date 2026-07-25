@@ -1,4 +1,5 @@
 use super::*;
+use magic_market_core::Adjustment;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 
@@ -211,7 +212,9 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
 #[test]
 fn blocking_bar_seam_uses_decoded_records_and_exact_request_parameters() {
     let query = ScriptedBarsQuery {
-        response: RefCell::new(Some(Ok(vec![source_bar()]))),
+        response: RefCell::new(Some(Ok((19..=23)
+            .map(|day| source_bar_at(day, 10.0))
+            .collect()))),
         ..Default::default()
     };
     let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 5).unwrap();
@@ -222,7 +225,7 @@ fn blocking_bar_seam_uses_decoded_records_and_exact_request_parameters() {
         *query.calls.borrow(),
         vec![(KLINE_DAILY, 1, "600396".into(), 0, 5, 0)]
     );
-    assert_eq!(batch.records().len(), 1);
+    assert_eq!(batch.records().len(), 5);
     assert_eq!(batch.provenance().source(), "tdx");
     assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
 }
@@ -281,6 +284,23 @@ fn blocking_historical_minute_seam_uses_explicit_source_date() {
 }
 
 #[test]
+fn blocking_current_minute_rejects_before_transport_outside_session() {
+    let query = ScriptedBarsQuery::default();
+    let request = MinuteDataRequest::new(instrument("600396"));
+
+    let result = minute_data_with_session(&query, "tdx", &request, |_| {
+        Err(TdxError::InvalidData("outside session".into()))
+    });
+
+    assert!(matches!(
+        result,
+        Err(TdxError::InvalidData(message)) if message == "outside session"
+    ));
+    assert!(query.minute_calls.borrow().is_empty());
+    assert!(query.history_minute_calls.borrow().is_empty());
+}
+
+#[test]
 fn blocking_trade_seam_uses_historical_query_and_stops_on_short_page() {
     let query = ScriptedBarsQuery {
         history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![
@@ -304,6 +324,23 @@ fn blocking_trade_seam_uses_historical_query_and_stops_on_short_page() {
     assert_eq!(batch.records().len(), 2);
     assert_eq!(batch.records()[0].trade_at(), "2026-07-21 10:00:00");
     assert_eq!(batch.provenance().source(), "tdx-history");
+}
+
+#[test]
+fn blocking_current_trades_reject_before_transport_outside_session() {
+    let query = ScriptedBarsQuery::default();
+    let request = TradesRequest::new(instrument("600519"), 3).unwrap();
+
+    let result = trades_with_session(&query, "tdx-current", "tdx-history", &request, |_| {
+        Err(TdxError::InvalidData("outside session".into()))
+    });
+
+    assert!(matches!(
+        result,
+        Err(TdxError::InvalidData(message)) if message == "outside session"
+    ));
+    assert!(query.transaction_calls.borrow().is_empty());
+    assert!(query.history_transaction_calls.borrow().is_empty());
 }
 
 #[test]
@@ -492,7 +529,9 @@ impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
 #[tokio::test]
 async fn async_bar_seam_uses_decoded_records_and_exact_source_label() {
     let query = ScriptedAsyncBarsQuery {
-        response: RefCell::new(Some(Ok(vec![source_bar()]))),
+        response: RefCell::new(Some(Ok((19..=23)
+            .map(|day| source_bar_at(day, 10.0))
+            .collect()))),
         ..Default::default()
     };
     let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 5).unwrap();
@@ -556,6 +595,24 @@ async fn async_trade_seam_uses_historical_query_and_short_terminal_page() {
     );
     assert_eq!(batch.records().len(), 2);
     assert_eq!(batch.provenance().source(), "tdx-async-history");
+}
+
+#[tokio::test]
+async fn async_current_trades_reject_before_transport_outside_session() {
+    let query = ScriptedAsyncBarsQuery::default();
+    let request = TradesRequest::new(instrument("600519"), 3).unwrap();
+
+    let result = trades_async_with_session(&query, &request, |_| {
+        Err(TdxError::InvalidData("outside session".into()))
+    })
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(TdxError::InvalidData(message)) if message == "outside session"
+    ));
+    assert!(query.transaction_calls.borrow().is_empty());
+    assert!(query.history_transaction_calls.borrow().is_empty());
 }
 
 fn source_quote(code: &str, price: f64) -> SecurityQuote {
@@ -829,33 +886,148 @@ fn maps_every_core_bar_interval_and_accepts_requests_without_ranges() {
 }
 
 #[test]
-fn strict_bar_batches_require_records_and_preserve_source_time() {
-    assert!(ensure_nonempty::<u8>(&[]).is_err());
-    assert!(ensure_nonempty(&[1]).is_ok());
-    assert!(fetched_at().unwrap().parse::<u64>().is_ok());
+fn normalized_daily_bar_preserves_units_and_complete_evidence() {
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 1).unwrap();
+    let batch = normalize_bars("tdx", &request, vec![source_bar()]).unwrap();
+    let record = &batch.records()[0];
+    let batch_id = batch.provenance().batch_id().unwrap();
 
-    let source = SecurityBar {
-        open: 10.0,
-        close: 11.0,
-        high: 12.0,
-        low: 9.0,
+    assert_eq!(batch.records().len(), 1);
+    assert_eq!(batch.provenance().source(), "tdx");
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+    assert_eq!(record.instrument(), request.instrument());
+    assert_eq!(record.interval(), BarInterval::Day);
+    assert_eq!(record.bar_start(), "2026-07-23");
+    assert_eq!(record.bar_end(), "2026-07-23");
+    assert_eq!(record.open(), Price::new(10.0).unwrap());
+    assert_eq!(record.high(), Price::new(12.0).unwrap());
+    assert_eq!(record.low(), Price::new(9.0).unwrap());
+    assert_eq!(record.close(), Price::new(11.0).unwrap());
+    assert_eq!(record.volume(), Quantity::new(1.0).unwrap());
+    assert_eq!(record.amount(), Some(Money::new(1_000.0).unwrap()));
+    assert_eq!(record.adjustment(), Adjustment::Unadjusted);
+    assert_eq!(record.source_at(), Some("2026-07-23"));
+    assert_eq!(record.provider(), ProviderId::Tdx);
+    assert_eq!(record.batch_id(), batch_id);
+}
+
+#[test]
+fn normalized_intraday_bar_canonicalizes_only_core_bar_time() {
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Minute5, 1).unwrap();
+    let mut source = source_bar();
+    source.hour = 9;
+    source.minute = 35;
+    source.datetime = "2026-07-23 09:35".into();
+
+    let batch = normalize_bars("tdx-smart", &request, vec![source]).unwrap();
+    let record = &batch.records()[0];
+    assert_eq!(record.bar_start(), "2026-07-23 09:35:00");
+    assert_eq!(record.bar_end(), "2026-07-23 09:35:00");
+    assert_eq!(record.source_at(), Some("2026-07-23 09:35"));
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-23 09:35"));
+}
+
+fn source_bar_at(day: u32, close: f64) -> SecurityBar {
+    SecurityBar {
+        open: close,
+        close,
+        high: close,
+        low: close,
         vol: 100.0,
-        amount: 1_000.0,
+        amount: close * 10_000.0,
         year: 2026,
         month: 7,
-        day: 23,
+        day,
         hour: 0,
         minute: 0,
-        datetime: "2026-07-23".into(),
-    };
-    let provenance = bars_provenance("test", std::slice::from_ref(&source)).unwrap();
-    assert_eq!(provenance.source_at(), Some("2026-07-23"));
-    assert!(bars_provenance("test", &[]).unwrap().source_at().is_none());
+        datetime: format!("2026-07-{day:02}"),
+    }
+}
 
-    let batch = strict_bars("test", vec![source]).unwrap();
-    assert_eq!(batch.records().len(), 1);
-    assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
-    assert!(strict_bars("test", Vec::new()).is_err());
+#[test]
+fn normalized_bar_batches_reject_incomplete_or_ambiguous_sequences() {
+    let one = BarsRequest::new(instrument("600396"), BarInterval::Day, 1).unwrap();
+    let two = BarsRequest::new(instrument("600396"), BarInterval::Day, 2).unwrap();
+
+    assert!(normalize_bars("tdx", &one, Vec::new()).is_err());
+    assert!(normalize_bars("legacy-tdx", &one, vec![source_bar()]).is_err());
+    assert!(normalize_bars("tdx", &two, vec![source_bar()]).is_err());
+    assert!(normalize_bars(
+        "tdx",
+        &one,
+        vec![source_bar_at(22, 10.0), source_bar_at(23, 10.0)],
+    )
+    .is_err());
+    assert!(normalize_bars(
+        "tdx",
+        &two,
+        vec![source_bar_at(22, 10.0), source_bar_at(22, 10.0)],
+    )
+    .is_err());
+    assert!(normalize_bars(
+        "tdx",
+        &two,
+        vec![source_bar_at(23, 10.0), source_bar_at(22, 10.0)],
+    )
+    .is_err());
+
+    let mut mismatched = source_bar();
+    mismatched.day = 22;
+    assert!(normalize_bars("tdx", &one, vec![mismatched]).is_err());
+
+    let mut future = source_bar();
+    future.year = 2099;
+    future.datetime = "2099-07-23".into();
+    assert!(normalize_bars("tdx", &one, vec![future]).is_err());
+
+    let mut invalid_calendar = source_bar();
+    invalid_calendar.month = 2;
+    invalid_calendar.day = 30;
+    invalid_calendar.datetime = "2026-02-30".into();
+    assert!(normalize_bars("tdx", &one, vec![invalid_calendar]).is_err());
+
+    let intraday = BarsRequest::new(instrument("600396"), BarInterval::Minute5, 1).unwrap();
+    let mut invalid_intraday = source_bar();
+    invalid_intraday.hour = 24;
+    invalid_intraday.minute = 35;
+    invalid_intraday.datetime = "2026-07-23 24:35".into();
+    assert!(normalize_bars("tdx", &intraday, vec![invalid_intraday]).is_err());
+
+    let mut invalid_daily = source_bar();
+    invalid_daily.hour = 1;
+    assert!(normalize_bars("tdx", &one, vec![invalid_daily]).is_err());
+}
+
+#[test]
+fn normalized_bar_batches_reject_bad_values_and_unconfirmed_jumps() {
+    let one = BarsRequest::new(instrument("600396"), BarInterval::Day, 1).unwrap();
+    let two = BarsRequest::new(instrument("600396"), BarInterval::Day, 2).unwrap();
+
+    for mutate in [
+        |bar: &mut SecurityBar| bar.open = f64::NAN,
+        |bar: &mut SecurityBar| bar.close = 0.0,
+        |bar: &mut SecurityBar| bar.high = 9.0,
+        |bar: &mut SecurityBar| bar.vol = -1.0,
+        |bar: &mut SecurityBar| bar.amount = -1.0,
+        |bar: &mut SecurityBar| bar.amount = 0.0,
+    ] {
+        let mut bar = source_bar();
+        mutate(&mut bar);
+        assert!(normalize_bars("tdx", &one, vec![bar]).is_err());
+    }
+
+    assert!(normalize_bars(
+        "tdx",
+        &two,
+        vec![source_bar_at(22, 10.0), source_bar_at(23, 12.0)],
+    )
+    .is_ok());
+    assert!(normalize_bars(
+        "tdx",
+        &two,
+        vec![source_bar_at(22, 10.0), source_bar_at(23, 12.01)],
+    )
+    .is_err());
 }
 
 #[test]
@@ -872,6 +1044,30 @@ fn date_and_session_helpers_reject_ambiguous_values() {
     }
     for value in ["09:30", "11:31", "13:00", "15:01", "bad"] {
         assert!(!valid_tdx_minute(value));
+    }
+}
+
+#[test]
+fn normalized_current_session_gate_accepts_only_active_weekday_windows() {
+    for unix_seconds in [
+        1_784_856_600, // 2026-07-24 Friday 09:30:00 Asia/Shanghai
+        1_784_863_800, // 2026-07-24 Friday 11:30:00 Asia/Shanghai
+        1_784_869_200, // 2026-07-24 Friday 13:00:00 Asia/Shanghai
+        1_784_876_400, // 2026-07-24 Friday 15:00:00 Asia/Shanghai
+    ] {
+        assert!(ensure_current_session_at(unix_seconds, "minute data").is_ok());
+    }
+    for unix_seconds in [
+        1_784_856_599, // Friday 09:29:59
+        1_784_863_801, // Friday 11:30:01
+        1_784_944_800, // Saturday 10:00:00
+    ] {
+        assert!(matches!(
+            ensure_current_session_at(unix_seconds, "minute data"),
+            Err(TdxError::InvalidData(message))
+                if message
+                    == "TDX normalized current minute data is unavailable outside an active A-share weekday session"
+        ));
     }
 }
 
