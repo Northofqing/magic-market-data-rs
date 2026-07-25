@@ -18,6 +18,8 @@ bash -n tools/release/preflight.sh tools/release/package.sh
 CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo check --workspace --all-targets --locked --offline
 CARGO_TARGET_DIR="$preflight_target_dir" \
+  cargo build --workspace --all-targets --release --locked --offline
+CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo test --workspace --all-targets --locked --offline
 CARGO_TARGET_DIR="$preflight_target_dir" \
   cargo clippy --workspace --all-targets --locked --offline -- -D warnings
