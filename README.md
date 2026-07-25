@@ -171,7 +171,7 @@ Router 适配器已经通过确定性测试。
 
 ### 公共研究、内容与信号 Provider
 
-| Provider | 已真实取得 | 当前明确边界 |
+| Provider | 已真实取得或当前诊断状态 | 当前明确边界 |
 | --- | --- | --- |
 | Eastmoney Web | 个股/行业研报及原始 PDF、最新财经资讯、三类板块流、个股/全市场龙虎榜、融资融券、大宗、户数、解禁、分红、四类打板、人气、严格 15:35 资金榜 | 最新资讯无证券身份；关键词搜索不准入；15:35 榜只允许中国当前日且须在窗口后调用 |
 | CNInfo | 个股公告、完整全市场公告发现、PDF metadata、互动易问答 | 内容源，不提供行情；公告 PDF 仍只返回 URL |
@@ -181,7 +181,8 @@ Router 适配器已经通过确定性测试。
 | The Paper | 财经频道原生文章、栏目、标签及来源时间 | 排除外链转载；不把文本证券名提升为结构化身份 |
 | Baidu | 华电辽能未复权日 K、MA5/10/20 | 不提供实时 Quote、分钟线或 Level-2 |
 | iWencai | 正式 X-Claw 鉴权和语义结果解析 | 真实数据待合法 API Key；不读取 Cookie/桌面登录态 |
-| SSE/SZSE/HKEX/CFFEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10、CFFEX 股指期货交割通知 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
+| SSE/SZSE/HKEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
+| CFFEX official diagnostic | 股指期货交割通知的确定性解析已通过；2026-07-25 官方目录 live 探针在 TLS 初始化时收到 EOF | 尚未生产准入：capability 为 false，生产 trait 返回 `Unsupported`；只保留显式诊断入口 |
 | State Council | 国务院政策库 `gongwen`/`bumenfile` 官方文件 | 仅规范 `www.gov.cn` 文件；不是新闻或行情源 |
 
 ### 市场发现、全球与日历能力

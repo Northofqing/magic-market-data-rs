@@ -51,7 +51,8 @@ Phase 5
 - [x] Re-run the complete preflight after review fixes.
 - [x] Resolve the post-fix review's CFFEX provenance and dormant-source findings.
 - [x] Enforce BR-009 by keeping unproved CFFEX production capability false.
-- [ ] Re-run the final preflight and obtain final independent review.
+- [x] Re-run the final preflight after enforcing BR-009.
+- [ ] Resolve the final documentation-label review and obtain final independent review.
 - [ ] Integrate the isolated branch without overwriting user-owned files.
 - **Status:** in_progress
 
@@ -101,6 +102,7 @@ Phase 5
 | Post-fix review found CFFEX cash method was inferred from settlement-price wording | 1 | Added `NotProvided`, stopped emitting `Cash`, updated BR-018 and all current docs, and retained event/date validation. |
 | CFFEX live rerun failed TLS inside and outside the sandbox | 2 | Preserved the typed transport failure and changed current acceptance docs from live passed to live blocked. |
 | Final review found CFFEX capability still advertised without corrected live proof | 1 | Set capability false, made the production trait return `Unsupported`, moved network verification behind an explicit diagnostic method, and removed CFFEX from the default admitted-provider probe. |
+| Final code review found three headings/labels that still grouped the CFFEX diagnostic with admitted capabilities | 1 | Split admitted SSE/SZSE/HKEX rows from the unadmitted CFFEX diagnostic and corrected the production-trait wording. |
 
 ## Notes
 
@@ -113,6 +115,9 @@ Phase 5
   completeness or thresholds.
 - The final report after BR-009 enforcement is 80.07% overall
   (22364/27931) and 95.97% critical (1881/1960).
+- The exact BR-009 enforcement commit passed the complete release preflight.
+  The subsequent review requested documentation-label corrections only; no
+  code, capability, or coverage defect remains open from that review.
 - `cargo build --workspace --all-targets --release` emits existing example
   filename-collision warnings for repeated `live_probe`/`load_probe` names.
   Cargo still succeeds, but those examples should be renamed in a separate

@@ -1,21 +1,22 @@
 # magic-exchange-rs
 
-Read-only adapters for admitted SSE, SZSE, HKEX and CFFEX official public data.
-The crate keeps the four venues as separate Provider identities and exposes only
-families that have deterministic fixtures plus a successful production-trait
-probe.
+Read-only adapters for official SSE, SZSE, HKEX and CFFEX public data. The
+crate keeps the four venues as separate Provider identities. SSE, SZSE and HKEX
+expose only families that have deterministic fixtures plus a successful
+production-trait probe. CFFEX currently exposes an unadmitted diagnostic path;
+its production capability remains false.
 
-## Admitted capabilities
+## Admitted capabilities and unadmitted diagnostics
 
-| Client | Core trait | Exact HTTPS endpoint |
-| --- | --- | --- |
-| `SseClient` | `Announcements` | `query.sse.com.cn/security/stock/queryCompanyBulletin.do` |
-| `SseClient` | `DragonTigerData` | `query.sse.com.cn/infodisplay/showTradePublicFile.do` |
-| `SzseClient` | `Announcements` | `www.szse.cn/api/disc/announcement/annList` |
-| `SzseClient` | `RealtimeQuotes`, `OrderBooks` | `www.szse.cn/api/market/ssjjhq/getTimeData` |
-| `SzseClient` | `DragonTigerData` | `www.szse.cn/api/report/ShowReport/data` |
-| `HkexClient` | `NorthboundDailyStatistics` | `www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js` |
-| `CffexClient` | diagnostic `probe_futures_delivery_calendar`; production trait currently `Unsupported` | `www.cffex.com.cn/jystz/` and dated same-host notice details |
+| Client | Status | Core trait or diagnostic | Exact HTTPS endpoint |
+| --- | --- | --- | --- |
+| `SseClient` | Admitted | `Announcements` | `query.sse.com.cn/security/stock/queryCompanyBulletin.do` |
+| `SseClient` | Admitted | `DragonTigerData` | `query.sse.com.cn/infodisplay/showTradePublicFile.do` |
+| `SzseClient` | Admitted | `Announcements` | `www.szse.cn/api/disc/announcement/annList` |
+| `SzseClient` | Admitted | `RealtimeQuotes`, `OrderBooks` | `www.szse.cn/api/market/ssjjhq/getTimeData` |
+| `SzseClient` | Admitted | `DragonTigerData` | `www.szse.cn/api/report/ShowReport/data` |
+| `HkexClient` | Admitted | `NorthboundDailyStatistics` | `www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js` |
+| `CffexClient` | Diagnostic only; not admitted | `probe_futures_delivery_calendar`; production trait is `Unsupported` | `www.cffex.com.cn/jystz/` and dated same-host notice details |
 
 SSE/SZSE announcements validate complete remote pages before local
 truncation. Dragon-tiger requests require an explicit trading date. SZSE

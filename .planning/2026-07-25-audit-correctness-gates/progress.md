@@ -143,9 +143,16 @@
     removed CFFEX from the default admitted-provider live path.
   - Regenerated coverage after BR-009 enforcement: 22364/27931 (80.07%)
     overall and 1881/1960 (95.97%) critical.
+  - Passed the complete release preflight on the exact BR-009 enforcement
+    commit.
+  - Final code review found no Critical code issue and one Important
+    documentation issue: three labels still grouped the unadmitted CFFEX
+    diagnostic with admitted production capabilities. Split those labels and
+    made the false capability and typed `Unsupported` boundary explicit.
 - Remaining:
-  - Rerun the complete preflight, obtain final independent review, and
-    integrate without overwriting the primary worktree's user-owned changes.
+  - Verify the documentation-only correction, obtain final independent review,
+    and integrate without overwriting the primary worktree's user-owned
+    changes.
 
 ## Test Results
 
@@ -165,6 +172,7 @@
 | Final overall coverage | scheduled-CI llvm-cov command plus strict segment checker | At least 80% | 22364/27931 = 80.07% | ✓ |
 | Final critical coverage | same final report | At least 95% | 1881/1960 = 95.97% | ✓ |
 | Full post-review release preflight | `bash tools/release/preflight.sh` | Every local release gate passes | `release preflight: passed` | ✓ |
+| Full BR-009 release preflight | `bash tools/release/preflight.sh` | Every local release gate passes | `release preflight: passed` | ✓ |
 | CFFEX provenance correction | Core + exchange targeted tests | Method is not inferred from event notice | Four events use `NotProvided`; targeted suites pass | ✓ |
 | CFFEX current live rerun | isolated official probe, sandboxed and unsandboxed | Four official events or explicit failure | TLS initialization unexpected EOF both times | ⚠ external |
 | Dependency policy registration | inspect push/PR and scheduled workflows | cargo-deny is enforced remotely | Pinned `cargo-deny-action@v2` in both workflows | ✓ |
@@ -185,13 +193,14 @@
 | 2026-07-25 | First post-review preflight found four cloned singleton slices | 1 | Used `std::slice::from_ref`, passed targeted TDX Clippy, then reran the complete preflight successfully. |
 | 2026-07-25 | CFFEX live probe received TLS initialization EOF | 2 | Repeated outside the sandbox, preserved the failure, and corrected live-status documentation. |
 | 2026-07-25 | Final review found BR-009 mismatch between false live evidence and true capability | 1 | Capability is false, production trait is typed `Unsupported`, and only the explicit diagnostic path performs network verification. |
+| 2026-07-25 | Final code review found admission wording that still grouped CFFEX with production-ready providers | 1 | Split CFFEX into an explicitly unadmitted diagnostic row and corrected the affected headings. |
 
 ## 5-Question Reboot Check
 
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 5, with BR-009 enforced and final coverage green; preflight/re-review remain. |
-| Where am I going? | Pass the final release gate, obtain final review, then integrate without touching user-owned changes. |
+| Where am I? | Phase 5, with BR-009 enforced, final coverage and preflight green, and a documentation-only review correction awaiting verification. |
+| Where am I going? | Verify the documentation correction, obtain final review, then integrate without touching user-owned changes. |
 | What's the goal? | Correct verified defects and make release gates truthful without weakening contracts. |
 | What have I learned? | See `findings.md`; coverage debt is larger than the original report indicated. |
 | What have I done? | Completed correctness, panic safety, strict Clippy, truthful 80%/95% segment coverage, release compilation, CFFEX/README updates, and review remediations. |
