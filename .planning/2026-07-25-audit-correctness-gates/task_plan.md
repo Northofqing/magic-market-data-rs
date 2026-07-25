@@ -50,7 +50,8 @@ Phase 5
 - [x] Complete an independent review and resolve its three Important findings.
 - [x] Re-run the complete preflight after review fixes.
 - [x] Resolve the post-fix review's CFFEX provenance and dormant-source findings.
-- [ ] Re-run coverage/preflight and obtain final independent review.
+- [x] Enforce BR-009 by keeping unproved CFFEX production capability false.
+- [ ] Re-run the final preflight and obtain final independent review.
 - [ ] Integrate the isolated branch without overwriting user-owned files.
 - **Status:** in_progress
 
@@ -76,6 +77,7 @@ Phase 5
 | Remove the uncalled placeholder codec module | A public copy-through “decompressor” was misleading; real zlib handling already exists in production network clients. |
 | Preserve unproved CFFEX delivery method as `NotProvided` | The event notice proves contracts, date, and settlement-price wording but does not independently prove cash settlement. |
 | Delete dormant `protocol/packet.rs` | It contained executable-looking code but was never registered by `protocol/mod.rs`; source completeness is clearer without dead production-shaped files. |
+| Keep CFFEX production trait `Unsupported` while exposing an explicit diagnostic probe | This preserves the implementation and a path to live admission without violating BR-009 capability truthfulness. |
 | Exclude architecture enhancements | Async routing, dynamic provider registration, and shared transports are not required to correct these defects. |
 
 ## Errors Encountered
@@ -98,6 +100,7 @@ Phase 5
 | First post-review preflight found four cloned singleton slices in TDX tests | 1 | Replaced them with `std::slice::from_ref`, passed targeted strict Clippy, then passed the complete clean preflight. |
 | Post-fix review found CFFEX cash method was inferred from settlement-price wording | 1 | Added `NotProvided`, stopped emitting `Cash`, updated BR-018 and all current docs, and retained event/date validation. |
 | CFFEX live rerun failed TLS inside and outside the sandbox | 2 | Preserved the typed transport failure and changed current acceptance docs from live passed to live blocked. |
+| Final review found CFFEX capability still advertised without corrected live proof | 1 | Set capability false, made the production trait return `Unsupported`, moved network verification behind an explicit diagnostic method, and removed CFFEX from the default admitted-provider probe. |
 
 ## Notes
 
@@ -108,8 +111,8 @@ Phase 5
   for the configured critical aggregate (1881/1960). The smaller denominator
   reflects removal of `#[cfg(test)]` attributed item spans, not relaxed source
   completeness or thresholds.
-- The final report after removing dormant `protocol/packet.rs` remains 80.06%
-  overall (22355/27922) and 95.97% critical (1881/1960).
+- The final report after BR-009 enforcement is 80.07% overall
+  (22364/27931) and 95.97% critical (1881/1960).
 - `cargo build --workspace --all-targets --release` emits existing example
   filename-collision warnings for repeated `live_probe`/`load_probe` names.
   Cargo still succeeds, but those examples should be renamed in a separate

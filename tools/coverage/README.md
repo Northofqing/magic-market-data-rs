@@ -37,7 +37,7 @@ production reports fail explicitly.
 The final 2026-07-25 workspace report is:
 
 ```text
-overall covered=22355 total=27922 percent=80.06 required=80.00
+overall covered=22364 total=27931 percent=80.07 required=80.00
 critical covered=1881 total=1960 percent=95.97 required=95.00
 ```
 

@@ -11,7 +11,7 @@
 | SZSE | `RealtimeQuotes`、`OrderBooks` | `000858`：Quote + 完整五档 | 数量按源端“手”保留；不推断集合竞价 |
 | SZSE | `DragonTigerData` | `000603 / 2026-07-23`：2 条榜单；首条完整买五卖五 | 完整拉取列表分页，详情按完整席位组返回 |
 | HKEX | `NorthboundDailyStatistics` | `2026-07-22` 沪股通/深股通各 1 条及各自 Top10 | quota 的 `999,999,999` 哨兵保留为 `Unavailable`，不猜测余额 |
-| CFFEX | `FuturesDeliveryCalendar` | 确定性生产 trait 测试通过；2026-07-25 live 在官方目录 TLS 初始化时收到 unexpected EOF | 只接受通知明确写出的日期与交割结算价；方式未被事件通知独立证明时保留 `NotProvided`，不按“第三个周五”推算 |
+| CFFEX | 诊断 `probe_futures_delivery_calendar`；生产 trait 当前 `Unsupported` | 确定性诊断测试通过；2026-07-25 live 在官方目录 TLS 初始化时收到 unexpected EOF | production capability 为 false；只接受通知明确写出的日期与交割结算价；方式未被事件通知独立证明时保留 `NotProvided`，不按“第三个周五”推算 |
 
 ## 端点和请求边界
 
@@ -46,7 +46,9 @@ CFFEX Provider 在官方交易通知目录中有界扫描最多 120 页，解析
 精确对应请求年月。详情必须同时明确 IF、IH、IC、IM 合约、同一最后交易/交割日及
 交割结算价，才输出四条事件。通知未独立说明交割方式时，标准化记录明确使用
 `NotProvided`，不会从“交割结算价”推导现金交割。节假日顺延由通知原文证明；
-公式计算或交易日历猜测均不准入。
+公式计算或交易日历猜测均不准入。根据 BR-009，live 验收通过前
+`calendar_capabilities().futures_delivery` 保持 false，生产 trait 返回 typed
+`Unsupported`；诊断入口只用于完成该验收，不表示能力已准入。
 
 ## 传输与部署
 
@@ -112,10 +114,11 @@ attempt_latency_max_ms=1201 minimum_attempt_start_gap_ms=1000
 load_probe_status=passed
 ```
 
-上面的真实结果覆盖 SSE、SZSE 和 HKEX。CFFEX 的确定性生产 trait 测试精确验证
+上面的真实结果覆盖 SSE、SZSE 和 HKEX。CFFEX 的确定性诊断测试精确验证
 IF2602/IH2602/IC2602/IM2602 四条记录、节假日顺延日期和 `NotProvided` 方法；
 2026-07-25 在沙箱内外运行独立命令都在官方目录 TLS 初始化时返回 unexpected EOF，
-因此当前只声明实现/合同测试通过，不声明 live 通过。
+因此当前只声明诊断实现/合同测试通过，生产 capability 为 false、trait 返回
+`Unsupported`，不声明 live 通过。
 
 这里的吞吐是高层数据族 attempt，不是 HTTP RPS；分页/详情会在一个 attempt 内产生
 多个受同一限流门约束的请求。数字只证明本次连通、解析、证据和限流行为，不构成

@@ -197,7 +197,7 @@ Router 适配器已经通过确定性测试。
 | 经济日历 | Jin10 | 仅公开未锁 type-1；保留前值/预期/实际/修正值和重要性 |
 | 官方政策 | State Council | 仅国务院官方搜索与 `www.gov.cn` 规范链接，页面上限 50 |
 | 研报 PDF 正文 | Eastmoney | 精确研报身份、`application/pdf`、`%PDF-`、最大 32 MiB |
-| 期货交割日历 | CFFEX | 有界扫描官方交易通知目录及同站详情；通知必须同时明确 IF/IH/IC/IM、请求月份的实际交割日与交割结算价；通知未独立证明交割方式时保留 `NotProvided`，节假日顺延不使用公式推算 |
+| 期货交割日历 | CFFEX 诊断实现（生产 capability 未准入） | 有界扫描官方交易通知目录及同站详情；通知必须同时明确 IF/IH/IC/IM、请求月份的实际交割日与交割结算价；通知未独立证明交割方式时保留 `NotProvided`，节假日顺延不使用公式推算；当前生产 trait 返回 `Unsupported` |
 | 15:35 资金榜 | Eastmoney | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称 |
 
 ### TDX
@@ -343,7 +343,7 @@ python3 tools/coverage/check_thresholds.py target/coverage/coverage.json
 
 门槛是生产代码整体 `80.00%`、codec/protocol/adjustment、
 `service/common.rs` 和 `adapter.rs` 关键集合 `95.00%`。2026-07-25 最终报告为
-`22355/27922 = 80.06%` 和 `1881/1960 = 95.97%`。合同和失败语义见
+`22364/27931 = 80.07%` 和 `1881/1960 = 95.97%`。合同和失败语义见
 [覆盖率门说明](tools/coverage/README.md)。
 
 ## 真实数据探针
@@ -467,9 +467,11 @@ cargo run -p magic-baidu-rs --example live_probe --release --locked --offline
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
 
-CFFEX 可以单独验收，默认示例月份为 `2026-02`；成功必须精确返回 IF/IH/IC/IM
+CFFEX 诊断实现可以单独验收，默认示例月份为 `2026-02`；成功必须精确返回 IF/IH/IC/IM
 四条由同一官方通知证明的交割事件。通知未独立说明交割方式，因此标准化
-`method=NotProvided`，不会从“交割结算价”推导现金交割：
+`method=NotProvided`，不会从“交割结算价”推导现金交割。BR-009 live 验收成功前，
+`calendar_capabilities().futures_delivery` 保持 `false`，生产 trait 返回
+`Unsupported`：
 
 ```bash
 MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
@@ -691,7 +693,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | 项目 | 结果 | 证据摘要 |
 | --- | --- | --- |
 | stable Rust 全工作区门禁 | 通过 | debug/release 全目标编译、全部测试、严格 Clippy、rustdoc/doctest、链接、合规和 diff |
-| 严格生产覆盖率门 | 通过 | 整体 22355/27922 = 80.06%；关键集合 1881/1960 = 95.97%；内联测试项不计入 |
+| 严格生产覆盖率门 | 通过 | 整体 22364/27931 = 80.07%；关键集合 1881/1960 = 95.97%；内联测试项不计入 |
 | TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
 | Tencent live probe | 通过 | 沪深京基础行情；股票/指数/ETF 行情统计；沪深当日逐笔 |
 | Tencent load probe | 通过 | mixed 100/8 为 100/100；统计 12/3 为 12/12 |
@@ -707,7 +709,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | The Paper live | 通过 | 财经频道原生文章 5 条；栏目/标签、来源时间和原生 canonical URL 完整 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 公告、SSE/SZSE 龙虎榜与完整席位、SZSE Quote/五档、HKEX 两通道 Top10；mixed load 8/8、最小 attempt 起始间隔 1000 ms |
-| CFFEX official delivery | 实现通过；live 当前阻塞 | 确定性生产 trait 测试精确返回 IF2602/IH2602/IC2602/IM2602 四条事件；日期来自通知原文、方式为 `NotProvided`；2026-07-25 沙箱内外 live 均在官方目录 TLS 初始化时收到 unexpected EOF |
+| CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602 四条事件；生产 capability 为 false、trait 返回 `Unsupported`；2026-07-25 沙箱内外 live 均在官方目录 TLS 初始化时收到 unexpected EOF |
 | iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
 | Release package | 每个提交独立构建 | 二十五个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 

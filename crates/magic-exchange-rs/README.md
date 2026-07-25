@@ -15,7 +15,7 @@ probe.
 | `SzseClient` | `RealtimeQuotes`, `OrderBooks` | `www.szse.cn/api/market/ssjjhq/getTimeData` |
 | `SzseClient` | `DragonTigerData` | `www.szse.cn/api/report/ShowReport/data` |
 | `HkexClient` | `NorthboundDailyStatistics` | `www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js` |
-| `CffexClient` | `FuturesDeliveryCalendar` | `www.cffex.com.cn/jystz/` and dated same-host notice details |
+| `CffexClient` | diagnostic `probe_futures_delivery_calendar`; production trait currently `Unsupported` | `www.cffex.com.cn/jystz/` and dated same-host notice details |
 
 SSE/SZSE announcements validate complete remote pages before local
 truncation. Dragon-tiger requests require an explicit trading date. SZSE
@@ -38,7 +38,10 @@ delivery-settlement-price wording agree. The notice does not independently
 state the settlement method, so normalized records use
 `FuturesDeliveryMethod::NotProvided`. Holiday shifts come from the notice text;
 the Provider never substitutes a “third Friday” formula or infers cash
-settlement from the existence of a settlement price.
+settlement from the existence of a settlement price. Under BR-009,
+`calendar_capabilities().futures_delivery` remains false and the production
+`FuturesDeliveryCalendar` trait returns typed `Unsupported` until a bounded
+live probe succeeds.
 
 All transports enforce credential-free HTTPS host/path allowlists, port 443,
 zero redirects, exact final URLs, bounded content types, an 8 MiB response
@@ -94,8 +97,8 @@ attempt_latency_max_ms=1201 minimum_attempt_start_gap_ms=1000
 load_probe_status=passed
 ```
 
-The deterministic CFFEX production-trait test returns exactly four delivery
-events for IF2602, IH2602, IC2602, and IM2602 from one official-notice fixture.
+The deterministic CFFEX diagnostic test returns exactly four delivery events
+for IF2602, IH2602, IC2602, and IM2602 from one official-notice fixture.
 The actual date is parsed from the notice rather than derived from a calendar
 formula, and the unproved method remains `NotProvided`. On 2026-07-25, the
 isolated live command failed both inside and outside the sandbox while

@@ -101,8 +101,9 @@
   from `Cargo.toml`, canonicalizes paths inside the repository, validates LLVM
   segments against current source length, and excludes the exact item span
   directly attributed by `#[cfg(test)]`.
-- The corrected exact report reaches 22355/27922 production lines (80.06%)
-  overall and 1881/1960 configured critical lines (95.97%).
+- The corrected exact report after BR-009 enforcement reaches 22364/27931
+  production lines (80.07%) overall and 1881/1960 configured critical lines
+  (95.97%).
 - The public TDX `codec` module was an uncalled placeholder whose decompression
   function copied input unchanged. It was removed; actual zlib handling remains
   in the real blocking, direct, async, F10, and finance network paths.
@@ -118,6 +119,10 @@
   with `unexpected end of file` both inside and outside the sandbox on
   2026-07-25. This is current external-state evidence, so live success is no
   longer claimed.
+- BR-009 also requires that absence of corrected live proof keep
+  `calendar_capabilities().futures_delivery` false and the production trait
+  typed `Unsupported`. The explicit diagnostic method remains available only
+  to establish future live admission; it is not an advertised capability.
 - The reported absence of cargo-deny enforcement is false for the current
   repository: both `.github/workflows/ci.yml` and
   `.github/workflows/security.yml` run the pinned cargo-deny action. Only the

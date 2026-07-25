@@ -109,8 +109,19 @@ impl CffexClient {
     pub const fn calendar_capabilities() -> CalendarCapabilities {
         CalendarCapabilities {
             economic_releases: false,
-            futures_delivery: true,
+            futures_delivery: false,
         }
+    }
+
+    /// Exercises the bounded official-notice implementation without advertising
+    /// the capability before a current live acceptance succeeds.
+    pub fn probe_futures_delivery_calendar(
+        &self,
+        request: &FuturesDeliveryRequest,
+    ) -> Result<DataBatch<FuturesDeliveryEvent>, ExchangeError> {
+        let (notice_url, detail) = self.find_notice(request)?;
+        let observed_at = now()?;
+        parse_delivery_notice(&detail, request, &notice_url, &observed_at)
     }
 
     fn get_html(&self, url: &str) -> Result<Vec<u8>, ExchangeError> {
@@ -183,11 +194,12 @@ impl FuturesDeliveryCalendar for CffexClient {
 
     fn futures_delivery_calendar(
         &self,
-        request: &FuturesDeliveryRequest,
+        _request: &FuturesDeliveryRequest,
     ) -> Result<DataBatch<FuturesDeliveryEvent>, Self::Error> {
-        let (notice_url, detail) = self.find_notice(request)?;
-        let observed_at = now()?;
-        parse_delivery_notice(&detail, request, &notice_url, &observed_at)
+        Err(ExchangeError::Unsupported(
+            "CFFEX futures delivery calendar is not admitted until a bounded live probe passes"
+                .into(),
+        ))
     }
 }
 
@@ -541,7 +553,11 @@ mod tests {
             },
         )
         .unwrap();
-        let batch = client.futures_delivery_calendar(&request()).unwrap();
+        assert!(matches!(
+            client.futures_delivery_calendar(&request()),
+            Err(ExchangeError::Unsupported(_))
+        ));
+        let batch = client.probe_futures_delivery_calendar(&request()).unwrap();
         assert_eq!(batch.records().len(), 4);
         assert_eq!(batch.records()[0].contract_code.as_str(), "IF2602");
         assert_eq!(batch.records()[0].delivery_date.as_str(), "2026-02-24");

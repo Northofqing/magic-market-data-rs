@@ -1,9 +1,8 @@
 use magic_exchange_rs::{CffexClient, HkexClient, SseClient, SzseClient};
 use magic_market_core::{
-    Announcements, AssetClass, DataBatch, DragonTigerData, Exchange, FuturesDeliveryCalendar,
-    FuturesDeliveryRequest, InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest,
-    IsoDate, NorthboundChannel, NorthboundDailyRequest, NorthboundDailyStatistics, OrderBooks,
-    PositiveU32, RealtimeQuotes,
+    Announcements, AssetClass, DataBatch, DragonTigerData, Exchange, FuturesDeliveryRequest,
+    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate, NorthboundChannel,
+    NorthboundDailyRequest, NorthboundDailyStatistics, OrderBooks, PositiveU32, RealtimeQuotes,
 };
 use std::error::Error;
 use std::fmt::Debug;
@@ -28,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         print_batch(
             "cffex_futures_delivery",
-            &cffex.futures_delivery_calendar(&request)?,
+            &cffex.probe_futures_delivery_calendar(&request)?,
             4,
             4,
         )?;
@@ -114,23 +113,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             1,
         )?;
     }
-
-    let cffex = CffexClient::new()?;
-    let delivery_request = FuturesDeliveryRequest::new(
-        PositiveU32::new(delivery_year)?,
-        PositiveU32::new(delivery_month)?,
-    )?;
-    println!("\nprovider=cffex-official");
-    println!(
-        "calendar_capabilities={:#?}",
-        CffexClient::calendar_capabilities()
-    );
-    print_batch(
-        "cffex_futures_delivery",
-        &cffex.futures_delivery_calendar(&delivery_request)?,
-        4,
-        4,
-    )?;
 
     println!("\nlive_probe_status=passed");
     Ok(())

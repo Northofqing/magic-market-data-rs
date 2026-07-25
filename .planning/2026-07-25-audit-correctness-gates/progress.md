@@ -136,10 +136,16 @@
   - Regenerated the complete coverage artifact after the CFFEX and dormant-file
     corrections; the strict result remains 22355/27922 (80.06%) overall and
     1881/1960 (95.97%) critical.
+  - Final review then found BR-009 still required the production capability to
+    remain false because the corrected records lack a successful live probe.
+    Set the capability false, made the production trait return typed
+    `Unsupported`, exposed only an explicit diagnostic fetch method, and
+    removed CFFEX from the default admitted-provider live path.
+  - Regenerated coverage after BR-009 enforcement: 22364/27931 (80.07%)
+    overall and 1881/1960 (95.97%) critical.
 - Remaining:
-  - Regenerate final strict coverage, rerun the complete preflight, obtain
-    final independent review, and integrate without overwriting the primary
-    worktree's user-owned changes.
+  - Rerun the complete preflight, obtain final independent review, and
+    integrate without overwriting the primary worktree's user-owned changes.
 
 ## Test Results
 
@@ -156,7 +162,7 @@
 | TDX strict Clippy after remediation | `cargo clippy -p magic-tdx-rs --all-targets --locked --offline -- -D warnings` | Zero warnings | Passed | ✓ |
 | TDX full suite after remediation | `cargo test -p magic-tdx-rs --all-targets --locked --offline` | Pass | 233 unit tests plus all integration/example tests passed | ✓ |
 | Coverage checker contract | `python3 -m unittest tools.coverage.test_check_thresholds` | Malformed reports, path/source completeness, segments, cfg spans, and thresholds enforced | 16 passed | ✓ |
-| Final overall coverage | scheduled-CI llvm-cov command plus strict segment checker | At least 80% | 22355/27922 = 80.06% | ✓ |
+| Final overall coverage | scheduled-CI llvm-cov command plus strict segment checker | At least 80% | 22364/27931 = 80.07% | ✓ |
 | Final critical coverage | same final report | At least 95% | 1881/1960 = 95.97% | ✓ |
 | Full post-review release preflight | `bash tools/release/preflight.sh` | Every local release gate passes | `release preflight: passed` | ✓ |
 | CFFEX provenance correction | Core + exchange targeted tests | Method is not inferred from event notice | Four events use `NotProvided`; targeted suites pass | ✓ |
@@ -178,13 +184,14 @@
 | 2026-07-25 | Independent review rejected placeholder codec and permissive coverage accounting | 1 | Removed the module and replaced the checker with complete, canonical, production-segment accounting plus 16 contract tests. |
 | 2026-07-25 | First post-review preflight found four cloned singleton slices | 1 | Used `std::slice::from_ref`, passed targeted TDX Clippy, then reran the complete preflight successfully. |
 | 2026-07-25 | CFFEX live probe received TLS initialization EOF | 2 | Repeated outside the sandbox, preserved the failure, and corrected live-status documentation. |
+| 2026-07-25 | Final review found BR-009 mismatch between false live evidence and true capability | 1 | Capability is false, production trait is typed `Unsupported`, and only the explicit diagnostic path performs network verification. |
 
 ## 5-Question Reboot Check
 
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 5, resolving final-review CFFEX provenance and dormant-source findings. |
-| Where am I going? | Regenerate evidence, pass every release gate, obtain final review, then integrate without touching user-owned changes. |
+| Where am I? | Phase 5, with BR-009 enforced and final coverage green; preflight/re-review remain. |
+| Where am I going? | Pass the final release gate, obtain final review, then integrate without touching user-owned changes. |
 | What's the goal? | Correct verified defects and make release gates truthful without weakening contracts. |
 | What have I learned? | See `findings.md`; coverage debt is larger than the original report indicated. |
 | What have I done? | Completed correctness, panic safety, strict Clippy, truthful 80%/95% segment coverage, release compilation, CFFEX/README updates, and review remediations. |
