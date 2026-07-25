@@ -384,7 +384,11 @@ fn exchange_for_code(code: &str) -> Result<Exchange, String> {
     match code.as_bytes().first().copied() {
         Some(b'6') => Ok(Exchange::Shanghai),
         Some(b'0' | b'3') => Ok(Exchange::Shenzhen),
-        Some(b'4' | b'8' | b'9') => Ok(Exchange::Beijing),
+        Some(b'4' | b'8') => Ok(Exchange::Beijing),
+        Some(b'9') if code.starts_with("920") => Ok(Exchange::Beijing),
+        Some(b'9') => Err(format!(
+            "Eastmoney stock code {code} uses an unverified 9-prefix exchange mapping"
+        )),
         Some(prefix) => Err(format!(
             "Eastmoney stock-code prefix {:?} has no verified exchange mapping",
             char::from(prefix)
@@ -457,6 +461,26 @@ mod tests {
             instrument_from_market("002475", 1),
             Err(super::EastmoneyError::Protocol(message))
                 if message.contains("market")
+        ));
+    }
+
+    #[test]
+    fn only_verified_920_nine_prefix_maps_to_beijing() {
+        let verified =
+            InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity).unwrap();
+        assert!(validate_instrument(&verified).is_ok());
+
+        let unverified =
+            InstrumentId::new(Exchange::Beijing, "900901", AssetClass::Equity).unwrap();
+        assert!(matches!(
+            validate_instrument(&unverified),
+            Err(super::EastmoneyError::Unsupported(message))
+                if message.contains("unverified 9-prefix")
+        ));
+        assert!(matches!(
+            instrument_from_market("900901", 0),
+            Err(super::EastmoneyError::Protocol(message))
+                if message.contains("unverified 9-prefix")
         ));
     }
 
