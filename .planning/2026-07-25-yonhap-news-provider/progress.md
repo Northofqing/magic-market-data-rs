@@ -45,6 +45,9 @@
 | Task 3 Yonhap library | Passed, 22 tests |
 | Task 3 public capabilities | Passed, 4 tests |
 | Task 3 Yonhap Clippy | Passed with `-D warnings` |
+| Task 4 probe configuration tests | Passed, 4 tests |
+| Task 4 Rolling live admission | Failed, typed TLS transport error |
+| Task 4 Economy live admission | Failed, typed TLS transport error |
 
 ## 5-Question Reboot Check
 
@@ -116,3 +119,23 @@
   pre-admission trait behavior.
 - Final Task 3 verification passed: 22 library tests, 4 capability tests,
   rustfmt, Clippy with `-D warnings`, and `git diff --check`.
+- Task 4 added a bounded live probe with seven exact channel spellings,
+  1–50 limit, local case-sensitive headline match, complete provenance output,
+  and enforced metadata-only assertions.
+- Task 4 added a serial load probe with a default of two and hard maximum of
+  three requests plus the shared one-second pacing boundary.
+- All-target tests and Clippy passed with both examples.
+- At 2026-07-26 03:47 +0800, release Rolling failed inside and outside the
+  sandbox with
+  `Transport("... tls connection init failed: unexpected end of file")`.
+  Release Economy failed outside the sandbox with the same typed error.
+- The evidence-determined state is therefore unchanged and truthful:
+  `content_capabilities().global_news=false`,
+  `NewsProvider::global_news=Unsupported`, and only
+  `probe_global_news` performs explicit diagnostics.
+- Final Task 4 all-target tests and Clippy passed. The combined follow-on
+  `git add` failed only because the sandbox denied creation of the Git
+  worktree `index.lock`; the commit is being retried as separate authorized
+  Git operations.
+- Phase 3 implementation is complete; Phase 4 documentation and release
+  registration is now in progress.

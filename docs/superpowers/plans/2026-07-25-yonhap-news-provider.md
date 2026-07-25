@@ -623,7 +623,7 @@ git commit -m "feat(yonhap): parse RSS news metadata"
 - Modify:
   `.planning/2026-07-25-yonhap-news-provider/progress.md`
 
-- [ ] **Step 1: Implement and unit-test environment parsing**
+- [x] **Step 1: Implement and unit-test environment parsing**
 
 `live_probe` accepts:
 
@@ -642,7 +642,7 @@ all returned titles, return an explicit failure.
 Add pure parser tests for every channel spelling, limit bounds, empty match,
 and unknown variables' values.
 
-- [ ] **Step 2: Implement the serial load probe**
+- [x] **Step 2: Implement the serial load probe**
 
 `load_probe` accepts `MAGIC_YONHAP_LOAD_REQUESTS`, defaults to 2, and permits
 only 1–3. Reuse one `YonhapClient`, call `probe_global_news` serially with a
@@ -650,7 +650,7 @@ small limit, print each start/completion and record count, and assert measured
 request starts remain at least one second apart. No threads and no bypass of
 the client gate are allowed.
 
-- [ ] **Step 3: Build and test both probes offline**
+- [x] **Step 3: Build and test both probes offline**
 
 Run:
 
@@ -662,7 +662,7 @@ cargo clippy -p magic-yonhap-rs --all-targets --locked --offline -- -D warnings
 Expected: both examples compile and their deterministic environment tests
 pass.
 
-- [ ] **Step 4: Run the bounded official production probe**
+- [x] **Step 4: Run the bounded official production probe**
 
 Run the default and financial channel through the production Rust client:
 
@@ -686,7 +686,7 @@ one official feed. Each must return at least one current metadata-only record,
 exact Yonhap evidence, newest-first times, exact canonical URLs, and absent
 summary/content.
 
-- [ ] **Step 5: Apply the evidence-determined capability state**
+- [x] **Step 5: Apply the evidence-determined capability state**
 
 If the admission condition passes:
 
@@ -720,7 +720,7 @@ endpoint, and typed failure in `findings.md` and `progress.md`.
 This is a deterministic decision branch, not an implementation choice:
 successful evidence admits the trait; every other result leaves it unadmitted.
 
-- [ ] **Step 6: Re-run capability and all-target checks**
+- [x] **Step 6: Re-run capability and all-target checks**
 
 Run:
 
@@ -732,7 +732,7 @@ git diff --check
 
 Expected: tests match the evidence-determined public capability exactly.
 
-- [ ] **Step 7: Commit probes and admission evidence**
+- [x] **Step 7: Commit probes and admission evidence**
 
 ```bash
 git add crates/magic-yonhap-rs/examples \

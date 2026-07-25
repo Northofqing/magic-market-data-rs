@@ -36,8 +36,16 @@
 - Browser-backed source inspection can read Yonhap article and RSS-guide pages.
 - Direct system `curl` to `https://cn.yna.co.kr/RSS/news.xml` fails during TLS
   initialization with `SSL_ERROR_SYSCALL`, including outside the sandbox.
-- This does not prove that the Rust TLS transport will fail, but it prevents a
-  capability claim until the production client completes a bounded live probe.
+- On 2026-07-26, the release-built production Rust client also failed for
+  Rolling inside and outside the sandbox and for Economy outside the sandbox:
+  `tls connection init failed: unexpected end of file`.
+- The same typed transport failure across both exact paths proves that current
+  live admission is unavailable in this environment. `global_news` must remain
+  false and the trait must remain typed `Unsupported`; deterministic fixture
+  success cannot replace this live result.
+- The local `MAGIC_YONHAP_MATCH` headline check was not repeated after the
+  third same-host TLS failure because no feed rows could be fetched and a
+  fourth attempt would add no evidence.
 
 ## Implementation Mapping
 
@@ -82,6 +90,11 @@
 - Locked `time` confirms direct `OffsetDateTime::parse(..., &Rfc2822)`,
   `to_offset`, and `format(&Rfc3339)` support, matching the planned explicit
   `+09:00` normalization.
+- Existing Provider probes keep environment validation in pure functions,
+  expose complete provenance in live output, cap load at three serial
+  requests, and compile their unit tests through `--all-targets`. Yonhap can
+  follow that release-compatible shape while using its diagnostic method
+  before capability admission.
 
 ## Official References
 

@@ -7,7 +7,7 @@ news metadata without fetching, storing, or redistributing article bodies.
 
 ## Current Phase
 
-Phase 3
+Phase 4
 
 ## Phases
 
@@ -37,18 +37,18 @@ Phase 3
 - [x] Add the standalone bounded RSS Provider crate.
 - [x] Add deterministic parser, transport, pacing, and failure tests.
 - [x] Add Router identity coverage and capability tests.
-- [ ] Add live and load probes.
-- **Status:** in_progress
+- [x] Add live and load probes.
+- **Status:** complete
 
 ### Phase 4: Admission, Documentation, and Release Gates
 
-- [ ] Run the bounded official live probe.
-- [ ] Advertise only the capability proven by the live result.
+- [x] Run the bounded official live probe.
+- [x] Advertise only the capability proven by the live result.
 - [ ] Register workspace, compliance, deployment, and integration docs.
 - [ ] Run formatting, tests, Clippy, compliance, docs, coverage, and release
   checks.
 - [ ] Obtain final code review and integrate without touching user-owned files.
-- **Status:** pending
+- **Status:** in_progress
 
 ## Decisions
 
@@ -69,6 +69,8 @@ Phase 3
 | Task 2 initial formatting check found rustfmt-only differences | 1 | Apply `cargo fmt --all`, then rerun the exact check before the Task 2 commit. |
 | Task 3 UTF-8 fixture used a non-ASCII raw byte string | 1 | Root cause confirmed against compiler output and repository patterns; use a UTF-8 raw string followed by `.as_bytes().to_vec()`. |
 | Task 3 Clippy rejected a no-interpolation `format!` | 1 | Replace only that test fixture construction with `.to_owned()` and rerun the exact Clippy command. |
+| Production Rust TLS ended unexpectedly for both Rolling and Economy RSS, including outside the sandbox | 3 bounded probes | Keep `global_news=false`, retain typed `Unsupported`, and expose only the explicitly named diagnostic method until a future live admission succeeds. |
+| Combined Task 4 verification/commit command could not create the worktree `index.lock` | 1 | Verification had already passed; split `git add` and `git commit` into independently authorized Git operations. |
 
 ## Notes
 
