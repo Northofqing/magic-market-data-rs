@@ -89,9 +89,9 @@ CNInfo's public `new/hisAnnouncement/query` form accepts an empty `stock`,
 `column=szse`, and a bounded `seDate`. A live 2026-07-24 probe returned 1,108
 announcements across Shanghai and Shenzhen source codes with stable
 `totalAnnouncement`, `totalpages`, `hasMore`, source IDs, publication
-milliseconds, and PDF paths. The provider pages until the requested bound,
-rejects unstable totals and duplicate IDs, and maps only verified A-share
-equity code families.
+milliseconds, and PDF paths. The provider reads and validates every
+source-declared page before applying the requested bound, rejects unstable
+totals and duplicate IDs, and maps only verified A-share equity code families.
 
 #### Global indices and FX
 

@@ -282,7 +282,13 @@ fn source_instrument(code: &str) -> Result<InstrumentId, TdxError> {
     let exchange = match code.as_bytes()[0] {
         b'6' => Exchange::Shanghai,
         b'0' | b'3' => Exchange::Shenzhen,
-        b'4' | b'8' | b'9' => Exchange::Beijing,
+        b'4' | b'8' => Exchange::Beijing,
+        b'9' if code.starts_with("920") => Exchange::Beijing,
+        b'9' => {
+            return Err(TdxError::Unsupported(format!(
+                "TDX board code {code} uses an unverified 9-prefix exchange mapping"
+            )))
+        }
         prefix => {
             return Err(TdxError::Unsupported(format!(
                 "TDX board code prefix {:?} has no verified exchange mapping",

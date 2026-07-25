@@ -185,7 +185,7 @@ impl ResearchDocuments for Fixture {
             vec![ResearchDocument::new(
                 request.report_id.clone(),
                 request.pdf_url.clone(),
-                b"%PDF-1.7 fixture".to_vec(),
+                b"%PDF-1.7\nfixture\nstartxref\n9\n%%EOF\n".to_vec(),
                 evidence("research-document", Some("2026-07-24")),
             )
             .unwrap()],

@@ -451,7 +451,7 @@ mod tests {
                 "https://pdf.dfcfw.com/pdf/H3_AP202607231827290069_1.pdf"
             );
             assert_eq!(max_bytes, 32 * 1024 * 1024);
-            Ok(b"%PDF-1.7\nfixture".to_vec())
+            Ok(b"%PDF-1.7\nfixture\nstartxref\n9\n%%EOF\n".to_vec())
         }
     }
 
@@ -464,7 +464,10 @@ mod tests {
                 .unwrap(),
         };
         let batch = client.research_document(&request).unwrap();
-        assert_eq!(batch.records()[0].body, b"%PDF-1.7\nfixture");
+        assert_eq!(
+            batch.records()[0].body,
+            b"%PDF-1.7\nfixture\nstartxref\n9\n%%EOF\n"
+        );
         assert_eq!(batch.records()[0].content_type.as_str(), "application/pdf");
     }
 

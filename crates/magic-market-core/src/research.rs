@@ -335,7 +335,7 @@ impl ResearchDocument {
         body: Vec<u8>,
         evidence: SourceEvidence,
     ) -> Result<Self, crate::CoreError> {
-        if body.len() < 8 || !body.starts_with(b"%PDF-") {
+        if !body.starts_with(b"%PDF-") {
             return Err(crate::CoreError::InvalidRequest(
                 "research document body must start with a PDF header".into(),
             ));
@@ -345,6 +345,24 @@ impl ResearchDocument {
                 "research document body must be at most 32 MiB".into(),
             ));
         }
+        let complete_body = body.strip_suffix_pdf_whitespace().ok_or_else(|| {
+            crate::CoreError::InvalidRequest(
+                "research document body must end with a PDF EOF marker".into(),
+            )
+        })?;
+        let before_eof = complete_body.strip_suffix(b"%%EOF").ok_or_else(|| {
+            crate::CoreError::InvalidRequest(
+                "research document body must end with a PDF EOF marker".into(),
+            )
+        })?;
+        if !before_eof
+            .windows(b"startxref".len())
+            .any(|window| window == b"startxref")
+        {
+            return Err(crate::CoreError::InvalidRequest(
+                "research document body must contain startxref before its EOF marker".into(),
+            ));
+        }
         Ok(Self {
             report_id,
             pdf_url,
@@ -352,6 +370,20 @@ impl ResearchDocument {
             body,
             evidence,
         })
+    }
+}
+
+trait PdfBodyExt {
+    fn strip_suffix_pdf_whitespace(&self) -> Option<&[u8]>;
+}
+
+impl PdfBodyExt for [u8] {
+    fn strip_suffix_pdf_whitespace(&self) -> Option<&[u8]> {
+        let end = self
+            .iter()
+            .rposition(|byte| !matches!(byte, 0x00 | b'\t' | b'\n' | 0x0c | b'\r' | b' '))?
+            + 1;
+        Some(&self[..end])
     }
 }
 

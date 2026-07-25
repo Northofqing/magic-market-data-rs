@@ -561,16 +561,13 @@ impl AnnouncementDiscovery for CninfoClient {
         request: &AnnouncementDiscoveryRequest,
     ) -> Result<DataBatch<Announcement>, Self::Error> {
         let limit = request.limit().get() as usize;
-        let mut rows_to_map = Vec::with_capacity(limit);
+        let mut rows_to_map = Vec::new();
         let mut seen = HashSet::new();
         let mut expected_total = None;
         let mut expected_pages = None;
         let mut page = 1_u32;
 
         loop {
-            if rows_to_map.len() == limit {
-                break;
-            }
             if page > self.config.max_discovery_pages {
                 return Err(CninfoError::Incomplete(format!(
                     "announcement discovery requires more than {} pages",
@@ -580,12 +577,18 @@ impl AnnouncementDiscovery for CninfoClient {
 
             let response = self.announcement_discovery_page(page, request)?;
             let total = required_page_count(
-                response
-                    .total_announcement
-                    .as_ref()
-                    .or(response.total_record_num.as_ref()),
-                "announcement total",
+                response.total_announcement.as_ref(),
+                "announcement totalAnnouncement",
             )?;
+            let record_total = required_page_count(
+                response.total_record_num.as_ref(),
+                "announcement totalRecordNum",
+            )?;
+            if total != record_total {
+                return Err(CninfoError::Schema(format!(
+                    "announcement totals disagree: totalAnnouncement={total}, totalRecordNum={record_total}"
+                )));
+            }
             let pages = required_page_count(response.total_pages.as_ref(), "announcement pages")?;
             if expected_total
                 .replace(total)
@@ -609,9 +612,6 @@ impl AnnouncementDiscovery for CninfoClient {
                 ));
             }
             for row in rows {
-                if rows_to_map.len() == limit {
-                    break;
-                }
                 let announcement_id =
                     required_text(row.announcement_id.clone(), "announcement.announcementId")?;
                 if !seen.insert(announcement_id.clone()) {
@@ -622,23 +622,48 @@ impl AnnouncementDiscovery for CninfoClient {
                 rows_to_map.push(row);
             }
 
-            if !has_more {
-                if rows_to_map.len() < total as usize && rows_to_map.len() < limit {
-                    return Err(CninfoError::Incomplete(format!(
-                        "announcement discovery ended after {} of {total} source rows",
-                        rows_to_map.len()
-                    )));
+            if pages == 0 {
+                if total != 0 || has_more {
+                    return Err(CninfoError::Schema(
+                        "announcement page count is zero for a non-empty result".into(),
+                    ));
                 }
                 break;
             }
-            if u64::from(page) >= pages {
+            if u64::from(page) < pages {
+                if !has_more {
+                    return Err(CninfoError::Incomplete(format!(
+                        "announcement discovery ended after {} of {total} source rows on page {page} of {pages}",
+                        rows_to_map.len()
+                    )));
+                }
+                page += 1;
+                continue;
+            }
+            if u64::from(page) > pages {
+                return Err(CninfoError::Schema(format!(
+                    "announcement discovery reached undeclared page {page} of {pages}"
+                )));
+            }
+            if has_more {
                 return Err(CninfoError::Schema(
                     "announcement hasMore remained true on the declared final page".into(),
                 ));
             }
-            page += 1;
+            break;
         }
 
+        let expected_total = expected_total
+            .ok_or_else(|| CninfoError::Schema("announcement total was not observed".into()))?;
+        let expected_total = usize::try_from(expected_total).map_err(|_| {
+            CninfoError::Schema("announcement total does not fit the local platform".into())
+        })?;
+        if rows_to_map.len() != expected_total {
+            return Err(CninfoError::Incomplete(format!(
+                "announcement discovery validated {} of {expected_total} source rows",
+                rows_to_map.len()
+            )));
+        }
         if rows_to_map.is_empty() {
             return Err(CninfoError::Incomplete(
                 "CNInfo returned no full-market announcements".into(),
@@ -650,13 +675,29 @@ impl AnnouncementDiscovery for CninfoClient {
             request.start().as_str(),
             request.end().as_str()
         );
-        let mut records = Vec::with_capacity(rows_to_map.len());
-        let mut source_times = Vec::with_capacity(rows_to_map.len());
+        let mut mapped = Vec::with_capacity(rows_to_map.len());
         for row in rows_to_map {
             let record = map_discovered_announcement(row, request, &observed_at, &batch_id)?;
-            source_times.push(record.published_at.as_str().to_owned());
-            records.push(record);
+            mapped.push(record);
         }
+        let records = mapped
+            .into_iter()
+            .filter(|record| {
+                request
+                    .exchange()
+                    .is_none_or(|exchange| exchange == record.instrument.exchange())
+            })
+            .take(limit)
+            .collect::<Vec<_>>();
+        if records.is_empty() {
+            return Err(CninfoError::Incomplete(
+                "CNInfo returned no announcements matching the requested filters".into(),
+            ));
+        }
+        let source_times = records
+            .iter()
+            .map(|record| record.published_at.as_str().to_owned())
+            .collect::<Vec<_>>();
         let provenance = provenance(
             "cninfo-full-market",
             &observed_at,
@@ -879,14 +920,6 @@ fn map_discovered_announcement(
 ) -> Result<Announcement, CninfoError> {
     let code = required_text(row.sec_code, "announcement.secCode")?;
     let instrument = discovered_equity(&code)?;
-    if request
-        .exchange()
-        .is_some_and(|exchange| exchange != instrument.exchange())
-    {
-        return Err(CninfoError::Schema(format!(
-            "announcement identity {code} does not match requested exchange"
-        )));
-    }
     let announcement_id = required_text(row.announcement_id, "announcement.announcementId")?;
     let published_at = parse_required_millis(row.published_at.as_ref(), "announcementTime")?;
     ensure_discovery_range(&published_at, request)?;
@@ -1633,6 +1666,107 @@ mod tests {
                 .unwrap()
                 .as_str(),
             "比亚迪"
+        );
+    }
+
+    #[test]
+    fn announcement_discovery_validates_later_pages_before_applying_the_limit() {
+        let first_page = r#"{
+          "hasMore": true,
+          "totalAnnouncement": 2,
+          "totalRecordNum": 2,
+          "totalpages": 2,
+          "announcements": [{
+            "announcementId": "A-SH",
+            "secCode": "600396",
+            "secName": "华电辽能",
+            "announcementTitle": "上海公告",
+            "announcementTime": 1784822400000,
+            "adjunctUrl": "finalpage/2026-07-24/A-SH.PDF"
+          }]
+        }"#;
+        let drifted_second_page = r#"{
+          "hasMore": false,
+          "totalAnnouncement": 3,
+          "totalRecordNum": 3,
+          "totalpages": 2,
+          "announcements": [{
+            "announcementId": "A-SZ",
+            "secCode": "002594",
+            "secName": "比亚迪",
+            "announcementTitle": "深圳公告",
+            "announcementTime": 1784822400000,
+            "adjunctUrl": "finalpage/2026-07-24/A-SZ.PDF"
+          }]
+        }"#;
+        let transport = FixtureTransport::new(vec![
+            response(DEFAULT_ANNOUNCEMENT_URL, first_page),
+            response(DEFAULT_ANNOUNCEMENT_URL, drifted_second_page),
+        ]);
+        let observed = transport.clone();
+        let client = CninfoClient::with_test_transport(transport);
+        let request = AnnouncementDiscoveryRequest::new(
+            magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+            magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+            magic_market_core::PositiveU32::new(1).unwrap(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            client.discover_announcements(&request),
+            Err(CninfoError::Schema(message)) if message.contains("totals changed")
+        ));
+        assert_eq!(observed.requests.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn announcement_discovery_filters_mixed_markets_after_source_validation() {
+        let body = r#"{
+          "hasMore": false,
+          "totalAnnouncement": 2,
+          "totalRecordNum": 2,
+          "totalpages": 1,
+          "announcements": [
+            {
+              "announcementId": "A-SH",
+              "secCode": "600396",
+              "secName": "华电辽能",
+              "announcementTitle": "上海公告",
+              "announcementTime": 1784822400000,
+              "adjunctUrl": "finalpage/2026-07-24/A-SH.PDF"
+            },
+            {
+              "announcementId": "A-SZ",
+              "secCode": "002594",
+              "secName": "比亚迪",
+              "announcementTitle": "深圳公告",
+              "announcementTime": 1784822400000,
+              "adjunctUrl": "finalpage/2026-07-24/A-SZ.PDF"
+            }
+          ]
+        }"#;
+        let client = CninfoClient::with_test_transport(FixtureTransport::new(vec![response(
+            DEFAULT_ANNOUNCEMENT_URL,
+            body,
+        )]));
+        let request = AnnouncementDiscoveryRequest::new(
+            magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+            magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+            magic_market_core::PositiveU32::new(2).unwrap(),
+        )
+        .unwrap()
+        .with_exchange(Exchange::Shanghai);
+
+        let batch = client.discover_announcements(&request).unwrap();
+        assert_eq!(batch.records().len(), 1);
+        assert_eq!(batch.records()[0].instrument.code(), "600396");
+        assert_eq!(
+            batch.records()[0]
+                .instrument_name
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            "华电辽能"
         );
     }
 

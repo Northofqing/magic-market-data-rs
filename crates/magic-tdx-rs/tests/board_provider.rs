@@ -118,6 +118,43 @@ fn rejects_duplicate_source_pairs_and_unverified_codes() {
 }
 
 #[test]
+fn accepts_verified_beijing_920_codes_and_rejects_other_nine_prefixes() {
+    let verified = TdxBoardProvider::with_source(FixtureSource {
+        industry: vec![record("北交所", "920118", 0)],
+        concept: Vec::new(),
+    });
+    let members = verified
+        .board_constituents(
+            &BoardConstituentRequest::new(
+                NonEmptyText::new("tdx:industry:北交所").unwrap(),
+                limit(10),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        members.records()[0].instrument.exchange(),
+        Exchange::Beijing
+    );
+    assert_eq!(members.records()[0].instrument.code(), "920118");
+
+    let unverified = TdxBoardProvider::with_source(FixtureSource {
+        industry: vec![record("B股", "900901", 0)],
+        concept: Vec::new(),
+    });
+    assert!(matches!(
+        unverified.board_constituents(
+            &BoardConstituentRequest::new(
+                NonEmptyText::new("tdx:industry:B股").unwrap(),
+                limit(10),
+            )
+            .unwrap(),
+        ),
+        Err(TdxError::Unsupported(message)) if message.contains("unverified")
+    ));
+}
+
+#[test]
 fn rejects_duplicate_requests_unknown_boards_and_unsupported_categories() {
     let provider = TdxBoardProvider::with_source(FixtureSource::new());
     let instrument = InstrumentId::new(Exchange::Shenzhen, "002230", AssetClass::Equity).unwrap();
