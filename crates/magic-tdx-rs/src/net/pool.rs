@@ -5,6 +5,7 @@ use crate::error::Result;
 use crate::loge;
 use crate::net::connection::TcpConnection;
 use crate::protocol::constants::{CONNECT_TIMEOUT, DEFAULT_POOL_SIZE};
+use crate::sync;
 
 /// 连接池中的单个连接
 struct PooledConnection {
@@ -68,7 +69,7 @@ impl ConnectionPool {
 
     /// 将一个已握手的连接放入池中
     pub fn push(&self, conn: TcpConnection, server: (String, u16)) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = sync::lock_recover(&self.inner, "connection pool");
         inner.total += 1;
         inner.idle.push_back(PooledConnection { conn, server });
     }
@@ -79,7 +80,7 @@ impl ConnectionPool {
     /// 如果未达上限，创建新连接；
     /// 如果已满，返回错误。
     pub fn borrow(&self, server: &(String, u16)) -> Result<PooledConnGuard<'_>> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = sync::lock(&self.inner, "connection pool")?;
 
         // 尝试从空闲队列获取
         if let Some(conn) = inner.idle.pop_front() {
@@ -136,7 +137,7 @@ impl ConnectionPool {
 
     /// 尝试借出连接 (非阻塞)
     pub fn try_borrow(&self, server: &(String, u16)) -> Result<Option<PooledConnGuard<'_>>> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = sync::lock(&self.inner, "connection pool")?;
 
         if let Some(conn) = inner.idle.pop_front() {
             inner.active += 1;
@@ -179,7 +180,7 @@ impl ConnectionPool {
 
     /// 归还连接到池中
     fn return_connection(&self, pooled: PooledConnection) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = sync::lock_recover(&self.inner, "connection pool");
         inner.active -= 1;
 
         if pooled.conn.is_open() && inner.idle.len() < self.config.max_size {
@@ -191,7 +192,7 @@ impl ConnectionPool {
 
     /// 关闭所有连接
     pub fn close_all(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = sync::lock_recover(&self.inner, "connection pool");
         while let Some(mut conn) = inner.idle.pop_front() {
             conn.conn.close();
             inner.total -= 1;
@@ -201,7 +202,7 @@ impl ConnectionPool {
 
     /// 获取池状态
     pub fn stats(&self) -> PoolStats {
-        let inner = self.inner.lock().unwrap();
+        let inner = sync::lock_recover(&self.inner, "connection pool");
         PoolStats {
             idle: inner.idle.len(),
             active: inner.active,

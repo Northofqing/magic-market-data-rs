@@ -14,6 +14,7 @@ use crate::net::packet::{ResponseHeader, RSP_HEADER_LEN};
 use crate::protocol::constants::*;
 use crate::protocol::parsers::parse_security_bars;
 use crate::protocol::types::{SecurityBar, XdXrInfo};
+use crate::sync;
 
 /// 复权上下文数据量档位
 ///
@@ -201,7 +202,7 @@ impl RateLimiter {
         if !self.enabled.load(Ordering::Relaxed) {
             return;
         }
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = sync::lock_recover(&self.inner, "rate limiter");
         if let Some(last) = inner.last_request {
             let elapsed = last.elapsed();
             if elapsed < inner.min_interval {
@@ -213,7 +214,7 @@ impl RateLimiter {
 
     /// 设置每秒请求数 (0 = 禁用, 超过 200 自动降为 200)
     pub fn set_rps(&self, rps: u32) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = sync::lock_recover(&self.inner, "rate limiter");
         if rps == 0 {
             self.enabled.store(false, Ordering::Relaxed);
         } else {
@@ -237,7 +238,7 @@ impl RateLimiter {
     /// - `PrePost`: 基准限流 / 2
     /// - `Closed`:  基准限流 / 4
     pub fn set_phase(&self, phase: TradingPhase) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = sync::lock_recover(&self.inner, "rate limiter");
         let mult = PHASE_MULTIPLIER[phase as usize].0;
         let adjusted_ms = (inner.base_interval.as_millis() as f64 / mult) as u64;
         inner.min_interval = Duration::from_millis(adjusted_ms.max(1));
@@ -246,7 +247,7 @@ impl RateLimiter {
 
     /// 获取当前阶段
     pub fn phase(&self) -> TradingPhase {
-        self.inner.lock().unwrap().phase
+        sync::lock_recover(&self.inner, "rate limiter").phase
     }
 
     /// 自动检测并设置交易阶段

@@ -41,6 +41,7 @@ use crate::net::client::TdxHqClient;
 use crate::net::utils;
 use crate::protocol::constants::*;
 use crate::protocol::types::*;
+use crate::sync;
 use crate::{loge, logi, logw};
 
 // ================================================================
@@ -257,7 +258,7 @@ impl TdxSmartClient {
     /// 仅验证 TCP + 握手，不做 K 线健康检查。
     /// 优先使用缓存的成功服务器。
     pub fn connect_to_any(&self, timeout: Option<f64>) -> Result<bool> {
-        let cache = self.cache.lock().unwrap();
+        let cache = sync::lock(&self.cache, "smart client cache")?;
 
         // 1. 尝试缓存的成功服务器
         if let Some(ref last) = cache.last_success {
@@ -270,7 +271,7 @@ impl TdxSmartClient {
             );
             match self.inner.connect(&last.ip, last.port, timeout) {
                 Ok(true) => {
-                    *self.current_server.lock().unwrap() =
+                    *sync::lock(&self.current_server, "smart current server")? =
                         Some((last.ip.clone(), last.port, last.name.clone()));
                     self.health_checked.store(false, Ordering::SeqCst);
                     return Ok(true);
@@ -289,14 +290,14 @@ impl TdxSmartClient {
 
         // 2. 遍历 PRIMARY_SERVERS (跳过黑名单)
         for &(name, ip, port) in PRIMARY_SERVERS {
-            if self.cache.lock().unwrap().is_blacklisted(ip, port) {
+            if sync::lock(&self.cache, "smart client cache")?.is_blacklisted(ip, port) {
                 logi!("smart", "skipping blacklisted server: {}:{}", ip, port);
                 continue;
             }
 
             match self.inner.connect(ip, port, timeout) {
                 Ok(true) => {
-                    *self.current_server.lock().unwrap() =
+                    *sync::lock(&self.current_server, "smart current server")? =
                         Some((ip.to_string(), port, name.to_string()));
                     self.health_checked.store(false, Ordering::SeqCst);
                     return Ok(true);
@@ -307,13 +308,13 @@ impl TdxSmartClient {
 
         // 3. 兜底: 遍历 ALL_KNOWN_SERVERS
         for &(name, ip, port) in ALL_KNOWN_SERVERS {
-            if self.cache.lock().unwrap().is_blacklisted(ip, port) {
+            if sync::lock(&self.cache, "smart client cache")?.is_blacklisted(ip, port) {
                 continue;
             }
 
             match self.inner.connect(ip, port, timeout) {
                 Ok(true) => {
-                    *self.current_server.lock().unwrap() =
+                    *sync::lock(&self.current_server, "smart current server")? =
                         Some((ip.to_string(), port, name.to_string()));
                     self.health_checked.store(false, Ordering::SeqCst);
                     return Ok(true);
@@ -335,7 +336,8 @@ impl TdxSmartClient {
             return true;
         }
 
-        let server = self.current_server.lock().unwrap().clone();
+        let server =
+            sync::lock_recover(&self.current_server, "smart current server").clone();
         if let Some((ip, port, name)) = server {
             logi!(
                 "smart",
@@ -353,29 +355,25 @@ impl TdxSmartClient {
                         Ok(bars) if !bars.is_empty() => {
                             logi!("smart", "health check passed: got {} bars", bars.len());
                             self.health_checked.store(true, Ordering::SeqCst);
-                            self.cache
-                                .lock()
-                                .unwrap()
+                            sync::lock_recover(&self.cache, "smart client cache")
                                 .record_success(&ip, port, &name, 0);
                             return true;
                         }
                         Ok(_) => {
                             logw!("smart", "health check failed: K-line empty, server may have protocol anomaly");
-                            self.cache
-                                .lock()
-                                .unwrap()
+                            sync::lock_recover(&self.cache, "smart client cache")
                                 .add_to_blacklist(&ip, port, "kline_empty");
-                            self.cache.lock().unwrap().record_failure(&ip, port);
+                            sync::lock_recover(&self.cache, "smart client cache")
+                                .record_failure(&ip, port);
                             self.inner.disconnect();
                             return false;
                         }
                         Err(e) => {
                             logw!("smart", "health check failed: parse error: {}", e);
-                            self.cache
-                                .lock()
-                                .unwrap()
+                            sync::lock_recover(&self.cache, "smart client cache")
                                 .add_to_blacklist(&ip, port, "parse_error");
-                            self.cache.lock().unwrap().record_failure(&ip, port);
+                            sync::lock_recover(&self.cache, "smart client cache")
+                                .record_failure(&ip, port);
                             self.inner.disconnect();
                             return false;
                         }
@@ -383,7 +381,8 @@ impl TdxSmartClient {
                 }
                 Err(e) => {
                     logw!("smart", "health check failed: {}", e);
-                    self.cache.lock().unwrap().record_failure(&ip, port);
+                    sync::lock_recover(&self.cache, "smart client cache")
+                        .record_failure(&ip, port);
                     self.inner.disconnect();
                     return false;
                 }
@@ -395,7 +394,7 @@ impl TdxSmartClient {
 
     /// 尝试切换到下一个服务器
     fn try_next_server(&self) -> Result<bool> {
-        let current = self.current_server.lock().unwrap().clone();
+        let current = sync::lock(&self.current_server, "smart current server")?.clone();
 
         // 遍历 PRIMARY_SERVERS，跳过当前和黑名单
         for &(name, ip, port) in PRIMARY_SERVERS {
@@ -405,13 +404,13 @@ impl TdxSmartClient {
                 }
             }
 
-            if self.cache.lock().unwrap().is_blacklisted(ip, port) {
+            if sync::lock(&self.cache, "smart client cache")?.is_blacklisted(ip, port) {
                 continue;
             }
 
             match self.inner.connect(ip, port, Some(5.0)) {
                 Ok(true) => {
-                    *self.current_server.lock().unwrap() =
+                    *sync::lock(&self.current_server, "smart current server")? =
                         Some((ip.to_string(), port, name.to_string()));
                     self.health_checked.store(false, Ordering::SeqCst);
                     logi!("smart", "switched to server: {}:{}", ip, port);
@@ -558,7 +557,7 @@ impl TdxSmartClient {
 
     /// 获取缓存统计
     pub fn cache_stats(&self) -> String {
-        let cache = self.cache.lock().unwrap();
+        let cache = sync::lock_recover(&self.cache, "smart client cache");
         format!(
             "last_success: {:?}, blacklist: {}, stats: {}",
             cache
@@ -572,7 +571,7 @@ impl TdxSmartClient {
 
     /// 清除缓存
     pub fn clear_cache(&self) {
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = sync::lock_recover(&self.cache, "smart client cache");
         *cache = ServerCache::new();
         cache.save();
         logi!("smart", "cache cleared");
@@ -589,16 +588,15 @@ impl TdxSmartClient {
             match self.inner.connect(ip, port, Some(timeout_secs)) {
                 Ok(true) => {
                     let latency = start.elapsed().as_millis() as u32;
-                    self.cache
-                        .lock()
-                        .unwrap()
+                    sync::lock_recover(&self.cache, "smart client cache")
                         .record_success(ip, port, name, latency);
                     results.push((ip.to_string(), port, name.to_string(), latency));
                     logi!("probe", "{}:{} ({}) - {}ms", ip, port, name, latency);
                     self.inner.disconnect();
                 }
                 _ => {
-                    self.cache.lock().unwrap().record_failure(ip, port);
+                    sync::lock_recover(&self.cache, "smart client cache")
+                        .record_failure(ip, port);
                     logw!("probe", "{}:{} ({}) - failed", ip, port, name);
                 }
             }

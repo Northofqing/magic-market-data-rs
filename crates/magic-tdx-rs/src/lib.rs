@@ -18,6 +18,7 @@ pub mod reader;
 pub mod service;
 /// Stable request-domain enums used by higher-level adapters.
 pub mod source;
+mod sync;
 pub use block::TdxBlockClient;
 pub use board_provider::{TdxBoardProvider, TdxBoardSource};
 pub use fund::client::TdxHqFundClient;
