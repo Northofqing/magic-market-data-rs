@@ -99,7 +99,8 @@ Breaking migrations:
   release packaging, deployment constraints and security navigation.
 - Added checked primitives and record-level `SourceEvidence` for the
   intelligence expansion, plus first-class Baidu, Tonghuashun, iwencai,
-  CNInfo, CLS and local-analysis provider identities.
+  CNInfo, CLS, Jin10, The Paper, SSE, SZSE, HKEX and local-analysis provider
+  identities.
 - Added provider-neutral contracts, conservative capabilities and traits for
   market statistics/technical bars, research/consensus/semantic search,
   signals/boards/dragon-tiger/popularity, historical fund flow/capital data,
@@ -140,6 +141,14 @@ Breaking migrations:
 - Added `magic-cls-rs` for signed, newest-first global telegraph/news records
   with source timestamps, publishers, related instruments and topics. The
   bounded 2/2 live load sample returned 20 records without failure.
+- Added `magic-jin10-rs` for unlocked public type-0 flashes and type-2 articles
+  from the official 7x24 stream. Locked VIP rows are omitted without requesting
+  protected details; the live probe returned five normalized records. Caller
+  output remains capped at 20 while the independently verified source window
+  permits a transient 21st row and rejects 22 or more.
+- Added `magic-thepaper-rs` for native articles on The Paper finance channel
+  `25951`. External forwards are omitted rather than relabeled; the live probe
+  returned five normalized records with source times, sections and tags.
 - Added `magic-baidu-rs` for unadjusted daily technical bars with source
   MA5/MA10/MA20. The live probe returned five 华电辽能 bars and the bounded 2/2
   load sample returned 40 records without failure.
@@ -157,7 +166,7 @@ Breaking migrations:
   inferred from either parent commit.
 - Switched the workspace, CI and release preflight to the rolling stable Rust
   toolchain and removed the fixed MSRV declaration.
-- All six public providers enforce HTTPS host allowlists, zero redirects,
+- All public-web providers enforce HTTPS host allowlists, zero redirects,
   timeouts, response-size/request bounds, strict non-empty output, source
   evidence, deterministic injected transports, live probes and conservative
   bounded load probes.
@@ -165,7 +174,7 @@ Breaking migrations:
   Shanghai `900xxx` B shares to Beijing, CLS related instruments distinguish
   verified ETF/index/equity code families, and malformed present THS metadata
   fails schema validation instead of disappearing as an absent field.
-- Expanded release packaging from seven to twenty-one uniquely named probe
+- Expanded release packaging from seven to twenty-five uniquely named probe
   binaries and added secret-gated iWencai plus public-web live/load workflow
   coverage.
 

@@ -16,10 +16,13 @@
 - `magic-cninfo-{live,load}-probe`：巨潮公告/PDF metadata 和互动易；
 - `magic-ths-{live,load}-probe`：同花顺一致预期、强势原因、涨停池和热榜；
 - `magic-cls-{live,load}-probe`：财联社签名全球电报；
+- `magic-jin10-{live,load}-probe`：金十公开 7x24 财经快讯；
+- `magic-thepaper-{live,load}-probe`：澎湃财经频道原生文章；
 - `magic-baidu-{live,load}-probe`：百度未复权日 K 和源端 MA；
 - `magic-iwencai-{live,load}-probe`：需要授权 API Key 的语义搜索；
 - `magic-exchange-{live,load}-probe`：SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、
-  HKEX 北向日统计；
+  HKEX 北向日统计和 CFFEX 股指期货交割通知；
+- `magic-gov-live-probe`：国务院政策库官方文件；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建
@@ -38,7 +41,7 @@ bash tools/release/package.sh
 预检先打印当前工具链版本，再在每次新建的隔离 target 目录中，以离线模式运行格式、
 全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
 空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
-构建二十一个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
+构建二十六个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
 可重复流程，不代表当前未完成合并的工作树已经通过 release gate：
 
 ```text
@@ -55,14 +58,19 @@ target/dist/GIT_SHA/
 │   ├── magic-eastmoney-load-probe[.exe]
 │   ├── magic-exchange-live-probe[.exe]
 │   ├── magic-exchange-load-probe[.exe]
+│   ├── magic-gov-live-probe[.exe]
 │   ├── magic-iwencai-live-probe[.exe]
 │   ├── magic-iwencai-load-probe[.exe]
+│   ├── magic-jin10-live-probe[.exe]
+│   ├── magic-jin10-load-probe[.exe]
 │   ├── magic-router-live-probe[.exe]
 │   ├── magic-sina-live-probe[.exe]
 │   ├── magic-sina-load-probe[.exe]
 │   ├── magic-tdx-live-probe[.exe]
 │   ├── magic-tencent-live-probe[.exe]
 │   ├── magic-tencent-load-probe[.exe]
+│   ├── magic-thepaper-live-probe[.exe]
+│   ├── magic-thepaper-load-probe[.exe]
 │   ├── magic-ths-live-probe[.exe]
 │   └── magic-ths-load-probe[.exe]
 ├── docs/
@@ -101,8 +109,9 @@ shasum -a 256 -c SHA256SUMS
 | TDX | 支持 | 支持 | 支持 | 需要出站 TCP/HTTP 与可写缓存目录 |
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
-| Eastmoney/CNInfo/THS/CLS/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源 |
-| SSE/SZSE/HKEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
+| Eastmoney/CNInfo/THS/CLS/Jin10/The Paper/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源 |
+| State Council official | 支持 | 支持 | 支持 | Rustls HTTPS；官方政策文件 |
+| SSE/SZSE/HKEX/CFFEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
 | iWencai | 支持 | 支持 | 支持 | Rustls HTTPS；需要获授权 API Key |
 | EMQuant Rust 层 | 支持 | 可编译 | 可编译 | 运行还取决于厂商 SDK |
 | 当前 EMQuant C++ bridge | x86_64 macOS | 未适配 | 未适配 | 使用 `.dylib`、`dlopen` 和 POSIX API |
@@ -118,13 +127,16 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | --- | --- | --- |
 | TDX | 已配置行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` | `~/.tdxrs/server_cache.json`；调用方指定的财务缓存 |
 | Tencent | `qt.gtimg.cn:443`、`web.ifzq.gtimg.cn:443`、`ifzq.gtimg.cn:443`、`stock.gtimg.cn:443`，HTTPS | 无持久缓存 |
-| Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`、`stock.finance.sina.com.cn:443`，HTTPS | 无持久缓存 |
-| Eastmoney Web | 集成文档白名单中的 `eastmoney.com`/`dfcfw.com` 主机，HTTPS 443 | 无持久缓存 |
+| Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`、`stock.finance.sina.com.cn:443`，HTTPS；全球指数/汇率也使用 `hq.sinajs.cn` | 无持久缓存 |
+| Eastmoney Web | 集成文档白名单中的 `eastmoney.com`/`dfcfw.com` 主机（含 `pdf.dfcfw.com`），HTTPS 443 | 无持久缓存 |
 | CNInfo | `www.cninfo.com.cn:443`、`irm.cninfo.com.cn:443`、`static.cninfo.com.cn:443` | 仅 24 小时进程内 org 映射缓存 |
 | THS | `basic`、`zx`、`data`、`dq.10jqka.com.cn:443` | 无持久缓存 |
 | CLS | `www.cls.cn:443` | 无持久缓存 |
+| Jin10 | `flash-api.jin10.com:443` | 无持久缓存 |
+| The Paper | `www.thepaper.cn:443` | 无持久缓存 |
 | Baidu | `finance.pae.baidu.com:443` | 无持久缓存 |
-| SSE/SZSE/HKEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443` | 无持久缓存 |
+| SSE/SZSE/HKEX/CFFEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443`、`www.cffex.com.cn:443` | 无持久缓存 |
+| State Council | `sousuo.www.gov.cn:443`；返回链接仅允许 `www.gov.cn:443` | 无持久缓存 |
 | iWencai | `openapi.iwencai.com:443` | API Key 仅由环境/秘密挂载提供，不落盘 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
 
@@ -199,8 +211,11 @@ market_release_dir=target/dist/$(git rev-parse HEAD)
 "$market_release_dir/bin/magic-cninfo-live-probe"
 "$market_release_dir/bin/magic-ths-live-probe"
 "$market_release_dir/bin/magic-cls-live-probe"
+"$market_release_dir/bin/magic-jin10-live-probe"
+"$market_release_dir/bin/magic-thepaper-live-probe"
 "$market_release_dir/bin/magic-baidu-live-probe"
 "$market_release_dir/bin/magic-exchange-live-probe"
+"$market_release_dir/bin/magic-gov-live-probe"
 MAGIC_TENCENT_LOAD_OPERATION=mixed MAGIC_TENCENT_LOAD_REQUESTS=20 \
   MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
   "$market_release_dir/bin/magic-tencent-load-probe"
@@ -229,6 +244,10 @@ MAGIC_THS_LOAD_REQUESTS=3 MAGIC_THS_LOAD_CONCURRENCY=1 \
   "$market_release_dir/bin/magic-ths-load-probe"
 MAGIC_CLS_LOAD_REQUESTS=2 MAGIC_CLS_LOAD_CONCURRENCY=1 \
   "$market_release_dir/bin/magic-cls-load-probe"
+MAGIC_JIN10_LOAD_REQUESTS=2 \
+  "$market_release_dir/bin/magic-jin10-load-probe"
+MAGIC_THEPAPER_LOAD_REQUESTS=2 \
+  "$market_release_dir/bin/magic-thepaper-load-probe"
 MAGIC_BAIDU_LOAD_REQUESTS=2 MAGIC_BAIDU_LOAD_CONCURRENCY=1 \
   "$market_release_dir/bin/magic-baidu-load-probe"
 MAGIC_EXCHANGE_LOAD_REQUESTS=8 MAGIC_EXCHANGE_LOAD_CONCURRENCY=1 \
@@ -254,9 +273,12 @@ Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打�
 缓存或跨源拼接，两个来源都失败时退出非零。公共研究/内容 Provider 同样要求非空
 严格批次；Eastmoney 已声明能力的完整 live/mixed probe 必须为零退出，两个未声明
 资金流端点若继续返回 empty reply 则单独打印预期失败诊断，不能登记为资金流实盘
-通过；关键词新闻同样因无结构化证券身份保持未准入。交易所官方 probe 要求公告
+通过；东财最新财经资讯必须校验完整滚动首屏，关键词搜索则因无结构化证券身份保持
+未准入。交易所官方 probe 要求公告
 证券/日期及分页匹配、龙虎榜证券/交易日和完整买五卖五匹配、SZSE Quote/盘口身份及
-源时间匹配、HKEX 两通道与 Top10 完整；任一来源失败时整体非零。iWencai 无授权 Key 时预期
+源时间匹配、HKEX 两通道与 Top10 完整；任一来源失败时整体非零。Jin10 probe 只
+接收未锁定的公开 type-0/type-2 新闻，The Paper probe 只接收财经频道原生文章并
+排除外链转载；两者都不从文本猜测证券身份。iWencai 无授权 Key 时预期
 返回脱敏鉴权错误，不能把这次运行登记为语义搜索实盘通过。
 
 上线门至少保存以下证据，但不要保存账号、令牌或原始登录包：

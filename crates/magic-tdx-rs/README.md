@@ -30,3 +30,27 @@ It verifies Beijing market `2` Quote, bars, books, normalized minute data and
 current trades. Beijing security metadata is explicitly unsupported because
 live servers close the market-2 security-list request; it is never remapped to
 Shanghai or Shenzhen.
+
+## Production board Provider
+
+`TdxBoardProvider` implements provider-neutral board directory, exact
+constituents and reverse membership from the verified `block_fg.dat` and
+`block_gn.dat` files. It rejects unsupported categories, malformed or
+unverified code prefixes, duplicate source pairs, duplicate reverse requests
+and empty normalized output. Provider-scoped board IDs use
+`tdx:<industry|concept>:<source name>` and retain `source_at=None` because the
+block packet supplies no timestamp.
+
+The block files carry stock codes but not stock names. Applications that display
+both use `magic_market_router::join_board_membership_names` with a
+`SecurityMetadataProvider` batch. The returned `NamedBoardMembership` retains
+TDX evidence for board membership and separate metadata evidence for the stock
+name; missing names or identity mismatch fail rather than substituting the code
+as a fake name.
+
+```text
+MAGIC_TDX_BOARD_SERVER=... \
+MAGIC_TDX_BOARD_CATEGORY=concept \
+MAGIC_TDX_BOARD_NAME=人工智能 \
+cargo run -p magic-tdx-rs --example board_live_probe --release --locked --offline
+```

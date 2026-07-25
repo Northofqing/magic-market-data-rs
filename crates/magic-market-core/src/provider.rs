@@ -43,9 +43,13 @@ pub enum ProviderId {
     Iwencai,
     Cninfo,
     Cailianpress,
+    Jin10,
+    ThePaper,
     Sse,
     Szse,
     Hkex,
+    Cffex,
+    StateCouncil,
     LocalAnalysis,
     /// Read-only data exposed by an authorized local terminal/SDK.
     LocalTerminal,

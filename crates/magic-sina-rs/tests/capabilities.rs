@@ -1,6 +1,6 @@
 use magic_market_core::{
-    FinancialStatements, HistoricalBars, MinuteData, NewsProvider, OptionData, OrderBooks,
-    RealtimeQuotes, SecurityMetadataProvider,
+    FinancialStatements, ForeignExchangeProvider, GlobalIndexProvider, HistoricalBars, MinuteData,
+    NewsProvider, OptionData, OrderBooks, RealtimeQuotes, SecurityMetadataProvider,
 };
 use magic_sina_rs::{SinaClient, SinaError};
 
@@ -14,6 +14,8 @@ fn public_client_implements_every_advertised_contract() {
             + SecurityMetadataProvider<Error = SinaError>
             + FinancialStatements<Error = SinaError>
             + OptionData<Error = SinaError>
+            + GlobalIndexProvider<Error = SinaError>
+            + ForeignExchangeProvider<Error = SinaError>
             + NewsProvider<Error = SinaError>,
     >() {
     }
@@ -41,6 +43,8 @@ fn public_client_implements_every_advertised_contract() {
             && !content_capabilities.announcements
             && !content_capabilities.investor_questions
     );
+    let global = SinaClient::global_market_capabilities();
+    assert!(global.indices && global.foreign_exchange);
     assert!(
         !capabilities.trades
             && !capabilities.corporate_actions

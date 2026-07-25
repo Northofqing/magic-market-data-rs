@@ -1,11 +1,11 @@
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
 use magic_market_core::{
     verify_serial_load, AssetClass, BlockTrades, BoardCategory, BoardFlows, DataBatch,
-    DividendPlans, DragonTigerData, Exchange, FlowInterval, FlowScope, FundFlowRequest,
-    FundFlowSeries, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
-    InstrumentSignalRequest, LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents, MarginData,
-    NewsProvider, NonEmptyText, PopularityData, PositiveU32, ProbeStatus, ReportScope,
-    ResearchReports, ResearchRequest,
+    DividendPlans, DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest, Exchange,
+    FlowInterval, FlowScope, FundFlowRequest, FundFlowSeries, HolderCounts,
+    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate, LimitPoolKind,
+    LimitPoolRequest, LimitPools, LockupEvents, MarginData, NewsProvider, NonEmptyText,
+    PopularityData, PositiveU32, ProbeStatus, ReportScope, ResearchReports, ResearchRequest,
 };
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -13,7 +13,7 @@ use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
 const MAX_HIGH_LEVEL_ATTEMPTS: u32 = 20;
-const SUITE_ATTEMPTS: u32 = 17;
+const SUITE_ATTEMPTS: u32 = 19;
 const MIN_PACING_MS: u64 = 1_000;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -62,6 +62,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let pool_date = magic_market_core::IsoDate::new(
         std::env::var("MAGIC_EASTMONEY_POOL_DATE").unwrap_or_else(|_| "2026-07-23".into()),
     )?;
+    let dragon_date = IsoDate::new(
+        std::env::var("MAGIC_EASTMONEY_DRAGON_DATE").unwrap_or_else(|_| "2026-07-24".into()),
+    )?;
 
     let total_started = Instant::now();
     let mut latencies = Vec::with_capacity(high_level_attempts as usize);
@@ -100,6 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             &instrument,
             &report_instrument,
             &pool_date,
+            &dragon_date,
             selected,
         ) {
             Ok(()) if diagnostic_mode => {
@@ -235,6 +239,8 @@ fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error
         "limit-pool-lower",
         "limit-pool-previous-upper",
         "popularity",
+        "dragon-tiger-discovery",
+        "news",
     ];
     const ALL: &[&str] = &[
         "research-instrument",
@@ -255,6 +261,7 @@ fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error
         "limit-pool-lower",
         "limit-pool-previous-upper",
         "popularity",
+        "dragon-tiger-discovery",
         "news",
     ];
     if requested == "suite" {
@@ -272,7 +279,7 @@ fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error
 }
 
 fn is_diagnostic_operation(operation: &str) -> bool {
-    matches!(operation, "fund-flow" | "news")
+    operation == "fund-flow"
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -306,6 +313,7 @@ fn run_operation(
     instrument: &InstrumentId,
     report_instrument: &InstrumentId,
     pool_date: &magic_market_core::IsoDate,
+    dragon_date: &IsoDate,
     operation: &str,
 ) -> Result<(), EastmoneyError> {
     let small = PositiveU32::new(3)?;
@@ -391,9 +399,13 @@ fn run_operation(
             print_batch(client.limit_pool(&request)?);
         }
         "popularity" => print_batch(client.popularity(small)?),
+        "dragon-tiger-discovery" => {
+            let request =
+                DragonTigerDiscoveryRequest::new(dragon_date.clone(), PositiveU32::new(10_000)?)?;
+            print_batch(client.discover_dragon_tiger(&request)?);
+        }
         "news" => {
-            let request = InstrumentDateRangeRequest::new(instrument.clone(), small)?;
-            print_batch(client.instrument_news(&request)?);
+            print_batch(client.global_news(small)?);
         }
         _ => {
             return Err(EastmoneyError::InvalidRequest(format!(

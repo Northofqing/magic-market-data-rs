@@ -6,8 +6,8 @@ use crate::{
     EastmoneyError,
 };
 use magic_market_core::{
-    EarningsEstimate, Exchange, HttpsUrl, NonEmptyText, PositiveU32, ReportScope, ResearchReport,
-    ResearchReports, ResearchRequest,
+    EarningsEstimate, Exchange, HttpsUrl, NonEmptyText, PositiveU32, ReportScope, ResearchDocument,
+    ResearchDocumentRequest, ResearchDocuments, ResearchReport, ResearchReports, ResearchRequest,
 };
 use serde_json::Value;
 
@@ -53,6 +53,46 @@ impl ResearchReports for EastmoneyClient {
             ],
         )?;
         parse_reports(&bytes, request.scope())
+    }
+}
+
+impl ResearchDocuments for EastmoneyClient {
+    type Error = EastmoneyError;
+
+    fn research_document(
+        &self,
+        request: &ResearchDocumentRequest,
+    ) -> Result<magic_market_core::DataBatch<ResearchDocument>, Self::Error> {
+        let report_id = request.report_id.as_str();
+        if !report_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        {
+            return Err(EastmoneyError::InvalidRequest(
+                "report ID contains URL-unsafe characters".into(),
+            ));
+        }
+        let expected = format!("https://pdf.dfcfw.com/pdf/H3_{report_id}_1.pdf");
+        if request.pdf_url.as_str() != expected {
+            return Err(EastmoneyError::InvalidRequest(format!(
+                "report PDF URL must exactly match {expected}"
+            )));
+        }
+        let body = self.get_pdf(
+            request.pdf_url.as_str(),
+            &[
+                ("Accept", "application/pdf"),
+                ("Referer", "https://data.eastmoney.com/"),
+            ],
+        )?;
+        let context = BatchContext::new("research-document", None)?;
+        let document = ResearchDocument::new(
+            request.report_id.clone(),
+            request.pdf_url.clone(),
+            body,
+            context.evidence()?,
+        )?;
+        context.finish(vec![document])
     }
 }
 
@@ -208,3 +248,7 @@ fn map_estimates(row: &Value, published_at: &str) -> Result<Vec<EarningsEstimate
 #[cfg(test)]
 #[path = "../tests/internal/reports_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/internal/research_document_regression_tests.rs"]
+mod research_document_regression_tests;

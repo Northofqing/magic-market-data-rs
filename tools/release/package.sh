@@ -80,12 +80,17 @@ build_probe magic-ths-rs live_probe magic-ths-live-probe
 build_probe magic-ths-rs load_probe magic-ths-load-probe
 build_probe magic-cls-rs live_probe magic-cls-live-probe
 build_probe magic-cls-rs load_probe magic-cls-load-probe
+build_probe magic-jin10-rs live_probe magic-jin10-live-probe
+build_probe magic-jin10-rs load_probe magic-jin10-load-probe
+build_probe magic-thepaper-rs live_probe magic-thepaper-live-probe
+build_probe magic-thepaper-rs load_probe magic-thepaper-load-probe
 build_probe magic-baidu-rs live_probe magic-baidu-live-probe
 build_probe magic-baidu-rs load_probe magic-baidu-load-probe
 build_probe magic-iwencai-rs live_probe magic-iwencai-live-probe
 build_probe magic-iwencai-rs load_probe magic-iwencai-load-probe
 build_probe magic-exchange-rs live_probe magic-exchange-live-probe
 build_probe magic-exchange-rs load_probe magic-exchange-load-probe
+build_probe magic-gov-rs live_probe magic-gov-live-probe
 
 while IFS= read -r -d '' tracked_doc; do
   target_parent="$dist_dir/$(dirname "$tracked_doc")"

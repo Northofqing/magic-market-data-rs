@@ -1,6 +1,6 @@
 use crate::{
-    DataBatch, HttpsUrl, InstrumentDateRangeRequest, InstrumentId, NonEmptyText, PositiveU32,
-    SourceEvidence, SourcedRecord,
+    DataBatch, Exchange, HttpsUrl, InstrumentDateRangeRequest, InstrumentId, IsoDate, NonEmptyText,
+    PositiveU32, SourceEvidence, SourcedRecord,
 };
 use serde::{de, Deserialize, Deserializer, Serialize};
 
@@ -23,6 +23,8 @@ pub struct NewsItem {
 pub struct Announcement {
     pub announcement_id: NonEmptyText,
     pub instrument: InstrumentId,
+    #[serde(default)]
+    pub instrument_name: Option<NonEmptyText>,
     pub category: Option<NonEmptyText>,
     pub title: NonEmptyText,
     pub published_at: NonEmptyText,
@@ -209,7 +211,80 @@ pub struct ContentCapabilities {
     pub instrument_news: bool,
     pub global_news: bool,
     pub announcements: bool,
+    pub announcement_discovery: bool,
     pub investor_questions: bool,
+}
+
+/// Bounded full-market announcement request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AnnouncementDiscoveryRequest {
+    start: IsoDate,
+    end: IsoDate,
+    exchange: Option<Exchange>,
+    limit: PositiveU32,
+}
+
+impl AnnouncementDiscoveryRequest {
+    pub fn new(start: IsoDate, end: IsoDate, limit: PositiveU32) -> Result<Self, crate::CoreError> {
+        if start > end {
+            return Err(crate::CoreError::InvalidRequest(
+                "announcement discovery start must not exceed end".into(),
+            ));
+        }
+        if limit.get() > 10_000 {
+            return Err(crate::CoreError::InvalidRequest(
+                "announcement discovery limit must be at most 10000".into(),
+            ));
+        }
+        Ok(Self {
+            start,
+            end,
+            exchange: None,
+            limit,
+        })
+    }
+
+    pub fn with_exchange(mut self, exchange: Exchange) -> Self {
+        self.exchange = Some(exchange);
+        self
+    }
+
+    pub fn start(&self) -> &IsoDate {
+        &self.start
+    }
+
+    pub fn end(&self) -> &IsoDate {
+        &self.end
+    }
+
+    pub fn exchange(&self) -> Option<Exchange> {
+        self.exchange
+    }
+
+    pub fn limit(&self) -> PositiveU32 {
+        self.limit
+    }
+}
+
+impl<'de> Deserialize<'de> for AnnouncementDiscoveryRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            start: IsoDate,
+            end: IsoDate,
+            exchange: Option<Exchange>,
+            limit: PositiveU32,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        let mut request = Self::new(wire.start, wire.end, wire.limit).map_err(de::Error::custom)?;
+        if let Some(exchange) = wire.exchange {
+            request = request.with_exchange(exchange);
+        }
+        Ok(request)
+    }
 }
 
 pub trait NewsProvider {
@@ -226,6 +301,15 @@ pub trait Announcements {
     fn announcements(
         &self,
         request: &InstrumentDateRangeRequest,
+    ) -> Result<DataBatch<Announcement>, Self::Error>;
+}
+
+pub trait AnnouncementDiscovery {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn discover_announcements(
+        &self,
+        request: &AnnouncementDiscoveryRequest,
     ) -> Result<DataBatch<Announcement>, Self::Error>;
 }
 

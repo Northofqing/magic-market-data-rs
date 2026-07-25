@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         batch.quality().issues().join("; "),
     );
     if !batch.quality().is_complete() {
-        return Err("BR-019 whole-market limit pool is incomplete".into());
+        return Err("BR-028 whole-market limit pool is incomplete".into());
     }
     Ok(())
 }

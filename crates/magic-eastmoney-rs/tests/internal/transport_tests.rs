@@ -1,6 +1,6 @@
 use super::{
-    read_http_response, validate_content_type, validate_endpoint, validate_response_limit,
-    EastmoneyTransport, HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES,
+    read_http_response, validate_content_type, validate_endpoint, validate_html_content_type,
+    validate_response_limit, EastmoneyTransport, HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES,
 };
 use std::io::{self, Read};
 use std::sync::mpsc;
@@ -11,6 +11,29 @@ struct FailingReader;
 impl Read for FailingReader {
     fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
         Err(io::Error::other("fixture read failed"))
+    }
+}
+
+struct DefaultDocumentTransport;
+
+impl EastmoneyTransport for DefaultDocumentTransport {
+    fn get(
+        &self,
+        _url: &str,
+        _headers: &[(&str, &str)],
+        _max_bytes: usize,
+    ) -> Result<Vec<u8>, super::EastmoneyError> {
+        Ok(b"forwarded".to_vec())
+    }
+
+    fn post_json(
+        &self,
+        _url: &str,
+        _headers: &[(&str, &str)],
+        _body: &[u8],
+        _max_bytes: usize,
+    ) -> Result<Vec<u8>, super::EastmoneyError> {
+        unreachable!("document forwarding uses GET")
     }
 }
 
@@ -67,6 +90,7 @@ fn only_documented_json_and_jsonp_media_types_are_accepted() {
     assert!(validate_content_type(None).is_err());
     assert!(validate_content_type(Some("text/html")).is_err());
     assert!(validate_content_type(Some("application/octet-stream")).is_err());
+    assert!(validate_html_content_type(None).is_err());
 }
 
 #[test]
@@ -136,6 +160,12 @@ fn prepared_requests_and_public_trait_fail_before_any_unsafe_network_call() {
             DEFAULT_MAX_RESPONSE_BYTES
         )
         .is_err());
+    assert!(transport
+        .get_pdf("https://pdf.dfcfw.com/pdf/test.pdf", &[], 0)
+        .is_err());
+    assert!(transport
+        .get_html("https://roll.eastmoney.com/finance.html", &[], 0)
+        .is_err());
 
     let gate = transport.acquire_slot().unwrap();
     transport.finish_request().unwrap();
@@ -143,4 +173,61 @@ fn prepared_requests_and_public_trait_fail_before_any_unsafe_network_call() {
     let snapshot = transport.load_probe_snapshot().unwrap();
     assert_eq!(snapshot.request_starts(), 1);
     assert_eq!(snapshot.active_requests(), 0);
+}
+
+#[test]
+fn default_document_transport_methods_forward_without_fabricating_probe_data() {
+    let transport = DefaultDocumentTransport;
+    assert_eq!(
+        transport
+            .get_pdf("https://pdf.dfcfw.com/pdf/test.pdf", &[], 8)
+            .unwrap(),
+        b"forwarded"
+    );
+    assert_eq!(
+        transport
+            .get_html("https://roll.eastmoney.com/finance.html", &[], 8)
+            .unwrap(),
+        b"forwarded"
+    );
+    assert!(transport.load_probe_snapshot().is_none());
+}
+
+#[test]
+fn poisoned_transport_gates_and_unbalanced_probe_completion_fail_explicitly() {
+    let mut limiter_poisoned = HttpsTransport::new(Duration::from_secs(1)).unwrap();
+    limiter_poisoned.minimum_interval = Duration::ZERO;
+    let limiter = limiter_poisoned.last_request.clone();
+    assert!(std::thread::spawn(move || {
+        let _guard = limiter.lock().unwrap();
+        panic!("poison limiter fixture");
+    })
+    .join()
+    .is_err());
+    assert!(limiter_poisoned
+        .get("https://push2.eastmoney.com/api/qt/stock/get", &[], 8)
+        .is_err());
+    assert!(limiter_poisoned
+        .post_json(
+            "https://datacenter-web.eastmoney.com/api/data/v1/get",
+            &[],
+            b"{}",
+            8
+        )
+        .is_err());
+
+    let probe_poisoned = HttpsTransport::new(Duration::from_secs(1)).unwrap();
+    let probe = probe_poisoned.request_probe.clone();
+    assert!(std::thread::spawn(move || {
+        let _guard = probe.lock().unwrap();
+        panic!("poison probe fixture");
+    })
+    .join()
+    .is_err());
+    assert!(probe_poisoned.acquire_slot().is_err());
+    assert!(probe_poisoned.finish_request().is_err());
+    assert!(probe_poisoned.load_probe_snapshot().is_none());
+
+    let unbalanced = HttpsTransport::new(Duration::from_secs(1)).unwrap();
+    assert!(unbalanced.finish_request().is_err());
 }

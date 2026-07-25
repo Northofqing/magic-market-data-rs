@@ -45,6 +45,7 @@ fn announcement_at(id: &str, batch_id: &str, published_at: &str) -> Announcement
     Announcement {
         announcement_id: NonEmptyText::new(id).unwrap(),
         instrument: InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity).unwrap(),
+        instrument_name: None,
         category: None,
         title: NonEmptyText::new("公告").unwrap(),
         published_at: NonEmptyText::new(published_at).unwrap(),

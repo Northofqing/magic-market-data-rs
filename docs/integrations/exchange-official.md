@@ -1,6 +1,6 @@
 # 交易所官方数据接入
 
-`magic-exchange-rs` 将上交所、深交所和港交所保留为独立的一手来源身份。当前已通过
+`magic-exchange-rs` 将上交所、深交所、港交所和中金所保留为独立的一手来源身份。当前已通过
 生产 trait 真实验收的能力如下：
 
 | 来源 | 标准化入口 | 真实验收 | 明确边界 |
@@ -11,6 +11,7 @@
 | SZSE | `RealtimeQuotes`、`OrderBooks` | `000858`：Quote + 完整五档 | 数量按源端“手”保留；不推断集合竞价 |
 | SZSE | `DragonTigerData` | `000603 / 2026-07-23`：2 条榜单；首条完整买五卖五 | 完整拉取列表分页，详情按完整席位组返回 |
 | HKEX | `NorthboundDailyStatistics` | `2026-07-22` 沪股通/深股通各 1 条及各自 Top10 | quota 的 `999,999,999` 哨兵保留为 `Unavailable`，不猜测余额 |
+| CFFEX | `FuturesDeliveryCalendar` | 官方交割通知解析 IF/IH/IC/IM 四个股指期货合约 | 只接受通知明确写出的日期与现金交割，不按“第三个周五”推算 |
 
 ## 端点和请求边界
 
@@ -23,6 +24,8 @@ www.szse.cn/api/disc/announcement/annList
 www.szse.cn/api/market/ssjjhq/getTimeData
 www.szse.cn/api/report/ShowReport/data
 www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js
+www.cffex.com.cn/jystz/
+www.cffex.com.cn/jystz/index_<N>.html
 ```
 
 公告固定按完整远程页校验后本地截断。SZSE 龙虎榜完整读取源端声明的所有页面，要求
@@ -39,6 +42,11 @@ HKEX DailyStat 映射两个北向通道的 CNY 成交额、成交笔数、ETF �
 证券代码补足六位，超过 JavaScript 精确整数范围的计数、负金额、日期/通道错配、
 非 JavaScript MIME 或不完整 Top10 都会失败。
 
+CFFEX Provider 在官方交易通知目录中有界扫描最多 120 页，解析同站详情，并要求标题
+精确对应请求年月。详情必须同时明确 IF、IH、IC、IM 合约、同一最后交易/交割日及
+现金交割结算措辞，才输出四条事件。节假日顺延由通知原文证明；公式计算或交易日历
+猜测均不准入。
+
 ## 传输与部署
 
 生产 transport 禁止凭据、非 443 端口和跳转，校验最终 URL、精确
@@ -51,6 +59,7 @@ JSON/JavaScript media type、8 MiB 上限和 1–60 秒超时。每个客户端 
 query.sse.com.cn
 www.szse.cn
 www.hkex.com.hk
+www.cffex.com.cn
 ```
 
 不读取浏览器 Cookie、账户、交易终端或本地行情文件，不提供 HTTP/旧 TLS 降级。
@@ -67,6 +76,17 @@ MAGIC_EXCHANGE_LOAD_REQUESTS=8 \
 MAGIC_EXCHANGE_LOAD_CONCURRENCY=1 \
 MAGIC_EXCHANGE_LOAD_PACING_MS=1000 \
 cargo run -p magic-exchange-rs --example load_probe --release --locked --offline
+```
+
+CFFEX 探针可用 `MAGIC_CFFEX_DELIVERY_YEAR` 和
+`MAGIC_CFFEX_DELIVERY_MONTH` 覆盖默认的 `2026-02`，并要求精确四条事件。只验收
+CFFEX、避免其他交易所的网络状态阻断时使用：
+
+```bash
+MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
+MAGIC_CFFEX_DELIVERY_YEAR=2026 \
+MAGIC_CFFEX_DELIVERY_MONTH=2 \
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
 
 默认测试证券/日期和覆盖变量见

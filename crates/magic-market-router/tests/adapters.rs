@@ -255,9 +255,11 @@ fn every_adapter_preserves_a_successful_provider_batch() {
     let auction = auction_source(ProviderId::Custom, Arc::clone(&provider), classify)
         .fetch(&instruments)
         .unwrap();
-    let post_close = post_close_flow_source(ProviderId::Custom, Arc::clone(&provider), classify)
-        .fetch(&post_close_request)
-        .unwrap();
+    assert!(
+        post_close_flow_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&post_close_request)
+            .is_err()
+    );
     let metadata = security_metadata_source(ProviderId::Custom, Arc::clone(&provider), classify)
         .fetch(&instruments)
         .unwrap();
@@ -270,7 +272,6 @@ fn every_adapter_preserves_a_successful_provider_batch() {
         flow.provenance(),
         book.provenance(),
         auction.provenance(),
-        post_close.provenance(),
         metadata.provenance(),
     ] {
         assert_eq!(provenance.source(), "fixture");

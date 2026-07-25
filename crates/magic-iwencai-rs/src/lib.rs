@@ -223,6 +223,7 @@ impl IwencaiClient {
             consensus: false,
             semantic_search: false,
             pdf_download: false,
+            document_body: false,
         }
     }
 

@@ -16,6 +16,10 @@ fn evidence() -> SourceEvidence {
     SourceEvidence::new(ProviderId::Eastmoney, "observed", "batch").unwrap()
 }
 
+fn post_close_evidence() -> SourceEvidence {
+    SourceEvidence::new(ProviderId::Eastmoney, "2026-07-23T15:35:00+08:00", "batch").unwrap()
+}
+
 fn northbound_top_ten(channel: NorthboundChannel) -> Vec<NorthboundTopTurnover> {
     let (exchange, base) = match channel {
         NorthboundChannel::Shanghai => (Exchange::Shanghai, 600_000),
@@ -238,7 +242,9 @@ fn capital_requests_round_trip_only_complete_validated_filters() {
 
 #[test]
 fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
-    let source_evidence = evidence().with_source_at("2026-07-23 15:35:00").unwrap();
+    let source_evidence = post_close_evidence()
+        .with_source_at("2026-07-23 15:00:00")
+        .unwrap();
     let record = PostCloseFlow::new(
         instrument(),
         Some(NonEmptyText::new("华电辽能").unwrap()),
@@ -247,6 +253,7 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
         Price::new(4.36).unwrap(),
         Ratio::new(2.1, RatioUnit::Percent).unwrap(),
         Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
         Some(Board::Main),
         Some(
             PriceLimitRule::new(
@@ -293,9 +300,10 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
         Price::new(4.36).unwrap(),
         Ratio::new(2.1, RatioUnit::Percent).unwrap(),
         Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
         None,
         None,
-        evidence(),
+        post_close_evidence(),
     )
     .is_err());
     assert!(PostCloseFlow::new(
@@ -306,6 +314,7 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
         Price::new(4.36).unwrap(),
         Ratio::new(2.1, RatioUnit::Percent).unwrap(),
         Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
         None,
         None,
         evidence().with_source_at("short").unwrap(),
@@ -319,6 +328,7 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
         Price::new(4.36).unwrap(),
         Ratio::new(2.1, RatioUnit::Percent).unwrap(),
         Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
         None,
         None,
         evidence().with_source_at("2026-07-23x15:35:00").unwrap(),
@@ -332,6 +342,7 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
         Price::new(4.36).unwrap(),
         Ratio::new(2.1, RatioUnit::Percent).unwrap(),
         Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
         None,
         None,
         evidence().with_source_at("2026-07-22 15:35:00").unwrap(),
@@ -345,9 +356,43 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
         Price::new(4.36).unwrap(),
         Ratio::new(2.1, RatioUnit::Percent).unwrap(),
         Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
         None,
         None,
-        evidence().with_source_at("not-a-date").unwrap(),
+        SourceEvidence::new(ProviderId::Eastmoney, "2026-07-23T15:34:59+08:00", "batch",)
+            .unwrap()
+            .with_source_at("2026-07-23 15:00:00")
+            .unwrap(),
+    )
+    .is_err());
+    assert!(PostCloseFlow::new(
+        instrument(),
+        None,
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        Price::new(4.36).unwrap(),
+        Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+        Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
+        None,
+        None,
+        post_close_evidence()
+            .with_source_at("2026-07-22 15:00:00")
+            .unwrap(),
+    )
+    .is_err());
+    assert!(PostCloseFlow::new(
+        instrument(),
+        None,
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        Price::new(4.36).unwrap(),
+        Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+        Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
+        None,
+        None,
+        post_close_evidence().with_source_at("not-a-date").unwrap(),
     )
     .is_err());
     assert!(PostCloseFlowRequest::new(

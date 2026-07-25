@@ -2,7 +2,7 @@
 
 ## Status
 
-Gate A approved on 2026-07-25. This design implements BR-018 and does not
+Gate A approved on 2026-07-25. This design implements BR-027 and does not
 change downstream `stock_analysis`.
 
 ## Problem
@@ -156,6 +156,6 @@ non-empty strict batch or the exact provider-proven empty state.
 ## Rollback
 
 Revert the Core market contract, CNInfo market module, Router adapter/policy,
-tests, probe, BR-018 and this design together. The existing instrument
+tests, probe, BR-027 and this design together. The existing instrument
 announcement contract remains untouched and is the operational fallback only
 for explicitly instrument-scoped callers, never for market discovery.

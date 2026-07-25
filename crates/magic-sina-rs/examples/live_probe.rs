@@ -1,5 +1,6 @@
 use magic_market_core::{
-    AssetClass, BarInterval, BarsRequest, Exchange, FinancialStatements, HistoricalBars,
+    AssetClass, BarInterval, BarsRequest, Exchange, FinancialStatements, ForeignExchangeProvider,
+    FxPair, FxRequest, GlobalIndexCode, GlobalIndexProvider, GlobalIndexRequest, HistoricalBars,
     InstrumentId, MinuteData, MinuteDataRequest, Money, NonEmptyText, OptionData, OrderBooks,
     RealtimeQuotes, SecurityMetadataProvider, StatementKind,
 };
@@ -38,6 +39,50 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
         "provider=sina-web capabilities={:?}",
         SinaClient::capabilities()
+    );
+    println!(
+        "global_capabilities={:?}",
+        SinaClient::global_market_capabilities()
+    );
+
+    let global = client.global_indices(&GlobalIndexRequest::new(vec![
+        GlobalIndexCode::DowJones,
+        GlobalIndexCode::NasdaqComposite,
+        GlobalIndexCode::Sp500,
+        GlobalIndexCode::Nikkei225,
+        GlobalIndexCode::HangSeng,
+        GlobalIndexCode::Ftse100,
+    ])?)?;
+    if global.records().len() != 6 {
+        return Err("global-index response cardinality mismatch".into());
+    }
+    println!(
+        "global_indices count={} provenance={:?} quality={:?} records={:?}",
+        global.records().len(),
+        global.provenance(),
+        global.quality(),
+        global.records()
+    );
+
+    let fx = client.foreign_exchange(&FxRequest::new(vec![
+        FxPair::UsdCny,
+        FxPair::EurUsd,
+        FxPair::UsdJpy,
+        FxPair::GbpUsd,
+        FxPair::AudUsd,
+        FxPair::UsdChf,
+        FxPair::UsdCad,
+        FxPair::NzdUsd,
+    ])?)?;
+    if fx.records().len() != 8 {
+        return Err("foreign-exchange response cardinality mismatch".into());
+    }
+    println!(
+        "foreign_exchange count={} provenance={:?} quality={:?} records={:?}",
+        fx.records().len(),
+        fx.provenance(),
+        fx.quality(),
+        fx.records()
     );
 
     let quotes = client.realtime_quotes(&instruments)?;

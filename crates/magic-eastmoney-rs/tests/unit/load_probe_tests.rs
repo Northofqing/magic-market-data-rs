@@ -7,15 +7,16 @@ fn suite_rotates_every_advertised_operation() {
         .collect::<Vec<_>>();
     assert_eq!(selected.len(), super::SUITE_ATTEMPTS as usize);
     assert_eq!(selected.first(), Some(&"research-instrument"));
-    assert_eq!(selected.last(), Some(&"popularity"));
+    assert_eq!(selected.last(), Some(&"news"));
     assert!(!selected.contains(&"fund-flow"));
-    assert!(!selected.contains(&"news"));
+    assert!(selected.contains(&"dragon-tiger-discovery"));
+    assert!(selected.contains(&"news"));
 }
 
 #[test]
 fn unadmitted_operations_and_failure_statuses_are_explicit() {
     assert!(is_diagnostic_operation("fund-flow"));
-    assert!(is_diagnostic_operation("news"));
+    assert!(!is_diagnostic_operation("news"));
     assert!(!is_diagnostic_operation("research-instrument"));
     assert_eq!(
         completion_status(true, 0, 1),

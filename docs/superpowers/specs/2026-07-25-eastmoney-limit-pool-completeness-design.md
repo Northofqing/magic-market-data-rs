@@ -2,7 +2,7 @@
 
 ## Status
 
-Gate A design for BR-019. This slice changes source admission only; it does
+Gate A design for BR-028. This slice changes source admission only; it does
 not change prices, streaks, sorting, or downstream selection thresholds.
 
 ## Problem
@@ -60,6 +60,6 @@ explicitly allows that behavior; it may never call them whole-market data.
 
 ## Rollback
 
-Revert the BR-019 commit. Downstream whole-market A10 must remain disabled if
+Revert the BR-028 commit. Downstream whole-market A10 must remain disabled if
 the completeness contract is unavailable; it must not fall back to row-count
 guessing.

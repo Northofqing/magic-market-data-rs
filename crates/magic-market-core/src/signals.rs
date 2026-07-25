@@ -37,6 +37,7 @@ pub struct StrongStockReason {
 pub struct DragonTigerEntry {
     entry_id: NonEmptyText,
     instrument: InstrumentId,
+    instrument_name: Option<NonEmptyText>,
     trading_date: IsoDate,
     reason: Option<NonEmptyText>,
     buy_amount: Option<Money>,
@@ -94,6 +95,7 @@ impl DragonTigerEntry {
         Ok(Self {
             entry_id,
             instrument,
+            instrument_name: None,
             trading_date,
             reason,
             buy_amount,
@@ -110,6 +112,15 @@ impl DragonTigerEntry {
 
     pub fn instrument(&self) -> &InstrumentId {
         &self.instrument
+    }
+
+    pub fn instrument_name(&self) -> Option<&NonEmptyText> {
+        self.instrument_name.as_ref()
+    }
+
+    pub fn with_instrument_name(mut self, instrument_name: NonEmptyText) -> Self {
+        self.instrument_name = Some(instrument_name);
+        self
     }
 
     pub fn trading_date(&self) -> &IsoDate {
@@ -319,6 +330,8 @@ impl<'de> Deserialize<'de> for DragonTigerDisclosure {
 struct DragonTigerEntryWire {
     entry_id: NonEmptyText,
     instrument: InstrumentId,
+    #[serde(default)]
+    instrument_name: Option<NonEmptyText>,
     trading_date: IsoDate,
     reason: Option<NonEmptyText>,
     buy_amount: Option<Money>,
@@ -345,6 +358,10 @@ impl<'de> Deserialize<'de> for DragonTigerEntry {
             wire.turnover_rate,
             wire.evidence,
         )
+        .map(|mut record| {
+            record.instrument_name = wire.instrument_name;
+            record
+        })
         .map_err(de::Error::custom)
     }
 }

@@ -1,13 +1,14 @@
 use magic_eastmoney_rs::EastmoneyClient;
 use magic_market_core::{
     verify_admitted_batch, AssetClass, BlockTrades, BoardCategory, BoardFlows, DataBatch,
-    DividendPlans, DragonTigerData, Exchange, FlowInterval, FlowScope, FundFlowRequest,
-    FundFlowSeries, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
-    InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents,
-    MarginData, MarketDragonTigerData, MarketDragonTigerRequest, NewsProvider, PopularityData,
-    PositiveU32, ProbeAdmissionPolicy, ProbeStatus, ProviderId, ReportScope, ResearchReports,
-    ResearchRequest, SourceEvidence,
+    DividendPlans, DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest,
+    DragonTigerEntry, Exchange, FlowInterval, FlowScope, FundFlowRequest, FundFlowSeries,
+    HolderCounts, InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate,
+    LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketDragonTigerData,
+    MarketDragonTigerRequest, NewsProvider, PopularityData, PositiveU32, ProbeAdmissionPolicy,
+    ProbeStatus, ProviderId, ReportScope, ResearchReports, ResearchRequest, SourceEvidence,
 };
+use std::collections::{BTreeMap, HashSet};
 use std::error::Error;
 use std::fmt::Debug;
 
@@ -55,6 +56,32 @@ fn main() -> Result<(), Box<dyn Error>> {
         "content_capabilities={:#?}",
         EastmoneyClient::content_capabilities()
     );
+    println!(
+        "market_discovery_capabilities={:#?}",
+        EastmoneyClient::market_discovery_capabilities()
+    );
+
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("global-news") {
+        probe_batch(
+            "content.global_news",
+            client.global_news(PositiveU32::new(5)?),
+            &source_policy,
+            |record| &record.evidence,
+            |record| record.item_id.as_str().to_owned(),
+            &mut failures,
+        );
+        return print_summary(&failures);
+    }
+
+    let dragon_date =
+        IsoDate::new(std::env::var("MAGIC_EASTMONEY_DRAGON_DATE").map_err(|_| {
+            "MAGIC_EASTMONEY_DRAGON_DATE=YYYY-MM-DD is required for the discovery live probe"
+        })?)?;
+    let dragon_request = DragonTigerDiscoveryRequest::new(dragon_date, PositiveU32::new(10_000)?)?;
+    probe_dragon_discovery(client.discover_dragon_tiger(&dragon_request), &mut failures);
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("dragon-tiger-discovery") {
+        return print_summary(&failures);
+    }
 
     let report = ResearchRequest::new(
         ReportScope::Instrument(report_sample),
@@ -273,14 +300,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         |record| instrument_identity(&record.instrument),
         &mut failures,
     );
+    probe_batch(
+        "content.global_news",
+        client.global_news(PositiveU32::new(5)?),
+        &source_policy,
+        |record| &record.evidence,
+        |record| record.item_id.as_str().to_owned(),
+        &mut failures,
+    );
     let news_request = InstrumentDateRangeRequest::new(primary, PositiveU32::new(5)?)?;
     probe_unadmitted_batch(
         "content.instrument_news",
         client.instrument_news(&news_request),
     );
+    print_summary(&failures)
+}
+
+fn print_summary(failures: &[String]) -> Result<(), Box<dyn Error>> {
     println!("\n=== probe_summary ===");
     println!("failures={}", failures.len());
-    for failure in &failures {
+    for failure in failures {
         println!("{failure}");
     }
     if !failures.is_empty() {
@@ -288,6 +327,43 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("live_probe_status={}", ProbeStatus::Admitted);
     Ok(())
+}
+
+fn probe_dragon_discovery<E: std::fmt::Display>(
+    result: Result<DataBatch<DragonTigerEntry>, E>,
+    failures: &mut Vec<String>,
+) {
+    println!("\n=== dragon_tiger.discovery ===");
+    match result {
+        Ok(batch) => {
+            let mut exchanges = BTreeMap::<String, usize>::new();
+            let unique_ids = batch
+                .records()
+                .iter()
+                .map(|record| {
+                    *exchanges
+                        .entry(format!("{:?}", record.instrument().exchange()))
+                        .or_default() += 1;
+                    record.entry_id().as_str()
+                })
+                .collect::<HashSet<_>>()
+                .len();
+            println!("records={}", batch.records().len());
+            println!("exchange_distribution={exchanges:?}");
+            println!("unique_entry_ids={unique_ids}");
+            println!("provenance={:#?}", batch.provenance());
+            println!("quality={:#?}", batch.quality());
+            if batch.records().is_empty() || unique_ids != batch.records().len() {
+                failures.push(
+                    "dragon_tiger.discovery: empty result or duplicate entry identity".into(),
+                );
+            }
+        }
+        Err(error) => {
+            println!("error={error}");
+            failures.push(format!("dragon_tiger.discovery: {error}"));
+        }
+    }
 }
 
 fn probe_unadmitted_batch<T: Debug, E: std::fmt::Display>(

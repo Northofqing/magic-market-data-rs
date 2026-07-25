@@ -41,6 +41,7 @@ impl SinaClient {
             instrument_news: true,
             global_news: false,
             announcements: false,
+            announcement_discovery: false,
             investor_questions: false,
         }
     }

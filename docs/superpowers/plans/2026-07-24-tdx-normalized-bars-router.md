@@ -25,7 +25,7 @@
 
 ### Task 1: Register strict TDX bar rules
 
-- [ ] Add BR-013 stating that TDX bar normalization is atomic, never sorts or
+- [ ] Add BR-022 stating that TDX bar normalization is atomic, never sorts or
   deduplicates, preserves source units, and requires record/batch evidence.
 - [ ] Run `bash tools/compliance/check.sh`; expect PASS.
 - [ ] Commit with `docs(tdx): register normalized bar rules`.

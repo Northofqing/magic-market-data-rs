@@ -2,8 +2,8 @@ use magic_market_core::{
     AssetClass, BoardCategory, BoardMembership, ConceptHit, DragonTigerDisclosure,
     DragonTigerEntry, DragonTigerSeat, DragonTigerSide, Exchange, FiniteNumber, InstrumentId,
     InstrumentSignalRequest, IsoDate, MarketDragonTigerRequest, MarketRankingEntry,
-    MarketRankingKind, Money, NonEmptyText, PopularityRank, PositiveU32, ProviderId,
-    SourceEvidence, SourcedRecord, StrongStockReason,
+    MarketRankingKind, Money, NonEmptyText, PopularityRank, PositiveU32, ProviderId, Ratio,
+    RatioUnit, SourceEvidence, SourcedRecord, StrongStockReason,
 };
 
 fn instrument() -> InstrumentId {
@@ -289,4 +289,118 @@ fn market_dragon_tiger_disclosure_requires_exact_buy_five_sell_five() {
 
     complete.pop();
     assert!(DragonTigerDisclosure::new(disclosure_entry(), complete).is_err());
+}
+
+#[test]
+fn dragon_tiger_entry_rejects_invalid_turnover_and_evidence_dates() {
+    let make = |turnover_rate, evidence| {
+        DragonTigerEntry::new(
+            NonEmptyText::new("entry-validation").unwrap(),
+            instrument(),
+            IsoDate::new("2026-07-23").unwrap(),
+            None,
+            None,
+            None,
+            None,
+            turnover_rate,
+            evidence,
+        )
+    };
+
+    assert!(make(
+        Some(Ratio::new(0.5, RatioUnit::Decimal).unwrap()),
+        dated_evidence(ProviderId::Eastmoney, "entry-validation")
+    )
+    .is_err());
+    assert!(make(
+        Some(Ratio::new(-0.5, RatioUnit::Percent).unwrap()),
+        dated_evidence(ProviderId::Eastmoney, "entry-validation")
+    )
+    .is_err());
+    assert!(DragonTigerEntry::new(
+        NonEmptyText::new("entry-negative").unwrap(),
+        instrument(),
+        IsoDate::new("2026-07-23").unwrap(),
+        None,
+        Some(Money::new(-1.0).unwrap()),
+        None,
+        None,
+        None,
+        dated_evidence(ProviderId::Eastmoney, "entry-negative")
+    )
+    .is_err());
+    assert!(make(None, evidence(ProviderId::Eastmoney, "entry-validation")).is_err());
+    assert!(make(
+        None,
+        evidence(ProviderId::Eastmoney, "entry-validation")
+            .with_source_at("2026-07-22")
+            .unwrap()
+    )
+    .is_err());
+    assert!(make(
+        None,
+        evidence(ProviderId::Eastmoney, "entry-validation")
+            .with_source_at("2026-07-23X")
+            .unwrap()
+    )
+    .is_err());
+
+    let named = make(
+        Some(Ratio::new(0.5, RatioUnit::Percent).unwrap()),
+        evidence(ProviderId::Eastmoney, "entry-validation")
+            .with_source_at("2026-07-23 16:00:00")
+            .unwrap(),
+    )
+    .unwrap()
+    .with_instrument_name(NonEmptyText::new("华电辽能").unwrap());
+    assert_eq!(named.instrument_name().unwrap().as_str(), "华电辽能");
+    assert_eq!(named.turnover_rate().unwrap().get(), 0.5);
+    assert!(named.reason().is_none());
+    assert!(named.net_amount().is_none());
+}
+
+#[test]
+fn dragon_tiger_disclosure_rejects_identity_and_duplicate_rank_bypasses() {
+    let mut complete = disclosure_seats(DragonTigerSide::Buy, 5);
+    complete.extend(disclosure_seats(DragonTigerSide::Sell, 5));
+
+    let mut wrong_identity = complete.clone();
+    let mismatched_instrument =
+        InstrumentId::new(Exchange::Shanghai, "600703", AssetClass::Equity).unwrap();
+    wrong_identity[0] = DragonTigerSeat::new(
+        wrong_identity[0].entry_id().clone(),
+        mismatched_instrument,
+        wrong_identity[0].trading_date().clone(),
+        wrong_identity[0].side(),
+        wrong_identity[0].rank(),
+        wrong_identity[0].seat_name().clone(),
+        wrong_identity[0].amount(),
+        wrong_identity[0].buy_amount(),
+        wrong_identity[0].sell_amount(),
+        wrong_identity[0].net_amount(),
+        wrong_identity[0].evidence().clone(),
+    )
+    .unwrap();
+    assert!(DragonTigerDisclosure::new(disclosure_entry(), wrong_identity).is_err());
+
+    let mut duplicate_rank = complete.clone();
+    duplicate_rank[9] = duplicate_rank[8].clone();
+    assert!(DragonTigerDisclosure::new(disclosure_entry(), duplicate_rank).is_err());
+
+    let valid = DragonTigerDisclosure::new(disclosure_entry(), complete).unwrap();
+    let restored: DragonTigerDisclosure =
+        serde_json::from_value(serde_json::to_value(&valid).unwrap()).unwrap();
+    assert_eq!(restored, valid);
+}
+
+#[test]
+fn market_dragon_tiger_request_checked_deserialization_revalidates_limit() {
+    let request: MarketDragonTigerRequest =
+        serde_json::from_str(r#"{"trading_date":"2026-07-23","limit":100}"#).unwrap();
+    assert_eq!(request.trading_date().as_str(), "2026-07-23");
+    assert_eq!(request.limit().get(), 100);
+    assert!(serde_json::from_str::<MarketDragonTigerRequest>(
+        r#"{"trading_date":"2026-07-23","limit":101}"#
+    )
+    .is_err());
 }

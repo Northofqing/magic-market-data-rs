@@ -116,6 +116,7 @@ impl SseClient {
                 instrument_news: false,
                 global_news: false,
                 announcements: true,
+                announcement_discovery: false,
                 investor_questions: false,
             },
             capital: CapitalCapabilities {
@@ -450,6 +451,7 @@ fn map_row(
     Ok(Announcement {
         announcement_id: NonEmptyText::new(announcement_id)?,
         instrument: request.instrument().clone(),
+        instrument_name: None,
         category: optional_nonempty(row.category)?,
         title: NonEmptyText::new(required(row.title, "SSE TITLE")?)?,
         published_at: NonEmptyText::new(source_date)?,

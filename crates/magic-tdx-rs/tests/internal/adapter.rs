@@ -1376,6 +1376,10 @@ fn concrete_blocking_query_delegates_every_family_and_preserves_preflight_errors
     client.set_auto_retry(false);
     assert_blocking_query_rejects_block_codes(&client);
 
+    let smart = crate::TdxSmartClient::new();
+    smart.inner().set_auto_retry(false);
+    assert_blocking_query_rejects_block_codes(&smart);
+
     let direct = crate::TdxDirectClient::new("127.0.0.1", 9, 0.001);
     assert_blocking_query_rejects_block_codes(&direct);
 }

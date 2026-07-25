@@ -327,6 +327,18 @@ fn blocking_service_quote_seam_rejects_incomplete_and_duplicate_chunks_atomicall
         quotes_chunked_with(&duplicate, &instruments),
         Err(TdxError::InvalidData(_))
     ));
+
+    let unexpected = ScriptedBlockingServiceQuery {
+        quote_responses: RefCell::new(VecDeque::from([Ok(vec![
+            source_quote("600001"),
+            source_quote("600003"),
+        ])])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        quotes_chunked_with(&unexpected, &instruments),
+        Err(TdxError::InvalidData(_))
+    ));
 }
 
 #[test]
@@ -655,10 +667,7 @@ fn service_market_mapping_and_construction_are_explicit() {
         market(&instrument(Exchange::Shenzhen, "000001")).unwrap(),
         0
     );
-    assert!(matches!(
-        market(&instrument(Exchange::Beijing, "920118")),
-        Err(TdxError::Unsupported(_))
-    ));
+    assert_eq!(market(&instrument(Exchange::Beijing, "920118")).unwrap(), 2);
     let blocking = TdxService::default();
     let _ = blocking.client();
     let asynchronous = AsyncTdxService::default();
@@ -685,11 +694,22 @@ fn blocking_service_rejects_requests_before_any_transport_call() {
 
     let beijing = instrument(Exchange::Beijing, "920118");
     assert!(matches!(
-        service.quotes_chunked(std::slice::from_ref(&beijing)),
+        service.security_metadata(std::slice::from_ref(&beijing)),
+        Err(TdxError::Unsupported(_))
+    ));
+}
+
+#[test]
+fn blocking_service_facade_preserves_every_explicit_unsupported_capability() {
+    let service = TdxService::new();
+    let id = instrument(Exchange::Beijing, "920118");
+
+    assert!(matches!(
+        service.money_flows(std::slice::from_ref(&id)),
         Err(TdxError::Unsupported(_))
     ));
     assert!(matches!(
-        service.security_metadata(std::slice::from_ref(&beijing)),
+        service.auction_snapshots(std::slice::from_ref(&id)),
         Err(TdxError::Unsupported(_))
     ));
 }

@@ -23,9 +23,10 @@ fn market(id: &InstrumentId) -> Result<u8, TdxError> {
     match id.exchange() {
         magic_market_core::Exchange::Shanghai => Ok(1),
         magic_market_core::Exchange::Shenzhen => Ok(0),
-        magic_market_core::Exchange::Beijing => Err(TdxError::Unsupported(
-            "beijing exchange: TDX market identifier is not verified".into(),
-        )),
+        // BR-007: live protocol evidence verifies market 2 for Beijing quotes,
+        // bars, minute data, trades and books. Security metadata has a separate
+        // list-packet preflight in the normalized adapter and remains unsupported.
+        magic_market_core::Exchange::Beijing => Ok(2),
     }
 }
 

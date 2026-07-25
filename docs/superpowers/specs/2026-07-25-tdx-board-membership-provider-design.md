@@ -2,7 +2,7 @@
 
 **Status:** Gate A approved
 
-**Rule:** BR-017
+**Rule:** BR-026
 
 **Scope:** existing Core `BoardMembershipProvider` implemented by production Magic TDX
 

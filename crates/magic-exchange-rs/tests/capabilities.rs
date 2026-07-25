@@ -1,8 +1,11 @@
-use magic_exchange_rs::{HkexClient, SseClient, SzseClient};
-use magic_market_core::ProviderId;
+use magic_exchange_rs::{CffexClient, HkexClient, SseClient, SzseClient};
+use magic_market_core::{FuturesDeliveryCalendar, ProviderId};
+
+fn assert_delivery_calendar<T: FuturesDeliveryCalendar>() {}
 
 #[test]
 fn provider_identities_are_exact_and_unimplemented_families_remain_false() {
+    assert_delivery_calendar::<CffexClient>();
     let sse = SseClient::capabilities();
     assert_eq!(sse.provider, ProviderId::Sse);
     assert_eq!(sse.market, Default::default());
@@ -32,4 +35,9 @@ fn provider_identities_are_exact_and_unimplemented_families_remain_false() {
     assert_eq!(hkex.content, Default::default());
     assert!(hkex.capital.northbound_daily_statistics);
     assert_eq!(hkex.signals, Default::default());
+
+    assert_eq!(CffexClient::provider_id(), ProviderId::Cffex);
+    let calendar = CffexClient::calendar_capabilities();
+    assert!(calendar.futures_delivery);
+    assert!(!calendar.economic_releases);
 }

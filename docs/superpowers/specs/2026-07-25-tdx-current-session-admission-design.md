@@ -7,7 +7,7 @@ latest cached trading session outside an active A-share session. Raw protocol
 access remains available for diagnostics, but normalized provider and gateway
 contracts must not relabel those packets as current.
 
-This design is governed by BR-014.
+This design is governed by BR-023.
 
 ## Data flow
 
@@ -69,6 +69,6 @@ a separate capability.
 
 ## Rollback
 
-Revert this design, BR-014, the adapter gate/tests and probe handling together.
+Revert this design, BR-023, the adapter gate/tests and probe handling together.
 Rollback restores the previous admission behavior but does not delete raw
 protocol evidence or change public traits.

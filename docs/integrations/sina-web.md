@@ -32,9 +32,19 @@
 | 个股新闻 | `https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllNewsStock.php` | 单个沪深 A 股；最多 5 页、输出最多 200 条；北京暂不声明 |
 | ETF 期权月份 | `https://stock.finance.sina.com.cn/futures/api/openapi.php/StockOptionService.getStockName` | 单个受支持标的；最多 12 个月 |
 | ETF 期权合约、T 型报价、希腊字母 | `https://hq.sinajs.cn/list=` | 合约发现最多 4,096 个；单批最多 50 个；必须发送 `Referer: https://stock.finance.sina.com.cn/` |
+| 全球指数 / 外汇 | `https://hq.sinajs.cn/list=` | 精确请求、精确返回；6 个已验证指数与 8 个已验证汇率对 |
 
 客户端只接受 HTTPS，拒绝重定向，connect/read/write 使用正的有界超时，单响应最多
 1 MiB。克隆 `SinaClient` 会共享同一个 `ureq` 连接池。
+
+## 全球指数与汇率
+
+`GlobalIndexProvider` 支持 Dow Jones、NASDAQ Composite、S&P 500、Nikkei 225、
+Hang Seng 和 FTSE 100；`ForeignExchangeProvider` 支持 USD/CNY、EUR/USD、
+USD/JPY、GBP/USD、AUD/USD、USD/CHF、USD/CAD、NZD/USD。请求必须非空、去重且不
+超过 20 个身份，响应必须与请求符号及数量精确一致。所有值必须有限，涨跌幅保留
+百分比单位。外汇包中的源日期/时间进入证据；全球指数包没有可靠源时间时明确保留
+`source_at=None`。
 
 ## Quote 编码与字段
 
@@ -255,9 +265,10 @@ MAGIC_SINA_TIMEOUT_SECS=10 \
 cargo run -p magic-sina-rs --example live_probe --release --locked --offline
 ```
 
-探针打印 Quote、全部五档、部分元数据、六个支持周期、北京 5 分钟/日线、每个证券的
-当前分时点、三张财务报表的全部报告期、全部发现的期权合约、样本 T 型报价/希腊字母
-和所有不支持能力。任一预期数据族为空或协议错误会退出非零。
+探针打印 6 个全球指数、8 个汇率对、Quote、全部五档、部分元数据、六个支持周期、
+北京 5 分钟/日线、每个证券的当前分时点、三张财务报表的全部报告期、全部发现的
+期权合约、样本 T 型报价/希腊字母和所有不支持能力。任一预期数据族为空、数量不符
+或协议错误会退出非零。
 
 个股新闻有界真实探针：
 

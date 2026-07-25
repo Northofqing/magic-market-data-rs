@@ -260,8 +260,25 @@ where
     Provider: BoardMembershipProvider + Send + Sync + 'static,
     Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
 {
-    SourceFn::new(provider_id, move |request| {
-        provider.board_memberships(request).map_err(&classify)
+    SourceFn::new(provider_id, move |request: &[InstrumentId]| {
+        let requested: HashSet<_> = request.iter().cloned().collect();
+        let batch = provider.board_memberships(request).map_err(&classify)?;
+        let mut identities = HashSet::with_capacity(batch.records().len());
+        for record in batch.records() {
+            if !requested.contains(&record.instrument) {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "board-membership instrument was not requested",
+                ));
+            }
+            if !identities.insert((record.instrument.clone(), record.board_code.as_str())) {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "board-membership batch contains duplicate identities",
+                ));
+            }
+        }
+        Ok(batch)
     })
 }
 
@@ -670,15 +687,16 @@ where
                 ),
             ));
         }
-        if batch.records().len() > request.limit().get() as usize {
+        if batch.records().len() != request.limit().get() as usize {
             return Err(SourceError::try_next(
                 FailureKind::Quality,
-                "post-close flow batch exceeds requested limit",
+                "post-close flow batch cardinality does not match requested limit",
             ));
         }
         let mut ranks = HashSet::with_capacity(batch.records().len());
         let mut instruments = HashSet::with_capacity(batch.records().len());
-        for record in batch.records() {
+        let mut previous_main_net = None;
+        for (index, record) in batch.records().iter().enumerate() {
             if record.trading_date() != request.trading_date() {
                 return Err(SourceError::try_next(
                     FailureKind::Evidence,
@@ -691,12 +709,31 @@ where
                     "post-close flow batch contains a duplicate rank",
                 ));
             }
+            if record.rank().get() != index as u32 + 1 {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "post-close flow ranks are not contiguous source order",
+                ));
+            }
             if !instruments.insert(record.instrument().clone()) {
                 return Err(SourceError::try_next(
                     FailureKind::Quality,
                     "post-close flow batch contains a duplicate instrument",
                 ));
             }
+            if record.name().is_none() {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "post-close flow record is missing its stock name",
+                ));
+            }
+            if previous_main_net.is_some_and(|value| value < record.main_net().get()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "post-close flow main net values are not descending",
+                ));
+            }
+            previous_main_net = Some(record.main_net().get());
         }
         Ok(batch)
     })
@@ -853,7 +890,23 @@ where
     Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
 {
     SourceFn::new(provider_id, move |request| {
-        provider.global_news(*request).map_err(&classify)
+        let batch = provider.global_news(*request).map_err(&classify)?;
+        if batch.records().len() > request.get() as usize {
+            return Err(SourceError::try_next(
+                FailureKind::Evidence,
+                "global-news batch exceeds requested limit",
+            ));
+        }
+        let mut item_ids = HashSet::with_capacity(batch.records().len());
+        for record in batch.records() {
+            if !item_ids.insert(record.item_id.as_str()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "global-news batch contains a duplicate item ID",
+                ));
+            }
+        }
+        Ok(batch)
     })
 }
 

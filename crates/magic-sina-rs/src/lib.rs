@@ -7,6 +7,7 @@
 
 mod bars;
 mod financials;
+mod global;
 mod minute;
 mod news;
 mod options;

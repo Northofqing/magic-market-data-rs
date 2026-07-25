@@ -89,12 +89,9 @@ fn news_date_must_be_a_real_date_and_time() {
 
 #[test]
 fn global_news_jsonp_and_url_boundaries_are_explicit() {
-    let client = crate::EastmoneyClient::new().unwrap();
-    assert!(matches!(
-        client.global_news(PositiveU32::new(1).unwrap()),
-        Err(crate::EastmoneyError::Unsupported(message))
-            if message.contains("global-news")
-    ));
+    let capabilities = crate::EastmoneyClient::content_capabilities();
+    assert!(capabilities.global_news);
+    assert!(!capabilities.instrument_news);
     assert_eq!(unwrap_jsonp(" jQuery_news({}); ").unwrap(), "{}");
     assert_eq!(unwrap_jsonp("jQuery_news({})").unwrap(), "{}");
     assert!(unwrap_jsonp("other({})").is_err());

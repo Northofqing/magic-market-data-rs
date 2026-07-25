@@ -14,10 +14,12 @@ sessions, credentials, portfolios, or order data.
 
 | Family | Core contract | Public host | Verified mapping |
 | --- | --- | --- | --- |
-| Instrument and industry reports | `ResearchReports` | `reportapi.eastmoney.com` | title, institution, author, rating, industry, publication time, EPS forecasts, PDF URL |
+| Instrument and industry reports | `ResearchReports`, `ResearchDocuments` | `reportapi.eastmoney.com`, `pdf.dfcfw.com` | metadata plus the exact original bounded PDF body |
 | Instrument fund flow | `FundFlowSeries` | `push2.eastmoney.com`, `push2his.eastmoney.com` | minute and daily parsers/mapping implemented, but `fund_flow_series=false` until a successful live admission probe |
 | Board fund flow | `BoardFlows` | `push2.eastmoney.com` | industry/concept/region; 1/5/10-day ranking, return, main flow, daily tiers, leader when supplied |
-| Dragon-tiger list | `DragonTigerData`, `MarketDragonTigerData` | `datacenter-web.eastmoney.com` | per-instrument entries plus explicit-date whole-A-share discovery; source `TRADE_ID` keeps same-stock reasons distinct and binds each entry to one atomic buy-five/sell-five group |
+| Dragon-tiger list | `DragonTigerData` | `datacenter-web.eastmoney.com` | entries plus one atomic buy-five/sell-five seat group, amounts, reason, turnover and independent side ranks; seat limit must be at least 10 |
+| Full-market dragon-tiger discovery | `DragonTigerDiscovery` | `datacenter-web.eastmoney.com` | complete dated pagination across Shanghai/Shenzhen/Beijing, stable source ID, stock code and name |
+| Full-market dragon-tiger seats | `MarketDragonTigerData` | `datacenter-web.eastmoney.com` | explicit-date whole-A-share discovery; source `TRADE_ID` keeps same-stock reasons distinct and binds each entry to one atomic buy-five/sell-five group |
 | Margin | `MarginData` | `datacenter-web.eastmoney.com` | financing and securities-lending balances, buys, repayments and quantities |
 | Block trades | `BlockTrades` | `datacenter-web.eastmoney.com` | price, close, premium, volume, amount, buyer and seller |
 | Holder counts | `HolderCounts` | `datacenter-web.eastmoney.com` | holders, change, ratio and average free shares |
@@ -25,12 +27,12 @@ sessions, credentials, portfolios, or order data.
 | Dividends | `DividendPlans` | `datacenter-web.eastmoney.com` | report/ex-date, state, cash/bonus/transfer/allotment per ten shares |
 | Limit pools | `LimitPools` | `push2ex.eastmoney.com` | upper, broken, lower and previous-upper pools; source `qdate` is mandatory and must match the requested date |
 | Popularity | `PopularityData` | `emappdata.eastmoney.com`, `push2.eastmoney.com` | rank and rank change, with separately evidenced quote join |
+| Strict post-close ranking | `PostCloseFlows` | `push2.eastmoney.com` | current China date after 15:35, exact limit, one source timestamp, contiguous rank, code and name |
+| Global latest finance news | `NewsProvider::global_news` | `roll.eastmoney.com`, `finance.eastmoney.com` | complete first-page validation, newest-first minute time, numeric article identity and canonical URL |
 
-Unsupported operations fail explicitly. In particular, generic board flow is
-not advertised as the exact 15:35 post-close Top-10 contract. Consensus,
-semantic search, PDF downloading, global news, announcements, investor
-questions, instrument news, inferred reasons, and account-backed data remain
-disabled.
+Unsupported operations fail explicitly. Consensus, semantic search,
+announcements, investor questions, instrument news, inferred reasons, and
+account-backed data remain disabled.
 The callable fund-flow method is retained for deterministic fixtures and
 diagnostics, but it is not an admitted capability because neither public host
 has completed a successful live probe on this environment.
@@ -42,12 +44,17 @@ promoted into `NewsItem::instruments`; `instrument_news` returns a typed
 ## Safety and transport bounds
 
 - HTTPS is mandatory.
-- Only the six exact Eastmoney public API hosts in the transport allowlist are
+- Only the exact Eastmoney public API/PDF hosts in the transport allowlist are
   reachable.
 - Redirect following is disabled.
-- Successful responses must carry one of the documented JSON/JSONP media
-  types; missing content type, HTML, and arbitrary binary payloads fail before
-  parsing.
+- API responses must carry a documented JSON/JSONP media type. Research
+  documents must be `application/pdf`, start with `%PDF-`, match the exact
+  report identity and stay within 32 MiB; HTML and arbitrary binary payloads
+  fail before admission.
+- Global news uses only the exact
+  `https://roll.eastmoney.com/finance.html` page. It requires UTF-8 HTML,
+  stays within 2 MiB, validates every first-page row before truncation, and
+  accepts only canonical numeric finance article identities.
 - Connect, read, and write timeouts default to 12 seconds.
 - A response is capped at 4 MiB and a POST body at 64 KiB.
 - Production clones share one limiter and issue at most one request per second.
@@ -126,7 +133,8 @@ cargo run -p magic-eastmoney-rs --example live_probe --release --locked
 ```
 
 Fund-flow and keyword-only instrument news are still called as unadmitted
-diagnostics. Their failures are printed as
+diagnostics. Global latest finance news is an admitted family. Diagnostic
+failures are printed as
 `diagnostic_status=expected_failure` and do not turn an otherwise successful
 admitted-family probe into a false failure.
 
@@ -162,16 +170,16 @@ cargo run -p magic-eastmoney-rs --example load_probe --release --locked
 
 `MAGIC_EASTMONEY_LOAD_OPERATION` accepts `mixed`, `research`, `fund-flow`,
 `board-flow`, `limit-pool`, `popularity`, or `news`. `mixed` rotates only
-admitted families; explicit `fund-flow` and `news` remain available as
-diagnostics.
+admitted families and includes `news`; only explicit `fund-flow` remains a
+diagnostic.
 High-level attempts are capped at 20. The summary includes attempts/second,
 min/P50/P95/P99/max attempt latency, explicit pacing-wait total/P95, minimum
 attempt start gap, status counts, and typed error categories. These are not
 transport HTTP-request metrics: some families issue more than one HTTP request
 per high-level attempt. Machine-readable fields therefore use
 `high_level_attempts`, `attempts_per_second`, and `attempt_latency_*`; they do
-not claim HTTP request counts or HTTP RPS. Explicit `fund-flow` and `news` runs
-print `admitted=false` for every attempt. Any failed diagnostic exits nonzero
+not claim HTTP request counts or HTTP RPS. Explicit `fund-flow` runs print
+`admitted=false` for every attempt. Any failed diagnostic exits nonzero
 with `diagnostic_status=diagnostic_failed`; a successful transport/parser check
 is still unadmitted and is reported only as
 `diagnostic_status=diagnostic_complete_unadmitted`.
@@ -185,9 +193,11 @@ kinds, and popularity plus quote join. Example samples included `688017`
 reports, `002475` dragon-tiger records, and `600396` popularity. All four
 limit-pool responses supplied a matching source `qdate`.
 
-The public news endpoint returned real keyword-search hits, but the rows did
-not contain structured instrument identity. It is therefore reported only as
-an unadmitted `Unsupported` diagnostic, not as an instrument-news live pass.
+The keyword-search endpoint returned real hits but no structured instrument
+identity, so it remains an unadmitted `instrument_news` diagnostic. Separately,
+the official finance rolling page backs admitted `global_news`; these records
+carry category and canonical article identity but intentionally have no
+instrument identity.
 
 The current machine/IP could not complete either fund-flow transport:
 
@@ -202,8 +212,8 @@ or replaced with another data family.
 
 The historical six-operation run included fund flow and therefore reported
 5 successes / 1 explicit failure. Current `mixed` load runs intentionally
-exclude fund flow and keyword-only news; select either explicitly to exercise
-its unadmitted diagnostic boundary.
+exclude fund flow but include global latest news. Select `fund-flow` explicitly
+to exercise its unadmitted diagnostic boundary.
 
 ## Deployment
 

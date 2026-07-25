@@ -110,11 +110,11 @@ fn constructors_debug_capabilities_transport_wrappers_and_probe_are_truthful() {
     assert!(research.reports);
     assert!(!research.consensus);
     assert!(!research.semantic_search);
-    assert!(!research.pdf_download);
+    assert!(research.pdf_download && research.document_body);
     let capital = EastmoneyClient::capital_capabilities();
     assert!(capital.board_flow && capital.margin && capital.block_trades);
     assert!(capital.holder_count && capital.lockups && capital.dividends);
-    assert!(!capital.fund_flow_series && !capital.post_close_flow);
+    assert!(!capital.fund_flow_series && capital.post_close_flow);
     let signals = EastmoneyClient::signal_capabilities();
     assert!(signals.dragon_tiger && signals.popularity);
     assert!(!signals.board_memberships && !signals.market_rankings);
@@ -123,8 +123,10 @@ fn constructors_debug_capabilities_transport_wrappers_and_probe_are_truthful() {
     assert!(pools.upper && pools.broken && pools.lower && pools.previous_upper);
     assert!(!pools.reasons);
     let content = EastmoneyClient::content_capabilities();
-    assert!(!content.instrument_news && !content.global_news);
-    assert!(!content.announcements && !content.investor_questions);
+    assert!(!content.instrument_news && content.global_news);
+    assert!(
+        !content.announcements && !content.announcement_discovery && !content.investor_questions
+    );
 }
 
 #[test]

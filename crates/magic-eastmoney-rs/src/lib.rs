@@ -8,6 +8,7 @@
 mod board_flow;
 mod capital;
 mod datacenter_api;
+mod discovery;
 mod dragon_tiger;
 mod error;
 mod fund_flow;
@@ -15,6 +16,7 @@ mod limit_pool;
 mod mapping;
 mod news;
 mod popularity;
+mod post_close;
 mod reports;
 mod transport;
 
@@ -24,15 +26,17 @@ mod test_support;
 
 use magic_market_core::{
     AssetClass, CapitalCapabilities, ContentCapabilities, DataBatch, Exchange, InstrumentId,
-    LimitPoolCapabilities, LoadProbeSnapshot, Provenance, ProviderId, ResearchCapabilities,
-    SignalCapabilities, SourceEvidence,
+    LimitPoolCapabilities, LoadProbeSnapshot, MarketDiscoveryCapabilities, Provenance, ProviderId,
+    ResearchCapabilities, SignalCapabilities, SourceEvidence,
 };
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use error::EastmoneyError;
 pub use transport::EastmoneyTransport;
-use transport::{HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES};
+use transport::{
+    HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES, MAX_HTML_RESPONSE_BYTES, MAX_PDF_RESPONSE_BYTES,
+};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(12);
 const SOURCE_NAME: &str = "eastmoney-web";
@@ -85,7 +89,8 @@ impl EastmoneyClient {
             reports: true,
             consensus: false,
             semantic_search: false,
-            pdf_download: false,
+            pdf_download: true,
+            document_body: true,
         }
     }
 
@@ -99,7 +104,7 @@ impl EastmoneyClient {
             holder_count: true,
             lockups: true,
             dividends: true,
-            post_close_flow: false,
+            post_close_flow: true,
             northbound_daily_statistics: false,
         }
     }
@@ -131,9 +136,20 @@ impl EastmoneyClient {
     pub const fn content_capabilities() -> ContentCapabilities {
         ContentCapabilities {
             instrument_news: false,
-            global_news: false,
+            global_news: true,
             announcements: false,
+            announcement_discovery: false,
             investor_questions: false,
+        }
+    }
+
+    /// Capabilities proved for complete market-intelligence discovery.
+    pub const fn market_discovery_capabilities() -> MarketDiscoveryCapabilities {
+        MarketDiscoveryCapabilities {
+            dragon_tiger_discovery: true,
+            board_directory: false,
+            board_memberships: false,
+            board_constituents: false,
         }
     }
 
@@ -153,6 +169,23 @@ impl EastmoneyClient {
     ) -> Result<Vec<u8>, EastmoneyError> {
         self.transport
             .post_json(url, headers, body, DEFAULT_MAX_RESPONSE_BYTES)
+    }
+
+    pub(crate) fn get_pdf(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        self.transport.get_pdf(url, headers, MAX_PDF_RESPONSE_BYTES)
+    }
+
+    pub(crate) fn get_html(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        self.transport
+            .get_html(url, headers, MAX_HTML_RESPONSE_BYTES)
     }
 }
 
@@ -207,6 +240,13 @@ impl BatchContext {
                 "Eastmoney response contains no usable records".into(),
             ));
         }
+        self.finish_with_issues(records, Vec::new())
+    }
+
+    pub(crate) fn finish_allow_empty<T>(
+        &self,
+        records: Vec<T>,
+    ) -> Result<DataBatch<T>, EastmoneyError> {
         self.finish_with_issues(records, Vec::new())
     }
 
@@ -401,3 +441,7 @@ fn observed_at() -> Result<String, EastmoneyError> {
 #[cfg(test)]
 #[path = "../tests/internal/lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/internal/discovery_and_news_regression_tests.rs"]
+mod discovery_and_news_regression_tests;

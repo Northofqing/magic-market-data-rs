@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Bounded read-only adapters for official exchange data.
 
+mod cffex;
 mod dragon_tiger;
 mod hkex;
 mod sse;
@@ -8,6 +9,7 @@ mod szse;
 mod szse_quote;
 mod transport;
 
+pub use cffex::{CffexClient, CffexConfig};
 pub use dragon_tiger::{
     parse_sse_response, parse_szse_detail_response, parse_szse_list_response,
     DragonTigerParseError, OfficialDragonTigerRequest, ParsedDragonTiger, SzseDragonTigerDetailKey,

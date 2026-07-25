@@ -32,6 +32,8 @@ struct MarketAnnouncementWire {
     announcement_id: Option<String>,
     #[serde(rename = "secCode")]
     security_code: Option<String>,
+    #[serde(rename = "secName")]
+    security_name: Option<String>,
     #[serde(rename = "orgId")]
     organization_id: Option<String>,
     #[serde(rename = "announcementTitle")]
@@ -52,6 +54,7 @@ struct MarketAnnouncementWire {
 struct ValidatedAnnouncement {
     announcement_id: String,
     security_code: String,
+    security_name: Option<String>,
     organization_id: String,
     exchange: Exchange,
     title: String,
@@ -302,6 +305,10 @@ fn validate_market_row(
     Ok(ValidatedAnnouncement {
         announcement_id: required_text(row.announcement_id, "market announcement.announcementId")?,
         security_code,
+        security_name: row
+            .security_name
+            .map(super::normalize_text)
+            .and_then(super::nonblank),
         organization_id: required_text(row.organization_id, "market announcement.orgId")?,
         exchange,
         title: normalize_required(row.title, "market announcement.announcementTitle")?,
@@ -327,6 +334,7 @@ fn map_market_row(
     Ok(Announcement {
         announcement_id: NonEmptyText::new(row.announcement_id.clone())?,
         instrument,
+        instrument_name: optional_nonempty(row.security_name)?,
         category: optional_nonempty(row.category)?,
         title: NonEmptyText::new(row.title)?,
         published_at: NonEmptyText::new(row.published_at.clone())?,

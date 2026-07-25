@@ -41,7 +41,7 @@ rows with the same normalized security identity are collapsed to the
 source-supplied highest score, with deterministic first-seen tie breaking.
 No downstream consumer may deduplicate by display name.
 
-## BR-012 Public-provider probe admission states
+## BR-021 Public-provider probe admission states
 An advertised public-provider family satisfies a probe only as `admitted` or
 source-evidenced `verified_empty`. Ordinary empty batches, incomplete quality,
 issues, provenance mismatch, future or stale source time, duplicate identity,
@@ -49,7 +49,7 @@ unit inconsistency, and cross-field inconsistency fail explicitly.
 `diagnostic_complete_unadmitted`, `skipped_missing_secret`, and `failed` never
 promote or satisfy a capability.
 
-## BR-013 TDX normalized bar atomicity
+## BR-022 TDX normalized bar atomicity
 The provider-facing Magic TDX historical-bar operation returns only
 provider-neutral `magic_market_core::Bar` records. Raw `SecurityBar` remains a
 wire/protocol DTO and is not a second `HistoricalBars` contract. One request is
@@ -61,7 +61,7 @@ by dividing by 100, amount is preserved in CNY yuan, and every record must
 carry `ProviderId::Tdx`, the exact source timestamp and the same non-empty
 batch identity as batch provenance.
 
-## BR-014 TDX normalized current-session admission
+## BR-023 TDX normalized current-session admission
 Raw TDX current-minute and current-transaction packets are diagnostic evidence
 only until the normalized provider or gateway verifies an active A-share
 weekday session in Asia/Shanghai. Normalized current minute and trade requests
@@ -73,7 +73,7 @@ date bypass this wall-clock gate and continue through the historical endpoint.
 This rule does not infer exchange holidays and does not fabricate a source
 date.
 
-## BR-015 Whole-market dragon-tiger disclosure admission
+## BR-024 Whole-market dragon-tiger disclosure admission
 One whole-market dragon-tiger request has an explicit trading date and a
 positive result limit of at most 100. "Market" in this rule means A-share
 equities: the Provider applies the source's explicit equity security-type
@@ -92,7 +92,7 @@ identity. Missing, extra, duplicated or cross-entry seats fail explicitly;
 missing numeric fields are never rendered, coerced to zero or replaced with
 textual numeric placeholders.
 
-## BR-016 Sina official instrument-news admission
+## BR-025 Sina official instrument-news admission
 One Sina instrument-news request accepts one validated Shanghai or Shenzhen
 A-share equity and a positive output limit of at most 200. The Provider builds
 at most five official AllNewsStock HTTPS page URLs from the exact
@@ -121,7 +121,7 @@ explicitly. Instrument identity comes only from the validated request URL plus
 exact page marker, never from title or body text. The retired `feed.mix`
 pageid=155 path and the global pageid=153 feed are not fallbacks.
 
-## BR-017 TDX board-membership atomic admission
+## BR-026 TDX board-membership atomic admission
 One Magic TDX board-membership request accepts a non-empty ordered set of validated
 Shanghai/Shenzhen equity instruments. Exact duplicate requests collapse to their
 first occurrence; the same six-digit code paired with conflicting exchange or asset
@@ -146,7 +146,7 @@ batch ID derived from the three source file hashes. TDX supplies no provider tim
 these files, so both batch and record `source_at` remain absent; local observation
 time must not masquerade as source time.
 
-## BR-018 CNInfo whole-market announcement discovery
+## BR-027 CNInfo whole-market announcement discovery
 One CNInfo whole-market announcement request has an inclusive start/end date
 range and a positive result limit of at most 300. The Provider must use the
 source's native market-list operation with an empty `stock` selector. It must
@@ -184,7 +184,7 @@ explicit error and never becomes an empty batch. Router acceptance of a
 complete empty batch is opt-in and disabled by default so existing routes keep
 their prior failover behavior.
 
-## BR-019 Eastmoney limit-pool completeness
+## BR-028 Eastmoney limit-pool completeness
 Every Eastmoney limit-pool response must retain and validate the source
 `data.tc` total before admission. `tc` must be a non-negative integer and may
 not be smaller than the returned `pool` row count. A batch is complete only
@@ -199,3 +199,86 @@ missing or null `pool`, duplicate source instrument identity, inconsistent
 date, or contradictory total is a protocol failure. The request limit remains
 a transport bound; whole-market consumers must require a complete quality
 report before applying any display or selection limit.
+
+## BR-029 TDX connection-pool lifecycle
+Closing a TDX connection pool while guards are active closes and removes only
+idle connections. Active guards retain their reservation until return and are
+tagged with an opaque pool generation; a guard from a generation invalidated
+by `close_all` is closed and removed, never reinserted. Failed connect or
+handshake attempts must release their pre-I/O reservation. Pool counter
+transitions are checked so guard destruction cannot panic or poison the mutex.
+The observable steady-state invariant is `total == idle + active`.
+
+## BR-012 Public financial-news access boundary
+Jin10 admission is limited to unlocked public type-0 flashes and type-2
+articles belonging to at least one source news channel 1/2/3; channel-5-only
+promotion slots are excluded. Protected details are never requested or
+decrypted. The Paper admission is limited to native articles on
+finance channel `25951`; externally forwarded rows are omitted rather than
+relabeled. Neither source may infer structured security identity from text.
+
+## BR-013 Full-market discovery completeness
+Full-market announcement and dragon-tiger discovery must read and validate the
+source-declared complete result set before applying an exchange filter or caller
+limit. Page totals, page counts, stable source identities and requested dates
+must agree. Every returned stock row must retain both its normalized instrument
+code and the source-supplied instrument name; a missing name is a protocol or
+router quality failure.
+
+## BR-014 Board membership provenance
+TDX board directories and constituents are produced only from validated
+`block_fg.dat` and `block_gn.dat` records. Board identities include category and
+source name, duplicate board/member pairs fail, and reverse membership never
+returns an unrequested instrument. TDX block packets do not contain stock names;
+consumers that display names must join a separately sourced
+`SecurityMetadataProvider` result through `join_board_membership_names` and
+retain both evidence records. Missing names, extra metadata identities and
+incomplete metadata coverage fail.
+
+## BR-015 Global index and FX snapshots
+Global-index and foreign-exchange requests are non-empty, bounded and
+duplicate-free. Sina packets are accepted only at exact requested cardinality,
+after GB18030 decoding and source-symbol validation. Missing or non-finite
+values fail; FX source date/time is retained, while index source time remains
+absent when the packet does not provide one.
+
+## BR-016 Official policy admission
+Official policy documents use only the credential-free State Council search
+endpoint and canonical `www.gov.cn` document URLs. Only the `gongwen` and
+`bumenfile` categories are admitted. Category identity, publication date,
+document identity, requested range, duplicates, response bounds and one-second
+pacing are mandatory.
+
+## BR-017 Research document body integrity
+Research-document retrieval must bind the requested report identity to the
+exact source PDF URL. The production transport accepts only HTTPS
+`pdf.dfcfw.com`, `application/pdf`, a `%PDF-` header and a body no larger than
+32 MiB. HTML, redirects, identity disagreement and truncated or oversized
+documents remain explicit failures.
+
+## BR-018 Calendar source evidence
+Economic releases preserve source indicator identity, country, schedule,
+release time, previous/consensus/actual/revised values and importance; numeric
+zero is not absence. CFFEX delivery events are admitted only from an official
+notice naming the requested contract month, all four IF/IH/IC/IM products,
+their exact date and cash-settlement wording. Formula-only calendar inference
+is prohibited.
+
+## BR-019 Strict 15:35 post-close ranking
+The post-close fund-flow ranking accepts only the current China trading date
+at or after 15:35 Asia/Shanghai. Every row must share the exact source
+timestamp/date, contain code and stock name, preserve main-net amount and
+percentage, use unique source market identities, be strictly non-increasing by
+main-net amount and have contiguous ranks. The Provider and router both require
+exact caller cardinality; stale, pre-window, mixed-snapshot or partial batches
+fail instead of being relabeled as the requested ranking.
+
+## BR-020 Eastmoney rolling finance news
+Eastmoney global latest news is admitted only from the exact first page at
+`https://roll.eastmoney.com/finance.html`. The Provider validates the complete
+`#artList` before applying a caller limit of at most 20. Every row must be in
+the source `财经` category, use a calendar-valid newest-first minute timestamp,
+have matching attribute/visible titles, and use a unique numeric article ID at
+the canonical `finance.eastmoney.com/a/<id>.html` path. The public page does
+not provide structured security identity, so records keep an empty instrument
+list and may not be presented as instrument news.
