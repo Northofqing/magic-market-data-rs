@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-#![allow(clippy::all)]
 //! Pure-Rust TDX market-data driver.
 pub mod block;
 pub mod constants;

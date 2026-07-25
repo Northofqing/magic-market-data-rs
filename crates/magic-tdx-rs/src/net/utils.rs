@@ -26,11 +26,12 @@ use crate::sync;
 /// | Low  | 2400 | ~10 年 |
 /// | Mid  | 4800 | ~20 年 (默认) |
 /// | High | 7200 | ~30 年 |
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FqContextTier {
     /// 约 10 年 (3 页 × 800 根)
     Low = 2400,
     /// 约 20 年 (6 页 × 800 根) — 默认
+    #[default]
     Mid = 4800,
     /// 约 30 年 (9 页 × 800 根)
     High = 7200,
@@ -40,12 +41,6 @@ impl FqContextTier {
     /// 计算对应的翻页数
     pub fn pages(&self) -> u32 {
         *self as u32 / MAX_KLINE_COUNT as u32
-    }
-}
-
-impl Default for FqContextTier {
-    fn default() -> Self {
-        FqContextTier::Mid
     }
 }
 
@@ -446,15 +441,14 @@ pub fn fetch_context_bars_for_adjust_with_tier<F: Fn(&[u8]) -> Result<Vec<u8>>>(
     let earliest_event = xdxr
         .iter()
         .filter(|x| x.category == 1)
-        .map(|x| x.year as u32 * 10000 + x.month as u32 * 100 + x.day as u32)
+        .map(|x| x.year * 10000 + x.month * 100 + x.day)
         .min();
 
     let Some(ee_date) = earliest_event else {
         return Vec::new();
     };
 
-    let first_bar_date =
-        bars[0].year as u32 * 10000 + bars[0].month as u32 * 100 + bars[0].day as u32;
+    let first_bar_date = bars[0].year * 10000 + bars[0].month * 100 + bars[0].day;
 
     if first_bar_date <= ee_date {
         return Vec::new();

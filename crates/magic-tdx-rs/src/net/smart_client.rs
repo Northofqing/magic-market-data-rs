@@ -336,8 +336,7 @@ impl TdxSmartClient {
             return true;
         }
 
-        let server =
-            sync::lock_recover(&self.current_server, "smart current server").clone();
+        let server = sync::lock_recover(&self.current_server, "smart current server").clone();
         if let Some((ip, port, name)) = server {
             logi!(
                 "smart",
@@ -361,8 +360,11 @@ impl TdxSmartClient {
                         }
                         Ok(_) => {
                             logw!("smart", "health check failed: K-line empty, server may have protocol anomaly");
-                            sync::lock_recover(&self.cache, "smart client cache")
-                                .add_to_blacklist(&ip, port, "kline_empty");
+                            sync::lock_recover(&self.cache, "smart client cache").add_to_blacklist(
+                                &ip,
+                                port,
+                                "kline_empty",
+                            );
                             sync::lock_recover(&self.cache, "smart client cache")
                                 .record_failure(&ip, port);
                             self.inner.disconnect();
@@ -370,8 +372,11 @@ impl TdxSmartClient {
                         }
                         Err(e) => {
                             logw!("smart", "health check failed: parse error: {}", e);
-                            sync::lock_recover(&self.cache, "smart client cache")
-                                .add_to_blacklist(&ip, port, "parse_error");
+                            sync::lock_recover(&self.cache, "smart client cache").add_to_blacklist(
+                                &ip,
+                                port,
+                                "parse_error",
+                            );
                             sync::lock_recover(&self.cache, "smart client cache")
                                 .record_failure(&ip, port);
                             self.inner.disconnect();
@@ -381,8 +386,7 @@ impl TdxSmartClient {
                 }
                 Err(e) => {
                     logw!("smart", "health check failed: {}", e);
-                    sync::lock_recover(&self.cache, "smart client cache")
-                        .record_failure(&ip, port);
+                    sync::lock_recover(&self.cache, "smart client cache").record_failure(&ip, port);
                     self.inner.disconnect();
                     return false;
                 }
@@ -595,8 +599,7 @@ impl TdxSmartClient {
                     self.inner.disconnect();
                 }
                 _ => {
-                    sync::lock_recover(&self.cache, "smart client cache")
-                        .record_failure(ip, port);
+                    sync::lock_recover(&self.cache, "smart client cache").record_failure(ip, port);
                     logw!("probe", "{}:{} ({}) - failed", ip, port, name);
                 }
             }

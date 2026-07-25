@@ -466,8 +466,7 @@ mod tests {
 
     #[test]
     fn only_verified_920_nine_prefix_maps_to_beijing() {
-        let verified =
-            InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity).unwrap();
+        let verified = InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity).unwrap();
         assert!(validate_instrument(&verified).is_ok());
 
         let unverified =

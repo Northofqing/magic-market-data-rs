@@ -1433,9 +1433,8 @@ mod tests {
     fn zero_current_quote_price_is_an_instrument_contextual_failure() {
         let requested = [instrument("600001")];
         for value in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-            let error =
-                normalize_quotes("test", &requested, vec![source_quote("600001", value)])
-                    .unwrap_err();
+            let error = normalize_quotes("test", &requested, vec![source_quote("600001", value)])
+                .unwrap_err();
             assert!(matches!(error, TdxError::InvalidData(_)));
             assert!(error.to_string().contains("600001"));
             assert!(error.to_string().contains("current price"));

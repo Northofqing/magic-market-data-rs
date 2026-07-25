@@ -7,6 +7,8 @@ use crate::net::connection::TcpConnection;
 use crate::protocol::constants::{CONNECT_TIMEOUT, DEFAULT_POOL_SIZE};
 use crate::sync;
 
+type HandshakeFn = dyn Fn(&mut TcpConnection) -> Result<()> + Send + Sync;
+
 /// 连接池中的单个连接
 struct PooledConnection {
     conn: TcpConnection,
@@ -18,7 +20,7 @@ pub struct PoolConfig {
     pub max_size: usize,
     pub connect_timeout: f64,
     /// 握手回调: 新建连接后执行 (setup commands)
-    pub handshake_fn: Option<Box<dyn Fn(&mut TcpConnection) -> Result<()> + Send + Sync>>,
+    pub handshake_fn: Option<Box<HandshakeFn>>,
 }
 
 impl PoolConfig {

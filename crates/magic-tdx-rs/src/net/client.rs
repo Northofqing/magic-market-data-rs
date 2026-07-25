@@ -104,13 +104,21 @@ pub struct TdxHqClient {
     fq_context_tier: AtomicU8,
 }
 
+impl Default for TdxHqClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TdxHqClient {
     pub fn new() -> Self {
-        let mut config = PoolConfig::default();
         // 设置握手回调，让连接池自动为新连接执行握手
-        config.handshake_fn = Some(Box::new(|conn: &mut TcpConnection| -> Result<()> {
-            utils::perform_handshake(conn)
-        }));
+        let config = PoolConfig {
+            handshake_fn: Some(Box::new(|conn: &mut TcpConnection| -> Result<()> {
+                utils::perform_handshake(conn)
+            })),
+            ..PoolConfig::default()
+        };
         let default_server = (PRIMARY_SERVERS[0].1.to_string(), PRIMARY_SERVERS[0].2);
         Self {
             pool: Mutex::new(Arc::new(ConnectionPool::new_single(default_server, config))),
@@ -168,9 +176,8 @@ impl TdxHqClient {
             let last = sync::lock(&self.last_server, "last server")?;
             if let Some((ref ip, port)) = *last {
                 if !self.is_server_blocked(ip, port) {
-                    match self.connect_internal(ip, port, timeout, false) {
-                        Ok(true) => return Ok(true),
-                        _ => {}
+                    if let Ok(true) = self.connect_internal(ip, port, timeout, false) {
+                        return Ok(true);
                     }
                 }
             }
@@ -422,16 +429,12 @@ impl TdxHqClient {
     fn start_heartbeat(&self) {
         self.stop_heartbeat();
         let stop = Arc::new(AtomicBool::new(false));
-        let pool = Arc::clone(&sync::lock_recover(
-            &self.pool,
-            "connection pool handle",
-        ));
+        let pool = Arc::clone(&sync::lock_recover(&self.pool, "connection pool handle"));
         let connected = Arc::clone(&self.connected);
         let stop_clone = stop.clone();
         let last_server = Arc::clone(&self.last_server);
         let interval = Duration::from_secs_f64(DEFAULT_HEARTBEAT_INTERVAL);
-        let connect_timeout =
-            *sync::lock_recover(&self.connect_timeout, "connect timeout");
+        let connect_timeout = *sync::lock_recover(&self.connect_timeout, "connect timeout");
 
         let handle = std::thread::spawn(move || {
             while !stop_clone.load(Ordering::Relaxed) {
@@ -443,9 +446,7 @@ impl TdxHqClient {
                 // 尝试从池中借出连接做心跳
                 let current_server = sync::lock_recover(&last_server, "last server")
                     .clone()
-                    .unwrap_or_else(|| {
-                        (PRIMARY_SERVERS[0].1.to_string(), PRIMARY_SERVERS[0].2)
-                    });
+                    .unwrap_or_else(|| (PRIMARY_SERVERS[0].1.to_string(), PRIMARY_SERVERS[0].2));
                 if let Ok(Some(mut guard)) = pool.try_borrow(&current_server) {
                     let alive = (|| -> bool {
                         let conn = guard.conn();
@@ -924,7 +925,7 @@ impl TdxHqClient {
         let earliest_event = xdxr
             .iter()
             .filter(|x| x.category == 1)
-            .map(|x| x.year as u32 * 10000 + x.month as u32 * 100 + x.day as u32)
+            .map(|x| x.year * 10000 + x.month * 100 + x.day)
             .min();
 
         let Some(ee_date) = earliest_event else {
@@ -932,8 +933,7 @@ impl TdxHqClient {
         };
 
         // 检查是否需要上下文
-        let first_bar_date =
-            bars[0].year as u32 * 10000 + bars[0].month as u32 * 100 + bars[0].day as u32;
+        let first_bar_date = bars[0].year * 10000 + bars[0].month * 100 + bars[0].day;
 
         if first_bar_date <= ee_date {
             return Ok(Vec::new());
@@ -1483,8 +1483,7 @@ mod tests {
 
     #[test]
     fn probe_one_returns_all_three_non_negative_latencies() {
-        let (tcp_ms, handshake_ms, api_ms) =
-            probe_one(|| Ok(FakeProbeSession::new(None))).unwrap();
+        let (tcp_ms, handshake_ms, api_ms) = probe_one(|| Ok(FakeProbeSession::new(None))).unwrap();
         assert!(tcp_ms >= 0.0);
         assert!(handshake_ms >= 0.0);
         assert!(api_ms >= 0.0);

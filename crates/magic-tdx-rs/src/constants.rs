@@ -119,7 +119,7 @@ mod tests {
         let y = max_valid_year();
         // 当前 2026, +10 = 2036. 有效范围: 2036 ~ 2040+
         assert!(
-            y >= 2036 && y <= 2050,
+            (2036..=2050).contains(&y),
             "max_valid_year={} out of expected range",
             y
         );
