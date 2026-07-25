@@ -1,8 +1,9 @@
 use magic_cninfo_rs::CninfoClient;
 use magic_market_core::{
-    verify_admitted_batch, AnnouncementDiscovery, AnnouncementDiscoveryRequest, Announcements,
-    AssetClass, DataBatch, Exchange, InstrumentDateRangeRequest, InstrumentId, InvestorQuestions,
-    IsoDate, PositiveU32, ProbeAdmissionPolicy, ProbeStatus, ProviderId,
+    verify_admitted_batch, Announcements, AssetClass, DataBatch, Exchange,
+    InstrumentDateRangeRequest, InstrumentId, InvestorQuestions, IsoDate,
+    MarketAnnouncementRequest, MarketAnnouncements, PositiveU32, ProbeAdmissionPolicy, ProbeStatus,
+    ProviderId,
 };
 use std::error::Error;
 use std::fmt::Debug;
@@ -50,12 +51,12 @@ fn run_probe() -> Result<ProbeStatus, Box<dyn Error>> {
     let discovery_date =
         std::env::var("MAGIC_CNINFO_DISCOVERY_DATE").unwrap_or_else(|_| "2026-07-24".into());
     let discovery_date = IsoDate::new(discovery_date)?;
-    let discovery = AnnouncementDiscoveryRequest::new(
+    let discovery = MarketAnnouncementRequest::new(
         discovery_date.clone(),
         discovery_date,
-        PositiveU32::new(10_000)?,
+        PositiveU32::new(300)?,
     )?;
-    let discovered = client.discover_announcements(&discovery)?;
+    let discovered = client.market_announcements(&discovery)?;
     if discovered
         .records()
         .iter()
@@ -63,7 +64,7 @@ fn run_probe() -> Result<ProbeStatus, Box<dyn Error>> {
     {
         return Err("full-market announcement record is missing its stock name".into());
     }
-    print_batch("announcement_discovery", &discovered);
+    print_batch("market_announcements", &discovered);
 
     let questions = InstrumentDateRangeRequest::new(question_instrument, limit)?;
     let question_batch = client.investor_questions(&questions)?;

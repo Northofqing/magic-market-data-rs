@@ -1,19 +1,16 @@
 use magic_market_core::{
-    Announcement, AnnouncementDiscovery, AnnouncementDiscoveryRequest, AssetClass, DataBatch,
-    EconomicCalendarProvider, EconomicCalendarRequest, EconomicEvent, Exchange,
+    DataBatch, EconomicCalendarProvider, EconomicCalendarRequest, EconomicEvent,
     ForeignExchangeProvider, FuturesDeliveryCalendar, FuturesDeliveryEvent, FuturesDeliveryMethod,
     FuturesDeliveryRequest, FuturesProduct, FxPair, FxQuote, FxRequest, GlobalIndexCode,
-    GlobalIndexProvider, GlobalIndexQuote, GlobalIndexRequest, HttpsUrl, InstrumentId, IsoDate,
-    NonEmptyText, PolicyDocument, PolicyDocuments, PolicyRequest, PositiveU32, Price, Provenance,
-    ProviderId, Ratio, RatioUnit, ResearchDocument, ResearchDocumentRequest, ResearchDocuments,
-    SourceEvidence,
+    GlobalIndexProvider, GlobalIndexQuote, GlobalIndexRequest, HttpsUrl, IsoDate, NonEmptyText,
+    PolicyDocument, PolicyDocuments, PolicyRequest, PositiveU32, Price, Provenance, ProviderId,
+    Ratio, RatioUnit, ResearchDocument, ResearchDocumentRequest, ResearchDocuments, SourceEvidence,
 };
 use magic_market_router::{
-    announcement_discovery_source, economic_calendar_source, foreign_exchange_source,
-    futures_delivery_source, global_index_source, policy_document_source, research_document_source,
-    AcceptancePolicy, AnnouncementDiscoveryRouter, EconomicCalendarRouter, FailureKind,
-    ForeignExchangeRouter, FuturesDeliveryRouter, GlobalIndexRouter, PolicyDocumentRouter,
-    ResearchDocumentRouter, RoutedSource, SourceError,
+    economic_calendar_source, foreign_exchange_source, futures_delivery_source,
+    global_index_source, policy_document_source, research_document_source, AcceptancePolicy,
+    EconomicCalendarRouter, FailureKind, ForeignExchangeRouter, FuturesDeliveryRouter,
+    GlobalIndexRouter, PolicyDocumentRouter, ResearchDocumentRouter, RoutedSource, SourceError,
 };
 use std::sync::Arc;
 
@@ -50,32 +47,6 @@ fn batch<T>(records: Vec<T>, batch_id: &str, source_at: Option<&str>) -> DataBat
 }
 
 struct Fixture;
-
-impl AnnouncementDiscovery for Fixture {
-    type Error = FixtureError;
-
-    fn discover_announcements(
-        &self,
-        _request: &AnnouncementDiscoveryRequest,
-    ) -> Result<DataBatch<Announcement>, Self::Error> {
-        Ok(batch(
-            vec![Announcement {
-                announcement_id: text("announcement-1"),
-                instrument: InstrumentId::new(Exchange::Shanghai, "600000", AssetClass::Equity)
-                    .unwrap(),
-                instrument_name: Some(text("浦发银行")),
-                category: Some(text("年度报告")),
-                title: text("fixture announcement"),
-                published_at: text("2026-07-24T12:00:00+08:00"),
-                canonical_url: HttpsUrl::new("https://example.com/announcement").unwrap(),
-                pdf_url: Some(HttpsUrl::new("https://example.com/announcement.pdf").unwrap()),
-                evidence: evidence("announcement", Some("2026-07-24T12:00:00+08:00")),
-            }],
-            "announcement",
-            Some("2026-07-24T12:00:00+08:00"),
-        ))
-    }
-}
 
 impl GlobalIndexProvider for Fixture {
     type Error = FixtureError;
@@ -227,33 +198,6 @@ impl FuturesDeliveryCalendar for Fixture {
 fn expanded_intelligence_adapters_admit_exact_evidenced_batches() {
     let provider = Arc::new(Fixture);
 
-    let announcement_request = AnnouncementDiscoveryRequest::new(
-        IsoDate::new("2026-07-24").unwrap(),
-        IsoDate::new("2026-07-24").unwrap(),
-        PositiveU32::new(10).unwrap(),
-    )
-    .unwrap();
-    let mut announcements = AnnouncementDiscoveryRouter::new(AcceptancePolicy::new());
-    announcements
-        .register(announcement_discovery_source(
-            ProviderId::Custom,
-            Arc::clone(&provider),
-            classify,
-        ))
-        .unwrap();
-    assert_eq!(
-        announcements
-            .route(&announcement_request)
-            .unwrap()
-            .batch()
-            .records()[0]
-            .instrument_name
-            .as_ref()
-            .unwrap()
-            .as_str(),
-        "浦发银行"
-    );
-
     let global_request = GlobalIndexRequest::new(vec![GlobalIndexCode::Sp500]).unwrap();
     let mut global = GlobalIndexRouter::new(AcceptancePolicy::new());
     global
@@ -364,106 +308,6 @@ fn expanded_intelligence_adapters_admit_exact_evidenced_batches() {
             .len(),
         4
     );
-}
-
-struct StaticAnnouncements(Vec<Announcement>);
-
-impl AnnouncementDiscovery for StaticAnnouncements {
-    type Error = FixtureError;
-
-    fn discover_announcements(
-        &self,
-        _request: &AnnouncementDiscoveryRequest,
-    ) -> Result<DataBatch<Announcement>, Self::Error> {
-        Ok(batch(self.0.clone(), "announcements-invalid", None))
-    }
-}
-
-fn announcement(id: &str, exchange: Exchange, date: &str, name: Option<&str>) -> Announcement {
-    Announcement {
-        announcement_id: text(id),
-        instrument: InstrumentId::new(exchange, "600000", AssetClass::Equity).unwrap(),
-        instrument_name: name.map(text),
-        category: None,
-        title: text("fixture announcement"),
-        published_at: text(date),
-        canonical_url: HttpsUrl::new("https://example.com/announcement").unwrap(),
-        pdf_url: None,
-        evidence: evidence("announcements-invalid", None),
-    }
-}
-
-#[test]
-fn announcement_discovery_adapter_rejects_every_identity_and_range_violation() {
-    let request = AnnouncementDiscoveryRequest::new(
-        IsoDate::new("2026-07-24").unwrap(),
-        IsoDate::new("2026-07-24").unwrap(),
-        PositiveU32::new(1).unwrap(),
-    )
-    .unwrap()
-    .with_exchange(Exchange::Shanghai);
-    let valid = announcement(
-        "a",
-        Exchange::Shanghai,
-        "2026-07-24T12:00:00+08:00",
-        Some("浦发银行"),
-    );
-    let cases = [
-        vec![valid.clone(), valid.clone()],
-        vec![announcement(
-            "a",
-            Exchange::Shanghai,
-            "2026-07-24T12:00:00+08:00",
-            None,
-        )],
-        vec![announcement(
-            "a",
-            Exchange::Shanghai,
-            "bad",
-            Some("浦发银行"),
-        )],
-        vec![announcement(
-            "a",
-            Exchange::Shanghai,
-            "2026-07-23T12:00:00+08:00",
-            Some("浦发银行"),
-        )],
-        vec![announcement(
-            "a",
-            Exchange::Shenzhen,
-            "2026-07-24T12:00:00+08:00",
-            Some("浦发银行"),
-        )],
-        vec![valid.clone(), valid],
-    ];
-    for records in cases {
-        let source = announcement_discovery_source(
-            ProviderId::Custom,
-            Arc::new(StaticAnnouncements(records)),
-            classify,
-        );
-        assert!(source.fetch(&request).is_err());
-    }
-
-    let duplicate_request = AnnouncementDiscoveryRequest::new(
-        IsoDate::new("2026-07-24").unwrap(),
-        IsoDate::new("2026-07-24").unwrap(),
-        PositiveU32::new(2).unwrap(),
-    )
-    .unwrap()
-    .with_exchange(Exchange::Shanghai);
-    let duplicate = announcement(
-        "duplicate",
-        Exchange::Shanghai,
-        "2026-07-24T12:00:00+08:00",
-        Some("浦发银行"),
-    );
-    let source = announcement_discovery_source(
-        ProviderId::Custom,
-        Arc::new(StaticAnnouncements(vec![duplicate.clone(), duplicate])),
-        classify,
-    );
-    assert!(source.fetch(&duplicate_request).is_err());
 }
 
 struct StaticGlobal(Vec<GlobalIndexQuote>);

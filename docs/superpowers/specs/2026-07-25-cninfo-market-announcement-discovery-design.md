@@ -2,8 +2,10 @@
 
 ## Status
 
-Gate A approved on 2026-07-25. This design implements BR-027 and does not
-change downstream `stock_analysis`.
+Gate A approved on 2026-07-25 and amended after the first remote Gate D run.
+This design implements BR-027. Downstream `stock_analysis` already consumes
+only this contract, so the amendment removes the superseded generic discovery
+contract without changing its call sites.
 
 ## Problem
 
@@ -34,11 +36,30 @@ Core adds `MarketAnnouncements`, returning
 `DataBatch<Announcement>`. The instrument-scoped `Announcements` trait remains
 unchanged. This prevents either contract from silently broadening the other.
 
+The earlier generic `AnnouncementDiscoveryRequest` /
+`AnnouncementDiscovery` contract and its CNInfo/Router implementations are
+rejected and removed. They duplicate the same endpoint but infer exchange from
+security-code prefixes, require attachment URLs that are optional at the
+source, build canonical URLs from the PDF URL, and interpret CNInfo
+`totalpages` as a conventional final page. Retaining a compatibility wrapper
+would keep two public definitions of the same source operation and would allow
+the weaker identity contract to re-enter production. No downstream caller in
+this release uses that interface.
+
 Router adds `MarketAnnouncementRouter` and
 `market_announcement_source`. Empty-batch selection is controlled by a new
 `AcceptancePolicy::with_accept_complete_empty(bool)` flag. Its default is
 `false`; only a route that understands provider-proven empty semantics enables
 it.
+
+## Old module relation
+
+| module | decision | reason |
+| --- | --- | --- |
+| instrument-scoped `Announcements` | adopt | Different request identity; remains the verified single-security operation. |
+| `AnnouncementDiscoveryRequest` / `AnnouncementDiscovery` | reject and delete | Superseded duplicate of the native market contract with contradictory pagination and weaker identity. |
+| CNInfo `announcement_discovery_page` and inferred-code mapper | reject and delete | Replaced by source `pageColumn`/`orgId` validation in `market_announcements.rs`. |
+| Router `AnnouncementDiscoveryRouter` | reject and delete | Replaced by `MarketAnnouncementRouter`; no downstream consumer remains. |
 
 ## Provider architecture
 

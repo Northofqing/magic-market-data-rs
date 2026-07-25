@@ -56,6 +56,16 @@ impl HttpsTransport {
     }
 }
 
+pub(crate) fn collect_transport_result(
+    result: Result<ureq::Response, ureq::Error>,
+) -> Result<HttpResponse, ThsError> {
+    match result {
+        Ok(response) => HttpsTransport::collect(response),
+        Err(ureq::Error::Status(_, response)) => HttpsTransport::collect(response),
+        Err(ureq::Error::Transport(error)) => Err(ThsError::Transport(error.to_string())),
+    }
+}
+
 pub(crate) fn read_http_response(
     status: u16,
     final_url: String,
@@ -88,10 +98,6 @@ impl ThsTransport for HttpsTransport {
         for (name, value) in &request.headers {
             wire = wire.set(name, value);
         }
-        match wire.call() {
-            Ok(response) => Self::collect(response),
-            Err(ureq::Error::Status(_, response)) => Self::collect(response),
-            Err(ureq::Error::Transport(error)) => Err(ThsError::Transport(error.to_string())),
-        }
+        collect_transport_result(wire.call())
     }
 }

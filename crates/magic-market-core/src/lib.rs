@@ -41,8 +41,8 @@ pub use company::{
     SecurityProfile, SecurityProfiles, StatementKind,
 };
 pub use content::{
-    Announcement, AnnouncementDiscovery, AnnouncementDiscoveryRequest, Announcements,
-    ContentCapabilities, InvestorQuestion, InvestorQuestions, NewsItem, NewsProvider,
+    Announcement, Announcements, ContentCapabilities, InvestorQuestion, InvestorQuestions,
+    NewsItem, NewsProvider,
 };
 pub use discovery::{
     BoardConstituentProvider, BoardConstituentRequest, BoardDefinition, BoardDirectoryProvider,

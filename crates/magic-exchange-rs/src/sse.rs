@@ -22,8 +22,8 @@ const DRAGON_TIGER_PATH: &str = "/infodisplay/showTradePublicFile.do";
 const CALLBACK: &str = "magicExchange";
 const PAGE_SIZE: u32 = 50;
 const MAX_RECORDS: u32 = 500;
-const USER_AGENT: &str =
-    "Mozilla/5.0 (compatible; magic-exchange-rs/0.2; read-only official-data probe)";
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+    (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 #[derive(Debug, Clone)]
 pub struct SseConfig {
@@ -116,7 +116,7 @@ impl SseClient {
                 instrument_news: false,
                 global_news: false,
                 announcements: true,
-                announcement_discovery: false,
+                market_announcements: false,
                 investor_questions: false,
             },
             capital: CapitalCapabilities {
@@ -199,10 +199,12 @@ impl SseClient {
                     "Accept".into(),
                     "application/json, text/javascript;q=0.9".into(),
                 ),
+                ("Accept-Language".into(), "zh-CN,zh;q=0.9,en;q=0.8".into()),
                 (
                     "Referer".into(),
                     "https://www.sse.com.cn/disclosure/listedinfo/announcement/".into(),
                 ),
+                ("X-Requested-With".into(), "XMLHttpRequest".into()),
             ],
             body: Vec::new(),
         })?;

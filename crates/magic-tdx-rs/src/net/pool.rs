@@ -228,6 +228,25 @@ impl ConnectionPool {
     /// 归还连接到池中
     fn return_connection(&self, mut pooled: PooledConnection) {
         let mut inner = self.inner.lock().unwrap();
+        let reusable = Self::settle_return_state(
+            &mut inner,
+            &pooled.generation,
+            pooled.conn.is_open(),
+            self.config.max_size,
+        );
+        if reusable {
+            inner.idle.push_back(pooled);
+        } else {
+            pooled.conn.close();
+        }
+    }
+
+    fn settle_return_state(
+        inner: &mut PoolInner,
+        returned_generation: &Arc<()>,
+        connection_is_open: bool,
+        max_size: usize,
+    ) -> bool {
         if inner.active == 0 || inner.total == 0 {
             loge!(
                 "pool",
@@ -235,19 +254,18 @@ impl ConnectionPool {
                 inner.active,
                 inner.total
             );
-            pooled.conn.close();
-            return;
+            return false;
         }
         inner.active -= 1;
 
-        if Arc::ptr_eq(&pooled.generation, &inner.generation)
-            && pooled.conn.is_open()
-            && inner.idle.len() < self.config.max_size
+        if Arc::ptr_eq(returned_generation, &inner.generation)
+            && connection_is_open
+            && inner.idle.len() < max_size
         {
-            inner.idle.push_back(pooled);
+            true
         } else {
             inner.total -= 1;
-            pooled.conn.close();
+            false
         }
     }
 
@@ -361,25 +379,15 @@ mod tests {
 
     #[test]
     fn close_all_keeps_active_reservations_until_stale_guards_return() {
-        use std::net::TcpListener;
-        use std::time::Duration;
-
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = std::thread::spawn(move || {
-            let (_stream, _) = listener.accept().unwrap();
-            std::thread::sleep(Duration::from_millis(100));
-        });
-
         let mut config = PoolConfig::new();
         config.max_size = 1;
-        let pool = ConnectionPool::new_single((address.ip().to_string(), address.port()), config);
-        let connection =
-            TcpConnection::connect(&address.ip().to_string(), address.port(), 0.5).unwrap();
-        let endpoint = (address.ip().to_string(), address.port());
-        pool.push(connection, endpoint.clone());
-
-        let guard = pool.borrow(&endpoint).unwrap();
+        let pool = ConnectionPool::new_single(("127.0.0.1".to_string(), 7709), config);
+        let stale_generation = {
+            let mut inner = pool.inner.lock().unwrap();
+            inner.active = 1;
+            inner.total = 1;
+            Arc::clone(&inner.generation)
+        };
         assert_eq!(pool.stats().active, 1);
         pool.close_all();
         let during_close = pool.stats();
@@ -387,11 +395,14 @@ mod tests {
         assert_eq!(during_close.active, 1);
         assert_eq!(during_close.total, 1);
 
-        drop(guard);
+        let reusable = {
+            let mut inner = pool.inner.lock().unwrap();
+            ConnectionPool::settle_return_state(&mut inner, &stale_generation, true, 1)
+        };
+        assert!(!reusable);
         let after_return = pool.stats();
         assert_eq!(after_return.idle, 0);
         assert_eq!(after_return.active, 0);
         assert_eq!(after_return.total, 0);
-        server.join().unwrap();
     }
 }

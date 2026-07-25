@@ -1,4 +1,5 @@
 use super::*;
+use magic_market_core::{MarketAnnouncementRequest, MarketAnnouncements};
 use std::collections::VecDeque;
 
 #[derive(Clone)]
@@ -242,17 +243,19 @@ fn organization_mapping_and_announcement_preserve_optional_category_and_pdf() {
 }
 
 #[test]
-fn full_market_announcement_discovery_keeps_stock_code_and_name() {
+fn full_market_announcements_keep_source_identity_and_name() {
     let body = r#"{
           "hasMore": false,
           "totalAnnouncement": 2,
           "totalRecordNum": 2,
-          "totalpages": 1,
+          "totalpages": 0,
           "announcements": [
             {
               "announcementId": "A-SH",
               "secCode": "600396",
               "secName": "华电辽能",
+              "orgId": "gssh0600396",
+              "pageColumn": "SHMB",
               "announcementTitle": "上海公告",
               "announcementTypeName": "公司公告",
               "announcementTime": 1784822400000,
@@ -262,6 +265,8 @@ fn full_market_announcement_discovery_keeps_stock_code_and_name() {
               "announcementId": "A-SZ",
               "secCode": "002594",
               "secName": "比亚迪",
+              "orgId": "gssz0002594",
+              "pageColumn": "SZMB",
               "announcementTitle": "深圳公告",
               "announcementTypeName": "公司公告",
               "announcementTime": 1784822400000,
@@ -273,13 +278,13 @@ fn full_market_announcement_discovery_keeps_stock_code_and_name() {
         DEFAULT_ANNOUNCEMENT_URL,
         body,
     )]));
-    let request = AnnouncementDiscoveryRequest::new(
+    let request = MarketAnnouncementRequest::new(
         magic_market_core::IsoDate::new("2026-07-24").unwrap(),
         magic_market_core::IsoDate::new("2026-07-24").unwrap(),
         magic_market_core::PositiveU32::new(2).unwrap(),
     )
     .unwrap();
-    let batch = client.discover_announcements(&request).unwrap();
+    let batch = client.market_announcements(&request).unwrap();
     assert_eq!(batch.records().len(), 2);
     assert_eq!(batch.records()[0].instrument.code(), "600396");
     assert_eq!(
@@ -298,107 +303,6 @@ fn full_market_announcement_discovery_keeps_stock_code_and_name() {
             .unwrap()
             .as_str(),
         "比亚迪"
-    );
-}
-
-#[test]
-fn announcement_discovery_validates_later_pages_before_applying_the_limit() {
-    let first_page = r#"{
-          "hasMore": true,
-          "totalAnnouncement": 2,
-          "totalRecordNum": 2,
-          "totalpages": 2,
-          "announcements": [{
-            "announcementId": "A-SH",
-            "secCode": "600396",
-            "secName": "华电辽能",
-            "announcementTitle": "上海公告",
-            "announcementTime": 1784822400000,
-            "adjunctUrl": "finalpage/2026-07-24/A-SH.PDF"
-          }]
-        }"#;
-    let drifted_second_page = r#"{
-          "hasMore": false,
-          "totalAnnouncement": 3,
-          "totalRecordNum": 3,
-          "totalpages": 2,
-          "announcements": [{
-            "announcementId": "A-SZ",
-            "secCode": "002594",
-            "secName": "比亚迪",
-            "announcementTitle": "深圳公告",
-            "announcementTime": 1784822400000,
-            "adjunctUrl": "finalpage/2026-07-24/A-SZ.PDF"
-          }]
-        }"#;
-    let transport = FixtureTransport::new(vec![
-        response(DEFAULT_ANNOUNCEMENT_URL, first_page),
-        response(DEFAULT_ANNOUNCEMENT_URL, drifted_second_page),
-    ]);
-    let observed = transport.clone();
-    let client = CninfoClient::with_test_transport(transport);
-    let request = AnnouncementDiscoveryRequest::new(
-        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
-        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
-        magic_market_core::PositiveU32::new(1).unwrap(),
-    )
-    .unwrap();
-
-    assert!(matches!(
-        client.discover_announcements(&request),
-        Err(CninfoError::Schema(message)) if message.contains("totals changed")
-    ));
-    assert_eq!(observed.requests.lock().unwrap().len(), 2);
-}
-
-#[test]
-fn announcement_discovery_filters_mixed_markets_after_source_validation() {
-    let body = r#"{
-          "hasMore": false,
-          "totalAnnouncement": 2,
-          "totalRecordNum": 2,
-          "totalpages": 1,
-          "announcements": [
-            {
-              "announcementId": "A-SH",
-              "secCode": "600396",
-              "secName": "华电辽能",
-              "announcementTitle": "上海公告",
-              "announcementTime": 1784822400000,
-              "adjunctUrl": "finalpage/2026-07-24/A-SH.PDF"
-            },
-            {
-              "announcementId": "A-SZ",
-              "secCode": "002594",
-              "secName": "比亚迪",
-              "announcementTitle": "深圳公告",
-              "announcementTime": 1784822400000,
-              "adjunctUrl": "finalpage/2026-07-24/A-SZ.PDF"
-            }
-          ]
-        }"#;
-    let client = CninfoClient::with_test_transport(FixtureTransport::new(vec![response(
-        DEFAULT_ANNOUNCEMENT_URL,
-        body,
-    )]));
-    let request = AnnouncementDiscoveryRequest::new(
-        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
-        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
-        magic_market_core::PositiveU32::new(2).unwrap(),
-    )
-    .unwrap()
-    .with_exchange(Exchange::Shanghai);
-
-    let batch = client.discover_announcements(&request).unwrap();
-    assert_eq!(batch.records().len(), 1);
-    assert_eq!(batch.records()[0].instrument.code(), "600396");
-    assert_eq!(
-        batch.records()[0]
-            .instrument_name
-            .as_ref()
-            .unwrap()
-            .as_str(),
-        "华电辽能"
     );
 }
 

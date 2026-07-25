@@ -3,7 +3,9 @@
 ## Scope
 
 This Gate A repair covers `magic-tdx-rs` blocking connection-pool lifecycle
-accounting. It does not change server selection, request retry policy, source
+accounting and the internal transport seam needed to verify connection
+configuration without assuming that a test runner may bind a loopback socket.
+It does not change server selection, request retry policy, source
 normalization, or any public market-data contract.
 
 ## Failure
@@ -16,6 +18,11 @@ could abort the process during destructor unwinding.
 Connection creation also reserves `active` and `total` before network I/O but
 did not release that reservation when connect or handshake failed.
 
+The external connection regression also bound `127.0.0.1:0` to prove timeout
+configuration and byte I/O. Coverage runners may correctly deny listener
+creation, causing the test fixture to fail before it reaches production code.
+That environmental assumption is not part of the `TcpConnection` interface.
+
 ## Data flow and invariants
 
 Each pool generation has an opaque epoch token:
@@ -27,6 +34,14 @@ Each pool generation has an opaque epoch token:
 5. failed connect/handshake reservations are released explicitly;
 6. counters use checked transitions and log an invariant failure instead of
    panicking from `Drop`.
+
+`TcpConnection` keeps its existing public interface. Internally, one private
+stream seam owns connect, timeout configuration, byte I/O, peer-state and
+shutdown operations. The production adapter remains `TcpStream`; deterministic
+tests use a memory adapter that exercises the same connection implementation
+without opening a listener. A private connector seam returns either that
+production stream or an injected transport error, so connection-error mapping
+and timeout bounds remain covered.
 
 At every externally observable boundary:
 
@@ -46,17 +61,28 @@ reservation is counted as active and is either committed or released.
   reservation.
 - An impossible counter contradiction is logged and the connection is closed;
   `Drop` never performs unchecked subtraction.
+- Invalid address and timeout values continue to fail before invoking the
+  connector.
+- Connector, timeout-configuration, send and receive failures remain typed
+  `TdxError::Connection` values; an early EOF remains
+  `TdxError::Disconnected`.
 
 ## Old module relation
 
 `ConnectionPool`, `TdxHqClient` heartbeat, and `PooledConnGuard` are retained.
 No alternate pool or legacy fallback is introduced. The repair deepens the
 existing lifecycle boundary rather than adding a second implementation.
+`TcpConnection::connect/send/recv/close/is_open` are also retained unchanged;
+the memory adapter is private test support and cannot enter a production data
+path.
 
 ## Validation
 
-- deterministic active-guard/`close_all` regression test
+- deterministic no-socket generation/accounting regression for an active
+  return after `close_all`
 - failed-reservation accounting tests
+- deterministic no-listener connection error, timeout, send/receive, EOF and
+  shutdown tests through the unchanged connection implementation
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-features -- --test-threads=1`

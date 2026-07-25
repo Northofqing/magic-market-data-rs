@@ -370,6 +370,12 @@ endpoint has:
 
 There is no insecure-TLS or guessed-schema compatibility mode.
 
+The release live gate executes the official CFFEX delivery-calendar probe as
+an independent job. A transport or authentication failure at SSE, SZSE or HKEX
+must remain visible, but it must not prevent CFFEX from producing its own
+source evidence. Public-web probes use browser-equivalent static request
+headers only; they do not persist cookies, credentials or account identity.
+
 ## 6. Router and aggregation
 
 `magic-market-router` keeps its generic `FailoverChain<Request, Record>`

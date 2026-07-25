@@ -1,7 +1,7 @@
 # 巨潮资讯公告与互动易接入
 
 `magic-cninfo-rs` 是只读的公告/互动问答 Provider，实现
-`Announcements`、`AnnouncementDiscovery` 与 `InvestorQuestions`。它不读取浏览器
+`Announcements`、`MarketAnnouncements` 与 `InvestorQuestions`。它不读取浏览器
 Cookie、桌面客户端、账户、持仓或交易信息。
 
 ## 数据源与映射

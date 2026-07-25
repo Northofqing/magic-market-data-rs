@@ -129,7 +129,7 @@ impl SzseClient {
                 instrument_news: false,
                 global_news: false,
                 announcements: true,
-                announcement_discovery: false,
+                market_announcements: false,
                 investor_questions: false,
             },
             capital: CapitalCapabilities {

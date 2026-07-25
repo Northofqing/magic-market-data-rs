@@ -161,7 +161,7 @@ impl ThePaperClient {
             instrument_news: false,
             global_news: true,
             announcements: false,
-            announcement_discovery: false,
+            market_announcements: false,
             investor_questions: false,
         }
     }

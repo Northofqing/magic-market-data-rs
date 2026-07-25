@@ -58,6 +58,7 @@ jobs:
         env:
           MAGIC_EASTMONEY_POOL_DATE: ${{ inputs.eastmoney_pool_date }}
           MAGIC_EASTMONEY_DRAGON_TIGER_DATE: ${{ inputs.eastmoney_pool_date }}
+          MAGIC_EASTMONEY_DRAGON_DATE: ${{ inputs.eastmoney_pool_date }}
         run: |
           set -o pipefail
           cargo run -p magic-eastmoney-rs --example live_probe --release --locked |
@@ -69,6 +70,25 @@ jobs:
         with:
           name: live-${{ matrix.provider }}-probe
           path: live-${{ matrix.provider }}.txt
+  live-cffex-delivery:
+    runs-on: ubuntu-latest
+    env:
+      MAGIC_EXCHANGE_LIVE_OPERATION: cffex-delivery
+      MAGIC_CFFEX_DELIVERY_YEAR: 2026
+      MAGIC_CFFEX_DELIVERY_MONTH: 2
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run independent official CFFEX delivery probe
+        run: |
+          set -o pipefail
+          cargo run -p magic-exchange-rs --example live_probe --release --locked |
+            tee live-cffex-delivery.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-cffex-delivery-probe
+          path: live-cffex-delivery.txt
   live-iwencai:
     runs-on: ubuntu-latest
     env:

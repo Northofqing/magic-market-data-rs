@@ -10,7 +10,7 @@ fn advertises_only_verified_global_news() {
     assert!(capabilities.global_news);
     assert!(!capabilities.instrument_news);
     assert!(!capabilities.announcements);
-    assert!(!capabilities.announcement_discovery);
+    assert!(!capabilities.market_announcements);
     assert!(!capabilities.investor_questions);
     let calendar = Jin10Client::calendar_capabilities();
     assert!(calendar.economic_releases);

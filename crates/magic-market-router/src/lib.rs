@@ -39,10 +39,10 @@ pub use discovery::{
 };
 pub use error::{FailureAction, FailureKind, SourceError};
 pub use intelligence::{
-    announcement_discovery_source, economic_calendar_source, foreign_exchange_source,
-    futures_delivery_source, global_index_source, policy_document_source, research_document_source,
-    AnnouncementDiscoveryRouter, EconomicCalendarRouter, ForeignExchangeRouter,
-    FuturesDeliveryRouter, GlobalIndexRouter, PolicyDocumentRouter, ResearchDocumentRouter,
+    economic_calendar_source, foreign_exchange_source, futures_delivery_source,
+    global_index_source, policy_document_source, research_document_source, EconomicCalendarRouter,
+    ForeignExchangeRouter, FuturesDeliveryRouter, GlobalIndexRouter, PolicyDocumentRouter,
+    ResearchDocumentRouter,
 };
 pub use market_announcements::{market_announcement_source, MarketAnnouncementRouter};
 pub use router::{

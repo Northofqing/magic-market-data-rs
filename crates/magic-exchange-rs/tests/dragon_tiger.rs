@@ -411,8 +411,9 @@ fn parsers_reject_oversized_bodies_before_decoding() {
 #[test]
 fn public_provider_traits_return_strict_entries_and_atomic_top_five_seats() {
     let sse_request = signal_request(Exchange::Shanghai, "600396", Some("2026-07-22"), 10);
-    let sse = SseClient::with_transport(SseConfig::default(), OfficialFixtureTransport::default())
-        .unwrap();
+    let transport = OfficialFixtureTransport::default();
+    let requests = Arc::clone(&transport.requests);
+    let sse = SseClient::with_transport(SseConfig::default(), transport).unwrap();
     let entries = sse.dragon_tiger_entries(&sse_request).unwrap();
     assert_eq!(entries.records().len(), 1);
     assert!(entries.quality().is_complete());
@@ -420,6 +421,12 @@ fn public_provider_traits_return_strict_entries_and_atomic_top_five_seats() {
         entries.records()[0].evidence().batch_id(),
         entries.provenance().batch_id().unwrap()
     );
+    let requests = requests.lock().unwrap();
+    assert!(requests[0]
+        .headers
+        .iter()
+        .any(|(name, value)| name == "X-Requested-With" && value == "XMLHttpRequest"));
+    drop(requests);
     let sse = SseClient::with_transport(SseConfig::default(), OfficialFixtureTransport::default())
         .unwrap();
     let seats = sse.dragon_tiger_seats(&sse_request).unwrap();

@@ -22,8 +22,8 @@ const SZSE_MAX_PAGES: u32 = 50;
 const SZSE_MAX_RECORDS: u32 = SZSE_PAGE_SIZE * SZSE_MAX_PAGES;
 pub const MAX_DRAGON_TIGER_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_DRAGON_TIGER_RECORDS: u32 = 500;
-const USER_AGENT: &str =
-    "Mozilla/5.0 (compatible; magic-exchange-rs/0.2; read-only official-data probe)";
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+    (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const SSE_REFERER: &str = "https://www.sse.com.cn/disclosure/diclosure/public/dailydata/";
 const SZSE_REFERER: &str = "https://www.szse.cn/disclosure/deal/public/index.html";
 
@@ -461,11 +461,16 @@ fn batch_id(
 }
 
 fn official_headers(referer: &str, accept: &str) -> Vec<(String, String)> {
-    vec![
+    let mut headers = vec![
         ("User-Agent".into(), USER_AGENT.into()),
         ("Accept".into(), accept.into()),
+        ("Accept-Language".into(), "zh-CN,zh;q=0.9,en;q=0.8".into()),
         ("Referer".into(), referer.into()),
-    ]
+    ];
+    if referer == SSE_REFERER {
+        headers.push(("X-Requested-With".into(), "XMLHttpRequest".into()));
+    }
+    headers
 }
 
 fn observed_at() -> Result<String, ExchangeError> {

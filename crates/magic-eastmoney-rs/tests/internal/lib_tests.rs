@@ -124,9 +124,7 @@ fn constructors_debug_capabilities_transport_wrappers_and_probe_are_truthful() {
     assert!(!pools.reasons);
     let content = EastmoneyClient::content_capabilities();
     assert!(!content.instrument_news && content.global_news);
-    assert!(
-        !content.announcements && !content.announcement_discovery && !content.investor_questions
-    );
+    assert!(!content.announcements && !content.market_announcements && !content.investor_questions);
 }
 
 #[test]
