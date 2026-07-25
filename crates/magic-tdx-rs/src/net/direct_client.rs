@@ -570,7 +570,7 @@ mod tests {
         let recent = source_bar((2026, 7, 25));
         let event = source_xdxr((2025, 7, 25), 1);
         assert!(client
-            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", &[], &[event.clone()])
+            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", &[], std::slice::from_ref(&event),)
             .unwrap()
             .is_empty());
         assert!(client

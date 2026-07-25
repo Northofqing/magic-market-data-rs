@@ -1569,7 +1569,7 @@ mod tests {
         assert!(client.connect("127.0.0.1", 1, Some(0.01)).is_err());
 
         client.connected.store(true, Ordering::SeqCst);
-        assert_eq!(client.connect_to_any(Some(0.01)).unwrap(), true);
+        assert!(client.connect_to_any(Some(0.01)).unwrap());
         client.connected.store(false, Ordering::SeqCst);
 
         let mut blocked = Vec::new();
@@ -1636,7 +1636,7 @@ mod tests {
         let recent = source_bar((2026, 7, 25));
         let event = source_xdxr((2025, 7, 25), 1);
         assert!(client
-            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", &[], &[event.clone()])
+            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", &[], std::slice::from_ref(&event),)
             .unwrap()
             .is_empty());
         assert!(client
