@@ -7,7 +7,7 @@ news metadata without fetching, storing, or redistributing article bodies.
 
 ## Current Phase
 
-Phase 2
+Phase 3
 
 ## Phases
 
@@ -28,17 +28,17 @@ Phase 2
 - [x] Map exact files and dependency changes.
 - [x] Write a TDD-oriented implementation plan.
 - [x] Self-review the plan against the approved specification.
-- [ ] Obtain execution approval.
-- **Status:** in_progress
+- [x] Obtain execution approval.
+- **Status:** complete
 
 ### Phase 3: Provider Implementation
 
-- [ ] Add the Yonhap Provider identity and core identity tests.
+- [x] Add the Yonhap Provider identity and core identity tests.
 - [ ] Add the standalone bounded RSS Provider crate.
 - [ ] Add deterministic parser, transport, pacing, and failure tests.
 - [ ] Add Router identity coverage and capability tests.
 - [ ] Add live and load probes.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 4: Admission, Documentation, and Release Gates
 

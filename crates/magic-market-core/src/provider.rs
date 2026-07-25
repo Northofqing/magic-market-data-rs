@@ -45,6 +45,7 @@ pub enum ProviderId {
     Cailianpress,
     Jin10,
     ThePaper,
+    Yonhap,
     Sse,
     Szse,
     Hkex,

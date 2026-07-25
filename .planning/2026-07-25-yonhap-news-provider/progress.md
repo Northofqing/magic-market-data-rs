@@ -40,6 +40,8 @@
 | --- | --- |
 | Workspace build baseline | Passed |
 | Workspace all-target test baseline | Passed |
+| Task 1 Core identity | Passed, 3 tests |
+| Task 1 Router intelligence routing | Passed, 14 tests |
 
 ## 5-Question Reboot Check
 
@@ -50,3 +52,28 @@
 | What's the goal? | Add a bounded metadata-only Yonhap Chinese RSS Provider. |
 | What have I learned? | See `findings.md`; RSS is public, but article content reuse is restricted. |
 | What have I done? | Completed research, design approval, isolation, green baseline, written specification, and detailed self-reviewed implementation plan. |
+
+## Session: 2026-07-26
+
+### Phase 2: Execution Approval
+
+- **Status:** complete
+- User selected inline execution mode (`2`).
+- Loaded and critically reviewed the implementation plan with the
+  `executing-plans` workflow.
+- Restored the isolated planning context with no unsynchronized changes.
+- Confirmed the worktree is clean on `feat/yonhap-news-provider`.
+- Confirmed `rustc 1.97.0` and `cargo 1.97.0`; the pinned parser dependencies
+  present no known toolchain compatibility blocker.
+
+### Phase 3: Provider Implementation
+
+- **Status:** in progress
+- Started Task 1: first-class Core identity and provider-neutral Router
+  evidence tests.
+- Task 1 red tests failed exactly as intended: Core identity and Router
+  fixtures could not compile because `ProviderId::Yonhap` did not yet exist.
+- Added `ProviderId::Yonhap`, stable `"Yonhap"` serialization coverage,
+  provider-neutral Router acceptance, and mismatched-evidence rejection.
+- Task 1 green verification passed: Core identity 3/3 and Router intelligence
+  routing 14/14.

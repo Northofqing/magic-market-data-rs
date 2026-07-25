@@ -72,7 +72,7 @@
 - Modify: `crates/magic-market-core/tests/provider_identity.rs`
 - Modify: `crates/magic-market-router/tests/intelligence_routing.rs`
 
-- [ ] **Step 1: Write failing Core identity tests**
+- [x] **Step 1: Write failing Core identity tests**
 
 Add Yonhap to `intelligence_sources_have_first_class_identities`, change the
 expected length from 11 to 12, and extend the stable serialization test:
@@ -84,7 +84,7 @@ assert_eq!(
 );
 ```
 
-- [ ] **Step 2: Write the failing Router fixture test**
+- [x] **Step 2: Write the failing Router fixture test**
 
 Add a Provider-neutral fixture test next to
 `global_news_router_accepts_eastmoney_identity`:
@@ -117,7 +117,7 @@ Extend the existing mismatch case with a Yonhap-registered fixture whose
 record evidence says `ProviderId::ThePaper`; assert the attempt is rejected as
 `FailureKind::Evidence`.
 
-- [ ] **Step 3: Verify the tests fail**
+- [x] **Step 3: Verify the tests fail**
 
 Run:
 
@@ -128,7 +128,7 @@ cargo test -p magic-market-router --test intelligence_routing --locked --offline
 
 Expected: compilation fails because `ProviderId::Yonhap` does not exist.
 
-- [ ] **Step 4: Add the identity**
+- [x] **Step 4: Add the identity**
 
 Add `Yonhap` immediately after the other financial-news identities:
 
@@ -144,13 +144,13 @@ pub enum ProviderId {
 
 Do not customize Serde naming; the stable wire value must remain `"Yonhap"`.
 
-- [ ] **Step 5: Run the identity tests**
+- [x] **Step 5: Run the identity tests**
 
 Run the two commands from Step 3.
 
 Expected: both test binaries pass.
 
-- [ ] **Step 6: Commit the identity boundary**
+- [x] **Step 6: Commit the identity boundary**
 
 ```bash
 git add crates/magic-market-core/src/provider.rs \
