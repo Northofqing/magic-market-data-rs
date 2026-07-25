@@ -877,6 +877,28 @@ mod tests {
     }
 
     #[test]
+    fn every_finance_request_builder_propagates_local_connection_failure() {
+        let client = TdxFinanceClient::new("127.0.0.1", 1, Some(0.01));
+        assert!(client.get_finance_info(1, "600001").is_err());
+        assert!(client.get_xdxr_info(1, "600001").is_err());
+        assert!(client.get_report_file("tdxfin/gpcw.txt", 0).is_err());
+        assert!(client
+            .get_report_file_by_size("tdxfin/gpcw.txt", CHUNK_SIZE)
+            .is_err());
+        assert!(client
+            .get_report_file_by_size("tdxfin/gpcw.txt", 0)
+            .is_err());
+        assert!(client.get_financial_list().is_err());
+        assert!(client.get_financial_data("../bad", 1).is_err());
+        assert!(client
+            .get_finance_indicators("../bad", 1, "600001")
+            .is_err());
+        assert!(client
+            .get_finance_indicators_labeled("../bad", 1, "600001")
+            .is_err());
+    }
+
+    #[test]
     fn test_cache_dir_set_get() {
         let mut client = TdxFinanceClient::new("127.0.0.1", 7709, None);
         assert!(client.cache_dir().is_none());

@@ -54,3 +54,24 @@ impl BlockService {
         self.client.set_server(ip, port);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::constants::KLINE_DAILY;
+
+    #[test]
+    fn block_facade_propagates_local_connection_failure() {
+        let service = BlockService::new("127.0.0.1", 1, 0.01);
+        service.set_server("127.0.0.1", 1);
+        assert!(service.bars(KLINE_DAILY, "880001", 0, 5).is_err());
+        assert!(service.quotes(&["880001"]).is_err());
+        assert!(service.industry().is_err());
+        assert!(service.concept().is_err());
+        assert!(service.index().is_err());
+
+        let default = BlockService::with_default("127.0.0.1");
+        default.set_server("127.0.0.1", 1);
+        assert!(default.quotes(&["880001"]).is_err());
+    }
+}

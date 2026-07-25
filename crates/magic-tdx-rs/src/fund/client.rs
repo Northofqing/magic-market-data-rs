@@ -348,4 +348,23 @@ mod tests {
         let result = client.get_fund_finance_info(1, "600519");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn every_fund_operation_validates_identity_before_transport() {
+        let client = TdxHqFundClient::new();
+        assert!(client.connect("127.0.0.1", 1, Some(0.01)).is_err());
+        assert!(!client.is_connected());
+        client.disconnect();
+        assert!(client
+            .get_fund_bars_all(KLINE_DAILY, 1, "600001", 801)
+            .is_err());
+        assert!(client.get_fund_minute_time_data(1, "600001").is_err());
+        assert!(client
+            .get_fund_history_minute_time_data(1, "600001", 20_260_725)
+            .is_err());
+        assert!(client.get_fund_transaction_data(1, "600001", 0, 5).is_err());
+        assert!(client
+            .get_fund_history_transaction_data(1, "600001", 0, 5, 20_260_725)
+            .is_err());
+    }
 }

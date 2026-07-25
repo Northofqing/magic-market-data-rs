@@ -939,6 +939,59 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn every_async_request_builder_propagates_disconnected_state() {
+        let mut client = AsyncTdxHqClient::default();
+        client.set_rate_limit(0);
+        client.set_phase(TradingPhase::Trading);
+        assert_eq!(
+            client.auto_detect_phase(),
+            crate::net::utils::detect_trading_phase()
+        );
+        assert!(!client.is_connected());
+
+        for tier in [
+            utils::FqContextTier::Low,
+            utils::FqContextTier::Mid,
+            utils::FqContextTier::High,
+        ] {
+            client.set_fq_context_tier(tier);
+            assert_eq!(client.fq_context_tier(), tier);
+        }
+
+        assert!(client
+            .get_security_bars(KLINE_DAILY, 1, "600001", 0, 5, 0)
+            .await
+            .is_err());
+        assert!(client
+            .get_security_bars_all(KLINE_DAILY, 1, "600001", 801, 0)
+            .await
+            .is_err());
+        assert!(client
+            .get_index_bars(KLINE_DAILY, 1, "000001", 0, 5, 1)
+            .await
+            .is_err());
+        assert!(client.get_security_quotes(&[(1, "600001")]).await.is_err());
+        assert!(client.get_security_list(1, 0).await.is_err());
+        assert!(client.get_security_list(1, 1).await.is_err());
+        assert!(client.get_security_count(1).await.is_err());
+        assert!(client.get_minute_time_data(1, "600001").await.is_err());
+        assert!(client
+            .get_history_minute_time_data(1, "600001", 20_260_725)
+            .await
+            .is_err());
+        assert!(client
+            .get_transaction_data(1, "600001", 0, 5)
+            .await
+            .is_err());
+        assert!(client
+            .get_history_transaction_data(1, "600001", 0, 5, 20_260_725)
+            .await
+            .is_err());
+        assert!(client.get_finance_info(1, "600001").await.is_err());
+        assert!(client.get_xdxr_info(1, "600001").await.is_err());
+    }
+
     // ================================================================
     // AsyncRateLimiter
     // ================================================================

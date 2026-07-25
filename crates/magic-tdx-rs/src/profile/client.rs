@@ -274,3 +274,26 @@ impl<'a> ProfileClient<'a> {
         self.client.send_raw_and_recv(pkg)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profile_validation_rejects_before_transport() {
+        let mut client = TdxHqClient::new();
+        let mut profile = ProfileClient::new(&mut client);
+        let category = F10Category::new("公司概况".into(), "600001.txt".into(), 10, 20);
+
+        assert!(profile.get_category(2, "600001").is_err());
+        assert!(profile.get_category(1, "60001").is_err());
+        assert!(profile.get_category_auto("bad").is_err());
+        assert!(profile.get_content(2, "600001", &category).is_err());
+        assert!(profile.get_content(1, "60001", &category).is_err());
+        assert!(profile
+            .get_content_by_name(2, "600001", "公司概况")
+            .is_err());
+        assert!(profile.get_all_contents(2, "600001").is_err());
+        assert!(profile.get_all_data(2, "600001").is_err());
+    }
+}

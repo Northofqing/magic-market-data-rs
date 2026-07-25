@@ -52,3 +52,21 @@ impl FinanceService {
             .get_finance_indicators_labeled(filename, filesize, code)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finance_facade_preserves_offline_failures() {
+        let service = FinanceService::new("127.0.0.1", 1, Some(0.01));
+        let _ = service.client();
+        assert!(service.info(1, "600001").is_err());
+        assert!(service.corporate_actions(1, "600001").is_err());
+        assert!(service.files().is_err());
+        assert!(service.report("tdxfin/gpcw.txt", 1).is_err());
+        assert!(service.records("../bad", 1).is_err());
+        assert!(service.indicators("../bad", 1, "600001").is_err());
+        assert!(service.labeled_indicators("../bad", 1, "600001").is_err());
+    }
+}

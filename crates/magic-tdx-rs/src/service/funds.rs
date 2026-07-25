@@ -48,3 +48,19 @@ impl Default for FundService {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::constants::KLINE_DAILY;
+
+    #[test]
+    fn fund_facade_rejects_non_fund_codes_before_transport() {
+        let service = FundService::default();
+        let _ = service.client();
+        assert!(service.bars(KLINE_DAILY, 1, "600001", 0, 5).is_err());
+        assert!(service.quotes(&[(1, "600001")]).is_err());
+        assert!(service.corporate_actions(1, "600001").is_err());
+        assert!(service.finance(1, "600001").is_err());
+    }
+}

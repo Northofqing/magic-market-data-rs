@@ -387,3 +387,104 @@ impl Default for TdxService {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use magic_market_core::{AssetClass, BarInterval, Exchange};
+
+    fn instrument(exchange: Exchange, code: &str) -> InstrumentId {
+        InstrumentId::new(exchange, code, AssetClass::Equity).unwrap()
+    }
+
+    #[test]
+    fn service_market_mapping_and_sync_validation_are_explicit() {
+        assert_eq!(
+            market(&instrument(Exchange::Shanghai, "600001")).unwrap(),
+            1
+        );
+        assert_eq!(
+            market(&instrument(Exchange::Shenzhen, "000001")).unwrap(),
+            0
+        );
+        assert!(matches!(
+            market(&instrument(Exchange::Beijing, "920001")),
+            Err(TdxError::Unsupported(_))
+        ));
+
+        let service = TdxService::default();
+        let _ = service.client();
+        let ranged = BarsRequest::new(
+            instrument(Exchange::Shanghai, "600001"),
+            BarInterval::Day,
+            5,
+        )
+        .unwrap()
+        .with_range("2026-07-01", "2026-07-25")
+        .unwrap();
+        assert!(matches!(
+            service.bars(&ranged),
+            Err(TdxError::Unsupported(_))
+        ));
+        assert!(service.quotes_chunked(&[]).is_err());
+        assert!(service
+            .quotes_chunked(&[instrument(Exchange::Beijing, "920001")])
+            .is_err());
+        assert!(matches!(
+            service.money_flows(&[]),
+            Err(TdxError::Unsupported(_))
+        ));
+        assert!(matches!(
+            service.auction_snapshots(&[]),
+            Err(TdxError::Unsupported(_))
+        ));
+
+        let duplicate = [
+            instrument(Exchange::Shanghai, "600001"),
+            instrument(Exchange::Shanghai, "600001"),
+        ];
+        assert!(
+            <TdxSmartClient as SecurityMetadataProvider>::security_metadata(
+                service.client(),
+                &duplicate
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn async_service_propagates_every_disconnected_operation() {
+        let service = AsyncTdxService::default();
+        let _ = service.client();
+        let equity = instrument(Exchange::Shanghai, "600001");
+        let bars = BarsRequest::new(equity.clone(), BarInterval::Day, 5).unwrap();
+        assert!(service.bars(&bars).await.is_err());
+        assert!(service.quotes(std::slice::from_ref(&equity)).await.is_err());
+
+        let current = TradesRequest::new(equity.clone(), 1).unwrap();
+        assert!(service.trades(&current).await.is_err());
+        let historical = current.with_date("2026-07-25").unwrap();
+        assert!(service.trades(&historical).await.is_err());
+
+        assert!(service.order_books(&[]).await.is_err());
+        assert!(service
+            .order_books(std::slice::from_ref(&equity))
+            .await
+            .is_err());
+        assert!(service.security_count(1).await.is_err());
+        assert!(service.security_list(1, 0).await.is_err());
+        assert!(service.security_list_all(1).await.is_err());
+        assert!(service.minute_data(1, "600001").await.is_err());
+        assert!(service
+            .history_minute_data(1, "600001", 20_260_725)
+            .await
+            .is_err());
+        assert!(service.transactions(1, "600001", 0, 5).await.is_err());
+        assert!(service
+            .history_transactions(1, "600001", 0, 5, 20_260_725)
+            .await
+            .is_err());
+        assert!(service.finance(1, "600001").await.is_err());
+        assert!(service.corporate_actions(1, "600001").await.is_err());
+    }
+}

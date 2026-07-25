@@ -286,3 +286,40 @@ impl TdxF10Client {
         Ok(data)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f10_validation_and_request_builders_are_offline() {
+        let mut client = TdxF10Client::new("127.0.0.1", 1, Some(0.01));
+        client.set_server("127.0.0.2", 2);
+        client.set_timeout(0.02);
+        client.set_server("127.0.0.1", 1);
+        client.set_timeout(0.01);
+
+        assert!(client.get_category(2, "600001").is_err());
+        assert!(client.get_category(1, "60001").is_err());
+        assert!(client.get_category(1, "600001").is_err());
+        assert!(client.get_category_auto("600001").is_err());
+        assert!(client.get_category_auto("bad").is_err());
+
+        let category = F10Category::new("公司概况".into(), "600001.txt".into(), 10, 20);
+        assert!(client.get_content(2, "600001", &category).is_err());
+        assert!(client.get_content(1, "60001", &category).is_err());
+        assert!(client.get_content(1, "600001", &category).is_err());
+
+        let raw = F10Category::new_with_raw(
+            "公司概况".into(),
+            "ignored.txt".into(),
+            vec![b'a'; CATEGORY_FILENAME_SIZE + 1],
+            10,
+            20,
+        );
+        assert!(client.get_content(1, "600001", &raw).is_err());
+        assert!(client.get_content_by_name(1, "600001", "公司概况").is_err());
+        assert!(client.get_all_contents(1, "600001").is_err());
+        assert!(client.get_all_data(1, "600001").is_err());
+    }
+}

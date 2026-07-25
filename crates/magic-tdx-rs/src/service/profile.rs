@@ -78,3 +78,20 @@ impl ProfileService {
         ProfileClient::new(&mut client).get_all_data(market, code)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profile_facade_rejects_invalid_identity_before_transport() {
+        let service = ProfileService::new("127.0.0.1", 1, 0.01);
+        let category = F10Category::new("公司概况".into(), "600001.txt".into(), 10, 20);
+        assert!(service.categories(2, "600001").is_err());
+        assert!(service.categories_auto("bad").is_err());
+        assert!(service.content(2, "600001", &category).is_err());
+        assert!(service.content_by_name(2, "600001", "公司概况").is_err());
+        assert!(service.all_contents(2, "600001").is_err());
+        assert!(service.all_data(2, "600001").is_err());
+    }
+}

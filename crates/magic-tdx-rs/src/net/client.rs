@@ -1485,4 +1485,196 @@ mod tests {
         assert!(handshake_ms >= 0.0);
         assert!(api_ms >= 0.0);
     }
+
+    fn local_failure_client() -> TdxHqClient {
+        let client = TdxHqClient::new();
+        client.set_auto_retry(false);
+        client.set_rate_limit(0);
+        client.set_rate_limit_daily(0);
+        client.rate_limiter_minute.set_rps(0);
+        *sync::lock(&client.last_server, "test last server").unwrap() =
+            Some(("127.0.0.1".into(), 1));
+        let config = PoolConfig {
+            connect_timeout: 0.01,
+            handshake_fn: None,
+            ..PoolConfig::default()
+        };
+        *sync::lock(&client.pool, "test pool").unwrap() =
+            Arc::new(ConnectionPool::new_single(("127.0.0.1".into(), 1), config));
+        client
+    }
+
+    fn source_bar(date: (u32, u32, u32)) -> SecurityBar {
+        SecurityBar {
+            open: 10.0,
+            close: 10.5,
+            high: 11.0,
+            low: 9.5,
+            vol: 100.0,
+            amount: 1_000.0,
+            year: date.0,
+            month: date.1,
+            day: date.2,
+            hour: 0,
+            minute: 0,
+            datetime: format!("{:04}-{:02}-{:02}", date.0, date.1, date.2),
+        }
+    }
+
+    fn source_xdxr(date: (u32, u32, u32), category: u32) -> XdXrInfo {
+        XdXrInfo {
+            year: date.0,
+            month: date.1,
+            day: date.2,
+            category,
+            name: "fixture".into(),
+            fenhong: None,
+            peigujia: None,
+            songzhuangu: None,
+            peigu: None,
+            suogu: None,
+            panqianliutong: None,
+            panhouliutong: None,
+            qianzongguben: None,
+            houzongguben: None,
+            fenshu: None,
+            xingquanjia: None,
+        }
+    }
+
+    #[test]
+    fn client_configuration_and_server_selection_are_explicit_offline() {
+        let client = local_failure_client();
+        assert!(!client.is_connected());
+        assert_eq!(client.connected_server(), Some(("127.0.0.1".into(), 1)));
+
+        client.set_servers(&[("first", "127.0.0.1", 1)]);
+        client.add_server("preferred", "127.0.0.2", 2);
+        client.reorder_servers(&[("preferred", "127.0.0.2", 2), ("first", "127.0.0.1", 1)]);
+        client.block_server("127.0.0.1", 1);
+        client.block_server("127.0.0.1", 1);
+        client.block_server("127.0.0.2", 2);
+        assert_eq!(client.blocked_servers().len(), 2);
+        client.unblock_server("127.0.0.2", 2);
+        assert_eq!(client.blocked_servers().len(), 1);
+        client.clear_blocked_servers();
+        assert!(client.blocked_servers().is_empty());
+
+        client.set_cache_ttl(1);
+        client.set_connect_timeout(0.01);
+        client.set_rate_limit(25);
+        client.set_rate_limit_daily(10);
+        assert_eq!(client.rate_limit_minute(), 10);
+        assert_eq!(client.pool_stats().total, 0);
+        assert!(client.connect("127.0.0.1", 1, Some(0.01)).is_err());
+
+        client.connected.store(true, Ordering::SeqCst);
+        assert_eq!(client.connect_to_any(Some(0.01)).unwrap(), true);
+        client.connected.store(false, Ordering::SeqCst);
+
+        let mut blocked = Vec::new();
+        blocked.extend(
+            PRIMARY_SERVERS
+                .iter()
+                .map(|(_, ip, port)| ((*ip).to_owned(), *port)),
+        );
+        blocked.extend(
+            ALL_KNOWN_SERVERS
+                .iter()
+                .map(|(_, ip, port)| ((*ip).to_owned(), *port)),
+        );
+        blocked.push(("127.0.0.1".into(), 1));
+        blocked.push(("127.0.0.2".into(), 2));
+        *sync::lock(&client.blocked_servers, "test blocked servers").unwrap() = blocked;
+        assert!(client.connect_to_any(Some(0.01)).is_err());
+        client.disconnect();
+        assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn every_blocking_request_builder_propagates_local_connection_failure() {
+        let client = local_failure_client();
+
+        assert!(client.send_raw_and_recv(&[1, 2, 3]).is_err());
+        assert!(client
+            .get_security_bars(KLINE_DAILY, 1, "600001", 0, 5, 0)
+            .is_err());
+        assert!(client
+            .get_security_bars(KLINE_DAILY, 1, "880001", 0, 5, 0)
+            .is_err());
+        assert!(client
+            .get_security_bars_all(KLINE_DAILY, 1, "600001", 801, 0)
+            .is_err());
+        assert!(client
+            .get_index_bars(KLINE_DAILY, 1, "000001", 0, 5, 1)
+            .is_err());
+        assert!(client
+            .get_index_bars_all(KLINE_DAILY, 1, "000001", 801, 1)
+            .is_err());
+        assert!(client.get_security_quotes(&[(1, "600001")]).is_err());
+        assert!(client.get_security_list(1, 0).is_err());
+        assert!(client.get_security_list(1, 1).is_err());
+        assert!(client.get_security_count(1).is_err());
+        assert!(client.get_minute_time_data(1, "600001").is_err());
+        assert!(client
+            .get_history_minute_time_data(1, "600001", 20_260_725)
+            .is_err());
+        assert!(client.get_transaction_data(1, "600001", 0, 5).is_err());
+        assert!(client
+            .get_history_transaction_data(1, "600001", 0, 5, 20_260_725)
+            .is_err());
+        assert!(client.get_finance_info(1, "600001").is_err());
+        assert!(client.get_xdxr_info(1, "600001").is_err());
+        assert!(client.get_block_info_meta("block.dat").is_err());
+        assert!(client.get_block_info("block.dat", 0, 10).is_err());
+        assert!(client.get_and_parse_block_info("block.dat").is_err());
+    }
+
+    #[test]
+    fn factor_context_boundaries_do_not_fabricate_history() {
+        let client = local_failure_client();
+        let recent = source_bar((2026, 7, 25));
+        let event = source_xdxr((2025, 7, 25), 1);
+        assert!(client
+            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", &[], &[event.clone()])
+            .unwrap()
+            .is_empty());
+        assert!(client
+            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", std::slice::from_ref(&recent), &[])
+            .unwrap()
+            .is_empty());
+        assert!(client
+            .fetch_context_for_factors(
+                KLINE_DAILY,
+                1,
+                "600001",
+                std::slice::from_ref(&recent),
+                &[source_xdxr((2025, 7, 25), 2)]
+            )
+            .unwrap()
+            .is_empty());
+        assert!(client
+            .fetch_context_for_factors(
+                KLINE_DAILY,
+                1,
+                "600001",
+                &[source_bar((2024, 7, 25))],
+                std::slice::from_ref(&event)
+            )
+            .unwrap()
+            .is_empty());
+        assert!(client
+            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", &[recent], &[event])
+            .unwrap()
+            .is_empty());
+
+        for tier in [
+            utils::FqContextTier::Low,
+            utils::FqContextTier::Mid,
+            utils::FqContextTier::High,
+        ] {
+            client.set_fq_context_tier(tier);
+            assert_eq!(client.fq_context_tier(), tier);
+        }
+    }
 }

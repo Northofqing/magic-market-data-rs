@@ -503,3 +503,137 @@ impl TdxDirectClient {
         crate::reader::block::parse_block(&all_data)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client() -> TdxDirectClient {
+        TdxDirectClient::new("127.0.0.1", 1, 0.01)
+    }
+
+    fn source_bar(date: (u32, u32, u32)) -> SecurityBar {
+        SecurityBar {
+            open: 10.0,
+            close: 10.5,
+            high: 11.0,
+            low: 9.5,
+            vol: 100.0,
+            amount: 1_000.0,
+            year: date.0,
+            month: date.1,
+            day: date.2,
+            hour: 0,
+            minute: 0,
+            datetime: format!("{:04}-{:02}-{:02}", date.0, date.1, date.2),
+        }
+    }
+
+    fn source_xdxr(date: (u32, u32, u32), category: u32) -> XdXrInfo {
+        XdXrInfo {
+            year: date.0,
+            month: date.1,
+            day: date.2,
+            category,
+            name: "fixture".into(),
+            fenhong: None,
+            peigujia: None,
+            songzhuangu: None,
+            peigu: None,
+            suogu: None,
+            panqianliutong: None,
+            panhouliutong: None,
+            qianzongguben: None,
+            houzongguben: None,
+            fenshu: None,
+            xingquanjia: None,
+        }
+    }
+
+    #[test]
+    fn configuration_and_factor_context_boundaries_are_offline() {
+        let mut client = client();
+        client.set_server("127.0.0.2", 2);
+        client.set_timeout(0.02);
+        client.set_server("127.0.0.1", 1);
+        client.set_timeout(0.01);
+
+        for tier in [
+            utils::FqContextTier::Low,
+            utils::FqContextTier::Mid,
+            utils::FqContextTier::High,
+        ] {
+            client.set_fq_context_tier(tier);
+            assert_eq!(client.fq_context_tier(), tier);
+        }
+
+        let recent = source_bar((2026, 7, 25));
+        let event = source_xdxr((2025, 7, 25), 1);
+        assert!(client
+            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", &[], &[event.clone()])
+            .unwrap()
+            .is_empty());
+        assert!(client
+            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", std::slice::from_ref(&recent), &[])
+            .unwrap()
+            .is_empty());
+        assert!(client
+            .fetch_context_for_factors(
+                KLINE_DAILY,
+                1,
+                "600001",
+                std::slice::from_ref(&recent),
+                &[source_xdxr((2025, 7, 25), 2)]
+            )
+            .unwrap()
+            .is_empty());
+        assert!(client
+            .fetch_context_for_factors(
+                KLINE_DAILY,
+                1,
+                "600001",
+                &[source_bar((2024, 7, 25))],
+                std::slice::from_ref(&event)
+            )
+            .unwrap()
+            .is_empty());
+        assert!(client
+            .fetch_context_for_factors(KLINE_DAILY, 1, "600001", &[recent], &[event])
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn every_direct_request_builder_propagates_local_connection_failure() {
+        let client = client();
+        assert!(client
+            .get_security_bars(KLINE_DAILY, 1, "600001", 0, 5, 0)
+            .is_err());
+        assert!(client
+            .get_security_bars(KLINE_DAILY, 1, "880001", 0, 5, 0)
+            .is_err());
+        assert!(client
+            .get_index_bars(KLINE_DAILY, 1, "000001", 0, 5, 1)
+            .is_err());
+        assert!(client
+            .get_index_bars_inner(KLINE_DAILY, 1, "880001", 0, 5, 1)
+            .is_err());
+        assert!(client.get_security_quotes(&[(1, "600001")]).is_err());
+        assert!(client.get_security_quotes_inner(&[(1, "880001")]).is_err());
+        assert!(client.get_security_list(1, 0).is_err());
+        assert!(client.get_security_count(1).is_err());
+        assert!(client.get_minute_time_data(1, "600001").is_err());
+        assert!(client
+            .get_history_minute_time_data(1, "600001", 20_260_725)
+            .is_err());
+        assert!(client.get_transaction_data(1, "600001", 0, 5).is_err());
+        assert!(client
+            .get_history_transaction_data(1, "600001", 0, 5, 20_260_725)
+            .is_err());
+        assert!(client.get_finance_info(1, "600001").is_err());
+        assert!(client.get_xdxr_info(1, "600001").is_err());
+        assert!(client.get_block_info_meta("block.dat").is_err());
+        assert!(client.get_block_info("block.dat", 0, 10).is_err());
+        assert!(client.get_and_parse_block_info("block.dat").is_err());
+    }
+}

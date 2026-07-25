@@ -1,14 +1,28 @@
 use magic_market_core::{
-    AssetClass, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, DataBatch, Exchange,
-    HistoricalBars, InstrumentId, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow,
-    MoneyFlows, OrderBook, OrderBooks, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows,
-    Provenance, ProviderId, Quote, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider,
-    Trade, Trades, TradesRequest,
+    AssetClass, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, BlockTrade, BlockTrades,
+    BoardCategory, BoardFlow, BoardFlows, ConceptHit, ConceptHits, ConsensusData,
+    ConsensusSnapshot, DataBatch, DividendPlan, DividendPlans, DragonTigerData, DragonTigerEntry,
+    DragonTigerSeat, Exchange, FinancialStatement, FinancialStatements, FlowInterval, FlowScope,
+    FundFlowPoint, FundFlowRequest, FundFlowSeries, HistoricalBars, HolderCount, HolderCounts,
+    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, LimitPoolEntry,
+    LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvent, LockupEvents, MarginBalance,
+    MarginData, MarketRankingEntry, MarketRankingKind, MarketRankings, MinuteData,
+    MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, OrderBook, OrderBooks, PopularityData,
+    PopularityRank, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows, Provenance, ProviderId,
+    Quote, RealtimeQuotes, ReportScope, ResearchReport, ResearchReports, ResearchRequest,
+    SecurityMetadata, SecurityMetadataProvider, SecurityProfile, SecurityProfiles, SemanticChannel,
+    SemanticSearch, SemanticSearchDocument, SemanticSearchRequest, StatementKind,
+    StrongStockReason, StrongStockReasons, TechnicalBar, TechnicalBarsProvider, Trade, Trades,
+    TradesRequest,
 };
 use magic_market_router::{
-    auction_source, bars_source, minute_source, money_flow_source, order_book_source,
-    post_close_flow_source, quote_source, security_metadata_source, trades_source, FailureKind,
-    RoutedSource, SourceError,
+    auction_source, bars_source, block_trade_source, board_flow_source, concept_hit_source,
+    consensus_source, dividend_source, dragon_tiger_entry_source, financial_statement_source,
+    fund_flow_series_source, holder_count_source, limit_pool_source, lockup_source, margin_source,
+    market_ranking_source, minute_source, money_flow_source, order_book_source, popularity_source,
+    post_close_flow_source, quote_source, research_source, security_metadata_source,
+    security_profile_source, semantic_search_source, strong_stock_reason_source,
+    technical_bars_source, trades_source, FailureKind, RoutedSource, SourceError,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -140,6 +154,176 @@ impl SecurityMetadataProvider for FixtureProvider {
     }
 }
 
+impl TechnicalBarsProvider for FixtureProvider {
+    type Error = FixtureError;
+    fn technical_bars(
+        &self,
+        _request: &BarsRequest,
+    ) -> Result<DataBatch<TechnicalBar>, Self::Error> {
+        self.result()
+    }
+}
+
+impl ResearchReports for FixtureProvider {
+    type Error = FixtureError;
+    fn research_reports(
+        &self,
+        _request: &ResearchRequest,
+    ) -> Result<DataBatch<ResearchReport>, Self::Error> {
+        self.result()
+    }
+}
+
+impl ConsensusData for FixtureProvider {
+    type Error = FixtureError;
+    fn consensus(
+        &self,
+        _instruments: &[InstrumentId],
+    ) -> Result<DataBatch<ConsensusSnapshot>, Self::Error> {
+        self.result()
+    }
+}
+
+impl SemanticSearch for FixtureProvider {
+    type Error = FixtureError;
+    fn semantic_search(
+        &self,
+        _request: &SemanticSearchRequest,
+    ) -> Result<DataBatch<SemanticSearchDocument>, Self::Error> {
+        self.result()
+    }
+}
+
+impl StrongStockReasons for FixtureProvider {
+    type Error = FixtureError;
+    fn strong_stock_reasons(
+        &self,
+        _request: &InstrumentSignalRequest,
+    ) -> Result<DataBatch<StrongStockReason>, Self::Error> {
+        self.result()
+    }
+}
+
+impl DragonTigerData for FixtureProvider {
+    type Error = FixtureError;
+    fn dragon_tiger_entries(
+        &self,
+        _request: &InstrumentSignalRequest,
+    ) -> Result<DataBatch<DragonTigerEntry>, Self::Error> {
+        self.result()
+    }
+    fn dragon_tiger_seats(
+        &self,
+        _request: &InstrumentSignalRequest,
+    ) -> Result<DataBatch<DragonTigerSeat>, Self::Error> {
+        self.result()
+    }
+}
+
+impl MarketRankings for FixtureProvider {
+    type Error = FixtureError;
+    fn market_rankings(
+        &self,
+        _kind: &MarketRankingKind,
+        _limit: magic_market_core::PositiveU32,
+    ) -> Result<DataBatch<MarketRankingEntry>, Self::Error> {
+        self.result()
+    }
+}
+
+impl PopularityData for FixtureProvider {
+    type Error = FixtureError;
+    fn popularity(
+        &self,
+        _limit: magic_market_core::PositiveU32,
+    ) -> Result<DataBatch<PopularityRank>, Self::Error> {
+        self.result()
+    }
+}
+
+impl ConceptHits for FixtureProvider {
+    type Error = FixtureError;
+    fn concept_hits(
+        &self,
+        _instruments: &[InstrumentId],
+    ) -> Result<DataBatch<ConceptHit>, Self::Error> {
+        self.result()
+    }
+}
+
+impl FundFlowSeries for FixtureProvider {
+    type Error = FixtureError;
+    fn fund_flow_series(
+        &self,
+        _request: &FundFlowRequest,
+    ) -> Result<DataBatch<FundFlowPoint>, Self::Error> {
+        self.result()
+    }
+}
+
+impl BoardFlows for FixtureProvider {
+    type Error = FixtureError;
+    fn board_flows(
+        &self,
+        _category: BoardCategory,
+        _interval: FlowInterval,
+        _limit: magic_market_core::PositiveU32,
+    ) -> Result<DataBatch<BoardFlow>, Self::Error> {
+        self.result()
+    }
+}
+
+impl SecurityProfiles for FixtureProvider {
+    type Error = FixtureError;
+    fn security_profiles(
+        &self,
+        _instruments: &[InstrumentId],
+    ) -> Result<DataBatch<SecurityProfile>, Self::Error> {
+        self.result()
+    }
+}
+
+impl FinancialStatements for FixtureProvider {
+    type Error = FixtureError;
+    fn financial_statements(
+        &self,
+        _instruments: &[InstrumentId],
+        _kind: StatementKind,
+    ) -> Result<DataBatch<FinancialStatement>, Self::Error> {
+        self.result()
+    }
+}
+
+impl LimitPools for FixtureProvider {
+    type Error = FixtureError;
+    fn limit_pool(
+        &self,
+        _request: &LimitPoolRequest,
+    ) -> Result<DataBatch<LimitPoolEntry>, Self::Error> {
+        self.result()
+    }
+}
+
+macro_rules! impl_date_range_fixture {
+    ($trait:ident, $method:ident, $record:ty) => {
+        impl $trait for FixtureProvider {
+            type Error = FixtureError;
+            fn $method(
+                &self,
+                _request: &InstrumentDateRangeRequest,
+            ) -> Result<DataBatch<$record>, Self::Error> {
+                self.result()
+            }
+        }
+    };
+}
+
+impl_date_range_fixture!(MarginData, margin_data, MarginBalance);
+impl_date_range_fixture!(BlockTrades, block_trades, BlockTrade);
+impl_date_range_fixture!(HolderCounts, holder_counts, HolderCount);
+impl_date_range_fixture!(LockupEvents, lockup_events, LockupEvent);
+impl_date_range_fixture!(DividendPlans, dividend_plans, DividendPlan);
+
 fn instrument() -> InstrumentId {
     InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity).unwrap()
 }
@@ -268,4 +452,131 @@ fn every_adapter_preserves_a_successful_provider_batch() {
         assert_eq!(provenance.fetched_at(), "observed");
     }
     assert_eq!(provider.calls.load(Ordering::SeqCst), 9);
+}
+
+#[test]
+fn every_extended_family_has_a_provider_neutral_adapter() {
+    let provider = Arc::new(FixtureProvider::new(true));
+    let instruments = [instrument()];
+    let one = magic_market_core::PositiveU32::new(1).unwrap();
+    let bars = BarsRequest::new(instrument(), BarInterval::Day, 5).unwrap();
+    let research = ResearchRequest::new(ReportScope::Instrument(instrument()), one, one).unwrap();
+    let semantic = SemanticSearchRequest::new("fixture", SemanticChannel::General, one).unwrap();
+    let signal = InstrumentSignalRequest::new(instrument(), one).unwrap();
+    let fund_flow =
+        FundFlowRequest::new(FlowScope::Instrument(instrument()), FlowInterval::Day1, one).unwrap();
+    let limit_pool = LimitPoolRequest::new(
+        LimitPoolKind::Upper,
+        magic_market_core::IsoDate::new("2026-07-25").unwrap(),
+        one,
+    )
+    .unwrap();
+    let date_range = InstrumentDateRangeRequest::new(instrument(), one).unwrap();
+
+    assert!(
+        technical_bars_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&bars)
+            .is_err()
+    );
+    assert!(
+        research_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&research)
+            .is_err()
+    );
+    assert!(
+        consensus_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&instruments)
+            .is_err()
+    );
+    assert!(
+        semantic_search_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&semantic)
+            .is_err()
+    );
+    assert!(
+        strong_stock_reason_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&signal)
+            .is_err()
+    );
+    assert!(
+        market_ranking_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&(MarketRankingKind::Popularity, one))
+            .is_err()
+    );
+    assert!(
+        popularity_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&one)
+            .is_err()
+    );
+    assert!(
+        concept_hit_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&instruments)
+            .is_err()
+    );
+    assert!(
+        fund_flow_series_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&fund_flow)
+            .is_err()
+    );
+    assert!(
+        board_flow_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&(BoardCategory::Concept, FlowInterval::Day1, one))
+            .is_err()
+    );
+    assert!(
+        security_profile_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&instruments)
+            .is_err()
+    );
+    assert!(
+        financial_statement_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&(instruments.to_vec(), StatementKind::Income))
+            .is_err()
+    );
+    assert!(
+        limit_pool_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&limit_pool)
+            .is_err()
+    );
+    assert!(
+        margin_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&date_range)
+            .is_err()
+    );
+    assert!(
+        block_trade_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&date_range)
+            .is_err()
+    );
+    assert!(
+        holder_count_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&date_range)
+            .is_err()
+    );
+    assert!(
+        lockup_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&date_range)
+            .is_err()
+    );
+    assert!(
+        dividend_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&date_range)
+            .is_err()
+    );
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 18);
+}
+
+#[test]
+fn optional_signal_dates_validate_without_fabricated_source_time() {
+    let provider = Arc::new(FixtureProvider::new(false));
+    let request = InstrumentSignalRequest::new(
+        instrument(),
+        magic_market_core::PositiveU32::new(1).unwrap(),
+    )
+    .unwrap();
+    let batch = dragon_tiger_entry_source(ProviderId::Custom, provider, classify)
+        .fetch(&request)
+        .unwrap();
+    assert!(batch.records().is_empty());
+    assert!(batch.provenance().source_at().is_none());
 }
