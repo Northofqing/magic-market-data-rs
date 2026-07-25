@@ -382,7 +382,7 @@ git commit -m "feat(yonhap): add bounded RSS transport"
 - Modify: `crates/magic-yonhap-rs/src/lib.rs`
 - Create: `crates/magic-yonhap-rs/tests/capabilities.rs`
 
-- [ ] **Step 1: Add the valid RSS fixture test**
+- [x] **Step 1: Add the valid RSS fixture test**
 
 Use a complete UTF-8 RSS fixture with at least three newest-first items. Include
 an escaped XML entity in a title, a `description` CDATA payload, a
@@ -426,7 +426,7 @@ assert!(batch.quality().is_complete());
 Assert separately that no unique phrase from either ignored body element
 appears in any normalized field.
 
-- [ ] **Step 2: Add the parser failure matrix**
+- [x] **Step 2: Add the parser failure matrix**
 
 Add one focused test per failure:
 
@@ -452,7 +452,7 @@ Allow only the five predefined XML named entities and numeric character
 references. Reject every other `Event::GeneralRef`; reject every
 `Event::DocType`. Do not enable DTD expansion.
 
-- [ ] **Step 3: Verify parser tests fail**
+- [x] **Step 3: Verify parser tests fail**
 
 Run:
 
@@ -463,7 +463,7 @@ cargo test -p magic-yonhap-rs parser --locked --offline
 Expected: the diagnostic fetch/parser path is missing or returns an
 unimplemented error.
 
-- [ ] **Step 4: Implement streaming parsing**
+- [x] **Step 4: Implement streaming parsing**
 
 Implement:
 
@@ -527,7 +527,7 @@ let item = NewsItem {
 Create strict batch provenance with source `yonhap-cn-rss-v1`, fetched time
 `observed_at`, latest selected source time, and the same `batch_id`.
 
-- [ ] **Step 5: Implement the diagnostic and trait boundary**
+- [x] **Step 5: Implement the diagnostic and trait boundary**
 
 Add:
 
@@ -578,7 +578,7 @@ impl NewsProvider for YonhapClient {
 }
 ```
 
-- [ ] **Step 6: Add public capability tests**
+- [x] **Step 6: Add public capability tests**
 
 `tests/capabilities.rs` must assert:
 
@@ -588,7 +588,7 @@ impl NewsProvider for YonhapClient {
 - only `probe_global_news` invokes an injected transport;
 - `YonhapClient: NewsProvider<Error = YonhapError> + Send + Sync + Clone`.
 
-- [ ] **Step 7: Run all deterministic Provider tests**
+- [x] **Step 7: Run all deterministic Provider tests**
 
 Run:
 
@@ -601,7 +601,7 @@ cargo clippy -p magic-yonhap-rs --all-targets --locked --offline -- -D warnings
 Expected: all deterministic parser, transport, capability, and trait tests
 pass while public global news remains explicitly unadmitted.
 
-- [ ] **Step 8: Commit parser and pre-admission semantics**
+- [x] **Step 8: Commit parser and pre-admission semantics**
 
 ```bash
 git add crates/magic-yonhap-rs/src/lib.rs \

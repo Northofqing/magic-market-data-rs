@@ -69,6 +69,19 @@
 - `tools/release/package.sh` derives no probe count automatically, so the two
   new Yonhap binaries must be added explicitly and every prose count must be
   reconciled against the actual `build_probe` call count.
+- Cargo successfully resolved and downloaded the exact planned versions on
+  2026-07-26. Their local registry sources are available for API verification,
+  so the parser can be implemented against the locked code without relying on
+  memory or adding another dependency.
+- Locked `quick-xml` confirms the slice reader uses `read_event()` with
+  `config_mut().trim_text(true)`, emits separate `DocType` and `GeneralRef`
+  events, decodes text/CDATA with XML-aware methods, and exposes
+  `BytesRef::resolve_char_ref`. The parser can therefore reject every DTD,
+  allow only numeric and five predefined references, and reject custom named
+  entities without expanding them.
+- Locked `time` confirms direct `OffsetDateTime::parse(..., &Rfc2822)`,
+  `to_offset`, and `format(&Rfc3339)` support, matching the planned explicit
+  `+09:00` normalization.
 
 ## Official References
 

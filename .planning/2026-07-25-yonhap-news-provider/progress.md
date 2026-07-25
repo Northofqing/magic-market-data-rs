@@ -42,6 +42,9 @@
 | Workspace all-target test baseline | Passed |
 | Task 1 Core identity | Passed, 3 tests |
 | Task 1 Router intelligence routing | Passed, 14 tests |
+| Task 3 Yonhap library | Passed, 22 tests |
+| Task 3 public capabilities | Passed, 4 tests |
+| Task 3 Yonhap Clippy | Passed with `-D warnings` |
 
 ## 5-Question Reboot Check
 
@@ -94,3 +97,22 @@
 - `cargo check -p magic-yonhap-rs --locked --offline` passed. Intermediate
   dead-code warnings are confined to parser-facing constants/methods that Task
   3 wires into the public diagnostic path.
+- Task 3 parser red test failed only because `parse_response` and
+  `probe_global_news` were not yet defined, as intended.
+- The first post-capability-test formatting run failed because the UTF-8 XML
+  fixture used a raw byte-string literal, which Rust restricts to ASCII.
+  Repository fixtures use UTF-8 `&str` plus `.as_bytes().to_vec()`; applying
+  that one-source conversion fixes the test representation without touching
+  Provider behavior.
+- Task 3 deterministic tests passed: 21 library tests and 3 public capability
+  tests.
+- The first Task 3 Clippy run found one `clippy::useless_format` in a
+  no-interpolation test fixture. The minimal equivalent is `.to_owned()`; no
+  production parser or contract code is affected.
+- Task 3 completed strict streaming parsing, UTF-8/XML declaration checks,
+  DTD/custom-entity rejection, exact article identity, RFC 2822 to explicit
+  `+09:00` conversion, uniqueness/order checks, complete-feed validation
+  before truncation, metadata-only mapping, strict provenance, and truthful
+  pre-admission trait behavior.
+- Final Task 3 verification passed: 22 library tests, 4 capability tests,
+  rustfmt, Clippy with `-D warnings`, and `git diff --check`.

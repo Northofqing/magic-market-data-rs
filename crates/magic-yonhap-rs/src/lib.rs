@@ -1,11 +1,20 @@
 #![forbid(unsafe_code)]
 //! Bounded metadata-only adapter for official Yonhap Chinese RSS feeds.
 
+use magic_market_core::{
+    ContentCapabilities, DataBatch, HttpsUrl, InstrumentDateRangeRequest, NewsItem, NewsProvider,
+    NonEmptyText, PositiveU32, Provenance, ProviderId, SourceEvidence,
+};
+use quick_xml::events::{BytesRef, Event};
+use quick_xml::reader::Reader;
+use std::collections::HashSet;
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
+use time::format_description::well_known::{Rfc2822, Rfc3339};
+use time::{OffsetDateTime, UtcOffset};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
@@ -243,6 +252,28 @@ impl YonhapClient {
         self.channel
     }
 
+    pub const fn content_capabilities() -> ContentCapabilities {
+        ContentCapabilities {
+            instrument_news: false,
+            global_news: false,
+            announcements: false,
+            announcement_discovery: false,
+            investor_questions: false,
+        }
+    }
+
+    /// Explicit diagnostic fetch while the public trait capability is subject
+    /// to live admission.
+    pub fn probe_global_news(
+        &self,
+        limit: PositiveU32,
+    ) -> Result<DataBatch<NewsItem>, YonhapError> {
+        validate_returned_limit(limit.get())?;
+        let response = self.execute(&build_request(self.channel))?;
+        let observed_at = now()?;
+        parse_response(response.body(), self.channel, limit.get(), &observed_at)
+    }
+
     fn for_channel_with_timeout(
         channel: YonhapChannel,
         timeout: Duration,
@@ -284,6 +315,25 @@ impl YonhapClient {
         let response = response?;
         validate_response(&response)?;
         Ok(response)
+    }
+}
+
+impl NewsProvider for YonhapClient {
+    type Error = YonhapError;
+
+    fn instrument_news(
+        &self,
+        _request: &InstrumentDateRangeRequest,
+    ) -> Result<DataBatch<NewsItem>, Self::Error> {
+        Err(YonhapError::Unsupported(
+            "Yonhap RSS does not expose a verified instrument/date filter".into(),
+        ))
+    }
+
+    fn global_news(&self, _limit: PositiveU32) -> Result<DataBatch<NewsItem>, Self::Error> {
+        Err(YonhapError::Unsupported(
+            "Yonhap global news is pending bounded live admission; use probe_global_news for explicit diagnostics".into(),
+        ))
     }
 }
 
@@ -389,6 +439,426 @@ fn validate_response(response: &HttpResponse) -> Result<(), YonhapError> {
     ensure_body_size(response.body())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ItemField {
+    Title,
+    Link,
+    Guid,
+    PublishedAt,
+}
+
+impl ItemField {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "title" => Some(Self::Title),
+            "link" => Some(Self::Link),
+            "guid" => Some(Self::Guid),
+            "pubDate" => Some(Self::PublishedAt),
+            _ => None,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Title => "title",
+            Self::Link => "link",
+            Self::Guid => "guid",
+            Self::PublishedAt => "pubDate",
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct RawItem {
+    title: Option<String>,
+    link: Option<String>,
+    guid: Option<String>,
+    published_at: Option<String>,
+}
+
+impl RawItem {
+    fn has_field(&self, field: ItemField) -> bool {
+        match field {
+            ItemField::Title => self.title.is_some(),
+            ItemField::Link => self.link.is_some(),
+            ItemField::Guid => self.guid.is_some(),
+            ItemField::PublishedAt => self.published_at.is_some(),
+        }
+    }
+
+    fn set_field(&mut self, field: ItemField, value: String) {
+        match field {
+            ItemField::Title => self.title = Some(value),
+            ItemField::Link => self.link = Some(value),
+            ItemField::Guid => self.guid = Some(value),
+            ItemField::PublishedAt => self.published_at = Some(value),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct RssState {
+    stack: Vec<String>,
+    saw_rss: bool,
+    closed_rss: bool,
+    saw_channel: bool,
+    closed_channel: bool,
+    current: Option<RawItem>,
+    active_field: Option<(ItemField, String)>,
+    items: Vec<RawItem>,
+}
+
+impl RssState {
+    fn start(&mut self, name: String) -> Result<(), YonhapError> {
+        if self.active_field.is_some() {
+            return Err(YonhapError::Protocol(
+                "recognized RSS item fields must not contain nested elements".into(),
+            ));
+        }
+        match self.stack.as_slice() {
+            [] => {
+                if name != "rss" || self.saw_rss {
+                    return Err(YonhapError::Protocol(
+                        "RSS document must contain exactly one rss root".into(),
+                    ));
+                }
+                self.saw_rss = true;
+            }
+            [root] if root == "rss" => {
+                if name != "channel" || self.saw_channel {
+                    return Err(YonhapError::Protocol(
+                        "RSS root must contain exactly one channel".into(),
+                    ));
+                }
+                self.saw_channel = true;
+            }
+            [root, channel] if root == "rss" && channel == "channel" => {
+                if name == "item" {
+                    if self.current.is_some() {
+                        return Err(YonhapError::Protocol(
+                            "nested RSS items are not permitted".into(),
+                        ));
+                    }
+                    self.current = Some(RawItem::default());
+                }
+            }
+            [root, channel, item] if root == "rss" && channel == "channel" && item == "item" => {
+                if let Some(field) = ItemField::from_name(&name) {
+                    let current = self.current.as_ref().ok_or_else(|| {
+                        YonhapError::Protocol("RSS item parser state is missing".into())
+                    })?;
+                    if current.has_field(field) {
+                        return Err(YonhapError::Protocol(format!(
+                            "RSS item contains duplicate {} field",
+                            field.name()
+                        )));
+                    }
+                    self.active_field = Some((field, String::new()));
+                }
+            }
+            _ if name == "item" => {
+                return Err(YonhapError::Protocol(
+                    "RSS item must be a direct channel child".into(),
+                ));
+            }
+            _ => {}
+        }
+        self.stack.push(name);
+        Ok(())
+    }
+
+    fn end(&mut self, name: &str) -> Result<(), YonhapError> {
+        if self.stack.last().map(String::as_str) != Some(name) {
+            return Err(YonhapError::Decode(format!(
+                "RSS closing element {name} does not match parser state"
+            )));
+        }
+        if self.stack.len() == 4 {
+            if let Some((field, value)) = self.active_field.take() {
+                if field.name() != name {
+                    return Err(YonhapError::Protocol(
+                        "RSS item field parser state disagrees with closing element".into(),
+                    ));
+                }
+                self.current
+                    .as_mut()
+                    .ok_or_else(|| {
+                        YonhapError::Protocol("RSS item parser state is missing".into())
+                    })?
+                    .set_field(field, value);
+            }
+        } else if self.stack.len() == 3 && name == "item" {
+            let item = self.current.take().ok_or_else(|| {
+                YonhapError::Protocol("RSS item closed without parser state".into())
+            })?;
+            self.items.push(item);
+            if self.items.len() > MAX_SOURCE_ITEMS {
+                return Err(YonhapError::Protocol(format!(
+                    "Yonhap RSS exceeds the {MAX_SOURCE_ITEMS}-item source bound"
+                )));
+            }
+        } else if self.stack.len() == 2 && name == "channel" {
+            self.closed_channel = true;
+        } else if self.stack.len() == 1 && name == "rss" {
+            self.closed_rss = true;
+        }
+        self.stack.pop();
+        Ok(())
+    }
+
+    fn append_text(&mut self, value: &str) {
+        if let Some((_, text)) = self.active_field.as_mut() {
+            text.push_str(value);
+        }
+    }
+
+    fn finish(self) -> Result<Vec<RawItem>, YonhapError> {
+        if !self.saw_rss
+            || !self.closed_rss
+            || !self.saw_channel
+            || !self.closed_channel
+            || !self.stack.is_empty()
+            || self.current.is_some()
+            || self.active_field.is_some()
+        {
+            return Err(YonhapError::Protocol(
+                "RSS document structure is incomplete".into(),
+            ));
+        }
+        if self.items.is_empty() {
+            return Err(YonhapError::Protocol(
+                "Yonhap returned an empty RSS feed".into(),
+            ));
+        }
+        Ok(self.items)
+    }
+}
+
+fn parse_response(
+    body: &[u8],
+    channel: YonhapChannel,
+    limit: u32,
+    observed_at: &str,
+) -> Result<DataBatch<NewsItem>, YonhapError> {
+    validate_returned_limit(limit)?;
+    ensure_body_size(body)?;
+    std::str::from_utf8(body)
+        .map_err(|error| YonhapError::Decode(format!("RSS is not UTF-8: {error}")))?;
+    if body.iter().all(u8::is_ascii_whitespace) {
+        return Err(YonhapError::Protocol(
+            "Yonhap returned an empty RSS body".into(),
+        ));
+    }
+
+    let mut reader = Reader::from_reader(body);
+    reader.config_mut().trim_text(true);
+    reader.config_mut().check_end_names = true;
+    let mut state = RssState::default();
+    loop {
+        let event = reader
+            .read_event()
+            .map_err(|error| YonhapError::Decode(format!("RSS XML: {error}")))?;
+        match event {
+            Event::Start(element) => {
+                validate_attributes(&element)?;
+                state.start(xml_name(element.name().as_ref())?)?;
+            }
+            Event::Empty(element) => {
+                validate_attributes(&element)?;
+                let name = xml_name(element.name().as_ref())?;
+                state.start(name.clone())?;
+                state.end(&name)?;
+            }
+            Event::End(element) => {
+                let name = xml_name(element.name().as_ref())?;
+                state.end(&name)?;
+            }
+            Event::Text(text) => {
+                let decoded = text
+                    .xml10_content()
+                    .map_err(|error| YonhapError::Decode(format!("RSS text: {error}")))?;
+                state.append_text(&decoded);
+            }
+            Event::CData(text) => {
+                let decoded = text
+                    .xml10_content()
+                    .map_err(|error| YonhapError::Decode(format!("RSS CDATA: {error}")))?;
+                state.append_text(&decoded);
+            }
+            Event::GeneralRef(reference) => {
+                let resolved = resolve_reference(&reference)?;
+                state.append_text(&resolved);
+            }
+            Event::DocType(_) => {
+                return Err(YonhapError::Protocol(
+                    "Yonhap RSS must not contain a DOCTYPE".into(),
+                ));
+            }
+            Event::Decl(declaration) => {
+                if let Some(encoding) = declaration.encoding() {
+                    let encoding = encoding.map_err(|error| {
+                        YonhapError::Decode(format!("RSS XML declaration: {error}"))
+                    })?;
+                    if !encoding.eq_ignore_ascii_case(b"utf-8") {
+                        return Err(YonhapError::Protocol(
+                            "Yonhap RSS must declare UTF-8 when encoding is present".into(),
+                        ));
+                    }
+                }
+            }
+            Event::Comment(_) | Event::PI(_) => {}
+            Event::Eof => break,
+        }
+    }
+
+    let raw_items = state.finish()?;
+    let batch_id = format!("yonhap:{observed_at}:{}", channel.slug());
+    let mut seen_ids = HashSet::with_capacity(raw_items.len());
+    let mut seen_urls = HashSet::with_capacity(raw_items.len());
+    let mut previous_time = None;
+    let mut parsed = Vec::with_capacity(raw_items.len());
+    for raw in raw_items {
+        let title = required_text("title", raw.title)?;
+        let canonical_url = required_text("link", raw.link)?;
+        let article_id = validate_article_url(&canonical_url)?;
+        if let Some(guid) = raw.guid {
+            let guid = normalize_text(&guid);
+            if guid.is_empty() || (guid != canonical_url && guid != article_id) {
+                return Err(YonhapError::Protocol(format!(
+                    "Yonhap GUID disagrees with canonical article {article_id}"
+                )));
+            }
+        }
+        let published_source = required_text("pubDate", raw.published_at)?;
+        let source_time = OffsetDateTime::parse(&published_source, &Rfc2822)
+            .map_err(|error| YonhapError::Protocol(format!("invalid RSS pubDate: {error}")))?;
+        let korea = UtcOffset::from_hms(9, 0, 0)
+            .map_err(|error| YonhapError::Protocol(format!("invalid Korea offset: {error}")))?;
+        let source_time = source_time.to_offset(korea);
+        if previous_time.is_some_and(|previous| previous < source_time) {
+            return Err(YonhapError::Protocol(
+                "Yonhap RSS items are not newest-first".into(),
+            ));
+        }
+        previous_time = Some(source_time);
+        let published_at = source_time
+            .format(&Rfc3339)
+            .map_err(|error| YonhapError::Protocol(format!("RSS time format: {error}")))?;
+        if !seen_ids.insert(article_id.clone()) || !seen_urls.insert(canonical_url.clone()) {
+            return Err(YonhapError::Protocol(format!(
+                "duplicate Yonhap article identity {article_id}"
+            )));
+        }
+        let evidence = SourceEvidence::new(ProviderId::Yonhap, observed_at, &batch_id)?
+            .with_source_at(&published_at)?;
+        parsed.push(NewsItem {
+            item_id: NonEmptyText::new(article_id)?,
+            title: NonEmptyText::new(title)?,
+            summary: None,
+            content: None,
+            publisher: NonEmptyText::new("韩联社")?,
+            canonical_url: HttpsUrl::new(canonical_url)?,
+            published_at: NonEmptyText::new(published_at)?,
+            instruments: Vec::new(),
+            topics: vec![NonEmptyText::new(channel.topic())?],
+            language: NonEmptyText::new("zh-CN")?,
+            evidence,
+        });
+    }
+
+    parsed.truncate(limit as usize);
+    let source_at = parsed
+        .first()
+        .map(|item| item.published_at.as_str())
+        .ok_or_else(|| YonhapError::Protocol("latest Yonhap source time is missing".into()))?;
+    let provenance = Provenance::new("yonhap-cn-rss-v1", observed_at)?
+        .with_source_at(source_at)?
+        .with_batch_id(batch_id)?;
+    Ok(DataBatch::strict(parsed, provenance))
+}
+
+fn validate_attributes(element: &quick_xml::events::BytesStart<'_>) -> Result<(), YonhapError> {
+    for attribute in element.attributes() {
+        attribute.map_err(|error| YonhapError::Decode(format!("RSS XML attribute: {error}")))?;
+    }
+    Ok(())
+}
+
+fn xml_name(bytes: &[u8]) -> Result<String, YonhapError> {
+    std::str::from_utf8(bytes)
+        .map(str::to_owned)
+        .map_err(|error| YonhapError::Decode(format!("RSS element name is not UTF-8: {error}")))
+}
+
+fn resolve_reference(reference: &BytesRef<'_>) -> Result<String, YonhapError> {
+    if let Some(character) = reference
+        .resolve_char_ref()
+        .map_err(|error| YonhapError::Protocol(format!("invalid numeric entity: {error}")))?
+    {
+        return Ok(character.to_string());
+    }
+    let name = reference
+        .decode()
+        .map_err(|error| YonhapError::Decode(format!("RSS entity name: {error}")))?;
+    let value = match name.as_ref() {
+        "amp" => "&",
+        "lt" => "<",
+        "gt" => ">",
+        "apos" => "'",
+        "quot" => "\"",
+        _ => {
+            return Err(YonhapError::Protocol(format!(
+                "custom RSS entity &{name}; is not permitted"
+            )));
+        }
+    };
+    Ok(value.to_owned())
+}
+
+fn required_text(field: &'static str, value: Option<String>) -> Result<String, YonhapError> {
+    let value = value.ok_or_else(|| {
+        YonhapError::Protocol(format!("Yonhap RSS item is missing required {field}"))
+    })?;
+    let normalized = normalize_text(&value);
+    if normalized.is_empty() {
+        return Err(YonhapError::Protocol(format!(
+            "Yonhap RSS item {field} must not be empty"
+        )));
+    }
+    if normalized.chars().any(char::is_control) {
+        return Err(YonhapError::Protocol(format!(
+            "Yonhap RSS item {field} contains control characters"
+        )));
+    }
+    Ok(normalized)
+}
+
+fn normalize_text(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn validate_article_url(url: &str) -> Result<String, YonhapError> {
+    const PREFIX: &str = "https://cn.yna.co.kr/view/";
+    let article_id = url.strip_prefix(PREFIX).ok_or_else(|| {
+        YonhapError::Protocol("Yonhap article URL must use the exact official HTTPS path".into())
+    })?;
+    let digits = article_id.strip_prefix("ACK").ok_or_else(|| {
+        YonhapError::Protocol("Yonhap Chinese article ID must begin with ACK".into())
+    })?;
+    if digits.len() != 17 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(YonhapError::Protocol(
+            "Yonhap Chinese article ID must contain ACK plus 17 ASCII digits".into(),
+        ));
+    }
+    Ok(article_id.to_owned())
+}
+
+fn now() -> Result<String, YonhapError> {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|error| YonhapError::Transport(format!("local observation clock: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,6 +897,57 @@ mod tests {
             Some("application/rss+xml; charset=utf-8".into()),
             b"<rss/>".to_vec(),
         )
+    }
+
+    fn rss_item(id: &str, title: &str, published_at: &str) -> String {
+        format!(
+            "<item>\
+               <title>{title}</title>\
+               <link>https://cn.yna.co.kr/view/{id}</link>\
+               <guid isPermaLink=\"true\">https://cn.yna.co.kr/view/{id}</guid>\
+               <pubDate>{published_at}</pubDate>\
+             </item>"
+        )
+    }
+
+    fn rss_feed(items: &str) -> String {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+             <rss version=\"2.0\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\">\
+               <channel><title>韩联社中文</title>{items}</channel>\
+             </rss>"
+        )
+    }
+
+    fn valid_rss() -> String {
+        let first = "<item>\
+               <title>韩国与美国扩大芯片合作</title>\
+               <link>https://cn.yna.co.kr/view/ACK20260725001100881</link>\
+               <guid>https://cn.yna.co.kr/view/ACK20260725001100881</guid>\
+               <pubDate>Sat, 25 Jul 2026 15:35:00 +0900</pubDate>\
+               <description><![CDATA[NEVER_EXPOSE_DESCRIPTION]]></description>\
+               <content:encoded><![CDATA[NEVER_EXPOSE_BODY]]></content:encoded>\
+             </item>"
+            .to_owned();
+        let second = rss_item(
+            "ACK20260725001000881",
+            "韩国&amp;亚洲市场动态",
+            "Sat, 25 Jul 2026 15:30:00 +0900",
+        );
+        let third = rss_item(
+            "ACK20260725000900881",
+            "韩国社会资讯",
+            "Sat, 25 Jul 2026 15:25:00 +0900",
+        );
+        rss_feed(&format!("{first}{second}{third}"))
+    }
+
+    fn parse_fixture(
+        body: &[u8],
+        channel: YonhapChannel,
+        limit: u32,
+    ) -> Result<magic_market_core::DataBatch<magic_market_core::NewsItem>, YonhapError> {
+        parse_response(body, channel, limit, "2026-07-25T15:36:00+09:00")
     }
 
     #[test]
@@ -664,5 +1185,273 @@ mod tests {
         let current = lock.lock().unwrap();
         assert_eq!(current.calls, 2);
         assert!(current.starts[1].duration_since(current.starts[0]) >= Duration::from_millis(40));
+    }
+
+    #[test]
+    fn parser_maps_valid_feed_to_metadata_only_news() {
+        let response = HttpResponse::new(
+            YonhapChannel::Economy.endpoint(),
+            Some("application/rss+xml; charset=utf-8".into()),
+            valid_rss().into_bytes(),
+        );
+        let client = YonhapClient::from_parts(
+            YonhapChannel::Economy,
+            Arc::new(StaticTransport {
+                response,
+                calls: Arc::new(AtomicUsize::new(0)),
+            }),
+            Duration::ZERO,
+        );
+        let batch = client
+            .probe_global_news(magic_market_core::PositiveU32::new(2).unwrap())
+            .unwrap();
+
+        assert_eq!(batch.records().len(), 2);
+        let first = &batch.records()[0];
+        assert_eq!(first.item_id.as_str(), "ACK20260725001100881");
+        assert_eq!(first.title.as_str(), "韩国与美国扩大芯片合作");
+        assert_eq!(first.publisher.as_str(), "韩联社");
+        assert_eq!(
+            first.canonical_url.as_str(),
+            "https://cn.yna.co.kr/view/ACK20260725001100881"
+        );
+        assert_eq!(first.published_at.as_str(), "2026-07-25T15:35:00+09:00");
+        assert!(first.summary.is_none());
+        assert!(first.content.is_none());
+        assert!(first.instruments.is_empty());
+        assert_eq!(first.topics[0].as_str(), "经济");
+        assert_eq!(first.language.as_str(), "zh-CN");
+        assert_eq!(
+            first.evidence.provider(),
+            magic_market_core::ProviderId::Yonhap
+        );
+        assert_eq!(
+            first.evidence.source_at(),
+            Some("2026-07-25T15:35:00+09:00")
+        );
+        assert_eq!(batch.provenance().source(), "yonhap-cn-rss-v1");
+        assert_eq!(
+            batch.provenance().source_at(),
+            Some("2026-07-25T15:35:00+09:00")
+        );
+        assert!(batch.quality().is_complete());
+        assert_eq!(batch.records()[1].title.as_str(), "韩国&亚洲市场动态");
+    }
+
+    #[test]
+    fn parser_ignores_description_content_and_extensions() {
+        let batch = parse_fixture(valid_rss().as_bytes(), YonhapChannel::Economy, 3).unwrap();
+        let debug = format!("{batch:?}");
+        assert!(!debug.contains("NEVER_EXPOSE_DESCRIPTION"));
+        assert!(!debug.contains("NEVER_EXPOSE_BODY"));
+        assert!(batch
+            .records()
+            .iter()
+            .all(|item| item.summary.is_none() && item.content.is_none()));
+    }
+
+    #[test]
+    fn parser_rejects_empty_malformed_and_non_utf8_xml() {
+        for body in [
+            b"".as_slice(),
+            b" \n\t".as_slice(),
+            b"<rss><channel><item></channel></rss>".as_slice(),
+            b"<rss><channel>".as_slice(),
+        ] {
+            assert!(parse_fixture(body, YonhapChannel::Rolling, 1).is_err());
+        }
+        let invalid_utf8 = b"<rss><channel><item><title>\xff</title></item></channel></rss>";
+        assert!(matches!(
+            parse_fixture(invalid_utf8, YonhapChannel::Rolling, 1),
+            Err(YonhapError::Decode(_))
+        ));
+    }
+
+    #[test]
+    fn parser_rejects_doctype_and_custom_named_entities() {
+        let with_doctype = b"<!DOCTYPE rss [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><rss/>";
+        assert!(matches!(
+            parse_fixture(with_doctype, YonhapChannel::Rolling, 1),
+            Err(YonhapError::Protocol(message)) if message.contains("DOCTYPE")
+        ));
+        let custom = rss_feed(
+            "<item><title>&custom;</title>\
+             <link>https://cn.yna.co.kr/view/ACK20260725001100881</link>\
+             <pubDate>Sat, 25 Jul 2026 15:35:00 +0900</pubDate></item>",
+        );
+        assert!(matches!(
+            parse_fixture(custom.as_bytes(), YonhapChannel::Rolling, 1),
+            Err(YonhapError::Protocol(message)) if message.contains("entity")
+        ));
+    }
+
+    #[test]
+    fn parser_accepts_only_predefined_and_numeric_references() {
+        let item = rss_item(
+            "ACK20260725001100881",
+            "A&amp;B&lt;C&gt;&#x4E2D;&#25991;&quot;&apos;",
+            "Sat, 25 Jul 2026 15:35:00 +0900",
+        );
+        let batch = parse_fixture(rss_feed(&item).as_bytes(), YonhapChannel::Rolling, 1).unwrap();
+        assert_eq!(batch.records()[0].title.as_str(), "A&B<C>中文\"'");
+    }
+
+    #[test]
+    fn parser_rejects_control_character_references() {
+        let item = rss_item(
+            "ACK20260725001100881",
+            "invalid&#x1;title",
+            "Sat, 25 Jul 2026 15:35:00 +0900",
+        );
+        assert!(matches!(
+            parse_fixture(rss_feed(&item).as_bytes(), YonhapChannel::Rolling, 1),
+            Err(YonhapError::Protocol(message)) if message.contains("control")
+        ));
+    }
+
+    #[test]
+    fn parser_rejects_wrong_structure_and_source_row_bounds() {
+        for body in [
+            "<channel></channel>".to_owned(),
+            "<rss></rss>".to_owned(),
+            "<rss><item/></rss>".to_owned(),
+            rss_feed(""),
+        ] {
+            assert!(parse_fixture(body.as_bytes(), YonhapChannel::Rolling, 1).is_err());
+        }
+
+        let items = (0..=MAX_SOURCE_ITEMS)
+            .map(|index| {
+                rss_item(
+                    &format!("ACK20260725{index:09}"),
+                    "bounded row",
+                    "Sat, 25 Jul 2026 15:35:00 +0900",
+                )
+            })
+            .collect::<String>();
+        assert!(matches!(
+            parse_fixture(rss_feed(&items).as_bytes(), YonhapChannel::Rolling, 1),
+            Err(YonhapError::Protocol(message)) if message.contains("100")
+        ));
+    }
+
+    #[test]
+    fn parser_rejects_missing_or_empty_required_fields() {
+        let valid = rss_item(
+            "ACK20260725001100881",
+            "required",
+            "Sat, 25 Jul 2026 15:35:00 +0900",
+        );
+        for invalid in [
+            valid.replace("<title>required</title>", ""),
+            valid.replace("required", "   "),
+            valid.replace(
+                "<link>https://cn.yna.co.kr/view/ACK20260725001100881</link>",
+                "",
+            ),
+            valid.replace("<pubDate>Sat, 25 Jul 2026 15:35:00 +0900</pubDate>", ""),
+        ] {
+            assert!(
+                parse_fixture(rss_feed(&invalid).as_bytes(), YonhapChannel::Rolling, 1).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn parser_rejects_noncanonical_article_urls() {
+        let canonical = "https://cn.yna.co.kr/view/ACK20260725001100881";
+        for invalid in [
+            "http://cn.yna.co.kr/view/ACK20260725001100881",
+            "https://user@cn.yna.co.kr/view/ACK20260725001100881",
+            "https://cn.yna.co.kr:444/view/ACK20260725001100881",
+            "https://cn.yna.co.kr.example/view/ACK20260725001100881",
+            "https://cn.yna.co.kr/view/ACK20260725001100881?x=1",
+            "https://cn.yna.co.kr/view/ACK20260725001100881#x",
+            "https://cn.yna.co.kr/news/ACK20260725001100881",
+            "https://cn.yna.co.kr/view/AEN20260725001100881",
+            "https://cn.yna.co.kr/view/ACK2026072500110088",
+            "https://cn.yna.co.kr/view/ACK202607250011008811",
+            "https://cn.yna.co.kr/view/ACK2026072500110088A",
+        ] {
+            let item = rss_item(
+                "ACK20260725001100881",
+                "canonical",
+                "Sat, 25 Jul 2026 15:35:00 +0900",
+            )
+            .replace(canonical, invalid);
+            assert!(
+                parse_fixture(rss_feed(&item).as_bytes(), YonhapChannel::Rolling, 1).is_err(),
+                "unexpectedly accepted {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn parser_rejects_guid_disagreement() {
+        let item = rss_item(
+            "ACK20260725001100881",
+            "guid",
+            "Sat, 25 Jul 2026 15:35:00 +0900",
+        )
+        .replace(
+            "<guid isPermaLink=\"true\">https://cn.yna.co.kr/view/ACK20260725001100881</guid>",
+            "<guid>https://cn.yna.co.kr/view/ACK20260725001000881</guid>",
+        );
+        assert!(matches!(
+            parse_fixture(rss_feed(&item).as_bytes(), YonhapChannel::Rolling, 1),
+            Err(YonhapError::Protocol(message)) if message.contains("GUID")
+        ));
+    }
+
+    #[test]
+    fn parser_rejects_bad_time_and_source_order_regression() {
+        let bad_time = rss_item("ACK20260725001100881", "bad time", "2026-07-25 15:35");
+        assert!(parse_fixture(rss_feed(&bad_time).as_bytes(), YonhapChannel::Rolling, 1).is_err());
+
+        let older = rss_item(
+            "ACK20260725001000881",
+            "older",
+            "Sat, 25 Jul 2026 15:30:00 +0900",
+        );
+        let newer = rss_item(
+            "ACK20260725001100881",
+            "newer",
+            "Sat, 25 Jul 2026 15:35:00 +0900",
+        );
+        assert!(matches!(
+            parse_fixture(
+                rss_feed(&format!("{older}{newer}")).as_bytes(),
+                YonhapChannel::Rolling,
+                2
+            ),
+            Err(YonhapError::Protocol(message)) if message.contains("newest-first")
+        ));
+    }
+
+    #[test]
+    fn parser_rejects_duplicate_ids_and_urls() {
+        let item = rss_item(
+            "ACK20260725001100881",
+            "duplicate",
+            "Sat, 25 Jul 2026 15:35:00 +0900",
+        );
+        assert!(matches!(
+            parse_fixture(
+                rss_feed(&format!("{item}{item}")).as_bytes(),
+                YonhapChannel::Rolling,
+                2
+            ),
+            Err(YonhapError::Protocol(message)) if message.contains("duplicate")
+        ));
+    }
+
+    #[test]
+    fn parser_validates_complete_feed_before_truncating() {
+        let mut feed = valid_rss();
+        feed = feed.replace(
+            "</channel>",
+            "<item><title>invalid trailing row</title></item></channel>",
+        );
+        assert!(parse_fixture(feed.as_bytes(), YonhapChannel::Rolling, 1).is_err());
     }
 }
