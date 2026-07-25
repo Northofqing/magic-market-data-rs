@@ -10,7 +10,7 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
-const MAX_HIGH_LEVEL_ATTEMPTS: u32 = 3;
+const MAX_HIGH_LEVEL_ATTEMPTS: u32 = 20;
 const MIN_PACING_MS: u64 = 1_000;
 
 fn main() -> Result<(), Box<dyn Error>> {
