@@ -755,7 +755,7 @@ git commit -m "test(yonhap): record live RSS admission"
 - Modify: `tools/compliance/check.sh`
 - Modify: `tools/release/package.sh`
 
-- [ ] **Step 1: Write BR-021**
+- [x] **Step 1: Write BR-021**
 
 Append:
 
@@ -775,7 +775,7 @@ the named diagnostic method may perform the fetch.
 
 Change the compliance sentinel to require `BR-021`.
 
-- [ ] **Step 2: Register compliance and packaging**
+- [x] **Step 2: Register compliance and packaging**
 
 In `tools/compliance/check.sh`:
 
@@ -795,7 +795,7 @@ build_probe magic-yonhap-rs load_probe magic-yonhap-load-probe
 Count the actual `build_probe` calls mechanically and update every documented
 package-binary count to that exact value.
 
-- [ ] **Step 3: Write Provider and integration documentation**
+- [x] **Step 3: Write Provider and integration documentation**
 
 Both new documents must state:
 
@@ -815,7 +815,7 @@ Both new documents must state:
 - typed failure categories;
 - the official RSS guide and Chinese terms links.
 
-- [ ] **Step 4: Update root and deployment documentation**
+- [x] **Step 4: Update root and deployment documentation**
 
 Update all relevant root README locations:
 
@@ -840,7 +840,7 @@ Update `docs/DEPLOYMENT.md`:
 Update `docs/UPSTREAM.md` with the official RSS directory and terms URL, access
 date `2026-07-25`, metadata-only scope, and no copied upstream source code.
 
-- [ ] **Step 5: Run documentation and structural checks**
+- [x] **Step 5: Run documentation and structural checks**
 
 Run:
 
@@ -856,7 +856,7 @@ git diff --check
 Expected: every command exits zero, Cargo metadata lists
 `magic-yonhap-rs`, and Router still has no Provider production dependency.
 
-- [ ] **Step 6: Commit release registration**
+- [x] **Step 6: Commit release registration**
 
 ```bash
 git add README.md crates/magic-yonhap-rs/README.md \

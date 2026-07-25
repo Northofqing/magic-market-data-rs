@@ -118,3 +118,14 @@ have matching attribute/visible titles, and use a unique numeric article ID at
 the canonical `finance.eastmoney.com/a/<id>.html` path. The public page does
 not provide structured security identity, so records keep an empty instrument
 list and may not be presented as instrument news.
+
+## BR-021 Yonhap Chinese RSS metadata boundary
+The Yonhap Provider may read only one of the seven official simplified-Chinese
+RSS endpoints per bounded request. It maps title, exact canonical article
+identity and URL, publication time, channel and provenance only; summary and
+content remain absent and article pages are never fetched. The complete feed
+must pass exact endpoint, XML structure, required-field, unique-ID/URL,
+newest-first and 100-row bounds before caller-limit truncation. Public global
+news capability is true only after the production Rust client passes bounded
+live admission; otherwise the trait remains explicitly unsupported and only
+the named diagnostic method may perform the fetch.

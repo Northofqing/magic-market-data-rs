@@ -139,3 +139,12 @@
   Git operations.
 - Phase 3 implementation is complete; Phase 4 documentation and release
   registration is now in progress.
+- Task 5 registered BR-021, official source provenance, the crate/integration
+  READMEs, root capability/probe/package documentation, deployment
+  host/path/health requirements, compliance membership, and both packaged
+  probes.
+- Mechanical verification confirms 28 `build_probe` calls and matching root
+  and deployment counts. This also corrected the pre-existing root README
+  omission of the packaged State Council probe.
+- Shell syntax, documentation links, compliance, locked offline Cargo
+  metadata, and workspace registration all pass.

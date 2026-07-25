@@ -20,6 +20,7 @@ required=(
   docs/integrations/cls-web.md
   docs/integrations/jin10-web.md
   docs/integrations/thepaper-web.md
+  docs/integrations/yonhap-rss.md
   docs/integrations/baidu-web.md
   docs/integrations/iwencai-api.md
   docs/integrations/exchange-official.md
@@ -34,6 +35,7 @@ required=(
   crates/magic-cls-rs/Cargo.toml
   crates/magic-jin10-rs/Cargo.toml
   crates/magic-thepaper-rs/Cargo.toml
+  crates/magic-yonhap-rs/Cargo.toml
   crates/magic-baidu-rs/Cargo.toml
   crates/magic-iwencai-rs/Cargo.toml
   crates/magic-exchange-rs/Cargo.toml
@@ -58,6 +60,7 @@ workspace_members=(
   crates/magic-iwencai-rs
   crates/magic-exchange-rs
   crates/magic-gov-rs
+  crates/magic-yonhap-rs
 )
 workspace_manifest_members=$(sed -n '/^members = \[/,/^\]/p' Cargo.toml)
 for member in "${workspace_members[@]}"; do
@@ -68,7 +71,7 @@ for member in "${workspace_members[@]}"; do
 done
 if rg -n 'stock_analysis' crates/*/Cargo.toml; then exit 1; fi
 router_dependencies=$(sed -n '/^\[dependencies\]/,/^\[/p' crates/magic-market-router/Cargo.toml)
-if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepaper|baidu|iwencai|exchange)-rs' <<<"$router_dependencies"; then
+if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepaper|yonhap|baidu|iwencai|exchange)-rs' <<<"$router_dependencies"; then
   echo "router production dependencies must remain provider-neutral" >&2
   exit 1
 fi
@@ -76,4 +79,5 @@ fi
 # hardening is tracked separately from this structural compliance gate.
 rg -q '^## BR-001 ' docs/business_rules.md
 rg -q '^## BR-020 ' docs/business_rules.md
+rg -q '^## BR-021 ' docs/business_rules.md
 rg -q '^## Gate D ' docs/ENGINEERING_RULES.md

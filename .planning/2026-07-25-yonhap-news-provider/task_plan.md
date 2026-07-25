@@ -44,7 +44,7 @@ Phase 4
 
 - [x] Run the bounded official live probe.
 - [x] Advertise only the capability proven by the live result.
-- [ ] Register workspace, compliance, deployment, and integration docs.
+- [x] Register workspace, compliance, deployment, and integration docs.
 - [ ] Run formatting, tests, Clippy, compliance, docs, coverage, and release
   checks.
 - [ ] Obtain final code review and integrate without touching user-owned files.

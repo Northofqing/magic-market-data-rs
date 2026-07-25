@@ -16,3 +16,10 @@ the market-discovery/global/calendar work does not copy implementation code from
 qshare: Eastmoney, CNInfo, Sina, Jin10, State Council and CFFEX adapters use
 their own typed contracts, bounded transports, deterministic fixtures and
 provenance validation.
+
+The Yonhap adapter is an independent local implementation against the official
+simplified-Chinese RSS directory at <https://cn.yna.co.kr/channel/rss> and the
+Chinese terms at <https://cn.yna.co.kr/aboutus/copyright>, reviewed on
+2026-07-25. It reads bounded RSS metadata only, does not copy upstream source
+code, does not fetch article pages, and does not store or redistribute article
+bodies.

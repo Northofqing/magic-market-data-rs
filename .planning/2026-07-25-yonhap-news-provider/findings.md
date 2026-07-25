@@ -95,6 +95,12 @@
   requests, and compile their unit tests through `--all-targets`. Yonhap can
   follow that release-compatible shape while using its diagnostic method
   before capability admission.
+- `tools/release/package.sh` currently contains 26 actual `build_probe` calls.
+  `docs/DEPLOYMENT.md` correctly says 26 and includes the State Council probe,
+  while the root README says 25 and omits that binary from its tree. Adding
+  Yonhap live/load makes the mechanical total 28; the release documentation
+  should correct the pre-existing root mismatch while registering both new
+  binaries.
 
 ## Official References
 
