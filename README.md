@@ -10,7 +10,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 
 > 当前状态（2026-07-25）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS、Jin10、The Paper、Baidu，以及 SSE/SZSE 官方公告与龙虎榜、SZSE Quote/五档和 HKEX
-> 北向日统计已通过真实网络验收；Eastmoney 已声明能力的
+> 北向日统计、CFFEX 官方 IF/IH/IC/IM 交割通知已通过真实网络验收；Eastmoney 已声明能力的
 > live/load 探针全部通过，
 > 分钟/日级资金流因当前网络返回 empty reply 而保持未声明能力；关键词新闻响应没有
 > 结构化证券身份，也不伪装成个股新闻。东财财经滚动页已作为独立全局最新资讯实现，
@@ -56,7 +56,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | `magic-thepaper-rs` | 澎湃新闻财经频道原生文章 | 外链转载不归因给澎湃；不伪造个股过滤 |
 | `magic-baidu-rs` | 百度未复权日线和源端 MA5/10/20 | 不提供 Quote/分钟/Level-2 |
 | `magic-iwencai-rs` | 获授权 API Key 的语义搜索 | 无 Key 明确鉴权失败，不复用 Cookie |
-| `magic-exchange-rs` | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 北向日统计 | 官方公共只读端点，无 SLA；不提供 Level-2、集合竞价或 SSE Quote |
+| `magic-exchange-rs` | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 北向日统计、CFFEX 官方交割通知 | 官方公共只读端点，无 SLA；不提供 Level-2、集合竞价或 SSE Quote |
 | `magic-market-analysis` | 基于标准化记录的均线、估值、涨停情绪和跨源诊断 | 纯函数、不联网；主观估值锚点必须由调用方配置 |
 
 依赖方向保持简单：
@@ -195,7 +195,7 @@ Router 适配器已经通过确定性测试。
 | 经济日历 | Jin10 | 仅公开未锁 type-1；保留前值/预期/实际/修正值和重要性 |
 | 官方政策 | State Council | 仅国务院官方搜索与 `www.gov.cn` 规范链接，页面上限 50 |
 | 研报 PDF 正文 | Eastmoney | 精确研报身份、`application/pdf`、`%PDF-`、最大 32 MiB |
-| 期货交割日历 | CFFEX | 官方通知必须明确 IF/IH/IC/IM 日期及现金交割，不使用公式推算 |
+| 期货交割日历 | CFFEX | 有界扫描官方交易通知目录及同站详情；通知必须同时明确 IF/IH/IC/IM、请求月份的实际交割日与现金交割结算措辞；节假日顺延不使用公式推算 |
 | 15:35 资金榜 | Eastmoney | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称 |
 
 ### TDX
@@ -212,6 +212,11 @@ Smart failover 客户端。2026-07-23 的真实 probe 覆盖：
 TDX Quote/盘口报文中的时间区域格式尚未完成审计，所以标准化记录保留
 `source_at=None` 并标记质量不完整。它们不能直接通过要求可审计源时间的 5 秒新鲜度
 门。TDX 也没有满足统一 MoneyFlow 和集合竞价契约的字段，不会从成交或盘口推测。
+
+标准化 Quote 的必填当前价如果为零、负数或非有限数，会连同证券身份和源字段上下文
+返回 typed error，不会用昨收或 `None` 伪装修复。关闭自动重试的未连接客户端会立即
+返回显式 disconnected error，不等待连接池超时。TDX 报文的 zlib 解压只由真实
+网络客户端路径执行；项目不再暴露无调用方的占位 codec API。
 
 完整边界见 [TDX 能力矩阵](docs/TDX_CAPABILITIES.md)。
 
@@ -309,17 +314,35 @@ cargo fetch --locked
 
 ```bash
 cargo check --workspace --all-targets --locked --offline
+cargo build --workspace --all-targets --release --locked --offline
 cargo test --workspace --all-targets --locked --offline
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo doc --workspace --no-deps --locked --offline
 ```
 
-完整发布门一次执行格式、stable Rust 全目标编译、全部测试、严格 Clippy、rustdoc、
-doctest、链接、合规和 diff 检查：
+本地预检一次执行格式、stable Rust debug/release 全目标编译、全部测试、严格
+Clippy、rustdoc、doctest、链接、合规和 diff 检查：
 
 ```bash
 bash tools/release/preflight.sh
 ```
+
+发布前还必须运行严格覆盖率门。检查器从工作区 manifest 枚举全部生产 Rust 源文件，
+按 LLVM coverage segment 计数，并排除 `#[cfg(test)]` 所属测试项；遗漏 workspace
+crate、遗漏生产源、仓库外路径、重复路径或 malformed JSON 都会显式失败，内联测试
+不能抬高生产覆盖率：
+
+```bash
+mkdir -p target/coverage
+cargo llvm-cov --workspace --all-features --json \
+  --output-path target/coverage/coverage.json -- --test-threads=1
+python3 tools/coverage/check_thresholds.py target/coverage/coverage.json
+```
+
+门槛是生产代码整体 `80.00%`、codec/protocol/adjustment、
+`service/common.rs` 和 `adapter.rs` 关键集合 `95.00%`。2026-07-25 最终报告为
+`22355/27922 = 80.06%` 和 `1881/1960 = 95.97%`。合同和失败语义见
+[覆盖率门说明](tools/coverage/README.md)。
 
 ## 真实数据探针
 
@@ -439,6 +462,16 @@ cargo run -p magic-cls-rs --example live_probe --release --locked --offline
 cargo run -p magic-jin10-rs --example live_probe --release --locked --offline
 cargo run -p magic-thepaper-rs --example live_probe --release --locked --offline
 cargo run -p magic-baidu-rs --example live_probe --release --locked --offline
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+```
+
+CFFEX 可以单独验收，默认示例月份为 `2026-02`；成功必须精确返回 IF/IH/IC/IM
+四条由同一官方通知证明的现金交割事件：
+
+```bash
+MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
+MAGIC_CFFEX_DELIVERY_YEAR=2026 \
+MAGIC_CFFEX_DELIVERY_MONTH=2 \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
 
@@ -650,11 +683,12 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 
 ## 当前验收状态
 
-以下是截至 2026-07-24 已保存的验收边界，不等同于供应商 SLA：
+以下是截至 2026-07-25 已保存的验收边界，不等同于供应商 SLA：
 
 | 项目 | 结果 | 证据摘要 |
 | --- | --- | --- |
-| stable Rust 全工作区门禁 | 通过 | check、全部测试、严格 Clippy、rustdoc/doctest、链接和合规 |
+| stable Rust 全工作区门禁 | 通过 | debug/release 全目标编译、全部测试、严格 Clippy、rustdoc/doctest、链接、合规和 diff |
+| 严格生产覆盖率门 | 通过 | 整体 22355/27922 = 80.06%；关键集合 1881/1960 = 95.97%；内联测试项不计入 |
 | TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
 | Tencent live probe | 通过 | 沪深京基础行情；股票/指数/ETF 行情统计；沪深当日逐笔 |
 | Tencent load probe | 通过 | mixed 100/8 为 100/100；统计 12/3 为 12/12 |
@@ -670,6 +704,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | The Paper live | 通过 | 财经频道原生文章 5 条；栏目/标签、来源时间和原生 canonical URL 完整 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 公告、SSE/SZSE 龙虎榜与完整席位、SZSE Quote/五档、HKEX 两通道 Top10；mixed load 8/8、最小 attempt 起始间隔 1000 ms |
+| CFFEX official delivery live | 通过 | 官方通知精确返回 IF2602/IH2602/IC2602/IM2602 四条现金交割事件；日期来自通知原文，不按公式推算 |
 | iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
 | Release package | 每个提交独立构建 | 二十五个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 

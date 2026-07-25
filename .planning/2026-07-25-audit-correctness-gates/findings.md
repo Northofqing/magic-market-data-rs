@@ -93,8 +93,19 @@
   `service/mod.rs`. Extracting one provider-neutral private normalizer makes the
   behavior directly testable and removes hundreds of hard-to-cover duplicate
   branch lines without changing the public contract.
-- The final exact report reaches 30520/38150 production lines (80.00%) overall
-  and 3480/3663 configured critical lines (95.00%).
+- Independent review proved that the first checker trusted report paths,
+  allowed omitted workspace sources, and counted inline `#[cfg(test)]` code
+  through file summaries. Those percentages were therefore not release
+  evidence.
+- The corrected checker derives every production source and workspace target
+  from `Cargo.toml`, canonicalizes paths inside the repository, validates LLVM
+  segments against current source length, and excludes the exact item span
+  directly attributed by `#[cfg(test)]`.
+- The corrected exact report reaches 22355/27922 production lines (80.06%)
+  overall and 1881/1960 configured critical lines (95.97%).
+- The public TDX `codec` module was an uncalled placeholder whose decompression
+  function copied input unchanged. It was removed; actual zlib handling remains
+  in the real blocking, direct, async, F10, and finance network paths.
 - The reported absence of cargo-deny enforcement is false for the current
   repository: both `.github/workflows/ci.yml` and
   `.github/workflows/security.yml` run the pinned cargo-deny action. Only the

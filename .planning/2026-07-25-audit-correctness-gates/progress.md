@@ -109,9 +109,25 @@
     deliberately confined to `#[cfg(test)]` poison/inspection tests.
   - Confirmed cargo-deny runs in both push/PR CI and the weekly security
     workflow; the local cargo-deny binary is not installed.
+  - Independent review found three Important issues: an uncalled placeholder
+    codec API, report paths/workspace sources that were not proven complete,
+    and whole-file coverage summaries that counted inline tests.
+  - Removed the placeholder codec, made the checker canonicalize and require
+    the complete manifest-derived production source set, switched calculation
+    to LLVM segments, and excluded exact `#[cfg(test)]` item spans.
+  - Added 16 checker contract tests and production behavior tests, then
+    regenerated a strict report at 22355/27922 (80.06%) overall and 1881/1960
+    (95.97%) critical.
+  - Updated the root, exchange-provider, and coverage READMEs with CFFEX
+    delivery behavior, TDX failure semantics, strict coverage semantics, and
+    current evidence.
+  - The first post-review preflight identified four
+    `cloned_ref_to_slice_refs` findings in new TDX tests. Replaced only those
+    singleton slices with `std::slice::from_ref`, passed targeted TDX Clippy,
+    and then passed the complete clean release preflight.
 - Remaining:
-  - Complete final review and integrate the isolated branch without overwriting
-    the primary worktree's user-owned changes.
+  - Obtain post-fix independent review and integrate without overwriting the
+    primary worktree's user-owned changes.
 
 ## Test Results
 
@@ -127,11 +143,10 @@
 | Isolated all-target baseline | `cargo test --workspace --all-targets --locked --offline --quiet` | Pass | Passed | ✓ |
 | TDX strict Clippy after remediation | `cargo clippy -p magic-tdx-rs --all-targets --locked --offline -- -D warnings` | Zero warnings | Passed | ✓ |
 | TDX full suite after remediation | `cargo test -p magic-tdx-rs --all-targets --locked --offline` | Pass | 233 unit tests plus all integration/example tests passed | ✓ |
-| Coverage checker contract | `python3 -m unittest tools.coverage.test_check_thresholds` | All malformed and threshold boundaries enforced | 12 passed | ✓ |
-| TDX critical aggregate | TDX all-target llvm-cov report plus strict checker | At least 95% | 3480/3663 = 95.00% | ✓ |
-| Final overall coverage | scheduled-CI llvm-cov command plus strict checker | At least 80% | 30520/38150 = 80.00% | ✓ |
-| Final critical coverage | same final report | At least 95% | 3480/3663 = 95.00% | ✓ |
-| Full release preflight | `bash tools/release/preflight.sh` | Every local release gate passes | `release preflight: passed` | ✓ |
+| Coverage checker contract | `python3 -m unittest tools.coverage.test_check_thresholds` | Malformed reports, path/source completeness, segments, cfg spans, and thresholds enforced | 16 passed | ✓ |
+| Final overall coverage | scheduled-CI llvm-cov command plus strict segment checker | At least 80% | 22355/27922 = 80.06% | ✓ |
+| Final critical coverage | same final report | At least 95% | 1881/1960 = 95.97% | ✓ |
+| Full post-review release preflight | `bash tools/release/preflight.sh` | Every local release gate passes | `release preflight: passed` | ✓ |
 | Dependency policy registration | inspect push/PR and scheduled workflows | cargo-deny is enforced remotely | Pinned `cargo-deny-action@v2` in both workflows | ✓ |
 
 ## Error Log
@@ -146,13 +161,15 @@
 | 2026-07-25 | New invalid-date test literals failed strict Clippy grouping | 1 | Re-grouped decimal literals and reran strict Clippy. |
 | 2026-07-25 | Full preflight found bool-assert and singleton-clone test warnings | 1 | Applied the mechanical fixes; workspace Clippy and full preflight then passed. |
 | 2026-07-25 | Local `cargo deny check` command was unavailable | 1 | Verified enforcement in both CI workflows and recorded the local-tool limitation. |
+| 2026-07-25 | Independent review rejected placeholder codec and permissive coverage accounting | 1 | Removed the module and replaced the checker with complete, canonical, production-segment accounting plus 16 contract tests. |
+| 2026-07-25 | First post-review preflight found four cloned singleton slices | 1 | Used `std::slice::from_ref`, passed targeted TDX Clippy, then reran the complete preflight successfully. |
 
 ## 5-Question Reboot Check
 
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 5, with every local gate and both coverage thresholds complete. |
-| Where am I going? | Complete final review and integrate the isolated branch without touching user-owned changes. |
+| Where am I? | Phase 5, with post-review fixes, truthful coverage, and final preflight complete; re-review remains. |
+| Where am I going? | Obtain post-fix review, then integrate without touching user-owned changes. |
 | What's the goal? | Correct verified defects and make release gates truthful without weakening contracts. |
 | What have I learned? | See `findings.md`; coverage debt is larger than the original report indicated. |
-| What have I done? | Completed correctness, panic safety, strict Clippy, 80%/95% coverage, release compilation, and the full preflight. |
+| What have I done? | Completed correctness, panic safety, strict Clippy, truthful 80%/95% segment coverage, release compilation, CFFEX/README updates, and review remediations. |

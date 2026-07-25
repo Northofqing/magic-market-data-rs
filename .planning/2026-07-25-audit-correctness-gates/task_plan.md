@@ -47,7 +47,9 @@ Phase 5
 ### Phase 5: Full Verification and Delivery
 
 - [x] Run formatting, workspace tests, Clippy, docs, compliance, coverage, and release checks.
-- [x] Review the final diff for provenance and contract regressions.
+- [x] Complete an independent review and resolve its three Important findings.
+- [x] Re-run the complete preflight after review fixes.
+- [ ] Obtain post-fix independent review.
 - [ ] Integrate the isolated branch without overwriting user-owned files.
 - **Status:** in_progress
 
@@ -69,6 +71,8 @@ Phase 5
 | Recognize Beijing 9-prefix equities only when the code starts with `920` | This matches verified project providers and prevents Shanghai B-share code `900901` from being mislabeled. |
 | Preserve public TDX signatures | Correctness fixes should not impose an unrelated semver-breaking API migration. |
 | Keep 80% overall and 95% critical coverage thresholds | Lowering or ratcheting the thresholds would contradict the committed release contract. |
+| Count LLVM production segments and exclude exact `#[cfg(test)]` item spans | Whole-file summaries allow inline tests to inflate production coverage and do not prove workspace completeness. |
+| Remove the uncalled placeholder codec module | A public copy-through “decompressor” was misleading; real zlib handling already exists in production network clients. |
 | Exclude architecture enhancements | Async routing, dynamic provider registration, and shared transports are not required to correct these defects. |
 
 ## Errors Encountered
@@ -87,14 +91,18 @@ Phase 5
 | Strict Clippy found inconsistent grouping in invalid-date test literals | 1 | Re-grouped the literals by decimal place and re-ran strict Clippy successfully. |
 | The first full preflight found three Clippy findings in newly added tests | 1 | Replaced the bool comparison and cloned singleton slices, then reran workspace Clippy and the complete preflight successfully. |
 | `cargo deny check` was unavailable in the local toolchain | 1 | Verified that both push/PR CI and the scheduled security workflow execute the pinned `cargo-deny-action`; did not misclassify a missing local binary as a repository defect. |
+| Independent review found a placeholder codec and two coverage-integrity defects | 1 | Removed the uncalled module, canonicalized and completed workspace source discovery, switched to LLVM segments, excluded exact inline test items, and added checker contract tests. |
+| First post-review preflight found four cloned singleton slices in TDX tests | 1 | Replaced them with `std::slice::from_ref`, passed targeted strict Clippy, then passed the complete clean preflight. |
 
 ## Notes
 
 - The primary worktree contains user-owned uncommitted planning and integration
   files. All implementation work stays in this linked worktree.
 - Re-read this plan before scope or contract decisions.
-- The final report is exactly 80.00% overall (30520/38150) and exactly 95.00%
-  for the configured critical aggregate (3480/3663).
+- The post-review strict report is 80.06% overall (22355/27922) and 95.97%
+  for the configured critical aggregate (1881/1960). The smaller denominator
+  reflects removal of `#[cfg(test)]` attributed item spans, not relaxed source
+  completeness or thresholds.
 - `cargo build --workspace --all-targets --release` emits existing example
   filename-collision warnings for repeated `live_probe`/`load_probe` names.
   Cargo still succeeds, but those examples should be renamed in a separate

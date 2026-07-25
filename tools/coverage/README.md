@@ -1,10 +1,21 @@
 # Coverage Gates
 
 The release coverage check consumes the JSON emitted by `cargo llvm-cov` and
-counts production line summaries only. A production file must be below
-`crates/*/src`; paths containing `tests`, `examples`, `benches`, `fuzz`, or
-generated `target` directories are excluded. Both Unix and Windows path
-separators are accepted.
+recomputes production line coverage from LLVM segments. It reads workspace
+members from the root `Cargo.toml` and requires every
+`<workspace-member>/src/**/*.rs` production source that LLVM can instrument.
+Files outside the repository, missing files, unregistered source paths,
+duplicate paths, omitted production sources, and omitted workspace targets are
+rejected explicitly. Both Unix and Windows path separators are accepted.
+
+Items directly attributed with `#[cfg(test)]` are removed from the production
+line calculation, so inline unit tests cannot inflate the release percentage.
+`#[cfg(not(test))]` remains production code. Other positive cfg expressions
+containing `test` are rejected until their semantics are supported explicitly.
+The small `NON_EXECUTABLE_SOURCE_PATHS` registry contains only current module,
+constant, and re-export sources for which LLVM emits no executable segments;
+it is intersected with the manifest-derived source set rather than acting as a
+general path exclusion.
 
 Two aggregate thresholds are enforced:
 
@@ -18,9 +29,17 @@ a family exists but the report contains no measured matching file, the check
 fails rather than silently reducing the critical set. Equality with either
 threshold passes.
 
-The report must contain exactly one export object, unique file names, and
-integer line totals satisfying `0 <= covered <= count`. Malformed reports and
-empty production reports fail explicitly.
+The report must contain exactly one export object, unique canonical file names,
+valid integer line summaries, ordered six-field LLVM segments, and segment
+locations within the current source length. Malformed reports and empty
+production reports fail explicitly.
+
+The final 2026-07-25 workspace report is:
+
+```text
+overall covered=22355 total=27922 percent=80.06 required=80.00
+critical covered=1881 total=1960 percent=95.97 required=95.00
+```
 
 Run the same commands used by CI:
 

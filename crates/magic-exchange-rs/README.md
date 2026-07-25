@@ -1,7 +1,7 @@
 # magic-exchange-rs
 
-Read-only adapters for admitted SSE, SZSE and HKEX official public data. The
-crate keeps the three venues as separate Provider identities and exposes only
+Read-only adapters for admitted SSE, SZSE, HKEX and CFFEX official public data.
+The crate keeps the four venues as separate Provider identities and exposes only
 families that have deterministic fixtures plus a successful production-trait
 probe.
 
@@ -15,6 +15,7 @@ probe.
 | `SzseClient` | `RealtimeQuotes`, `OrderBooks` | `www.szse.cn/api/market/ssjjhq/getTimeData` |
 | `SzseClient` | `DragonTigerData` | `www.szse.cn/api/report/ShowReport/data` |
 | `HkexClient` | `NorthboundDailyStatistics` | `www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js` |
+| `CffexClient` | `FuturesDeliveryCalendar` | `www.cffex.com.cn/jystz/` and dated same-host notice details |
 
 SSE/SZSE announcements validate complete remote pages before local
 truncation. Dragon-tiger requests require an explicit trading date. SZSE
@@ -30,6 +31,12 @@ incomplete batch quality report. HKEX DailyStat preserves CNY totals, trade
 counts, ETF turnover, exact Top10 ranks and the quota `999,999,999` sentinel as
 `NorthboundQuotaBalance::Unavailable`.
 
+CFFEX scans at most 120 official notice-list pages for the requested contract
+month. A detail is admitted only when its title, delivery-settlement wording,
+IF/IH/IC/IM contract identities, actual delivery date, requested month, and
+cash-settlement semantics agree. Holiday shifts come from the notice text;
+the Provider never substitutes a “third Friday” formula.
+
 All transports enforce credential-free HTTPS host/path allowlists, port 443,
 zero redirects, exact final URLs, bounded content types, an 8 MiB response
 ceiling and 1–60 second timeouts. Client clones share a serial request gate and
@@ -39,6 +46,11 @@ second apart.
 ## Probes
 
 ```bash
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+
+MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
+MAGIC_CFFEX_DELIVERY_YEAR=2026 \
+MAGIC_CFFEX_DELIVERY_MONTH=2 \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 
 MAGIC_EXCHANGE_LOAD_REQUESTS=8 \
@@ -53,11 +65,15 @@ Defaults:
 - SSE dragon-tiger: `600396`, `2026-07-22`;
 - SZSE dragon-tiger: `000603`, `2026-07-23`;
 - HKEX DailyStat: `2026-07-22`, both northbound channels.
+- CFFEX delivery notice: `2026-02`, exactly IF2602/IH2602/IC2602/IM2602.
 
 Override with `MAGIC_EXCHANGE_SSE_CODE`, `MAGIC_EXCHANGE_SZSE_CODE`,
 `MAGIC_EXCHANGE_SSE_DRAGON_DATE`, `MAGIC_EXCHANGE_SZSE_DRAGON_CODE`,
 `MAGIC_EXCHANGE_SZSE_DRAGON_DATE`, `MAGIC_EXCHANGE_HKEX_DATE` and
-`MAGIC_EXCHANGE_LIVE_LIMIT`.
+`MAGIC_EXCHANGE_LIVE_LIMIT`. Set
+`MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery` for the isolated CFFEX probe and
+override its month with `MAGIC_CFFEX_DELIVERY_YEAR` and
+`MAGIC_CFFEX_DELIVERY_MONTH`.
 
 The final 2026-07-23 production-trait live probe passed announcements,
 SSE/SZSE dragon-tiger entries and complete seats, SZSE Quote/five-level book,
@@ -74,6 +90,11 @@ attempt_latency_p95_ms=1201 attempt_latency_p99_ms=1201
 attempt_latency_max_ms=1201 minimum_attempt_start_gap_ms=1000
 load_probe_status=passed
 ```
+
+The isolated CFFEX production-trait probe also returned exactly four
+cash-delivery events for IF2602, IH2602, IC2602, and IM2602 from the official
+notice; the actual date was parsed from the notice rather than derived from a
+calendar formula.
 
 These are bounded connectivity/validation measurements, not exchange SLA or
 permission for sustained collection. One high-level attempt can issue
