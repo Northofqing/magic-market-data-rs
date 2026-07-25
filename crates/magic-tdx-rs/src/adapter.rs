@@ -224,6 +224,25 @@ fn optional_quote_price(value: f64, field: &str) -> Result<Option<Price>, TdxErr
     }
 }
 
+fn required_quote_price(
+    instrument: &InstrumentId,
+    value: f64,
+    field: &str,
+) -> Result<Price, TdxError> {
+    if !value.is_finite() || value <= 0.0 {
+        return Err(TdxError::InvalidData(format!(
+            "TDX quote {} {field} must be finite and positive, received {value}",
+            instrument.code()
+        )));
+    }
+    Price::new(value).map_err(|error| {
+        TdxError::InvalidData(format!(
+            "TDX quote {} {field} is invalid: {error}",
+            instrument.code()
+        ))
+    })
+}
+
 pub(crate) fn normalize_quotes(
     source: &str,
     instruments: &[InstrumentId],
@@ -267,8 +286,7 @@ pub(crate) fn normalize_quotes(
         let record = by_key
             .remove(&key)
             .ok_or_else(|| TdxError::InvalidData("TDX omitted a requested quote".into()))?;
-        let price =
-            Price::new(record.price).map_err(|error| TdxError::InvalidData(error.to_string()))?;
+        let price = required_quote_price(instrument, record.price, "current price")?;
         let previous_close = optional_quote_price(record.last_close, "previous close")?;
         let open = optional_quote_price(record.open, "open")?;
         let high = optional_quote_price(record.high, "high")?;
@@ -1409,6 +1427,20 @@ mod tests {
 
         let requested = [instrument("600001"), instrument("600002")];
         assert!(normalize_quotes("test", &requested, vec![source_quote("600001", 102.0)]).is_err());
+    }
+
+    #[test]
+    fn zero_current_quote_price_is_an_instrument_contextual_failure() {
+        let requested = [instrument("600001")];
+        for value in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let error =
+                normalize_quotes("test", &requested, vec![source_quote("600001", value)])
+                    .unwrap_err();
+            assert!(matches!(error, TdxError::InvalidData(_)));
+            assert!(error.to_string().contains("600001"));
+            assert!(error.to_string().contains("current price"));
+            assert!(error.to_string().contains(&value.to_string()));
+        }
     }
 
     #[test]
