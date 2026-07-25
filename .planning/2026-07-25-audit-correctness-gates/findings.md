@@ -93,6 +93,16 @@
   `service/mod.rs`. Extracting one provider-neutral private normalizer makes the
   behavior directly testable and removes hundreds of hard-to-cover duplicate
   branch lines without changing the public contract.
+- The final exact report reaches 30520/38150 production lines (80.00%) overall
+  and 3480/3663 configured critical lines (95.00%).
+- The reported absence of cargo-deny enforcement is false for the current
+  repository: both `.github/workflows/ci.yml` and
+  `.github/workflows/security.yml` run the pinned cargo-deny action. Only the
+  local developer binary is absent.
+- Compiling all workspace release targets exposes pre-existing Cargo output
+  filename-collision warnings because many provider examples share
+  `live_probe` and `load_probe` names. This remains non-fatal today but should
+  be resolved as a separate example-compatibility cleanup.
 
 ## Technical Decisions
 

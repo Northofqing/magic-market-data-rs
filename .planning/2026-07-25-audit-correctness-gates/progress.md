@@ -59,7 +59,7 @@
 
 ### Phase 4: Coverage and Release Gates
 
-- **Status:** in progress
+- **Status:** complete
 - Actions taken:
   - Replaced the permissive coverage script with a strict production-only JSON
     contract and twelve synthetic checker tests.
@@ -74,6 +74,13 @@
     a contextual typed lock error.
   - Measured the configured critical aggregate at 3480/3663 lines, exactly
     95.00%, and re-ran strict TDX Clippy successfully.
+  - Added disconnected and local-failure behavior matrices across the TDX
+    blocking, direct, async, finance, F10, fund, profile, and service facades.
+  - Exercised every provider-neutral router adapter, including all five
+    date-range families and optional source signal dates.
+  - Raised the exact final workspace aggregate to 30520/38150 lines, exactly
+    80.00%, without exclusions, ignored coverage, or external network calls.
+  - Added all-target release compilation to the isolated release preflight.
 - Files created/modified:
   - `tools/coverage/check_thresholds.py`
   - `tools/coverage/test_check_thresholds.py`
@@ -83,6 +90,28 @@
   - `crates/magic-tdx-rs/src/adapter.rs`
   - `crates/magic-tdx-rs/src/service/mod.rs`
   - `crates/magic-tdx-rs/src/net/client.rs`
+  - TDX network, fund, profile, and service facade test modules
+  - `crates/magic-market-router/tests/adapters.rs`
+  - `tools/release/preflight.sh`
+
+### Phase 5: Full Verification and Delivery
+
+- **Status:** in progress
+- Actions taken:
+  - Ran the complete release preflight successfully after correcting three
+    Clippy findings in newly added test code.
+  - Verified format, debug check, release build, all workspace targets,
+    workspace Clippy with `-D warnings`, Rustdoc with `-D warnings`, doc tests,
+    documentation links, compliance, and `git diff --check`.
+  - Regenerated the final llvm-cov JSON from the final source and passed both
+    exact thresholds.
+  - Confirmed all remaining `.lock().unwrap()` matches in TDX source are
+    deliberately confined to `#[cfg(test)]` poison/inspection tests.
+  - Confirmed cargo-deny runs in both push/PR CI and the weekly security
+    workflow; the local cargo-deny binary is not installed.
+- Remaining:
+  - Complete final review and integrate the isolated branch without overwriting
+    the primary worktree's user-owned changes.
 
 ## Test Results
 
@@ -100,6 +129,10 @@
 | TDX full suite after remediation | `cargo test -p magic-tdx-rs --all-targets --locked --offline` | Pass | 233 unit tests plus all integration/example tests passed | ✓ |
 | Coverage checker contract | `python3 -m unittest tools.coverage.test_check_thresholds` | All malformed and threshold boundaries enforced | 12 passed | ✓ |
 | TDX critical aggregate | TDX all-target llvm-cov report plus strict checker | At least 95% | 3480/3663 = 95.00% | ✓ |
+| Final overall coverage | scheduled-CI llvm-cov command plus strict checker | At least 80% | 30520/38150 = 80.00% | ✓ |
+| Final critical coverage | same final report | At least 95% | 3480/3663 = 95.00% | ✓ |
+| Full release preflight | `bash tools/release/preflight.sh` | Every local release gate passes | `release preflight: passed` | ✓ |
+| Dependency policy registration | inspect push/PR and scheduled workflows | cargo-deny is enforced remotely | Pinned `cargo-deny-action@v2` in both workflows | ✓ |
 
 ## Error Log
 
@@ -111,13 +144,15 @@
 | 2026-07-25 | Unquoted regex was interpreted as shell pipelines | 1 | Quoted the full expression before rerunning. |
 | 2026-07-25 | llvm-cov could not create the report parent directory | 1 | Created `target/coverage` and documented the prerequisite. |
 | 2026-07-25 | New invalid-date test literals failed strict Clippy grouping | 1 | Re-grouped decimal literals and reran strict Clippy. |
+| 2026-07-25 | Full preflight found bool-assert and singleton-clone test warnings | 1 | Applied the mechanical fixes; workspace Clippy and full preflight then passed. |
+| 2026-07-25 | Local `cargo deny check` command was unavailable | 1 | Verified enforcement in both CI workflows and recorded the local-tool limitation. |
 
 ## 5-Question Reboot Check
 
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 4, with the strict checker and 95% critical gate complete. |
-| Where am I going? | Raise overall coverage to 80%, add release preflight compilation, then run every release gate and integrate. |
+| Where am I? | Phase 5, with every local gate and both coverage thresholds complete. |
+| Where am I going? | Complete final review and integrate the isolated branch without touching user-owned changes. |
 | What's the goal? | Correct verified defects and make release gates truthful without weakening contracts. |
 | What have I learned? | See `findings.md`; coverage debt is larger than the original report indicated. |
-| What have I done? | Completed correctness, panic safety, Clippy restoration, the strict checker, and the 95% critical coverage gate. |
+| What have I done? | Completed correctness, panic safety, strict Clippy, 80%/95% coverage, release compilation, and the full preflight. |

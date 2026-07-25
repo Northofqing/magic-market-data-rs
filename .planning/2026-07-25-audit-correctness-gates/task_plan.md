@@ -8,7 +8,7 @@ artifacts without weakening public data contracts or quality thresholds.
 
 ## Current Phase
 
-Phase 4
+Phase 5
 
 ## Phases
 
@@ -40,16 +40,16 @@ Phase 4
 
 - [x] Implement the documented overall and critical-path coverage contract.
 - [x] Add behavior tests until the real critical set reaches 95%.
-- [ ] Add behavior tests until the real workspace report reaches 80% overall.
-- [ ] Add release compilation to preflight.
-- **Status:** in_progress
+- [x] Add behavior tests until the real workspace report reaches 80% overall.
+- [x] Add release compilation to preflight.
+- **Status:** complete
 
 ### Phase 5: Full Verification and Delivery
 
-- [ ] Run formatting, workspace tests, Clippy, docs, compliance, coverage, and release checks.
-- [ ] Review the final diff for provenance and contract regressions.
+- [x] Run formatting, workspace tests, Clippy, docs, compliance, coverage, and release checks.
+- [x] Review the final diff for provenance and contract regressions.
 - [ ] Integrate the isolated branch without overwriting user-owned files.
-- **Status:** pending
+- **Status:** in_progress
 
 ## Key Questions
 
@@ -85,11 +85,17 @@ Phase 4
 | An unquoted shell regex was parsed as pipeline commands | 1 | Re-ran the inspection with the complete expression quoted. |
 | The first llvm-cov report write failed because `target/coverage` did not exist | 1 | Created the directory and added that prerequisite to the documented command. |
 | Strict Clippy found inconsistent grouping in invalid-date test literals | 1 | Re-grouped the literals by decimal place and re-ran strict Clippy successfully. |
+| The first full preflight found three Clippy findings in newly added tests | 1 | Replaced the bool comparison and cloned singleton slices, then reran workspace Clippy and the complete preflight successfully. |
+| `cargo deny check` was unavailable in the local toolchain | 1 | Verified that both push/PR CI and the scheduled security workflow execute the pinned `cargo-deny-action`; did not misclassify a missing local binary as a repository defect. |
 
 ## Notes
 
 - The primary worktree contains user-owned uncommitted planning and integration
   files. All implementation work stays in this linked worktree.
 - Re-read this plan before scope or contract decisions.
-- The measured critical aggregate is now exactly 95.00% (3480/3663). The
-  remaining coverage work is the independent 80% whole-workspace aggregate.
+- The final report is exactly 80.00% overall (30520/38150) and exactly 95.00%
+  for the configured critical aggregate (3480/3663).
+- `cargo build --workspace --all-targets --release` emits existing example
+  filename-collision warnings for repeated `live_probe`/`load_probe` names.
+  Cargo still succeeds, but those examples should be renamed in a separate
+  compatibility-focused change before Cargo turns the warning into an error.
