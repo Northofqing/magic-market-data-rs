@@ -101,6 +101,11 @@
   Yonhap live/load makes the mechanical total 28; the release documentation
   should correct the pre-existing root mismatch while registering both new
   binaries.
+- The release preflight succeeds, but Cargo warns that repeated example target
+  names such as `live_probe` and `load_probe` collide in a workspace-wide
+  release build. This is a pre-existing workspace naming issue rather than a
+  Yonhap contract failure; a future repository-wide probe naming migration
+  should resolve it atomically.
 
 ## Official References
 

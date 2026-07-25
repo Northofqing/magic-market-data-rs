@@ -148,3 +148,18 @@
   omission of the packaged State Council probe.
 - Shell syntax, documentation links, compliance, locked offline Cargo
   metadata, and workspace registration all pass.
+- Ran strict coverage over every workspace target without excluding the new
+  crate. All tests passed. The initial report write failed only because
+  `target/llvm-cov` did not exist; regenerating the retained report after
+  creating the directory succeeded.
+- Coverage thresholds passed at `22889/28535 = 80.21%` overall and
+  `1881/1960 = 95.97%` for the critical source set.
+- Verified `magic-yonhap-rs` depends only on Core and declared registry
+  dependencies, `magic-market-router` still depends only on Core and
+  `thiserror`, and no provider manifest contains a downstream
+  `stock_analysis` dependency.
+- Passed rustfmt, locked offline all-target check and test, strict Clippy,
+  rustdoc, doctest, documentation links, compliance, and `git diff --check`.
+- Passed `bash tools/release/preflight.sh`, including an isolated debug check,
+  release all-target build, full tests, Clippy, rustdoc/doctest, link checks,
+  compliance, and diff validation.

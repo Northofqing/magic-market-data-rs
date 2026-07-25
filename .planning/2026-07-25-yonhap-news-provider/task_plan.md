@@ -45,7 +45,7 @@ Phase 4
 - [x] Run the bounded official live probe.
 - [x] Advertise only the capability proven by the live result.
 - [x] Register workspace, compliance, deployment, and integration docs.
-- [ ] Run formatting, tests, Clippy, compliance, docs, coverage, and release
+- [x] Run formatting, tests, Clippy, compliance, docs, coverage, and release
   checks.
 - [ ] Obtain final code review and integrate without touching user-owned files.
 - **Status:** in_progress
@@ -71,6 +71,8 @@ Phase 4
 | Task 3 Clippy rejected a no-interpolation `format!` | 1 | Replace only that test fixture construction with `.to_owned()` and rerun the exact Clippy command. |
 | Production Rust TLS ended unexpectedly for both Rolling and Economy RSS, including outside the sandbox | 3 bounded probes | Keep `global_news=false`, retain typed `Unsupported`, and expose only the explicitly named diagnostic method until a future live admission succeeds. |
 | Combined Task 4 verification/commit command could not create the worktree `index.lock` | 1 | Verification had already passed; split `git add` and `git commit` into independently authorized Git operations. |
+| Coverage tests passed but the report output directory did not exist | 1 | Create `target/llvm-cov`, then generate JSON from the retained profile data and run the unchanged thresholds. |
+| Parallel Cargo gates queued behind one build lock and detached their output sessions | 1 | Let the queue clear, then rerun every required gate serially with explicit exit results. |
 
 ## Notes
 
@@ -79,3 +81,17 @@ Phase 4
   `/Users/zhangzhen/Desktop/Quant/magic-market-data-rs/.worktrees/yonhap-news-provider`
 - Branch: `feat/yonhap-news-provider`
 - Re-read this plan before capability or copyright decisions.
+- Strict coverage passed without exclusions: overall
+  `22889/28535 = 80.21%` (required 80%) and critical
+  `1881/1960 = 95.97%` (required 95%).
+- Serial release verification passed: rustfmt, locked offline all-target
+  check/test, Clippy with `-D warnings`, rustdoc with `-D warnings`, doctest,
+  documentation links, compliance, `git diff --check`, and
+  `tools/release/preflight.sh`.
+- Dependency boundaries passed: Yonhap depends only on Core plus registry
+  crates, Router remains provider-neutral, and no `stock_analysis` path
+  dependency exists.
+- The release build still emits the workspace's pre-existing Cargo filename
+  collision warnings because many packages use the example names
+  `live_probe` and `load_probe`; preflight exits zero and this feature does
+  not change that shared naming policy.

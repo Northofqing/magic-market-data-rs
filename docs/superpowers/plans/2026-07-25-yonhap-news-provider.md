@@ -875,7 +875,7 @@ git commit -m "docs: register Yonhap RSS provider"
 - Modify:
   `.planning/2026-07-25-yonhap-news-provider/{task_plan,findings,progress}.md`
 
-- [ ] **Step 1: Run focused coverage without exclusions**
+- [x] **Step 1: Run focused coverage without exclusions**
 
 Run the repository's strict coverage workflow:
 
@@ -891,7 +891,7 @@ Do not exclude the new crate or lower a threshold. If coverage fails, add
 deterministic behavior tests for the reported uncovered branches and rerun the
 same commands.
 
-- [ ] **Step 2: Run the complete release gate**
+- [x] **Step 2: Run the complete release gate**
 
 Run:
 
@@ -911,7 +911,7 @@ git diff --check
 Expected: every command exits zero. Preserve exact failing command output in
 `progress.md` before fixing any discovered issue.
 
-- [ ] **Step 3: Verify manifest and dependency boundaries**
+- [x] **Step 3: Verify manifest and dependency boundaries**
 
 Run:
 
@@ -928,7 +928,7 @@ Expected:
 - Router does not depend on `magic-yonhap-rs`;
 - no downstream `stock_analysis` path appears.
 
-- [ ] **Step 4: Record and commit gate evidence**
+- [x] **Step 4: Record and commit gate evidence**
 
 Set Phase 3 and Phase 4 complete in `task_plan.md`. Record live admission,
 coverage, and every release-gate result in `progress.md`; record any lasting
