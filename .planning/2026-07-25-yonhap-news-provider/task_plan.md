@@ -66,6 +66,7 @@ Phase 3
 | Error | Attempt | Resolution |
 | --- | --- | --- |
 | Direct `curl` TLS handshake to `cn.yna.co.kr` returned `SSL_ERROR_SYSCALL` inside and outside the sandbox | 2 | Preserve the failure as current evidence; test the production Rust TLS path during implementation and keep capability false if live admission cannot be proved. |
+| Task 2 initial formatting check found rustfmt-only differences | 1 | Apply `cargo fmt --all`, then rerun the exact check before the Task 2 commit. |
 
 ## Notes
 

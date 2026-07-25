@@ -77,3 +77,20 @@
   provider-neutral Router acceptance, and mismatched-evidence rejection.
 - Task 1 green verification passed: Core identity 3/3 and Router intelligence
   routing 14/14.
+- Task 2 dependency resolution added the pinned `quick-xml 0.41.0`,
+  `time 0.3.54`, and their transitive packages to `Cargo.lock`.
+- Task 2 red test failed only because the planned channel, client, request,
+  limit, URL, and MIME APIs did not yet exist.
+- Channel/request tests passed 6/6 and transport-bound tests passed 3/3.
+- `cargo fmt --all -- --check` reported rustfmt-only differences on the first
+  attempt; no behavior or contract failure was present. The next action is to
+  apply rustfmt and rerun the check.
+- Applied rustfmt; the repeated formatting check and `git diff --check`
+  passed.
+- Task 2 completed the closed seven-channel map, exact request headers and URL
+  allowlist, timeout/limit validation, XML MIME gate, 2 MiB body bound,
+  production `ureq` transport, injected transport seam, and clone-shared
+  pacing gate held through response completion.
+- `cargo check -p magic-yonhap-rs --locked --offline` passed. Intermediate
+  dead-code warnings are confined to parser-facing constants/methods that Task
+  3 wires into the public diagnostic path.

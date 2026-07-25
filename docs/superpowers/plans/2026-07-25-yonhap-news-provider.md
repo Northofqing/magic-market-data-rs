@@ -167,7 +167,7 @@ git commit -m "feat(core): add Yonhap provider identity"
 - Create: `crates/magic-yonhap-rs/Cargo.toml`
 - Create: `crates/magic-yonhap-rs/src/lib.rs`
 
-- [ ] **Step 1: Register the crate and exact dependencies**
+- [x] **Step 1: Register the crate and exact dependencies**
 
 Add `"crates/magic-yonhap-rs"` to workspace members. Create the manifest:
 
@@ -192,7 +192,7 @@ workspace = true
 Resolve once with network access and commit the resulting lockfile. Thereafter
 all deterministic checks use `--locked --offline`.
 
-- [ ] **Step 2: Write failing channel and request tests**
+- [x] **Step 2: Write failing channel and request tests**
 
 In `src/lib.rs`, write tests first for this exact public channel matrix:
 
@@ -234,7 +234,7 @@ Also require:
   case-insensitively with optional parameters, and rejects absent MIME, HTML,
   JSON, and `application/xmlx`.
 
-- [ ] **Step 3: Verify the new tests fail**
+- [x] **Step 3: Verify the new tests fail**
 
 Run:
 
@@ -245,7 +245,7 @@ cargo test -p magic-yonhap-rs channel_and_request --locked --offline
 Expected: compilation fails because the channel, client, request, and
 validators are not implemented.
 
-- [ ] **Step 4: Implement the public model and typed errors**
+- [x] **Step 4: Implement the public model and typed errors**
 
 Use these public shapes:
 
@@ -300,7 +300,7 @@ injected transports and probes can inspect evidence without mutating it.
 `YonhapChannel::endpoint`, `topic`, and `slug` must be closed `match`
 expressions; do not construct paths from caller text.
 
-- [ ] **Step 5: Implement the production transport and shared gate**
+- [x] **Step 5: Implement the production transport and shared gate**
 
 Use constants:
 
@@ -338,7 +338,7 @@ share `request_gate`. Acquire the mutex before waiting, record the request
 start, keep the guard through `transport.get`, and translate a poisoned lock
 to `YonhapError::Transport`.
 
-- [ ] **Step 6: Add deterministic transport-bound tests**
+- [x] **Step 6: Add deterministic transport-bound tests**
 
 Use injected transports and a controllable zero-duration private constructor
 for unit tests. Require:
@@ -355,7 +355,7 @@ for unit tests. Require:
 Do not weaken the public one-second minimum; only private test construction may
 use shorter intervals.
 
-- [ ] **Step 7: Resolve dependencies and run the transport tests**
+- [x] **Step 7: Resolve dependencies and run the transport tests**
 
 Run:
 
@@ -368,7 +368,7 @@ cargo test -p magic-yonhap-rs transport --locked --offline
 Expected: Cargo.lock contains `quick-xml 0.41.0` and `time 0.3.54`; all new
 tests pass.
 
-- [ ] **Step 8: Commit the transport boundary**
+- [x] **Step 8: Commit the transport boundary**
 
 ```bash
 git add Cargo.toml Cargo.lock crates/magic-yonhap-rs/Cargo.toml \

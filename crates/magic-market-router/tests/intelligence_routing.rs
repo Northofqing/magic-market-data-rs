@@ -199,11 +199,7 @@ fn global_news_router_accepts_yonhap_identity() {
     });
     let mut router = GlobalNewsRouter::new(AcceptancePolicy::new().with_require_source_at(true));
     router
-        .register(global_news_source(
-            ProviderId::Yonhap,
-            provider,
-            classify,
-        ))
+        .register(global_news_source(ProviderId::Yonhap, provider, classify))
         .unwrap();
 
     let outcome = router.route(&PositiveU32::new(2).unwrap()).unwrap();
