@@ -29,6 +29,7 @@ fn news_and_announcement_urls_are_https_and_sourced() {
     let announcement = Announcement {
         announcement_id: NonEmptyText::new("ann-1").unwrap(),
         instrument: instrument(),
+        instrument_name: Some(NonEmptyText::new("华电辽能").unwrap()),
         category: Some(NonEmptyText::new("公司公告").unwrap()),
         title: NonEmptyText::new("年度报告").unwrap(),
         published_at: NonEmptyText::new("2026-07-23").unwrap(),

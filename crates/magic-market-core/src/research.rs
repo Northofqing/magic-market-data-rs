@@ -308,6 +308,85 @@ pub struct ResearchCapabilities {
     pub consensus: bool,
     pub semantic_search: bool,
     pub pdf_download: bool,
+    pub document_body: bool,
+}
+
+/// Identity pair for one source report document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResearchDocumentRequest {
+    pub report_id: NonEmptyText,
+    pub pdf_url: HttpsUrl,
+}
+
+/// Original bounded report body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResearchDocument {
+    pub report_id: NonEmptyText,
+    pub pdf_url: HttpsUrl,
+    pub content_type: NonEmptyText,
+    pub body: Vec<u8>,
+    pub evidence: SourceEvidence,
+}
+
+impl ResearchDocument {
+    pub fn new(
+        report_id: NonEmptyText,
+        pdf_url: HttpsUrl,
+        body: Vec<u8>,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
+        if body.len() < 8 || !body.starts_with(b"%PDF-") {
+            return Err(crate::CoreError::InvalidRequest(
+                "research document body must start with a PDF header".into(),
+            ));
+        }
+        if body.len() > 32 * 1024 * 1024 {
+            return Err(crate::CoreError::InvalidRequest(
+                "research document body must be at most 32 MiB".into(),
+            ));
+        }
+        Ok(Self {
+            report_id,
+            pdf_url,
+            content_type: NonEmptyText::new("application/pdf")?,
+            body,
+            evidence,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct ResearchDocumentWire {
+    report_id: NonEmptyText,
+    pdf_url: HttpsUrl,
+    content_type: NonEmptyText,
+    body: Vec<u8>,
+    evidence: SourceEvidence,
+}
+
+impl<'de> Deserialize<'de> for ResearchDocument {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ResearchDocumentWire::deserialize(deserializer)?;
+        if wire.content_type.as_str() != "application/pdf" {
+            return Err(de::Error::custom(
+                "research document content_type must be application/pdf",
+            ));
+        }
+        Self::new(wire.report_id, wire.pdf_url, wire.body, wire.evidence).map_err(de::Error::custom)
+    }
+}
+
+impl SourcedRecord for ResearchDocument {
+    fn provider_id(&self) -> crate::ProviderId {
+        self.evidence.provider()
+    }
+
+    fn evidence_batch_id(&self) -> &str {
+        self.evidence.batch_id()
+    }
 }
 
 pub trait ResearchReports {
@@ -317,6 +396,15 @@ pub trait ResearchReports {
         &self,
         request: &ResearchRequest,
     ) -> Result<DataBatch<ResearchReport>, Self::Error>;
+}
+
+pub trait ResearchDocuments {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn research_document(
+        &self,
+        request: &ResearchDocumentRequest,
+    ) -> Result<DataBatch<ResearchDocument>, Self::Error>;
 }
 
 pub trait ConsensusData {

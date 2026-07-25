@@ -184,6 +184,7 @@ impl ThsClient {
                 consensus: true,
                 semantic_search: false,
                 pdf_download: false,
+                document_body: false,
             },
             signals: SignalCapabilities {
                 board_memberships: false,

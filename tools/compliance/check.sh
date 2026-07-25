@@ -23,6 +23,7 @@ required=(
   docs/integrations/baidu-web.md
   docs/integrations/iwencai-api.md
   docs/integrations/exchange-official.md
+  docs/integrations/gov-policy.md
   crates/magic-market-router/Cargo.toml
   crates/magic-market-analysis/Cargo.toml
   crates/magic-tencent-rs/Cargo.toml
@@ -36,6 +37,7 @@ required=(
   crates/magic-baidu-rs/Cargo.toml
   crates/magic-iwencai-rs/Cargo.toml
   crates/magic-exchange-rs/Cargo.toml
+  crates/magic-gov-rs/Cargo.toml
 )
 for path in "${required[@]}"; do test -s "$path" || { echo "missing required file: $path" >&2; exit 1; }; done
 workspace_members=(
@@ -55,6 +57,7 @@ workspace_members=(
   crates/magic-baidu-rs
   crates/magic-iwencai-rs
   crates/magic-exchange-rs
+  crates/magic-gov-rs
 )
 workspace_manifest_members=$(sed -n '/^members = \[/,/^\]/p' Cargo.toml)
 for member in "${workspace_members[@]}"; do
@@ -72,5 +75,5 @@ fi
 # Imported upstream modules retain documented/test-only unwrap examples; runtime
 # hardening is tracked separately from this structural compliance gate.
 rg -q '^## BR-001 ' docs/business_rules.md
-rg -q '^## BR-012 ' docs/business_rules.md
+rg -q '^## BR-020 ' docs/business_rules.md
 rg -q '^## Gate D ' docs/ENGINEERING_RULES.md

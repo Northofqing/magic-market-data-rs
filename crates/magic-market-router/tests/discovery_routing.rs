@@ -2,13 +2,14 @@ use magic_market_core::{
     AssetClass, BoardCategory, BoardConstituentProvider, BoardConstituentRequest, BoardDefinition,
     BoardDirectoryProvider, BoardDirectoryRequest, BoardMembership, BoardMembershipProvider,
     DataBatch, DragonTigerDiscovery, DragonTigerDiscoveryRequest, DragonTigerEntry, Exchange,
-    InstrumentId, IsoDate, NonEmptyText, PositiveU32, Provenance, ProviderId, SourceEvidence,
+    InstrumentId, IsoDate, NonEmptyText, PositiveU32, PriceLimitRule, Provenance, ProviderId,
+    SecurityMetadata, SourceEvidence,
 };
 use magic_market_router::{
     board_constituent_source, board_directory_source, board_membership_source,
-    dragon_tiger_discovery_source, AcceptancePolicy, AttemptStatus, BoardConstituentRouter,
-    BoardDirectoryRouter, BoardMembershipRouter, DragonTigerDiscoveryRouter, FailureKind,
-    SourceError,
+    dragon_tiger_discovery_source, join_board_membership_names, AcceptancePolicy, AttemptStatus,
+    BoardConstituentRouter, BoardDirectoryRouter, BoardMembershipRouter,
+    DragonTigerDiscoveryRouter, FailureKind, SourceError,
 };
 use std::sync::Arc;
 
@@ -42,6 +43,35 @@ fn batch<T>(records: Vec<T>, batch_id: &str, source_at: Option<&str>) -> DataBat
         None => provenance,
     };
     DataBatch::strict(records, provenance)
+}
+
+fn metadata(instrument: InstrumentId, name: Option<&str>, batch_id: &str) -> SecurityMetadata {
+    SecurityMetadata::new(
+        instrument,
+        name.map(str::to_owned),
+        None,
+        None,
+        None,
+        PriceLimitRule::new(None, None).unwrap(),
+        magic_market_core::DataStatus::Unavailable,
+        Some("2026-07-24T15:00:00+08:00".into()),
+        "observed",
+        ProviderId::Sina,
+        batch_id,
+    )
+    .unwrap()
+}
+
+fn metadata_batch(records: Vec<SecurityMetadata>, batch_id: &str) -> DataBatch<SecurityMetadata> {
+    DataBatch::strict(
+        records,
+        Provenance::new("sina-security-metadata", "observed")
+            .unwrap()
+            .with_source_at("2026-07-24T15:00:00+08:00")
+            .unwrap()
+            .with_batch_id(batch_id)
+            .unwrap(),
+    )
 }
 
 struct DragonFixture {
@@ -81,6 +111,9 @@ impl DragonTigerDiscovery for DragonFixture {
                     evidence(self.provider, batch_id, Some(&source_at)),
                 )
                 .unwrap()
+                .with_instrument_name(
+                    NonEmptyText::new(format!("fixture stock {}", index + 1)).unwrap(),
+                )
             })
             .collect();
         Ok(batch(records, batch_id, Some(&source_at)))
@@ -400,4 +433,52 @@ fn reverse_memberships_reject_unrequested_instruments_and_duplicate_identities()
             ..
         }
     ));
+}
+
+#[test]
+fn board_name_join_requires_exact_metadata_and_keeps_both_evidence_records() {
+    let requested = instrument(Exchange::Shenzhen, "002230");
+    let membership_batch = batch(
+        vec![BoardMembership {
+            instrument: requested.clone(),
+            board_code: NonEmptyText::new("tdx:concept:人工智能").unwrap(),
+            board_name: NonEmptyText::new("人工智能").unwrap(),
+            category: BoardCategory::Concept,
+            evidence: evidence(ProviderId::Tdx, "tdx-board", None),
+        }],
+        "tdx-board",
+        None,
+    );
+    let names = metadata_batch(
+        vec![metadata(requested.clone(), Some("科大讯飞"), "sina-names")],
+        "sina-names",
+    );
+    let joined = join_board_membership_names(&membership_batch, &names).unwrap();
+    assert_eq!(joined[0].membership.instrument, requested);
+    assert_eq!(joined[0].instrument_name.as_str(), "科大讯飞");
+    assert_eq!(joined[0].membership.evidence.provider(), ProviderId::Tdx);
+    assert_eq!(
+        joined[0].instrument_name_evidence.provider(),
+        ProviderId::Sina
+    );
+
+    let missing_name = metadata_batch(
+        vec![metadata(
+            joined[0].membership.instrument.clone(),
+            None,
+            "missing-name",
+        )],
+        "missing-name",
+    );
+    assert!(join_board_membership_names(&membership_batch, &missing_name).is_err());
+
+    let wrong = metadata_batch(
+        vec![metadata(
+            instrument(Exchange::Shanghai, "600000"),
+            Some("浦发银行"),
+            "wrong-name",
+        )],
+        "wrong-name",
+    );
+    assert!(join_board_membership_names(&membership_batch, &wrong).is_err());
 }

@@ -389,6 +389,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-gov-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "serde_json",
+ "thiserror",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "magic-iwencai-rs"
 version = "0.2.0"
 dependencies = [

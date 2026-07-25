@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Provider-neutral market-data contracts.
 mod batch;
+mod calendar;
 mod capital;
 mod company;
 mod content;
@@ -8,9 +9,11 @@ mod discovery;
 mod enrichment;
 mod error;
 mod evidence;
+mod global;
 mod instrument;
 mod limit_pool;
 mod options;
+mod policy;
 mod provenance;
 mod provider;
 mod research;
@@ -18,6 +21,11 @@ mod signals;
 mod validated;
 mod value;
 pub use batch::{DataBatch, QualityReport};
+pub use calendar::{
+    CalendarCapabilities, EconomicCalendarProvider, EconomicCalendarRequest, EconomicEvent,
+    FuturesDeliveryCalendar, FuturesDeliveryEvent, FuturesDeliveryMethod, FuturesDeliveryRequest,
+    FuturesProduct,
+};
 pub use capital::{
     BlockTrade, BlockTrades, BoardFlow, BoardFlows, CapitalCapabilities, DividendPlan,
     DividendPlans, FlowInterval, FlowScope, FundFlowPoint, FundFlowRequest, FundFlowSeries,
@@ -31,8 +39,8 @@ pub use company::{
     SecurityProfile, SecurityProfiles, StatementKind,
 };
 pub use content::{
-    Announcement, Announcements, ContentCapabilities, InvestorQuestion, InvestorQuestions,
-    NewsItem, NewsProvider,
+    Announcement, AnnouncementDiscovery, AnnouncementDiscoveryRequest, Announcements,
+    ContentCapabilities, InvestorQuestion, InvestorQuestions, NewsItem, NewsProvider,
 };
 pub use discovery::{
     BoardConstituentProvider, BoardConstituentRequest, BoardDefinition, BoardDirectoryProvider,
@@ -44,6 +52,10 @@ pub use enrichment::{
 };
 pub use error::CoreError;
 pub use evidence::SourceEvidence;
+pub use global::{
+    ForeignExchangeProvider, FxPair, FxQuote, FxRequest, GlobalIndexCode, GlobalIndexProvider,
+    GlobalIndexQuote, GlobalIndexRequest, GlobalMarketCapabilities,
+};
 pub use instrument::{AssetClass, Exchange, InstrumentId};
 pub use limit_pool::{
     LimitPoolCapabilities, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools,
@@ -52,6 +64,7 @@ pub use options::{
     ContractMonth, OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind,
     OptionQuote,
 };
+pub use policy::{PolicyCapabilities, PolicyDocument, PolicyDocuments, PolicyRequest};
 pub use provenance::Provenance;
 pub use provider::{
     Adjustment, AsyncHistoricalBars, AsyncMinuteData, AsyncRealtimeQuotes, AsyncTrades,
@@ -62,8 +75,9 @@ pub use provider::{
 };
 pub use research::{
     ConsensusData, ConsensusSnapshot, EarningsEstimate, ReportScope, ResearchCapabilities,
-    ResearchReport, ResearchReports, ResearchRequest, SemanticChannel, SemanticSearch,
-    SemanticSearchDocument, SemanticSearchRequest,
+    ResearchDocument, ResearchDocumentRequest, ResearchDocuments, ResearchReport, ResearchReports,
+    ResearchRequest, SemanticChannel, SemanticSearch, SemanticSearchDocument,
+    SemanticSearchRequest,
 };
 pub use signals::{
     BoardCategory, BoardMembership, BoardMembershipProvider, ConceptHit, ConceptHits,

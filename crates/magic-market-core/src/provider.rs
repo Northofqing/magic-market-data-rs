@@ -48,6 +48,8 @@ pub enum ProviderId {
     Sse,
     Szse,
     Hkex,
+    Cffex,
+    StateCouncil,
     LocalAnalysis,
     /// Read-only data exposed by an authorized local terminal/SDK.
     LocalTerminal,

@@ -446,6 +446,7 @@ pub struct PostCloseFlow {
     close: Price,
     change: Ratio,
     main_net: Money,
+    main_net_ratio: Ratio,
     board: Option<crate::Board>,
     price_limit_rule: Option<crate::PriceLimitRule>,
     evidence: SourceEvidence,
@@ -461,6 +462,7 @@ impl PostCloseFlow {
         close: Price,
         change: Ratio,
         main_net: Money,
+        main_net_ratio: Ratio,
         board: Option<crate::Board>,
         price_limit_rule: Option<crate::PriceLimitRule>,
         evidence: SourceEvidence,
@@ -488,6 +490,7 @@ impl PostCloseFlow {
                 trading_date.as_str()
             )));
         }
+        validate_post_close_observation(evidence.observed_at(), &trading_date)?;
         Ok(Self {
             instrument,
             name,
@@ -496,6 +499,7 @@ impl PostCloseFlow {
             close,
             change,
             main_net,
+            main_net_ratio,
             board,
             price_limit_rule,
             evidence,
@@ -530,6 +534,10 @@ impl PostCloseFlow {
         self.main_net
     }
 
+    pub fn main_net_ratio(&self) -> Ratio {
+        self.main_net_ratio
+    }
+
     pub fn board(&self) -> Option<crate::Board> {
         self.board
     }
@@ -552,6 +560,7 @@ struct PostCloseFlowWire {
     close: Price,
     change: Ratio,
     main_net: Money,
+    main_net_ratio: Ratio,
     board: Option<crate::Board>,
     price_limit_rule: Option<crate::PriceLimitRule>,
     evidence: SourceEvidence,
@@ -571,12 +580,54 @@ impl<'de> Deserialize<'de> for PostCloseFlow {
             wire.close,
             wire.change,
             wire.main_net,
+            wire.main_net_ratio,
             wire.board,
             wire.price_limit_rule,
             wire.evidence,
         )
         .map_err(de::Error::custom)
     }
+}
+
+fn validate_post_close_observation(
+    observed_at: &str,
+    trading_date: &IsoDate,
+) -> Result<(), crate::CoreError> {
+    let expected_prefix = format!("{}T", trading_date.as_str());
+    let time = observed_at
+        .strip_prefix(&expected_prefix)
+        .and_then(|value| value.strip_suffix("+08:00"))
+        .ok_or_else(|| {
+            crate::CoreError::InvalidRequest(
+                "post-close flow observed_at must use the trading date and +08:00".into(),
+            )
+        })?;
+    if time.len() != 8
+        || time.as_bytes().get(2) != Some(&b':')
+        || time.as_bytes().get(5) != Some(&b':')
+        || !time
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 2 | 5) || byte.is_ascii_digit())
+    {
+        return Err(crate::CoreError::InvalidRequest(
+            "post-close flow observed_at must use HH:MM:SS precision".into(),
+        ));
+    }
+    let hour = time[0..2].parse::<u32>().unwrap_or(u32::MAX);
+    let minute = time[3..5].parse::<u32>().unwrap_or(u32::MAX);
+    let second = time[6..8].parse::<u32>().unwrap_or(u32::MAX);
+    if hour > 23 || minute > 59 || second > 59 {
+        return Err(crate::CoreError::InvalidRequest(
+            "post-close flow observed_at contains an invalid clock time".into(),
+        ));
+    }
+    if (hour, minute, second) < (15, 35, 0) {
+        return Err(crate::CoreError::InvalidRequest(
+            "post-close flow cannot be captured before 15:35:00 Asia/Shanghai".into(),
+        ));
+    }
+    Ok(())
 }
 
 macro_rules! impl_sourced {

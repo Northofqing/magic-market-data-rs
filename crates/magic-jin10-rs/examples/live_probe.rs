@@ -1,5 +1,7 @@
 use magic_jin10_rs::Jin10Client;
-use magic_market_core::{NewsProvider, PositiveU32};
+use magic_market_core::{
+    EconomicCalendarProvider, EconomicCalendarRequest, NewsProvider, PositiveU32,
+};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -37,6 +39,36 @@ fn main() -> Result<(), Box<dyn Error>> {
             item.evidence.observed_at(),
             item.evidence.batch_id()
         );
+    }
+    if std::env::var("MAGIC_JIN10_LIVE_INCLUDE_CALENDAR").as_deref() == Ok("1") {
+        let calendar_request = EconomicCalendarRequest::new(PositiveU32::new(10)?)?;
+        let calendar = client.economic_calendar(&calendar_request)?;
+        println!(
+            "economic_calendar source={} source_at={:?} fetched_at={} batch_id={:?} complete={} records={}",
+            calendar.provenance().source(),
+            calendar.provenance().source_at(),
+            calendar.provenance().fetched_at(),
+            calendar.provenance().batch_id(),
+            calendar.quality().is_complete(),
+            calendar.records().len()
+        );
+        for event in calendar.records() {
+            println!(
+                "event_id={} country={} name={} period={:?} scheduled_at={} released_at={} previous={:?} consensus={:?} actual={:?} unit={:?} importance={} impact={:?}",
+                event.event_id,
+                event.country,
+                event.name,
+                event.period.as_ref().map(|value| value.as_str()),
+                event.scheduled_at,
+                event.released_at,
+                event.previous.as_ref().map(|value| value.as_str()),
+                event.consensus.as_ref().map(|value| value.as_str()),
+                event.actual.as_ref().map(|value| value.as_str()),
+                event.unit.as_ref().map(|value| value.as_str()),
+                event.importance.get(),
+                event.impact.as_ref().map(|value| value.as_str())
+            );
+        }
     }
     println!("live_probe_status=passed");
     Ok(())

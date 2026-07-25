@@ -10,6 +10,35 @@
 
 ---
 
+## Expanded closure (2026-07-25)
+
+The original two-family plan was expanded by the user and implemented in the
+same feature branch:
+
+- [x] Eastmoney complete dated full-market dragon-tiger discovery, retaining
+  source stock code and name.
+- [x] TDX industry/concept directory, constituents and reverse membership
+  production Provider.
+- [x] CNInfo full-market announcement discovery with strict totals, complete
+  pagination, code and stock name.
+- [x] Sina six global indices and eight FX pairs.
+- [x] Jin10 public unlocked economic calendar.
+- [x] State Council official policy library Provider in `magic-gov-rs`.
+- [x] Eastmoney original research PDF body with exact identity and bounded
+  content validation.
+- [x] CFFEX IF/IH/IC/IM delivery-notice calendar without formula inference.
+- [x] Eastmoney strict current-day 15:35 post-close fund-flow ranking with
+  exact cardinality, common source timestamp, contiguous ranks, code and name.
+- [x] Provider-neutral router aliases and admission checks for every family.
+- [x] Business rules BR-013 through BR-019, integration documentation,
+  live-probe source, release packaging and compliance registration.
+
+The remaining checkboxes below preserve the original red/green implementation
+procedure as historical plan detail; branch completion is determined by the
+expanded closure list and the repository release gates.
+
+---
+
 ## File Structure
 
 - `crates/magic-market-core/src/discovery.rs`: discovery records, requests, capabilities

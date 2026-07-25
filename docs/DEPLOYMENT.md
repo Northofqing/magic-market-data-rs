@@ -21,7 +21,8 @@
 - `magic-baidu-{live,load}-probe`：百度未复权日 K 和源端 MA；
 - `magic-iwencai-{live,load}-probe`：需要授权 API Key 的语义搜索；
 - `magic-exchange-{live,load}-probe`：SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、
-  HKEX 北向日统计；
+  HKEX 北向日统计和 CFFEX 股指期货交割通知；
+- `magic-gov-live-probe`：国务院政策库官方文件；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建
@@ -39,7 +40,7 @@ bash tools/release/package.sh
 
 预检在每次新建的隔离 target 目录中，以离线模式运行格式、stable Rust 全目标编译、
 全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff 空白检查，避免
-本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建二十五个 release
+本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建二十六个 release
 探针，复制为不冲突的文件名，并生成 SHA-256 清单：
 
 ```text
@@ -56,6 +57,7 @@ target/dist/GIT_SHA/
 │   ├── magic-eastmoney-load-probe[.exe]
 │   ├── magic-exchange-live-probe[.exe]
 │   ├── magic-exchange-load-probe[.exe]
+│   ├── magic-gov-live-probe[.exe]
 │   ├── magic-iwencai-live-probe[.exe]
 │   ├── magic-iwencai-load-probe[.exe]
 │   ├── magic-jin10-live-probe[.exe]
@@ -107,7 +109,8 @@ shasum -a 256 -c SHA256SUMS
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
 | Eastmoney/CNInfo/THS/CLS/Jin10/The Paper/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源 |
-| SSE/SZSE/HKEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
+| State Council official | 支持 | 支持 | 支持 | Rustls HTTPS；官方政策文件 |
+| SSE/SZSE/HKEX/CFFEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
 | iWencai | 支持 | 支持 | 支持 | Rustls HTTPS；需要获授权 API Key |
 | EMQuant Rust 层 | 支持 | 可编译 | 可编译 | 运行还取决于厂商 SDK |
 | 当前 EMQuant C++ bridge | x86_64 macOS | 未适配 | 未适配 | 使用 `.dylib`、`dlopen` 和 POSIX API |
@@ -123,15 +126,16 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | --- | --- | --- |
 | TDX | 已配置行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` | `~/.tdxrs/server_cache.json`；调用方指定的财务缓存 |
 | Tencent | `qt.gtimg.cn:443`、`web.ifzq.gtimg.cn:443`、`ifzq.gtimg.cn:443`、`stock.gtimg.cn:443`，HTTPS | 无持久缓存 |
-| Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`、`stock.finance.sina.com.cn:443`，HTTPS | 无持久缓存 |
-| Eastmoney Web | 集成文档白名单中的 `eastmoney.com`/`dfcfw.com` 主机，HTTPS 443 | 无持久缓存 |
+| Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`、`stock.finance.sina.com.cn:443`，HTTPS；全球指数/汇率也使用 `hq.sinajs.cn` | 无持久缓存 |
+| Eastmoney Web | 集成文档白名单中的 `eastmoney.com`/`dfcfw.com` 主机（含 `pdf.dfcfw.com`），HTTPS 443 | 无持久缓存 |
 | CNInfo | `www.cninfo.com.cn:443`、`irm.cninfo.com.cn:443`、`static.cninfo.com.cn:443` | 仅 24 小时进程内 org 映射缓存 |
 | THS | `basic`、`zx`、`data`、`dq.10jqka.com.cn:443` | 无持久缓存 |
 | CLS | `www.cls.cn:443` | 无持久缓存 |
 | Jin10 | `flash-api.jin10.com:443` | 无持久缓存 |
 | The Paper | `www.thepaper.cn:443` | 无持久缓存 |
 | Baidu | `finance.pae.baidu.com:443` | 无持久缓存 |
-| SSE/SZSE/HKEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443` | 无持久缓存 |
+| SSE/SZSE/HKEX/CFFEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443`、`www.cffex.com.cn:443` | 无持久缓存 |
+| State Council | `sousuo.www.gov.cn:443`；返回链接仅允许 `www.gov.cn:443` | 无持久缓存 |
 | iWencai | `openapi.iwencai.com:443` | API Key 仅由环境/秘密挂载提供，不落盘 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
 
@@ -210,6 +214,7 @@ market_release_dir=target/dist/$(git rev-parse HEAD)
 "$market_release_dir/bin/magic-thepaper-live-probe"
 "$market_release_dir/bin/magic-baidu-live-probe"
 "$market_release_dir/bin/magic-exchange-live-probe"
+"$market_release_dir/bin/magic-gov-live-probe"
 MAGIC_TENCENT_LOAD_OPERATION=mixed MAGIC_TENCENT_LOAD_REQUESTS=20 \
   MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
   "$market_release_dir/bin/magic-tencent-load-probe"
@@ -267,7 +272,8 @@ Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打�
 缓存或跨源拼接，两个来源都失败时退出非零。公共研究/内容 Provider 同样要求非空
 严格批次；Eastmoney 已声明能力的完整 live/mixed probe 必须为零退出，两个未声明
 资金流端点若继续返回 empty reply 则单独打印预期失败诊断，不能登记为资金流实盘
-通过；关键词新闻同样因无结构化证券身份保持未准入。交易所官方 probe 要求公告
+通过；东财最新财经资讯必须校验完整滚动首屏，关键词搜索则因无结构化证券身份保持
+未准入。交易所官方 probe 要求公告
 证券/日期及分页匹配、龙虎榜证券/交易日和完整买五卖五匹配、SZSE Quote/盘口身份及
 源时间匹配、HKEX 两通道与 Top10 完整；任一来源失败时整体非零。Jin10 probe 只
 接收未锁定的公开 type-0/type-2 新闻，The Paper probe 只接收财经频道原生文章并

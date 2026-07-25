@@ -2,8 +2,9 @@
 //! Bounded read-only adapter for public Jin10 financial flashes.
 
 use magic_market_core::{
-    ContentCapabilities, DataBatch, HttpsUrl, InstrumentDateRangeRequest, NewsItem, NewsProvider,
-    NonEmptyText, PositiveU32, Provenance, ProviderId, SourceEvidence,
+    CalendarCapabilities, ContentCapabilities, DataBatch, EconomicCalendarProvider,
+    EconomicCalendarRequest, EconomicEvent, HttpsUrl, InstrumentDateRangeRequest, NewsItem,
+    NewsProvider, NonEmptyText, PositiveU32, Provenance, ProviderId, SourceEvidence,
 };
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -162,7 +163,15 @@ impl Jin10Client {
             instrument_news: false,
             global_news: true,
             announcements: false,
+            announcement_discovery: false,
             investor_questions: false,
+        }
+    }
+
+    pub const fn calendar_capabilities() -> CalendarCapabilities {
+        CalendarCapabilities {
+            economic_releases: true,
+            futures_delivery: false,
         }
     }
 
@@ -215,6 +224,24 @@ impl NewsProvider for Jin10Client {
 
     fn global_news(&self, limit: PositiveU32) -> Result<DataBatch<NewsItem>, Self::Error> {
         self.fetch_global_news(limit)
+    }
+}
+
+impl EconomicCalendarProvider for Jin10Client {
+    type Error = Jin10Error;
+
+    fn economic_calendar(
+        &self,
+        request: &EconomicCalendarRequest,
+    ) -> Result<DataBatch<EconomicEvent>, Self::Error> {
+        let body = self.execute(&build_request())?;
+        if body.len() > MAX_RESPONSE_BYTES {
+            return Err(Jin10Error::Protocol(format!(
+                "response exceeds {MAX_RESPONSE_BYTES} bytes"
+            )));
+        }
+        let observed_at = now()?;
+        parse_economic_response(&body, request, &observed_at)
     }
 }
 
@@ -311,7 +338,7 @@ fn parse_response(
                 "duplicate Jin10 flash id {item_id}"
             )));
         }
-        if is_locked(object)? || !is_news_type(object)? {
+        if is_locked(object)? || !is_news_type(object)? || !is_public_news_channel(object)? {
             continue;
         }
         parsed.push(parse_item(object, item_id, observed_at, &batch_id)?);
@@ -332,6 +359,187 @@ fn parse_response(
         .with_source_at(source_at)?
         .with_batch_id(batch_id)?;
     Ok(DataBatch::strict(parsed, provenance))
+}
+
+fn parse_economic_response(
+    body: &[u8],
+    request: &EconomicCalendarRequest,
+    observed_at: &str,
+) -> Result<DataBatch<EconomicEvent>, Jin10Error> {
+    let root: Value = serde_json::from_slice(body)
+        .map_err(|error| Jin10Error::Decode(format!("flash JSON: {error}")))?;
+    let object = checked_envelope(&root)?;
+    let rows = object
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or_else(|| Jin10Error::Protocol("data must be an array".into()))?;
+    if rows.is_empty() || rows.len() > MAX_SOURCE_ROWS {
+        return Err(Jin10Error::Protocol(format!(
+            "Jin10 economic source row count {} is outside 1..={MAX_SOURCE_ROWS}",
+            rows.len()
+        )));
+    }
+
+    let batch_id = format!("jin10:{observed_at}:economic-calendar");
+    let mut seen = HashSet::with_capacity(rows.len());
+    let mut records = Vec::new();
+    for row in rows {
+        let row = row
+            .as_object()
+            .ok_or_else(|| Jin10Error::Protocol("flash row must be an object".into()))?;
+        let event_id = required_id(row.get("id"))?;
+        if !seen.insert(event_id.clone()) {
+            return Err(Jin10Error::Protocol(format!(
+                "duplicate Jin10 flash id {event_id}"
+            )));
+        }
+        if is_locked(row)? {
+            continue;
+        }
+        let item_type = row
+            .get("type")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| Jin10Error::Protocol("flash type must be an integer".into()))?;
+        if item_type != 1 {
+            continue;
+        }
+        let record = parse_economic_event(row, event_id, observed_at, &batch_id)?;
+        if request
+            .country()
+            .is_some_and(|country| country.as_str() != record.country.as_str())
+        {
+            continue;
+        }
+        records.push(record);
+    }
+    if records.is_empty() {
+        return Err(Jin10Error::Protocol(
+            "Jin10 returned no eligible public economic releases".into(),
+        ));
+    }
+    records.sort_by(|left, right| right.released_at.as_str().cmp(left.released_at.as_str()));
+    records.truncate(request.limit().get() as usize);
+    let source_at = records
+        .first()
+        .map(|record| record.released_at.as_str())
+        .ok_or_else(|| Jin10Error::Protocol("latest economic release time is missing".into()))?;
+    let provenance = Provenance::new("jin10-flash-v1", observed_at)?
+        .with_source_at(source_at)?
+        .with_batch_id(batch_id)?;
+    Ok(DataBatch::strict(records, provenance))
+}
+
+fn checked_envelope(root: &Value) -> Result<&Map<String, Value>, Jin10Error> {
+    let object = root
+        .as_object()
+        .ok_or_else(|| Jin10Error::Protocol("response root must be an object".into()))?;
+    let status = object
+        .get("status")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| Jin10Error::Protocol("status must be an integer".into()))?;
+    let message = object
+        .get("message")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Jin10Error::Protocol("message must be a string".into()))?;
+    if status != 200 || message != "OK" {
+        return Err(Jin10Error::Protocol(format!(
+            "Jin10 returned status {status}: {message}"
+        )));
+    }
+    Ok(object)
+}
+
+fn parse_economic_event(
+    row: &Map<String, Value>,
+    event_id: String,
+    observed_at: &str,
+    batch_id: &str,
+) -> Result<EconomicEvent, Jin10Error> {
+    let data = row
+        .get("data")
+        .and_then(Value::as_object)
+        .ok_or_else(|| Jin10Error::Protocol("economic data must be an object".into()))?;
+    let released_at =
+        jin10_time(row.get("time").and_then(Value::as_str).ok_or_else(|| {
+            Jin10Error::Protocol("economic release time must be a string".into())
+        })?)?;
+    let scheduled_at = jin10_time(
+        data.get("pub_time")
+            .and_then(Value::as_str)
+            .ok_or_else(|| Jin10Error::Protocol("economic pub_time must be a string".into()))?,
+    )?;
+    let indicator = required_positive_u32(data.get("indicator_id"), "indicator_id")?;
+    let star = required_positive_u32(data.get("star"), "star")?;
+    if star.get() > 5 {
+        return Err(Jin10Error::Protocol(
+            "economic star must be in 1..=5".into(),
+        ));
+    }
+    let country = required_scalar_text(data.get("country"), "country")?;
+    let name = required_scalar_text(data.get("name"), "name")?;
+    let evidence = SourceEvidence::new(ProviderId::Jin10, observed_at, batch_id)?
+        .with_source_at(released_at.clone())?;
+    Ok(EconomicEvent {
+        event_id: NonEmptyText::new(event_id)?,
+        indicator_id: indicator,
+        country: NonEmptyText::new(country)?,
+        name: NonEmptyText::new(name)?,
+        period: optional_scalar_text(data.get("time_period"))?
+            .map(NonEmptyText::new)
+            .transpose()?,
+        scheduled_at: NonEmptyText::new(scheduled_at)?,
+        released_at: NonEmptyText::new(released_at)?,
+        previous: optional_scalar_text(data.get("previous"))?
+            .map(NonEmptyText::new)
+            .transpose()?,
+        consensus: optional_scalar_text(data.get("consensus"))?
+            .map(NonEmptyText::new)
+            .transpose()?,
+        actual: optional_scalar_text(data.get("actual"))?
+            .map(NonEmptyText::new)
+            .transpose()?,
+        revised: optional_scalar_text(data.get("revised"))?
+            .map(NonEmptyText::new)
+            .transpose()?,
+        unit: optional_scalar_text(data.get("unit"))?
+            .map(NonEmptyText::new)
+            .transpose()?,
+        importance: star,
+        impact: optional_scalar_text(data.get("affect"))?
+            .map(NonEmptyText::new)
+            .transpose()?,
+        evidence,
+    })
+}
+
+fn required_positive_u32(value: Option<&Value>, field: &str) -> Result<PositiveU32, Jin10Error> {
+    let number = match value {
+        Some(Value::Number(value)) => value.as_u64(),
+        Some(Value::String(value)) => value.trim().parse::<u64>().ok(),
+        _ => None,
+    }
+    .filter(|value| *value <= u64::from(u32::MAX))
+    .ok_or_else(|| Jin10Error::Protocol(format!("{field} must be a positive u32")))?;
+    PositiveU32::new(number as u32).map_err(Into::into)
+}
+
+fn required_scalar_text(value: Option<&Value>, field: &str) -> Result<String, Jin10Error> {
+    optional_scalar_text(value)?
+        .ok_or_else(|| Jin10Error::Protocol(format!("economic {field} is missing")))
+}
+
+fn optional_scalar_text(value: Option<&Value>) -> Result<Option<String>, Jin10Error> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => {
+            let value = normalized_text(value);
+            Ok((!value.is_empty()).then_some(value))
+        }
+        Some(Value::Number(value)) => Ok(Some(value.to_string())),
+        Some(_) => Err(Jin10Error::Protocol(
+            "economic scalar field must be text, number, or null".into(),
+        )),
+    }
 }
 
 fn required_id(value: Option<&Value>) -> Result<String, Jin10Error> {
@@ -379,6 +587,31 @@ fn is_news_type(row: &Map<String, Value>) -> Result<bool, Jin10Error> {
         .and_then(Value::as_i64)
         .ok_or_else(|| Jin10Error::Protocol("flash type must be an integer".into()))?;
     Ok(matches!(item_type, 0 | 2))
+}
+
+fn is_public_news_channel(row: &Map<String, Value>) -> Result<bool, Jin10Error> {
+    let channels = row
+        .get("channel")
+        .and_then(Value::as_array)
+        .ok_or_else(|| Jin10Error::Protocol("flash channel must be an array".into()))?;
+    if channels.is_empty() {
+        return Err(Jin10Error::Protocol(
+            "flash channel must not be empty".into(),
+        ));
+    }
+    let mut public_news = false;
+    for channel in channels {
+        let channel = channel
+            .as_u64()
+            .filter(|channel| *channel > 0)
+            .ok_or_else(|| {
+                Jin10Error::Protocol("flash channel entries must be positive integers".into())
+            })?;
+        if matches!(channel, 1..=3) {
+            public_news = true;
+        }
+    }
+    Ok(public_news)
 }
 
 fn parse_item(
@@ -588,6 +821,7 @@ mod tests {
           "time": "2026-07-24 22:40:37",
           "type": 0,
           "important": 1,
+          "channel": [1, 2, 3],
           "data": {
             "content": "【晶泰控股：预计上半年由盈转亏】<a href=\"https://example.com\">详情</a>",
             "exclusive_to": [],
@@ -602,6 +836,7 @@ mod tests {
           "time": "2026-07-24 22:40:12",
           "type": 0,
           "important": 0,
+          "channel": [5],
           "data": {
             "content": "",
             "lock": true,
@@ -615,6 +850,7 @@ mod tests {
           "time": "2026-07-24 22:26:59",
           "type": 2,
           "important": 0,
+          "channel": [2],
           "data": {
             "content": "公开文章摘要",
             "link": "https://xnews.jin10.com/details/225718",
@@ -630,6 +866,7 @@ mod tests {
           "time": "2026-07-24 22:00:00",
           "type": 1,
           "important": 0,
+          "channel": [1],
           "data": {"content": "economic calendar"},
           "tags": []
         }
@@ -726,6 +963,106 @@ mod tests {
         assert_eq!(
             batch.provenance().source_at(),
             Some("2026-07-24T22:40:37+08:00")
+        );
+    }
+
+    #[test]
+    fn public_news_omits_source_channel_five_only_promotions() {
+        let fixture = r#"{
+          "status": 200,
+          "message": "OK",
+          "data": [
+            {
+              "id": "promotion-text",
+              "time": "2026-07-25 09:01:43",
+              "type": 0,
+              "important": 0,
+              "channel": [5],
+              "data": {
+                "content": "VIP年会员限时9折",
+                "source": "",
+                "title": "VIP·9折"
+              },
+              "tags": []
+            },
+            {
+              "id": "promotion-image",
+              "time": "2026-07-25 09:01:41",
+              "type": 0,
+              "important": 0,
+              "channel": [5],
+              "data": {
+                "content": "<a href=\"https://www.jin10.com/activity\"><img src=\"promotion.jpg\"/></a>",
+                "source": "",
+                "title": ""
+              },
+              "tags": []
+            },
+            {
+              "id": "public-news",
+              "time": "2026-07-25 08:55:45",
+              "type": 0,
+              "important": 1,
+              "channel": [1, 2, 3],
+              "data": {
+                "content": "公开财经快讯",
+                "source": "",
+                "title": ""
+              },
+              "tags": []
+            }
+          ]
+        }"#;
+        let batch = parse_response(fixture.as_bytes(), 5, "observed").unwrap();
+        assert_eq!(batch.records().len(), 1);
+        assert_eq!(batch.records()[0].item_id.as_str(), "public-news");
+    }
+
+    #[test]
+    fn economic_release_preserves_zero_actual_and_source_fields() {
+        let economic = r#"{
+          "status": 200,
+          "message": "OK",
+          "data": [{
+            "id": "202607250001",
+            "time": "2026-07-25 09:30:01",
+            "type": 1,
+            "important": 1,
+            "data": {
+              "lock": false,
+              "indicator_id": 950,
+              "country": "中国",
+              "name": "规模以上工业企业利润",
+              "time_period": "6月",
+              "pub_time": "2026-07-25 09:30:00",
+              "previous": -9.1,
+              "consensus": null,
+              "actual": 0,
+              "revised": null,
+              "unit": "%",
+              "star": 3,
+              "affect": 1
+            },
+            "tags": []
+          }]
+        }"#;
+        let client = Jin10Client::from_parts(
+            Arc::new(FixtureTransport {
+                response: economic.as_bytes().to_vec(),
+                request: Mutex::new(None),
+            }),
+            Duration::ZERO,
+        );
+        let request = EconomicCalendarRequest::new(PositiveU32::new(20).unwrap())
+            .unwrap()
+            .with_country("中国")
+            .unwrap();
+        let batch = client.economic_calendar(&request).unwrap();
+        assert_eq!(batch.records()[0].actual.as_ref().unwrap().as_str(), "0");
+        assert_eq!(batch.records()[0].indicator_id.get(), 950);
+        assert_eq!(
+            batch.provenance().source_at(),
+            Some("2026-07-25T09:30:01+08:00")
         );
     }
 

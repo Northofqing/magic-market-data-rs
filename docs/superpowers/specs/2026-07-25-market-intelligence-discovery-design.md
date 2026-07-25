@@ -2,17 +2,20 @@
 
 ## Scope
 
-This slice adds the two A-share discovery capabilities with the highest direct value to
+This slice adds the A-share and cross-market discovery capabilities required by
 selection workflows:
 
 1. discover every dragon-tiger entry published for one trading date, optionally restricted
    to one domestic exchange;
 2. list industry/concept boards, list one board's constituents, and find all memberships
-   for requested instruments.
-
-Global-index quotes and economic/trading calendars remain separate follow-on slices. They
-have different identities, sources, freshness and failure modes and therefore receive
-separate specifications and implementation plans.
+   for requested instruments;
+3. discover full-market announcements without a caller-known instrument;
+4. read a verified set of global indices and major FX pairs;
+5. read Jin10 economic-calendar releases and official China Government policy documents;
+6. download the original body of an Eastmoney research-report PDF;
+7. discover official CFFEX equity-index-futures delivery events;
+8. capture the Eastmoney main-fund-flow ranking under a strict 15:35
+   Asia/Shanghai contract.
 
 The user's standing instruction to make implementation choices independently is the design
 authorization for this specification.
@@ -77,6 +80,81 @@ tdx:concept:<source board name>
 
 This is a reversible identifier derived from source fields, not a guessed upstream code.
 Record and batch `source_at` remain absent.
+
+### Expanded production sources
+
+#### Full-market announcements
+
+CNInfo's public `new/hisAnnouncement/query` form accepts an empty `stock`,
+`column=szse`, and a bounded `seDate`. A live 2026-07-24 probe returned 1,108
+announcements across Shanghai and Shenzhen source codes with stable
+`totalAnnouncement`, `totalpages`, `hasMore`, source IDs, publication
+milliseconds, and PDF paths. The provider pages until the requested bound,
+rejects unstable totals and duplicate IDs, and maps only verified A-share
+equity code families.
+
+#### Global indices and FX
+
+Sina's credential-free HTTPS quote endpoint is used only for symbols proved by
+live probes:
+
+- indices: Dow Jones, Nasdaq Composite, S&P 500, Nikkei 225, Hang Seng, FTSE
+  100;
+- FX: USD/CNY, EUR/USD, USD/JPY, GBP/USD, AUD/USD, USD/CHF, USD/CAD, NZD/USD.
+
+Index packets do not expose a source timestamp, so their evidence contains only
+the local observation time. FX packets expose both date and time; the provider
+requires both and retains their combined Asia/Shanghai source timestamp.
+
+#### Economic calendar
+
+Jin10 type-1 public flash rows are normalized as economic releases. Live rows
+prove `data_id`, country, indicator name, period, previous/consensus/actual,
+unit, star/importance, impact, scheduled publication time, and flash release
+time. Protected rows are never returned. This family is intentionally a
+bounded latest-release calendar rather than an unproved historical archive.
+
+#### Official policy source
+
+The China Government Network policy library
+`https://sousuo.www.gov.cn/search-gov/data` is the only policy source. Requests
+are bounded and may specify query text, publication range, page, and page size.
+The provider retains official document ID, title, summary, issuing
+organization, document number, category, publication date, and canonical
+`gov.cn` URL.
+
+#### Research PDF body
+
+Eastmoney report metadata already proves the report `infoCode` and canonical
+`https://pdf.dfcfw.com/pdf/H3_<infoCode>_1.pdf` URL. The document provider
+accepts that exact identity pair, downloads a bounded body, requires the PDF
+magic header, rejects empty/truncated/oversized bodies, and returns the
+original bytes with provenance. It does not perform lossy PDF-to-text
+conversion inside the market-data adapter.
+
+#### Futures delivery calendar
+
+The first production family is deliberately bounded to CFFEX equity-index
+futures IF, IH, IC, and IM. An official CFFEX delivery notice is the
+event-level source. The provider parses the notice publication/delivery date,
+contract identities, and explicit delivery wording. It never derives a
+holiday-adjusted date from the third-Friday rule alone. A missing monthly
+notice is an explicit incomplete-source failure.
+
+#### Strict 15:35 main-fund-flow ranking
+
+The Eastmoney main-fund-flow page proves the production `clist/get` market
+filter, source sort fields, and per-row `f124` update timestamp. The normalized
+contract is a 15:35 Asia/Shanghai capture:
+
+- the production client only serves the current trading date;
+- local capture must be at or after 15:35:00 and before the date rolls over;
+- every row must carry a source `f124` on the requested trading date;
+- the upstream order is `f62` descending and normalized ranks are contiguous;
+- calls before 15:35, stale dates, missing timestamps, duplicate identities,
+  partial pages, or unstable totals fail explicitly.
+
+This is not advertised as a historical 15:35 replay API.
 
 ## Core Contracts
 
@@ -293,6 +371,9 @@ wire shape.
 - Duplicate source rows, duplicate requests, unknown boards, invalid categories and
   unverified code prefixes fail.
 - Router failover tests for date, exchange, board, uniqueness and limit violations.
+- Router admission tests for announcement discovery, global indices, FX,
+  economic releases, policy documents, report PDFs, CFFEX delivery events and
+  strict post-close rankings.
 
 ### Live and load
 
@@ -317,6 +398,10 @@ documents, compliance probe registry, business rules and release packaging. Docu
 - dragon-tiger discovery is a dated Eastmoney public-data view, not exchange-certified
   data;
 - TDX board identities are provider-scoped and have no source timestamp;
+- TDX block files contain security codes but no security names. A UI that
+  displays TDX board members must join a separately sourced
+  `SecurityMetadataProvider` result and keep both evidence records; the board
+  Provider never substitutes the code as a fake name.
 - TDX index/region blocks and Beijing board membership are not admitted in this slice;
 - no cross-source batch is presented as atomic.
 

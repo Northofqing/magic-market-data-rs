@@ -165,6 +165,31 @@ fn global_news_router_preserves_jin10_and_thepaper_identities() {
 }
 
 #[test]
+fn global_news_router_accepts_eastmoney_identity() {
+    let provider = Arc::new(NewsFixtureProvider {
+        record_provider: ProviderId::Eastmoney,
+        batch_source: "eastmoney-web",
+        item_count: 2,
+        duplicate_id: false,
+    });
+    let mut router = GlobalNewsRouter::new(AcceptancePolicy::new().with_require_source_at(true));
+    router
+        .register(global_news_source(
+            ProviderId::Eastmoney,
+            provider,
+            classify,
+        ))
+        .unwrap();
+
+    let outcome = router.route(&PositiveU32::new(2).unwrap()).unwrap();
+    assert_eq!(outcome.selected_provider(), ProviderId::Eastmoney);
+    assert!(matches!(
+        outcome.attempts()[0].status(),
+        AttemptStatus::Selected
+    ));
+}
+
+#[test]
 fn global_news_router_rejects_oversized_and_duplicate_batches() {
     let valid = || {
         Arc::new(NewsFixtureProvider {
@@ -255,6 +280,7 @@ impl Announcements for AnnouncementFixtureProvider {
         let record = Announcement {
             announcement_id: NonEmptyText::new("A001").unwrap(),
             instrument: self.instrument.clone(),
+            instrument_name: Some(NonEmptyText::new("fixture stock").unwrap()),
             category: None,
             title: NonEmptyText::new("fixture announcement").unwrap(),
             published_at: NonEmptyText::new(self.published_at).unwrap(),
@@ -635,12 +661,17 @@ impl PostCloseFlows for PostCloseFixtureProvider {
             Price::new(16.41).unwrap(),
             Ratio::new(9.99, RatioUnit::Percent).unwrap(),
             Money::new(100_000_000.0).unwrap(),
+            Ratio::new(12.34, RatioUnit::Percent).unwrap(),
             None,
             None,
-            SourceEvidence::new(self.record_provider, "observed", &batch_id)
-                .unwrap()
-                .with_source_at(&source_at)
-                .unwrap(),
+            SourceEvidence::new(
+                self.record_provider,
+                format!("{response_date}T15:35:00+08:00"),
+                &batch_id,
+            )
+            .unwrap()
+            .with_source_at(&source_at)
+            .unwrap(),
         )
         .unwrap();
         let records = if self.duplicate_rank {
@@ -680,7 +711,7 @@ fn post_close_adapter_forwards_date_and_routes_only_matching_sourced_records() {
     });
     let request = PostCloseFlowRequest::new(
         magic_market_core::IsoDate::new("2026-07-23").unwrap(),
-        magic_market_core::PositiveU32::new(10).unwrap(),
+        magic_market_core::PositiveU32::new(1).unwrap(),
     )
     .unwrap();
     let mut router = PostCloseFlowRouter::new(
@@ -719,8 +750,8 @@ fn post_close_adapter_forwards_date_and_routes_only_matching_sourced_records() {
     ));
     assert_eq!(wrong.seen_dates.lock().unwrap().as_slice(), ["2026-07-23"]);
     assert_eq!(valid.seen_dates.lock().unwrap().as_slice(), ["2026-07-23"]);
-    assert_eq!(wrong.seen_limits.lock().unwrap().as_slice(), [10]);
-    assert_eq!(valid.seen_limits.lock().unwrap().as_slice(), [10]);
+    assert_eq!(wrong.seen_limits.lock().unwrap().as_slice(), [1]);
+    assert_eq!(valid.seen_limits.lock().unwrap().as_slice(), [1]);
 }
 
 #[test]
@@ -751,7 +782,7 @@ fn post_close_adapter_rejects_wrong_dates_and_duplicate_ranks() {
     });
     let request = PostCloseFlowRequest::new(
         magic_market_core::IsoDate::new("2026-07-23").unwrap(),
-        magic_market_core::PositiveU32::new(10).unwrap(),
+        magic_market_core::PositiveU32::new(1).unwrap(),
     )
     .unwrap();
     let mut router = PostCloseFlowRouter::new(AcceptancePolicy::new());

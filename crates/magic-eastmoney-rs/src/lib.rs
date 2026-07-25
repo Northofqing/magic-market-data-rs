@@ -16,6 +16,7 @@ mod limit_pool;
 mod mapping;
 mod news;
 mod popularity;
+mod post_close;
 mod reports;
 mod transport;
 
@@ -29,7 +30,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use error::EastmoneyError;
 pub use transport::EastmoneyTransport;
-use transport::{HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES};
+use transport::{
+    HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES, MAX_HTML_RESPONSE_BYTES, MAX_PDF_RESPONSE_BYTES,
+};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(12);
 const SOURCE_NAME: &str = "eastmoney-web";
@@ -74,7 +77,8 @@ impl EastmoneyClient {
             reports: true,
             consensus: false,
             semantic_search: false,
-            pdf_download: false,
+            pdf_download: true,
+            document_body: true,
         }
     }
 
@@ -88,7 +92,7 @@ impl EastmoneyClient {
             holder_count: true,
             lockups: true,
             dividends: true,
-            post_close_flow: false,
+            post_close_flow: true,
             northbound_daily_statistics: false,
         }
     }
@@ -120,8 +124,9 @@ impl EastmoneyClient {
     pub const fn content_capabilities() -> ContentCapabilities {
         ContentCapabilities {
             instrument_news: false,
-            global_news: false,
+            global_news: true,
             announcements: false,
+            announcement_discovery: false,
             investor_questions: false,
         }
     }
@@ -152,6 +157,23 @@ impl EastmoneyClient {
     ) -> Result<Vec<u8>, EastmoneyError> {
         self.transport
             .post_json(url, headers, body, DEFAULT_MAX_RESPONSE_BYTES)
+    }
+
+    pub(crate) fn get_pdf(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        self.transport.get_pdf(url, headers, MAX_PDF_RESPONSE_BYTES)
+    }
+
+    pub(crate) fn get_html(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        self.transport
+            .get_html(url, headers, MAX_HTML_RESPONSE_BYTES)
     }
 }
 
@@ -446,6 +468,7 @@ mod tests {
     #[test]
     fn keyword_only_instrument_news_is_not_admitted_as_a_capability() {
         assert!(!EastmoneyClient::content_capabilities().instrument_news);
+        assert!(EastmoneyClient::content_capabilities().global_news);
     }
 
     #[test]

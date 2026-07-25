@@ -55,6 +55,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         EastmoneyClient::market_discovery_capabilities()
     );
 
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("global-news") {
+        probe_batch(
+            "content.global_news",
+            client.global_news(PositiveU32::new(5)?),
+            &mut failures,
+        );
+        return print_summary(&failures);
+    }
+
     let dragon_date =
         IsoDate::new(std::env::var("MAGIC_EASTMONEY_DRAGON_DATE").map_err(|_| {
             "MAGIC_EASTMONEY_DRAGON_DATE=YYYY-MM-DD is required for the discovery live probe"
@@ -173,6 +182,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     probe_batch(
         "popularity",
         client.popularity(PositiveU32::new(5)?),
+        &mut failures,
+    );
+    probe_batch(
+        "content.global_news",
+        client.global_news(PositiveU32::new(5)?),
         &mut failures,
     );
     let news_request = InstrumentDateRangeRequest::new(primary, PositiveU32::new(5)?)?;

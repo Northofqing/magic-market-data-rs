@@ -6,8 +6,8 @@ use crate::{
     EastmoneyError,
 };
 use magic_market_core::{
-    EarningsEstimate, Exchange, HttpsUrl, NonEmptyText, PositiveU32, ReportScope, ResearchReport,
-    ResearchReports, ResearchRequest,
+    EarningsEstimate, Exchange, HttpsUrl, NonEmptyText, PositiveU32, ReportScope, ResearchDocument,
+    ResearchDocumentRequest, ResearchDocuments, ResearchReport, ResearchReports, ResearchRequest,
 };
 use serde_json::Value;
 
@@ -53,6 +53,46 @@ impl ResearchReports for EastmoneyClient {
             ],
         )?;
         parse_reports(&bytes, request.scope())
+    }
+}
+
+impl ResearchDocuments for EastmoneyClient {
+    type Error = EastmoneyError;
+
+    fn research_document(
+        &self,
+        request: &ResearchDocumentRequest,
+    ) -> Result<magic_market_core::DataBatch<ResearchDocument>, Self::Error> {
+        let report_id = request.report_id.as_str();
+        if !report_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        {
+            return Err(EastmoneyError::InvalidRequest(
+                "report ID contains URL-unsafe characters".into(),
+            ));
+        }
+        let expected = format!("https://pdf.dfcfw.com/pdf/H3_{report_id}_1.pdf");
+        if request.pdf_url.as_str() != expected {
+            return Err(EastmoneyError::InvalidRequest(format!(
+                "report PDF URL must exactly match {expected}"
+            )));
+        }
+        let body = self.get_pdf(
+            request.pdf_url.as_str(),
+            &[
+                ("Accept", "application/pdf"),
+                ("Referer", "https://data.eastmoney.com/"),
+            ],
+        )?;
+        let context = BatchContext::new("research-document", None)?;
+        let document = ResearchDocument::new(
+            request.report_id.clone(),
+            request.pdf_url.clone(),
+            body,
+            context.evidence()?,
+        )?;
+        context.finish(vec![document])
     }
 }
 
@@ -208,7 +248,11 @@ fn map_estimates(row: &Value, published_at: &str) -> Result<Vec<EarningsEstimate
 #[cfg(test)]
 mod tests {
     use super::parse_reports;
-    use magic_market_core::{AssetClass, Exchange, InstrumentId, ReportScope};
+    use crate::{EastmoneyClient, EastmoneyError, EastmoneyTransport};
+    use magic_market_core::{
+        AssetClass, Exchange, HttpsUrl, InstrumentId, NonEmptyText, ReportScope,
+        ResearchDocumentRequest, ResearchDocuments,
+    };
 
     #[test]
     fn maps_every_available_report_contract_field() {
@@ -372,5 +416,68 @@ mod tests {
                 "{published_at}"
             );
         }
+    }
+
+    struct PdfFixture;
+
+    impl EastmoneyTransport for PdfFixture {
+        fn get(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            Err(EastmoneyError::Transport("unexpected JSON request".into()))
+        }
+
+        fn post_json(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: &[u8],
+            _max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            Err(EastmoneyError::Transport("unexpected POST request".into()))
+        }
+
+        fn get_pdf(
+            &self,
+            url: &str,
+            _headers: &[(&str, &str)],
+            max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            assert_eq!(
+                url,
+                "https://pdf.dfcfw.com/pdf/H3_AP202607231827290069_1.pdf"
+            );
+            assert_eq!(max_bytes, 32 * 1024 * 1024);
+            Ok(b"%PDF-1.7\nfixture".to_vec())
+        }
+    }
+
+    #[test]
+    fn downloads_original_pdf_body_for_the_exact_report_identity() {
+        let client = EastmoneyClient::with_transport(PdfFixture);
+        let request = ResearchDocumentRequest {
+            report_id: NonEmptyText::new("AP202607231827290069").unwrap(),
+            pdf_url: HttpsUrl::new("https://pdf.dfcfw.com/pdf/H3_AP202607231827290069_1.pdf")
+                .unwrap(),
+        };
+        let batch = client.research_document(&request).unwrap();
+        assert_eq!(batch.records()[0].body, b"%PDF-1.7\nfixture");
+        assert_eq!(batch.records()[0].content_type.as_str(), "application/pdf");
+    }
+
+    #[test]
+    fn report_document_rejects_identity_url_disagreement() {
+        let client = EastmoneyClient::with_transport(PdfFixture);
+        let request = ResearchDocumentRequest {
+            report_id: NonEmptyText::new("AP1").unwrap(),
+            pdf_url: HttpsUrl::new("https://pdf.dfcfw.com/pdf/H3_AP2_1.pdf").unwrap(),
+        };
+        assert!(matches!(
+            client.research_document(&request),
+            Err(EastmoneyError::InvalidRequest(_))
+        ));
     }
 }

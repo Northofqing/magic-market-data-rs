@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 pub(crate) const DEFAULT_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_HTML_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+pub(crate) const MAX_PDF_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 const ALLOWED_HOSTS: &[&str] = &[
     "datacenter-web.eastmoney.com",
@@ -12,6 +14,7 @@ const ALLOWED_HOSTS: &[&str] = &[
     "push2ex.eastmoney.com",
     "push2his.eastmoney.com",
     "reportapi.eastmoney.com",
+    "pdf.dfcfw.com",
 ];
 
 /// Injected bounded transport used by deterministic fixtures and the live client.
@@ -30,6 +33,24 @@ pub trait EastmoneyTransport: Send + Sync {
         body: &[u8],
         max_bytes: usize,
     ) -> Result<Vec<u8>, EastmoneyError>;
+
+    fn get_pdf(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        self.get(url, headers, max_bytes)
+    }
+
+    fn get_html(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        self.get(url, headers, max_bytes)
+    }
 }
 
 #[derive(Clone)]
@@ -146,6 +167,84 @@ impl HttpsTransport {
             .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
         Self::read_response(response, max_bytes)
     }
+
+    fn get_pdf_request(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        validate_endpoint(url)?;
+        if max_bytes == 0 || max_bytes > MAX_PDF_RESPONSE_BYTES {
+            return Err(EastmoneyError::InvalidRequest(format!(
+                "PDF response limit must be in 1..={MAX_PDF_RESPONSE_BYTES}"
+            )));
+        }
+        let _request_gate = self.acquire_slot()?;
+        let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
+        for (name, value) in headers {
+            request = request.set(name, value);
+        }
+        let response = request
+            .call()
+            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+        if response.status() != 200 {
+            return Err(EastmoneyError::Transport(format!(
+                "unexpected HTTP status {}",
+                response.status()
+            )));
+        }
+        validate_pdf_content_type(response.header("Content-Type"))?;
+        let mut body = Vec::new();
+        response
+            .into_reader()
+            .take((max_bytes + 1) as u64)
+            .read_to_end(&mut body)
+            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+        if body.len() > max_bytes {
+            return Err(EastmoneyError::ResponseTooLarge { limit: max_bytes });
+        }
+        Ok(body)
+    }
+
+    fn get_html_request(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        validate_news_page_endpoint(url)?;
+        if max_bytes == 0 || max_bytes > MAX_HTML_RESPONSE_BYTES {
+            return Err(EastmoneyError::InvalidRequest(format!(
+                "HTML response limit must be in 1..={MAX_HTML_RESPONSE_BYTES}"
+            )));
+        }
+        let _request_gate = self.acquire_slot()?;
+        let mut request = self.agent.get(url).set("User-Agent", USER_AGENT);
+        for (name, value) in headers {
+            request = request.set(name, value);
+        }
+        let response = request
+            .call()
+            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+        if response.status() != 200 {
+            return Err(EastmoneyError::Transport(format!(
+                "unexpected HTTP status {}",
+                response.status()
+            )));
+        }
+        validate_html_content_type(response.header("Content-Type"))?;
+        let mut body = Vec::new();
+        response
+            .into_reader()
+            .take((max_bytes + 1) as u64)
+            .read_to_end(&mut body)
+            .map_err(|error| EastmoneyError::Transport(error.to_string()))?;
+        if body.len() > max_bytes {
+            return Err(EastmoneyError::ResponseTooLarge { limit: max_bytes });
+        }
+        Ok(body)
+    }
 }
 
 fn validate_content_type(content_type: Option<&str>) -> Result<(), EastmoneyError> {
@@ -174,6 +273,40 @@ fn validate_content_type(content_type: Option<&str>) -> Result<(), EastmoneyErro
     }
 }
 
+fn validate_pdf_content_type(content_type: Option<&str>) -> Result<(), EastmoneyError> {
+    let media_type = content_type
+        .and_then(|value| value.split(';').next())
+        .map(str::trim);
+    if media_type.is_some_and(|value| value.eq_ignore_ascii_case("application/pdf")) {
+        Ok(())
+    } else {
+        Err(EastmoneyError::Protocol(format!(
+            "expected PDF Content-Type, received {content_type:?}"
+        )))
+    }
+}
+
+fn validate_html_content_type(content_type: Option<&str>) -> Result<(), EastmoneyError> {
+    let content_type = content_type.ok_or_else(|| {
+        EastmoneyError::Protocol("Eastmoney HTML response has no Content-Type header".into())
+    })?;
+    let mut parts = content_type.split(';').map(str::trim);
+    let media_type = parts.next().unwrap_or_default();
+    let utf8 = parts.any(|part| {
+        part.split_once('=').is_some_and(|(name, value)| {
+            name.trim().eq_ignore_ascii_case("charset")
+                && value.trim().trim_matches('"').eq_ignore_ascii_case("utf-8")
+        })
+    });
+    if media_type.eq_ignore_ascii_case("text/html") && utf8 {
+        Ok(())
+    } else {
+        Err(EastmoneyError::Protocol(format!(
+            "expected UTF-8 HTML Content-Type, received {content_type:?}"
+        )))
+    }
+}
+
 impl EastmoneyTransport for HttpsTransport {
     fn get(
         &self,
@@ -192,6 +325,34 @@ impl EastmoneyTransport for HttpsTransport {
         max_bytes: usize,
     ) -> Result<Vec<u8>, EastmoneyError> {
         self.post_request(url, headers, body, max_bytes)
+    }
+
+    fn get_pdf(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        self.get_pdf_request(url, headers, max_bytes)
+    }
+
+    fn get_html(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, EastmoneyError> {
+        self.get_html_request(url, headers, max_bytes)
+    }
+}
+
+pub(crate) fn validate_news_page_endpoint(url: &str) -> Result<(), EastmoneyError> {
+    if url == "https://roll.eastmoney.com/finance.html" {
+        Ok(())
+    } else {
+        Err(EastmoneyError::InvalidRequest(
+            "latest news must use the exact Eastmoney finance rolling page".into(),
+        ))
     }
 }
 
@@ -224,19 +385,28 @@ pub(crate) fn validate_endpoint(url: &str) -> Result<(), EastmoneyError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_content_type, validate_endpoint, HttpsTransport};
+    use super::{
+        validate_content_type, validate_endpoint, validate_html_content_type,
+        validate_news_page_endpoint, validate_pdf_content_type, HttpsTransport,
+    };
     use std::sync::mpsc;
     use std::time::Duration;
 
     #[test]
     fn endpoint_allowlist_rejects_non_https_redirect_targets_and_lookalikes() {
         assert!(validate_endpoint("https://push2.eastmoney.com/api").is_ok());
+        assert!(validate_endpoint("https://pdf.dfcfw.com/pdf/H3_AP1_1.pdf").is_ok());
         assert!(validate_endpoint("https://push2.eastmoney.com:443/api").is_ok());
         assert!(validate_endpoint("https://search-api-web.eastmoney.com/search/jsonp").is_err());
         assert!(validate_endpoint("http://push2.eastmoney.com/api").is_err());
         assert!(validate_endpoint("https://push2.eastmoney.com.example/api").is_err());
         assert!(validate_endpoint("https://user@push2.eastmoney.com/api").is_err());
         assert!(validate_endpoint("https://push2.eastmoney.com:8443/api").is_err());
+        assert!(validate_news_page_endpoint("https://roll.eastmoney.com/finance.html").is_ok());
+        assert!(validate_news_page_endpoint("https://roll.eastmoney.com/finance_2.html").is_err());
+        assert!(
+            validate_news_page_endpoint("https://roll.eastmoney.com.example/finance.html").is_err()
+        );
     }
 
     #[test]
@@ -281,5 +451,12 @@ mod tests {
         assert!(validate_content_type(None).is_err());
         assert!(validate_content_type(Some("text/html")).is_err());
         assert!(validate_content_type(Some("application/octet-stream")).is_err());
+        assert!(validate_pdf_content_type(Some("application/pdf")).is_ok());
+        assert!(validate_pdf_content_type(Some("application/pdf;charset=utf-8")).is_ok());
+        assert!(validate_pdf_content_type(Some("application/json")).is_err());
+        assert!(validate_html_content_type(Some("text/html; charset=utf-8")).is_ok());
+        assert!(validate_html_content_type(Some("TEXT/HTML; Charset=\"UTF-8\"")).is_ok());
+        assert!(validate_html_content_type(Some("text/html")).is_err());
+        assert!(validate_html_content_type(Some("application/json")).is_err());
     }
 }

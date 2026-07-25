@@ -4,6 +4,7 @@
 mod adapters;
 mod discovery;
 mod error;
+mod intelligence;
 mod router;
 mod source;
 
@@ -31,9 +32,16 @@ pub use adapters::{
 };
 pub use discovery::{
     board_constituent_source, board_directory_source, dragon_tiger_discovery_source,
-    BoardConstituentRouter, BoardDirectoryRouter, DragonTigerDiscoveryRouter,
+    join_board_membership_names, BoardConstituentRouter, BoardDirectoryRouter,
+    DragonTigerDiscoveryRouter, NamedBoardMembership,
 };
 pub use error::{FailureAction, FailureKind, SourceError};
+pub use intelligence::{
+    announcement_discovery_source, economic_calendar_source, foreign_exchange_source,
+    futures_delivery_source, global_index_source, policy_document_source, research_document_source,
+    AnnouncementDiscoveryRouter, EconomicCalendarRouter, ForeignExchangeRouter,
+    FuturesDeliveryRouter, GlobalIndexRouter, PolicyDocumentRouter, ResearchDocumentRouter,
+};
 pub use router::{
     AcceptancePolicy, AttemptStatus, FailoverChain, RouteAttempt, RouteOutcome, RouterError,
 };

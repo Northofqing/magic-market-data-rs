@@ -1,8 +1,8 @@
 # 巨潮资讯公告与互动易接入
 
 `magic-cninfo-rs` 是只读的公告/互动问答 Provider，实现
-`Announcements` 与 `InvestorQuestions`。它不读取浏览器 Cookie、桌面客户端、
-账户、持仓或交易信息。
+`Announcements`、`AnnouncementDiscovery` 与 `InvestorQuestions`。它不读取浏览器
+Cookie、桌面客户端、账户、持仓或交易信息。
 
 ## 数据源与映射
 
@@ -30,6 +30,11 @@ https://static.cninfo.com.cn/
 - 规范详情 URL 与 PDF URL；
 - 对应证券和完整 `SourceEvidence`。
 
+全市场公告发现使用空 `stock` 的官方公告查询，在本地 limit 或交易所过滤之前读取
+并验证全部远程页。`totalAnnouncement`、`totalRecordNum`、`totalpages`、
+`hasMore`、累计条数和公告 ID 必须一致。每条股票公告同时保留证券代码与
+`secName` 股票名称；缺失名称、非股票代码或证券/交易所不一致都会失败。
+
 互动易映射为 `InvestorQuestion`：
 
 - 源问题 ID、问题内容与提问时间；
@@ -39,15 +44,15 @@ https://static.cninfo.com.cn/
 
 ## 分页、限流与错误
 
-- 公共请求最多 300 条；
-- 每页最多 30 条，最多自动读取 10 页；
+- 个股公告请求最多 300 条；全市场发现请求最多 10,000 条；
+- 每页最多 30 条；个股最多自动读取 10 页，全市场最多 334 页；
 - 单响应最多 8 MiB；
 - 默认超时 15 秒；
 - 所有客户端克隆共享串行请求门，完整响应读取期间并发为 1；
 - 请求起始间隔至少 1 秒；
 - 空结果、字段不完整、总数/分页矛盾、非法 URL 或源端错误都返回 typed error。
 
-capability 只声明公告和互动问答；个股新闻与全球新闻明确不支持。
+capability 声明个股公告、全市场公告发现和互动问答；个股新闻与全球新闻明确不支持。
 
 ## 探针
 
@@ -60,9 +65,11 @@ MAGIC_CNINFO_LOAD_PACING_MS=1000 \
 cargo run -p magic-cninfo-rs --example load_probe --release --locked --offline
 ```
 
-live probe 默认使用华电辽能 `600396.SH` 验证映射和公告，并使用比亚迪
-`002594.SZ` 验证互动易。两个批次都打印 provenance、quality 和全部记录；任何
-一项失败都会非零退出。load probe 只压公告链路，最多五次，不代表服务 SLA。
+live probe 默认使用华电辽能 `600396.SH` 验证映射和公告、用
+`MAGIC_CNINFO_DISCOVERY_DATE`（默认 `2026-07-24`）验证全市场代码+名称，并使用
+比亚迪 `002594.SZ` 验证互动易。所有批次都打印 provenance、quality 和全部记录；
+任何一项失败都会非零退出。load probe 只压个股公告链路，最多五次，不代表服务
+SLA。
 
 ## 生产边界
 

@@ -8,12 +8,13 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 测试默认不访问公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧
 缓存或零值冒充实盘成功。
 
-> 当前状态（2026-07-24）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
+> 当前状态（2026-07-25）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS、Jin10、The Paper、Baidu，以及 SSE/SZSE 官方公告与龙虎榜、SZSE Quote/五档和 HKEX
 > 北向日统计已通过真实网络验收；Eastmoney 已声明能力的
 > live/load 探针全部通过，
 > 分钟/日级资金流因当前网络返回 empty reply 而保持未声明能力；关键词新闻响应没有
-> 结构化证券身份，也不伪装成个股新闻。两者只作为未准入诊断运行。
+> 结构化证券身份，也不伪装成个股新闻。东财财经滚动页已作为独立全局最新资讯实现，
+> 不把新闻文本提升为证券身份。
 > Choice/EMQuant 已完成设备激活和 API 登录，日线与日级资金流已取得
 > 真实记录，Quote、盘口和分钟线仍因 `10001012/EQERR_ACCESS_INSUFFICIENCE` 待补
 > 权限。iWencai 已实现正式 API Key 鉴权，当前没有授权 Key，因此真实 401 会按设计
@@ -47,7 +48,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
 | `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖基础行情、沪深财务三表和沪市 ETF 期权 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
 | `magic-emquant-rs` | 通过独立 C++ bridge 调用官方 Choice/EMQuant SDK 的只读适配层 | 厂商 SDK、授权和激活文件不进入仓库 |
-| `magic-eastmoney-rs` | 东财公开研报、资金流解析、龙虎榜、资本事件、涨跌停池和人气 | 与 Choice/EMQuant 身份分离；关键词新闻无结构化证券身份，不声明个股新闻能力 |
+| `magic-eastmoney-rs` | 东财公开研报、最新财经资讯、资金流解析、龙虎榜、资本事件、涨跌停池和人气 | 与 Choice/EMQuant 身份分离；最新资讯不伪装成个股新闻 |
 | `magic-cninfo-rs` | 巨潮公告/PDF 与互动易问答 | 只读公开信息；不读取账户或桌面登录态 |
 | `magic-ths-rs` | 同花顺一致预期、强势原因、涨停池和热榜 | 只读公开补充源；字段/频率以当前探针为准 |
 | `magic-cls-rs` | 财联社签名电报/全球新闻 | 只支持全局电报，不伪造个股过滤 |
@@ -120,10 +121,10 @@ Router 适配器已经通过确定性测试。
 | --- | --- | --- |
 | 行情增强 | `MarketStatistics`、`TechnicalBar` | Tencent 股票/指数/ETF 统计与 Baidu 未复权日 K/MA 实盘 |
 | 研报与一致预期 | `ResearchReport`、`ConsensusSnapshot`、`SemanticSearchDocument` | Eastmoney 研报、THS 一致预期实盘；iWencai 已实现/待授权 Key |
-| 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 与 SSE/SZSE 龙虎榜、Eastmoney/THS 人气、THS 强势原因实盘；板块归属/概念命中待源 |
+| 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 与 SSE/SZSE 龙虎榜、TDX 行业/概念目录和成员、Eastmoney/THS 人气、THS 强势原因实盘 |
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
-| 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | 契约/路由完成；没有 Provider 获得已验证的 15:35 Top10 语义 |
-| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10 全球财经新闻，The Paper 原生财经文章，CNInfo 公告/互动易实盘；个股新闻仍待有结构化证券身份的来源 |
+| 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Eastmoney 严格当前日 15:35 后榜单 Provider 与二次路由校验完成 |
+| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10 全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；个股新闻仍待结构化证券身份来源 |
 | 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | Sina 沪深三表实盘；SecurityProfile/TDX 映射待接 |
 | 打板 | 四类 `LimitPoolEntry` | Eastmoney 四类池与 THS 涨停池实盘；字段缺失不跨源猜测 |
 | ETF 期权 | `OptionContract`、`OptionQuote`、`OptionGreeks` | Sina 510050 实盘；510300/588000/510500 已实现待实测 |
@@ -163,21 +164,39 @@ Router 适配器已经通过确定性测试。
 | ETF 期权 | 不支持 | 不支持 | 510050 实盘；另 3 个沪市 ETF 已实现待实测 | 不支持 |
 | 除权除息 | 实盘：XDXR 分红/送股/配股/缩股历史 | 不支持 | 不支持 | 当前未接入 |
 | 板块/F10/基金 | 实盘：行业/概念/指数、F10、基金数据 | 不支持 | 不支持 | 当前未接入 |
+| 全球指数/汇率 | 不支持 | 不支持 | 实盘：6 个全球指数、8 个汇率对 | 当前未接入 |
 | 开盘集合竞价 | 不支持 | 不支持 | 不支持 | 不支持：完整字段集尚未证明 |
 
 ### 公共研究、内容与信号 Provider
 
 | Provider | 已真实取得 | 当前明确边界 |
 | --- | --- | --- |
-| Eastmoney Web | 个股/行业研报、三类板块流、龙虎榜、融资融券、大宗、户数、解禁、分红、四类打板、人气 | 当前网络对两个资金流 host 返回 empty reply；关键词新闻无证券身份；PDF 只给 URL；无已验证 15:35 Top10 |
-| CNInfo | 华电辽能公告/PDF metadata、比亚迪互动易问答 | 内容源，不提供行情；PDF 不由 crate 下载 |
+| Eastmoney Web | 个股/行业研报及原始 PDF、最新财经资讯、三类板块流、个股/全市场龙虎榜、融资融券、大宗、户数、解禁、分红、四类打板、人气、严格 15:35 资金榜 | 最新资讯无证券身份；关键词搜索不准入；15:35 榜只允许中国当前日且须在窗口后调用 |
+| CNInfo | 个股公告、完整全市场公告发现、PDF metadata、互动易问答 | 内容源，不提供行情；公告 PDF 仍只返回 URL |
 | THS | 一致预期、强势原因、涨停池/原因、股票热榜 | 只声明已验证涨停池，不声明其他三类池 |
 | CLS | 签名全球电报及来源时间、发布者、关联股票/主题 | 不伪造个股过滤，不是行情源 |
-| Jin10 | 公开 7x24 财经快讯/文章及来源时间、主题 | 排除锁定 VIP 行；不请求受保护详情；不伪造个股过滤 |
+| Jin10 | 公开 7x24 财经快讯/文章及来源时间、主题；公开经济日历 | 排除锁定 VIP 行；不请求受保护详情；不伪造个股过滤 |
 | The Paper | 财经频道原生文章、栏目、标签及来源时间 | 排除外链转载；不把文本证券名提升为结构化身份 |
 | Baidu | 华电辽能未复权日 K、MA5/10/20 | 不提供实时 Quote、分钟线或 Level-2 |
 | iWencai | 正式 X-Claw 鉴权和语义结果解析 | 真实数据待合法 API Key；不读取 Cookie/桌面登录态 |
-| SSE/SZSE/HKEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
+| SSE/SZSE/HKEX/CFFEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10、CFFEX 股指期货交割通知 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
+| State Council | 国务院政策库 `gongwen`/`bumenfile` 官方文件 | 仅规范 `www.gov.cn` 文件；不是新闻或行情源 |
+
+### 市场发现、全球与日历能力
+
+| 能力 | 生产 Provider | 严格合同 |
+| --- | --- | --- |
+| 全市场龙虎榜 | Eastmoney | 完整读取交易日数据后过滤/截断；源 `TRADE_ID` 唯一；代码与名称同时保留 |
+| 板块目录/成员/反查 | TDX + 名称元数据联查 | `block_fg.dat`/`block_gn.dat`；分类、成员数、重复身份和请求证券均校验；展示结果保留代码、名称及两份独立证据 |
+| 全市场公告 | CNInfo | 空证券条件完整翻页；总数/页数/`hasMore` 原子一致；代码与名称同时保留 |
+| 最新财经资讯 | Eastmoney | 精确滚动首屏；完整列表校验后截断；财经分类、分钟倒序、数字文章 ID |
+| 全球指数 | Sina | Dow/Nasdaq/S&P 500/Nikkei/Hang Seng/FTSE，精确请求与返回数量 |
+| 外汇 | Sina | USD/CNY 等 8 个已验证汇率对，保留源日期时间 |
+| 经济日历 | Jin10 | 仅公开未锁 type-1；保留前值/预期/实际/修正值和重要性 |
+| 官方政策 | State Council | 仅国务院官方搜索与 `www.gov.cn` 规范链接，页面上限 50 |
+| 研报 PDF 正文 | Eastmoney | 精确研报身份、`application/pdf`、`%PDF-`、最大 32 MiB |
+| 期货交割日历 | CFFEX | 官方通知必须明确 IF/IH/IC/IM 日期及现金交割，不使用公式推算 |
+| 15:35 资金榜 | Eastmoney | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称 |
 
 ### TDX
 
@@ -643,7 +662,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Sina load probe | 通过 | mixed 20/4、财务 6/2、510050 期权 6/2 均零失败 |
 | Router live probe | 通过 | TDX 质量拒绝被保留，Tencent 合格 Quote 被选中 |
 | EMQuant live probe | 部分通过 | 登录成功；真实日线、日级资金流通过；Quote/盘口/分钟返回 `10001012`，完整 probe 按设计退出非零 |
-| Eastmoney live/load | 通过（已声明能力） | live 的研报、板块、龙虎榜、资本数据、四类池和人气通过；load 3/3、最小高层 attempt 起始间隔 1002 ms；未声明资金流/关键词新闻保持诊断 |
+| Eastmoney live/load | 通过（已声明能力） | live 的研报、最新财经资讯、板块、龙虎榜、资本数据、四类池和人气通过；未声明资金流/关键词新闻保持诊断 |
 | CNInfo live/load | 通过 | 公告 3 条、互动易 3 条；load 3/3，最小请求起始间隔 1004 ms |
 | THS live/load | 通过 | 一致预期、强势原因、涨停池、热榜；load 3/3，最小请求起始间隔 1002 ms |
 | CLS live/load | 通过 | 签名电报 5 条；load 2/2、20 条记录、零失败 |
@@ -666,7 +685,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | [Tencent 接入合同](docs/integrations/tencent-web.md) | 端点、统计字段/单位、市场/周期边界与负载结果 |
 | [Sina 接入合同](docs/integrations/sina-web.md) | 基础行情、财务三表、ETF 期权、字段与负载结果 |
 | [Choice/EMQuant 接入](docs/integrations/eastmoney-emquant.md) | SDK bridge、激活、能力映射和当前权限状态 |
-| [Eastmoney Web 接入](docs/integrations/eastmoney-web.md) | 研报、资金面、龙虎榜、打板、人气及未准入诊断 |
+| [Eastmoney Web 接入](docs/integrations/eastmoney-web.md) | 研报、最新财经资讯、资金面、龙虎榜、打板、人气及未准入诊断 |
 | [CNInfo 接入](docs/integrations/cninfo-web.md) | 证券/org 映射、公告/PDF 和互动易问答 |
 | [THS 接入](docs/integrations/tonghuashun-web.md) | 一致预期、强势原因、涨停池和热榜 |
 | [CLS 接入](docs/integrations/cls-web.md) | 签名全球电报、字段和限流边界 |

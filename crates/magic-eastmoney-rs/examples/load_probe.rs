@@ -2,9 +2,8 @@ use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
 use magic_market_core::{
     AssetClass, BoardCategory, BoardFlows, DataBatch, DragonTigerDiscovery,
     DragonTigerDiscoveryRequest, Exchange, FlowInterval, FlowScope, FundFlowRequest,
-    FundFlowSeries, InstrumentDateRangeRequest, InstrumentId, IsoDate, LimitPoolKind,
-    LimitPoolRequest, LimitPools, NewsProvider, PopularityData, PositiveU32, ReportScope,
-    ResearchReports, ResearchRequest,
+    FundFlowSeries, InstrumentId, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools,
+    NewsProvider, PopularityData, PositiveU32, ReportScope, ResearchReports, ResearchRequest,
 };
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -187,7 +186,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error>> {
-    const MIXED: &[&str] = &["research", "board-flow", "limit-pool", "popularity"];
+    const MIXED: &[&str] = &["research", "board-flow", "limit-pool", "popularity", "news"];
     const ALL: &[&str] = &[
         "research",
         "fund-flow",
@@ -212,7 +211,7 @@ fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error
 }
 
 fn is_diagnostic_operation(operation: &str) -> bool {
-    matches!(operation, "fund-flow" | "news")
+    operation == "fund-flow"
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,8 +280,7 @@ fn run_operation(
             print_batch(client.discover_dragon_tiger(&request)?);
         }
         "news" => {
-            let request = InstrumentDateRangeRequest::new(instrument.clone(), small)?;
-            print_batch(client.instrument_news(&request)?);
+            print_batch(client.global_news(small)?);
         }
         _ => {
             return Err(EastmoneyError::InvalidRequest(format!(
@@ -323,7 +321,7 @@ mod tests {
 
     #[test]
     fn mixed_rotates_only_admitted_operations() {
-        let selected = (0..8)
+        let selected = (0..10)
             .map(|attempt| select_operation("mixed", attempt).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(
@@ -333,20 +331,22 @@ mod tests {
                 "board-flow",
                 "limit-pool",
                 "popularity",
+                "news",
                 "research",
                 "board-flow",
                 "limit-pool",
-                "popularity"
+                "popularity",
+                "news"
             ]
         );
         assert!(!selected.contains(&"fund-flow"));
-        assert!(!selected.contains(&"news"));
+        assert!(selected.contains(&"news"));
     }
 
     #[test]
     fn unadmitted_operations_and_failure_statuses_are_explicit() {
         assert!(is_diagnostic_operation("fund-flow"));
-        assert!(is_diagnostic_operation("news"));
+        assert!(!is_diagnostic_operation("news"));
         assert!(!is_diagnostic_operation("research"));
         assert_eq!(
             completion_status(true, 0, 1),

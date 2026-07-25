@@ -55,19 +55,23 @@ impl DragonTigerDiscovery for EastmoneyClient {
                 continue;
             }
 
-            records.push(DragonTigerEntry::new(
-                NonEmptyText::new(format!("eastmoney:{date}:{trade_id}"))?,
-                instrument,
-                source_date,
-                optional_string(row.get("EXPLANATION"))?
-                    .map(NonEmptyText::new)
-                    .transpose()?,
-                optional_money(row, "BILLBOARD_BUY_AMT")?,
-                optional_money(row, "BILLBOARD_SELL_AMT")?,
-                optional_money(row, "BILLBOARD_NET_AMT")?,
-                percent(optional_f64(row.get("TURNOVERRATE"))?)?,
-                context.evidence_at(Some(&source_date_text))?,
-            )?);
+            let instrument_name = NonEmptyText::new(required_string(row, "SECURITY_NAME_ABBR")?)?;
+            records.push(
+                DragonTigerEntry::new(
+                    NonEmptyText::new(format!("eastmoney:{date}:{trade_id}"))?,
+                    instrument,
+                    source_date,
+                    optional_string(row.get("EXPLANATION"))?
+                        .map(NonEmptyText::new)
+                        .transpose()?,
+                    optional_money(row, "BILLBOARD_BUY_AMT")?,
+                    optional_money(row, "BILLBOARD_SELL_AMT")?,
+                    optional_money(row, "BILLBOARD_NET_AMT")?,
+                    percent(optional_f64(row.get("TURNOVERRATE"))?)?,
+                    context.evidence_at(Some(&source_date_text))?,
+                )?
+                .with_instrument_name(instrument_name),
+            );
         }
 
         context.finish_allow_empty(records)
@@ -152,10 +156,10 @@ mod tests {
         fn fixture() -> Self {
             Self {
                 rows: vec![
-                    row(101, "600000", "600000.SH", 100.0, 40.0, 60.0),
-                    row(102, "123275", "123275.SZ", 80.0, 30.0, 50.0),
-                    row(103, "920001", "920001.BJ", 70.0, 20.0, 50.0),
-                    row(104, "600000", "600000.SH", 20.0, 10.0, 10.0),
+                    row(101, "600000", "浦发银行", "600000.SH", 100.0, 40.0, 60.0),
+                    row(102, "123275", "沿浦转债", "123275.SZ", 80.0, 30.0, 50.0),
+                    row(103, "920001", "北交样本", "920001.BJ", 70.0, 20.0, 50.0),
+                    row(104, "600000", "浦发银行", "600000.SH", 20.0, 10.0, 10.0),
                 ],
             }
         }
@@ -193,10 +197,19 @@ mod tests {
         }
     }
 
-    fn row(trade_id: u64, code: &str, secucode: &str, buy: f64, sell: f64, net: f64) -> Value {
+    fn row(
+        trade_id: u64,
+        code: &str,
+        name: &str,
+        secucode: &str,
+        buy: f64,
+        sell: f64,
+        net: f64,
+    ) -> Value {
         json!({
             "TRADE_ID": trade_id,
             "SECURITY_CODE": code,
+            "SECURITY_NAME_ABBR": name,
             "SECUCODE": secucode,
             "SECURITY_TYPE_CODE": if code.starts_with('1') { "060" } else { "058001001" },
             "TRADE_DATE": "2026-07-24 00:00:00",
@@ -242,6 +255,10 @@ mod tests {
             batch.records()[0].entry_id().as_str(),
             "eastmoney:2026-07-24:101"
         );
+        assert_eq!(
+            batch.records()[0].instrument_name().unwrap().as_str(),
+            "浦发银行"
+        );
     }
 
     #[test]
@@ -285,6 +302,12 @@ mod tests {
         let mut wrong_net = DiscoveryTransport::fixture();
         wrong_net.rows[0]["BILLBOARD_NET_AMT"] = json!(59.0);
         assert!(EastmoneyClient::with_transport(wrong_net)
+            .discover_dragon_tiger(&request(10))
+            .is_err());
+
+        let mut missing_name = DiscoveryTransport::fixture();
+        missing_name.rows[0]["SECURITY_NAME_ABBR"] = Value::Null;
+        assert!(EastmoneyClient::with_transport(missing_name)
             .discover_dragon_tiger(&request(10))
             .is_err());
     }

@@ -6,9 +6,9 @@ mod transport;
 pub use transport::{CninfoTransport, HttpMethod, HttpRequest, HttpResponse};
 
 use magic_market_core::{
-    Announcement, Announcements, AssetClass, ContentCapabilities, DataBatch, Exchange, HttpsUrl,
-    InstrumentDateRangeRequest, InstrumentId, InvestorQuestion, InvestorQuestions, NonEmptyText,
-    Provenance, ProviderId, SourceEvidence,
+    Announcement, AnnouncementDiscovery, AnnouncementDiscoveryRequest, Announcements, AssetClass,
+    ContentCapabilities, DataBatch, Exchange, HttpsUrl, InstrumentDateRangeRequest, InstrumentId,
+    InvestorQuestion, InvestorQuestions, NonEmptyText, Provenance, ProviderId, SourceEvidence,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -69,6 +69,7 @@ pub struct CninfoConfig {
     pub minimum_interval: Duration,
     pub mapping_cache_ttl: Duration,
     pub max_pages: u32,
+    pub max_discovery_pages: u32,
 }
 
 impl Default for CninfoConfig {
@@ -82,6 +83,7 @@ impl Default for CninfoConfig {
             minimum_interval: Duration::from_secs(1),
             mapping_cache_ttl: Duration::from_secs(24 * 60 * 60),
             max_pages: 10,
+            max_discovery_pages: 334,
         }
     }
 }
@@ -114,6 +116,11 @@ impl CninfoConfig {
         if self.max_pages == 0 || self.max_pages > 10 {
             return Err(CninfoError::InvalidRequest(
                 "max_pages must be between 1 and 10".into(),
+            ));
+        }
+        if self.max_discovery_pages == 0 || self.max_discovery_pages > 334 {
+            return Err(CninfoError::InvalidRequest(
+                "max_discovery_pages must be between 1 and 334".into(),
             ));
         }
         Ok(())
@@ -201,6 +208,7 @@ impl CninfoClient {
             instrument_news: false,
             global_news: false,
             announcements: true,
+            announcement_discovery: true,
             investor_questions: true,
         }
     }
@@ -329,6 +337,43 @@ impl CninfoClient {
             ("category", String::new()),
             ("plate", String::new()),
             ("seDate", date_range),
+            ("searchkey", String::new()),
+            ("secid", String::new()),
+            ("sortName", String::new()),
+            ("sortType", String::new()),
+            ("isHLtitle", "false".into()),
+        ]);
+        let response = self.execute(HttpRequest {
+            method: HttpMethod::Post,
+            url: self.config.announcement_url.clone(),
+            headers: form_headers(
+                "https://www.cninfo.com.cn",
+                "https://www.cninfo.com.cn/new/disclosure",
+            ),
+            body,
+        })?;
+        ensure_json(&response)?;
+        serde_json::from_slice(&response.body)
+            .map_err(|error| CninfoError::Decode(error.to_string()))
+    }
+
+    fn announcement_discovery_page(
+        &self,
+        page: u32,
+        request: &AnnouncementDiscoveryRequest,
+    ) -> Result<AnnouncementPage, CninfoError> {
+        let body = encode_form(&[
+            ("stock", String::new()),
+            ("tabName", "fulltext".into()),
+            ("pageSize", PAGE_SIZE.to_string()),
+            ("pageNum", page.to_string()),
+            ("column", "szse".into()),
+            ("category", String::new()),
+            ("plate", String::new()),
+            (
+                "seDate",
+                format!("{}~{}", request.start().as_str(), request.end().as_str()),
+            ),
             ("searchkey", String::new()),
             ("secid", String::new()),
             ("sortName", String::new()),
@@ -508,6 +553,120 @@ impl Announcements for CninfoClient {
     }
 }
 
+impl AnnouncementDiscovery for CninfoClient {
+    type Error = CninfoError;
+
+    fn discover_announcements(
+        &self,
+        request: &AnnouncementDiscoveryRequest,
+    ) -> Result<DataBatch<Announcement>, Self::Error> {
+        let limit = request.limit().get() as usize;
+        let mut rows_to_map = Vec::with_capacity(limit);
+        let mut seen = HashSet::new();
+        let mut expected_total = None;
+        let mut expected_pages = None;
+        let mut page = 1_u32;
+
+        loop {
+            if rows_to_map.len() == limit {
+                break;
+            }
+            if page > self.config.max_discovery_pages {
+                return Err(CninfoError::Incomplete(format!(
+                    "announcement discovery requires more than {} pages",
+                    self.config.max_discovery_pages
+                )));
+            }
+
+            let response = self.announcement_discovery_page(page, request)?;
+            let total = required_page_count(
+                response
+                    .total_announcement
+                    .as_ref()
+                    .or(response.total_record_num.as_ref()),
+                "announcement total",
+            )?;
+            let pages = required_page_count(response.total_pages.as_ref(), "announcement pages")?;
+            if expected_total
+                .replace(total)
+                .is_some_and(|value| value != total)
+                || expected_pages
+                    .replace(pages)
+                    .is_some_and(|value| value != pages)
+            {
+                return Err(CninfoError::Schema(
+                    "announcement totals changed across pages".into(),
+                ));
+            }
+
+            let has_more = response
+                .has_more
+                .ok_or_else(|| CninfoError::Schema("announcement hasMore is missing".into()))?;
+            let rows = response.announcements.unwrap_or_default();
+            if (total > 0 || has_more) && rows.is_empty() {
+                return Err(CninfoError::Schema(
+                    "announcement discovery page is empty before completion".into(),
+                ));
+            }
+            for row in rows {
+                if rows_to_map.len() == limit {
+                    break;
+                }
+                let announcement_id =
+                    required_text(row.announcement_id.clone(), "announcement.announcementId")?;
+                if !seen.insert(announcement_id.clone()) {
+                    return Err(CninfoError::Schema(format!(
+                        "duplicate announcement {announcement_id} across discovery pages"
+                    )));
+                }
+                rows_to_map.push(row);
+            }
+
+            if !has_more {
+                if rows_to_map.len() < total as usize && rows_to_map.len() < limit {
+                    return Err(CninfoError::Incomplete(format!(
+                        "announcement discovery ended after {} of {total} source rows",
+                        rows_to_map.len()
+                    )));
+                }
+                break;
+            }
+            if u64::from(page) >= pages {
+                return Err(CninfoError::Schema(
+                    "announcement hasMore remained true on the declared final page".into(),
+                ));
+            }
+            page += 1;
+        }
+
+        if rows_to_map.is_empty() {
+            return Err(CninfoError::Incomplete(
+                "CNInfo returned no full-market announcements".into(),
+            ));
+        }
+        let observed_at = now()?;
+        let batch_id = format!(
+            "cninfo:{observed_at}:announcement-discovery:{}:{}",
+            request.start().as_str(),
+            request.end().as_str()
+        );
+        let mut records = Vec::with_capacity(rows_to_map.len());
+        let mut source_times = Vec::with_capacity(rows_to_map.len());
+        for row in rows_to_map {
+            let record = map_discovered_announcement(row, request, &observed_at, &batch_id)?;
+            source_times.push(record.published_at.as_str().to_owned());
+            records.push(record);
+        }
+        let provenance = provenance(
+            "cninfo-full-market",
+            &observed_at,
+            &batch_id,
+            source_times.iter().max().map(String::as_str),
+        )?;
+        Ok(DataBatch::strict(records, provenance))
+    }
+}
+
 impl InvestorQuestions for CninfoClient {
     type Error = CninfoError;
 
@@ -603,6 +762,12 @@ struct OrganizationWire {
 struct AnnouncementPage {
     #[serde(rename = "hasMore")]
     has_more: Option<bool>,
+    #[serde(rename = "totalAnnouncement")]
+    total_announcement: Option<Value>,
+    #[serde(rename = "totalRecordNum")]
+    total_record_num: Option<Value>,
+    #[serde(rename = "totalpages")]
+    total_pages: Option<Value>,
     announcements: Option<Vec<AnnouncementWire>>,
 }
 
@@ -612,6 +777,8 @@ struct AnnouncementWire {
     announcement_id: Option<String>,
     #[serde(rename = "secCode")]
     sec_code: Option<String>,
+    #[serde(rename = "secName")]
+    sec_name: Option<String>,
     #[serde(rename = "announcementTitle")]
     title: Option<String>,
     #[serde(rename = "announcementTypeName")]
@@ -690,6 +857,7 @@ fn map_announcement(
     Ok(Announcement {
         announcement_id: NonEmptyText::new(announcement_id.clone())?,
         instrument: request.instrument().clone(),
+        instrument_name: optional_nonempty(row.sec_name)?,
         category: optional_nonempty(row.category_name.or(row.category))?,
         title: NonEmptyText::new(normalize_required(row.title, "announcementTitle")?)?,
         published_at: NonEmptyText::new(published_at)?,
@@ -701,6 +869,68 @@ fn map_announcement(
             .transpose()?,
         evidence,
     })
+}
+
+fn map_discovered_announcement(
+    row: AnnouncementWire,
+    request: &AnnouncementDiscoveryRequest,
+    observed_at: &str,
+    batch_id: &str,
+) -> Result<Announcement, CninfoError> {
+    let code = required_text(row.sec_code, "announcement.secCode")?;
+    let instrument = discovered_equity(&code)?;
+    if request
+        .exchange()
+        .is_some_and(|exchange| exchange != instrument.exchange())
+    {
+        return Err(CninfoError::Schema(format!(
+            "announcement identity {code} does not match requested exchange"
+        )));
+    }
+    let announcement_id = required_text(row.announcement_id, "announcement.announcementId")?;
+    let published_at = parse_required_millis(row.published_at.as_ref(), "announcementTime")?;
+    ensure_discovery_range(&published_at, request)?;
+    let instrument_name = optional_nonempty(row.sec_name)?
+        .ok_or_else(|| CninfoError::Schema("announcement secName is missing".into()))?;
+    let pdf = row
+        .adjunct_url
+        .and_then(nonblank)
+        .ok_or_else(|| CninfoError::Schema("announcement adjunctUrl is missing".into()))
+        .and_then(pdf_url)?;
+    let mut evidence = SourceEvidence::new(ProviderId::Cninfo, observed_at, batch_id.to_owned())?;
+    evidence = evidence.with_source_at(published_at.clone())?;
+    Ok(Announcement {
+        announcement_id: NonEmptyText::new(announcement_id)?,
+        instrument,
+        instrument_name: Some(instrument_name),
+        category: optional_nonempty(row.category_name.or(row.category))?,
+        title: NonEmptyText::new(normalize_required(row.title, "announcementTitle")?)?,
+        published_at: NonEmptyText::new(published_at)?,
+        canonical_url: pdf.clone(),
+        pdf_url: Some(pdf),
+        evidence,
+    })
+}
+
+fn discovered_equity(code: &str) -> Result<InstrumentId, CninfoError> {
+    if code.len() != 6 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(CninfoError::Schema(format!(
+            "announcement secCode {code:?} is not a six-digit equity code"
+        )));
+    }
+    let exchange = match code.as_bytes()[0] {
+        b'6' => Exchange::Shanghai,
+        b'0' | b'3' => Exchange::Shenzhen,
+        b'4' | b'8' => Exchange::Beijing,
+        b'9' if code.starts_with("920") => Exchange::Beijing,
+        prefix => {
+            return Err(CninfoError::Unsupported(format!(
+                "announcement code {code} has unverified prefix {:?}",
+                char::from(prefix)
+            )));
+        }
+    };
+    Ok(InstrumentId::new(exchange, code, AssetClass::Equity)?)
 }
 
 fn map_question(
@@ -1012,6 +1242,11 @@ fn parse_optional_u64(value: Option<&Value>, field: &str) -> Result<Option<u64>,
     .ok_or_else(|| CninfoError::Schema(format!("{field} is not a non-negative integer")))
 }
 
+fn required_page_count(value: Option<&Value>, field: &str) -> Result<u64, CninfoError> {
+    parse_optional_u64(value, field)?
+        .ok_or_else(|| CninfoError::Schema(format!("{field} is missing")))
+}
+
 fn ensure_in_range(
     timestamp: &str,
     request: &InstrumentDateRangeRequest,
@@ -1024,6 +1259,21 @@ fn ensure_in_range(
     {
         return Err(CninfoError::Schema(format!(
             "source record date {date} is outside the requested range"
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_discovery_range(
+    timestamp: &str,
+    request: &AnnouncementDiscoveryRequest,
+) -> Result<(), CninfoError> {
+    let date = timestamp
+        .get(..10)
+        .ok_or_else(|| CninfoError::Schema("source timestamp has no date prefix".into()))?;
+    if date < request.start().as_str() || date > request.end().as_str() {
+        return Err(CninfoError::Schema(format!(
+            "source record date {date} is outside the requested discovery range"
         )));
     }
     Ok(())
@@ -1324,6 +1574,66 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert!(String::from_utf8_lossy(&requests[1].body).contains("isHLtitle=false"));
         assert!(!String::from_utf8_lossy(&requests[1].body).contains("Cookie"));
+    }
+
+    #[test]
+    fn full_market_announcement_discovery_keeps_stock_code_and_name() {
+        let body = r#"{
+          "hasMore": false,
+          "totalAnnouncement": 2,
+          "totalRecordNum": 2,
+          "totalpages": 1,
+          "announcements": [
+            {
+              "announcementId": "A-SH",
+              "secCode": "600396",
+              "secName": "华电辽能",
+              "announcementTitle": "上海公告",
+              "announcementTypeName": "公司公告",
+              "announcementTime": 1784822400000,
+              "adjunctUrl": "finalpage/2026-07-24/A-SH.PDF"
+            },
+            {
+              "announcementId": "A-SZ",
+              "secCode": "002594",
+              "secName": "比亚迪",
+              "announcementTitle": "深圳公告",
+              "announcementTypeName": "公司公告",
+              "announcementTime": 1784822400000,
+              "adjunctUrl": "finalpage/2026-07-24/A-SZ.PDF"
+            }
+          ]
+        }"#;
+        let client = CninfoClient::with_test_transport(FixtureTransport::new(vec![response(
+            DEFAULT_ANNOUNCEMENT_URL,
+            body,
+        )]));
+        let request = AnnouncementDiscoveryRequest::new(
+            magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+            magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+            magic_market_core::PositiveU32::new(2).unwrap(),
+        )
+        .unwrap();
+        let batch = client.discover_announcements(&request).unwrap();
+        assert_eq!(batch.records().len(), 2);
+        assert_eq!(batch.records()[0].instrument.code(), "600396");
+        assert_eq!(
+            batch.records()[0]
+                .instrument_name
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            "华电辽能"
+        );
+        assert_eq!(batch.records()[1].instrument.code(), "002594");
+        assert_eq!(
+            batch.records()[1]
+                .instrument_name
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            "比亚迪"
+        );
     }
 
     #[test]
