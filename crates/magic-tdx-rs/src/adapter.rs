@@ -900,6 +900,65 @@ pub(crate) fn ordered_order_book_quotes<'a>(
         .collect()
 }
 
+pub(crate) fn normalize_order_books(
+    source: &str,
+    instruments: &[InstrumentId],
+    quotes: Vec<SecurityQuote>,
+) -> Result<DataBatch<OrderBook>, TdxError> {
+    let ordered = ordered_order_book_quotes(instruments, quotes, source)?;
+    let observed_at = fetched_at()?;
+    let batch_id = format!("{source}:{observed_at}:order-book");
+    let mut books = Vec::with_capacity(ordered.len());
+    let mut issues = Vec::new();
+    for (id, quote) in ordered {
+        let bids = [
+            book_level(quote.bid1, quote.bid_vol1)?,
+            book_level(quote.bid2, quote.bid_vol2)?,
+            book_level(quote.bid3, quote.bid_vol3)?,
+            book_level(quote.bid4, quote.bid_vol4)?,
+            book_level(quote.bid5, quote.bid_vol5)?,
+        ];
+        let asks = [
+            book_level(quote.ask1, quote.ask_vol1)?,
+            book_level(quote.ask2, quote.ask_vol2)?,
+            book_level(quote.ask3, quote.ask_vol3)?,
+            book_level(quote.ask4, quote.ask_vol4)?,
+            book_level(quote.ask5, quote.ask_vol5)?,
+        ];
+        let total_bid_quantity = book_depth(&bids)?;
+        let total_ask_quantity = book_depth(&asks)?;
+        let levels_complete = bids
+            .iter()
+            .chain(&asks)
+            .all(|level| level.price().is_some());
+        if !levels_complete {
+            issues.push(format!(
+                "{}: one or more normalized order-book fields unavailable",
+                id.code()
+            ));
+        }
+        issues.push(format!(
+            "{}: TDX order-book source timestamp format is unverified",
+            id.code()
+        ));
+        books.push(OrderBook::new(
+            id.clone(),
+            bids,
+            asks,
+            total_bid_quantity,
+            total_ask_quantity,
+            DataStatus::Unavailable,
+            None,
+            observed_at.clone(),
+            ProviderId::Tdx,
+            batch_id.clone(),
+        )?);
+    }
+    let provenance =
+        magic_market_core::Provenance::new(source, observed_at)?.with_batch_id(batch_id)?;
+    Ok(DataBatch::best_effort(books, provenance, issues)?)
+}
+
 impl OrderBooks for TdxHqClient {
     type Error = TdxError;
     fn order_books(
@@ -908,58 +967,7 @@ impl OrderBooks for TdxHqClient {
     ) -> Result<DataBatch<OrderBook>, Self::Error> {
         let pairs = order_book_pairs(instruments, "TDX")?;
         let quotes = self.get_security_quotes(&pairs)?;
-        let ordered = ordered_order_book_quotes(instruments, quotes, "TDX")?;
-        let observed_at = fetched_at()?;
-        let batch_id = format!("tdx:{observed_at}:order-book");
-        let mut books = Vec::with_capacity(ordered.len());
-        let mut issues = Vec::new();
-        for (id, quote) in ordered {
-            let bids = [
-                book_level(quote.bid1, quote.bid_vol1)?,
-                book_level(quote.bid2, quote.bid_vol2)?,
-                book_level(quote.bid3, quote.bid_vol3)?,
-                book_level(quote.bid4, quote.bid_vol4)?,
-                book_level(quote.bid5, quote.bid_vol5)?,
-            ];
-            let asks = [
-                book_level(quote.ask1, quote.ask_vol1)?,
-                book_level(quote.ask2, quote.ask_vol2)?,
-                book_level(quote.ask3, quote.ask_vol3)?,
-                book_level(quote.ask4, quote.ask_vol4)?,
-                book_level(quote.ask5, quote.ask_vol5)?,
-            ];
-            let total_bid_quantity = book_depth(&bids)?;
-            let total_ask_quantity = book_depth(&asks)?;
-            let levels_complete = bids
-                .iter()
-                .chain(&asks)
-                .all(|level| level.price().is_some());
-            if !levels_complete {
-                issues.push(format!(
-                    "{}: one or more normalized order-book fields unavailable",
-                    id.code()
-                ));
-            }
-            issues.push(format!(
-                "{}: TDX order-book source timestamp format is unverified",
-                id.code()
-            ));
-            books.push(OrderBook::new(
-                id.clone(),
-                bids,
-                asks,
-                total_bid_quantity,
-                total_ask_quantity,
-                magic_market_core::DataStatus::Unavailable,
-                None,
-                observed_at.clone(),
-                magic_market_core::ProviderId::Tdx,
-                batch_id.clone(),
-            )?);
-        }
-        let provenance =
-            magic_market_core::Provenance::new("tdx", observed_at)?.with_batch_id(batch_id)?;
-        Ok(DataBatch::best_effort(books, provenance, issues)?)
+        normalize_order_books("tdx", instruments, quotes)
     }
 }
 
@@ -971,58 +979,7 @@ impl OrderBooks for crate::TdxSmartClient {
     ) -> Result<DataBatch<OrderBook>, Self::Error> {
         let pairs = order_book_pairs(instruments, "TDX smart")?;
         let quotes = self.get_security_quotes(&pairs)?;
-        let ordered = ordered_order_book_quotes(instruments, quotes, "TDX smart")?;
-        let observed_at = fetched_at()?;
-        let batch_id = format!("tdx-smart:{observed_at}:order-book");
-        let mut books = Vec::with_capacity(ordered.len());
-        let mut issues = Vec::new();
-        for (id, quote) in ordered {
-            let bids = [
-                book_level(quote.bid1, quote.bid_vol1)?,
-                book_level(quote.bid2, quote.bid_vol2)?,
-                book_level(quote.bid3, quote.bid_vol3)?,
-                book_level(quote.bid4, quote.bid_vol4)?,
-                book_level(quote.bid5, quote.bid_vol5)?,
-            ];
-            let asks = [
-                book_level(quote.ask1, quote.ask_vol1)?,
-                book_level(quote.ask2, quote.ask_vol2)?,
-                book_level(quote.ask3, quote.ask_vol3)?,
-                book_level(quote.ask4, quote.ask_vol4)?,
-                book_level(quote.ask5, quote.ask_vol5)?,
-            ];
-            let total_bid_quantity = book_depth(&bids)?;
-            let total_ask_quantity = book_depth(&asks)?;
-            let levels_complete = bids
-                .iter()
-                .chain(&asks)
-                .all(|level| level.price().is_some());
-            if !levels_complete {
-                issues.push(format!(
-                    "{}: one or more normalized order-book fields unavailable",
-                    id.code()
-                ));
-            }
-            issues.push(format!(
-                "{}: TDX order-book source timestamp format is unverified",
-                id.code()
-            ));
-            books.push(OrderBook::new(
-                id.clone(),
-                bids,
-                asks,
-                total_bid_quantity,
-                total_ask_quantity,
-                magic_market_core::DataStatus::Unavailable,
-                None,
-                observed_at.clone(),
-                magic_market_core::ProviderId::Tdx,
-                batch_id.clone(),
-            )?);
-        }
-        let provenance = magic_market_core::Provenance::new("tdx-smart", observed_at)?
-            .with_batch_id(batch_id)?;
-        Ok(DataBatch::best_effort(books, provenance, issues)?)
+        normalize_order_books("tdx-smart", instruments, quotes)
     }
 }
 
@@ -1271,13 +1228,72 @@ mod tests {
             reject_unsupported_bar_range(&request),
             Err(TdxError::Unsupported(_))
         ));
+        let unrestricted = BarsRequest::new(instrument("600396"), BarInterval::Day, 5).unwrap();
+        assert!(reject_unsupported_bar_range(&unrestricted).is_ok());
     }
 
     #[test]
-    fn maps_standard_one_minute_monthly_and_yearly_categories_exactly() {
-        assert_eq!(category(BarInterval::Minute1).unwrap(), 8);
-        assert_eq!(category(BarInterval::Month).unwrap(), 6);
-        assert_eq!(category(BarInterval::Year).unwrap(), 11);
+    fn maps_every_bar_category_exactly() {
+        let cases = [
+            (BarInterval::Minute1, KLINE_1MIN),
+            (BarInterval::Minute5, KLINE_5MIN),
+            (BarInterval::Minute15, KLINE_15MIN),
+            (BarInterval::Minute30, KLINE_30MIN),
+            (BarInterval::Hour1, KLINE_1HOUR),
+            (BarInterval::Day, KLINE_DAILY),
+            (BarInterval::Week, KLINE_WEEKLY),
+            (BarInterval::Month, KLINE_MONTHLY),
+            (BarInterval::Year, KLINE_YEARLY),
+        ];
+        for (interval, expected) in cases {
+            assert_eq!(category(interval).unwrap(), expected);
+        }
+    }
+
+    fn source_bar(datetime: &str) -> SecurityBar {
+        SecurityBar {
+            open: 10.0,
+            close: 10.5,
+            high: 11.0,
+            low: 9.5,
+            vol: 100.0,
+            amount: 1_000.0,
+            year: 2026,
+            month: 7,
+            day: 25,
+            hour: 0,
+            minute: 0,
+            datetime: datetime.into(),
+        }
+    }
+
+    #[test]
+    fn strict_bar_batches_require_records_and_keep_source_time() {
+        assert!(ensure_nonempty::<SecurityBar>(&[]).is_err());
+        assert!(strict_bars("test", Vec::new()).is_err());
+
+        let batch = strict_bars("test", vec![source_bar("2026-07-25")]).unwrap();
+        assert_eq!(batch.records().len(), 1);
+        assert_eq!(batch.provenance().source_at(), Some("2026-07-25"));
+        assert!(bars_provenance("test", &[]).unwrap().source_at().is_none());
+    }
+
+    #[test]
+    fn minute_date_and_clock_helpers_reject_bad_shapes() {
+        assert_eq!(compact_date("2026-07-25").unwrap(), 20_260_725);
+        assert_eq!(compact_date("20260725").unwrap(), 20_260_725);
+        for invalid in ["2026-7-25", "2026-0x-25", ""] {
+            assert!(compact_date(invalid).is_err());
+        }
+        assert_eq!(display_date(20_260_725).unwrap(), "2026-07-25");
+        assert!(display_date(100_000_000).is_err());
+
+        for valid in ["09:31", "11:30", "13:01", "15:00"] {
+            assert!(valid_tdx_minute(valid));
+        }
+        for invalid in ["09:30", "11:31", "13:00", "15:01", "9:31", "0931"] {
+            assert!(!valid_tdx_minute(invalid));
+        }
     }
 
     #[test]
@@ -1289,6 +1305,17 @@ mod tests {
         assert!(half_present.price().is_none());
         assert!(half_present.quantity().is_none());
         assert!(book_level(10.0, -1.0).is_err());
+        assert!(book_level(f64::NAN, 1.0).is_err());
+        assert!(book_level(10.0, f64::INFINITY).is_err());
+        let present = book_level(10.0, 2.0).unwrap();
+        assert_eq!(present.price(), Some(Price::new(10.0).unwrap()));
+        assert_eq!(present.quantity(), Some(Quantity::new(2.0).unwrap()));
+
+        assert_eq!(book_depth(&[BookLevel::unavailable(); 5]).unwrap(), None);
+        assert_eq!(
+            book_depth(&[present; 5]).unwrap(),
+            Some(Quantity::new(10.0).unwrap())
+        );
     }
     use magic_market_core::{AssetClass, Exchange};
 
@@ -1387,6 +1414,46 @@ mod tests {
         .is_err());
     }
 
+    #[test]
+    fn order_book_normalization_preserves_order_depth_and_unavailable_tail() {
+        let instruments = [instrument("600001"), instrument("600002")];
+        let full = normalize_order_books(
+            "test",
+            &instruments,
+            vec![source_quote("600002", 102.0), source_quote("600001", 101.0)],
+        )
+        .unwrap();
+        assert_eq!(full.records()[0].instrument().code(), "600001");
+        assert_eq!(
+            full.records()[0].total_bid_quantity(),
+            Some(Quantity::new(60.0).unwrap())
+        );
+        assert_eq!(
+            full.records()[0].total_ask_quantity(),
+            Some(Quantity::new(85.0).unwrap())
+        );
+        assert_eq!(full.quality().issues().len(), 2);
+
+        let mut partial = source_quote("600001", 101.0);
+        partial.bid2 = 0.0;
+        partial.bid_vol2 = 0.0;
+        partial.ask5 = 0.0;
+        partial.ask_vol5 = 0.0;
+        let partial =
+            normalize_order_books("test", &[instrument("600001")], vec![partial]).unwrap();
+        assert!(partial.records()[0].bids()[1].price().is_none());
+        assert!(partial.records()[0].asks()[4].price().is_none());
+        assert_eq!(
+            partial.records()[0].total_bid_quantity(),
+            Some(Quantity::new(49.0).unwrap())
+        );
+        assert_eq!(partial.quality().issues().len(), 2);
+
+        let mut invalid = source_quote("600001", 101.0);
+        invalid.bid1 = -1.0;
+        assert!(normalize_order_books("test", &[instrument("600001")], vec![invalid]).is_err());
+    }
+
     fn source_trade(index: u32, side: u32) -> TickData {
         TickData {
             time: format!("10:00:{index:02}"),
@@ -1422,11 +1489,25 @@ mod tests {
 
     #[test]
     fn normalized_quotes_reject_duplicates_and_missing_records() {
+        assert!(normalize_quotes("test", &[], Vec::new()).is_err());
+
         let duplicated = [instrument("600001"), instrument("600001")];
         assert!(normalize_quotes("test", &duplicated, Vec::new()).is_err());
 
         let requested = [instrument("600001"), instrument("600002")];
         assert!(normalize_quotes("test", &requested, vec![source_quote("600001", 102.0)]).is_err());
+        assert!(normalize_quotes(
+            "test",
+            &requested,
+            vec![source_quote("600001", 102.0), source_quote("600001", 103.0)],
+        )
+        .is_err());
+        assert!(normalize_quotes(
+            "test",
+            &[instrument("600001")],
+            vec![source_quote("600002", 102.0)],
+        )
+        .is_err());
     }
 
     #[test]
@@ -1440,6 +1521,62 @@ mod tests {
             assert!(error.to_string().contains("current price"));
             assert!(error.to_string().contains(&value.to_string()));
         }
+    }
+
+    #[test]
+    fn optional_quote_prices_preserve_zero_and_reject_invalid_values() {
+        assert_eq!(optional_quote_price(0.0, "open").unwrap(), None);
+        assert_eq!(
+            optional_quote_price(12.5, "open").unwrap(),
+            Some(Price::new(12.5).unwrap())
+        );
+        for value in [-1.0, f64::NAN, f64::INFINITY] {
+            assert!(optional_quote_price(value, "open").is_err());
+        }
+    }
+
+    #[test]
+    fn quote_normalization_rejects_invalid_optional_amount_and_volume_fields() {
+        let requested = [instrument("600001")];
+        for field in ["last_close", "open", "high", "low"] {
+            let mut quote = source_quote("600001", 102.0);
+            match field {
+                "last_close" => quote.last_close = -1.0,
+                "open" => quote.open = f64::NAN,
+                "high" => quote.high = f64::INFINITY,
+                "low" => quote.low = -1.0,
+                _ => unreachable!(),
+            }
+            assert!(
+                normalize_quotes("test", &requested, vec![quote]).is_err(),
+                "field {field} must fail"
+            );
+        }
+
+        for volume in [-1.0, f64::NAN] {
+            let mut quote = source_quote("600001", 102.0);
+            quote.vol = volume;
+            assert!(normalize_quotes("test", &requested, vec![quote]).is_err());
+        }
+        for amount in [-1.0, f64::NAN] {
+            let mut quote = source_quote("600001", 102.0);
+            quote.amount = amount;
+            assert!(normalize_quotes("test", &requested, vec![quote]).is_err());
+        }
+
+        let mut partial = source_quote("600001", 102.0);
+        partial.last_close = 0.0;
+        partial.open = 0.0;
+        partial.high = 0.0;
+        partial.low = 0.0;
+        partial.amount = 0.0;
+        let batch = normalize_quotes("test", &requested, vec![partial]).unwrap();
+        let quote = &batch.records()[0];
+        assert!(quote.previous_close().is_none());
+        assert!(quote.open().is_none());
+        assert!(quote.high().is_none());
+        assert!(quote.low().is_none());
+        assert!(quote.change_percent().is_none());
     }
 
     #[test]
@@ -1484,6 +1621,125 @@ mod tests {
         assert!(!batch.quality().is_complete());
     }
 
+    fn source_security(code: &str, name: &str) -> SecurityInfo {
+        SecurityInfo {
+            code: code.into(),
+            volunit: 100,
+            decimal_point: 2,
+            name: name.into(),
+            pre_close: 10.0,
+        }
+    }
+
+    #[test]
+    fn security_record_fetching_validates_requests_and_page_cardinality() {
+        assert!(
+            fetch_security_records(&[], |_| Ok(0), |_, _| Ok(Vec::<SecurityInfo>::new()),).is_err()
+        );
+
+        let duplicated = [instrument("600001"), instrument("600001")];
+        assert!(fetch_security_records(
+            &duplicated,
+            |_| Ok(1),
+            |_, _| Ok(vec![source_security("600001", "示例")]),
+        )
+        .is_err());
+
+        let shenzhen = InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity).unwrap();
+        let requested = [instrument("600001"), shenzhen];
+        let records = fetch_security_records(
+            &requested,
+            |_| Ok(2),
+            |market, _| {
+                if market == 1 {
+                    Ok(vec![
+                        source_security("600001", "沪市示例"),
+                        source_security("600999", "沪市噪声"),
+                    ])
+                } else {
+                    Ok(vec![
+                        source_security("000001", "深市示例"),
+                        source_security("000999", "深市噪声"),
+                    ])
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(records.len(), 2);
+
+        assert!(fetch_security_records(
+            &[instrument("600001")],
+            |_| Ok(1),
+            |_, _| Ok(Vec::<SecurityInfo>::new()),
+        )
+        .is_err());
+        assert!(fetch_security_records(
+            &[instrument("600001")],
+            |_| Ok(1),
+            |_, _| {
+                Ok(vec![
+                    source_security("600001", "示例"),
+                    source_security("600002", "超额"),
+                ])
+            },
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn security_metadata_rejects_duplicate_missing_and_unexpected_records() {
+        let requested = [instrument("600001")];
+        let duplicate = vec![
+            (1, source_security("600001", "示例")),
+            (1, source_security("600001", "重复")),
+        ];
+        assert!(normalize_security_metadata("test", &requested, duplicate).is_err());
+        assert!(normalize_security_metadata("test", &requested, Vec::new()).is_err());
+        assert!(normalize_security_metadata(
+            "test",
+            &requested,
+            vec![
+                (1, source_security("600001", "")),
+                (1, source_security("600002", "额外")),
+            ],
+        )
+        .is_err());
+
+        let batch = normalize_security_metadata(
+            "test",
+            &requested,
+            vec![(1, source_security("600001", "   "))],
+        )
+        .unwrap();
+        assert!(batch.records()[0].name().is_none());
+        assert!(batch
+            .quality()
+            .issues()
+            .iter()
+            .any(|issue| issue.contains("name unavailable")));
+    }
+
+    #[test]
+    fn board_and_st_derivation_cover_every_supported_identity() {
+        assert_eq!(board(&instrument("600001")), Board::Main);
+        assert_eq!(board(&instrument("688001")), Board::Star);
+        assert_eq!(board(&instrument("689001")), Board::Star);
+        let shenzhen = InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity).unwrap();
+        let chinext = InstrumentId::new(Exchange::Shenzhen, "301001", AssetClass::Equity).unwrap();
+        let beijing = InstrumentId::new(Exchange::Beijing, "920001", AssetClass::Equity).unwrap();
+        let index = InstrumentId::new(Exchange::Shanghai, "000001", AssetClass::Index).unwrap();
+        assert_eq!(board(&shenzhen), Board::Main);
+        assert_eq!(board(&chinext), Board::ChiNext);
+        assert_eq!(board(&beijing), Board::Beijing);
+        assert_eq!(board(&index), Board::Unknown);
+
+        assert_eq!(st_flag(""), None);
+        for name in ["ST示例", "*ST示例", "S*ST示例", "SST示例", " st示例 "] {
+            assert_eq!(st_flag(name), Some(true));
+        }
+        assert_eq!(st_flag("普通示例"), Some(false));
+    }
+
     #[test]
     fn beijing_uses_the_live_verified_tdx_market_number() {
         let beijing = InstrumentId::new(Exchange::Beijing, "920001", AssetClass::Equity).unwrap();
@@ -1499,6 +1755,7 @@ mod tests {
         let error = validate_security_metadata_request(&[beijing]).unwrap_err();
         assert!(matches!(error, TdxError::Unsupported(_)));
         assert!(error.to_string().contains("security-list"));
+        assert!(validate_security_metadata_request(&[instrument("600001")]).is_ok());
     }
 
     #[test]
@@ -1529,6 +1786,70 @@ mod tests {
         assert!(batch.records()[1].cumulative_amount().is_none());
     }
 
+    fn minute(time: &str, price: f64, volume: f64) -> MinuteTimePrice {
+        MinuteTimePrice {
+            time: time.into(),
+            price,
+            avg_price: price,
+            vol: volume,
+        }
+    }
+
+    #[test]
+    fn minute_normalization_rejects_every_invalid_boundary() {
+        let id = instrument("600396");
+        assert!(normalize_minute_records("test", &id, "2026-07-25", Vec::new()).is_err());
+        assert!(normalize_minute_records(
+            "test",
+            &id,
+            "2026-07-25",
+            vec![minute("09:31", 10.0, 1.0); 241],
+        )
+        .is_err());
+        assert!(normalize_minute_records(
+            "test",
+            &id,
+            "2026-07-25",
+            vec![minute("09:30", 10.0, 1.0)],
+        )
+        .is_err());
+        assert!(normalize_minute_records(
+            "test",
+            &id,
+            "2026-07-25",
+            vec![minute("09:31", 10.0, 1.0), minute("09:31", 10.0, 1.0)],
+        )
+        .is_err());
+        for volume in [-1.0, f64::NAN] {
+            assert!(normalize_minute_records(
+                "test",
+                &id,
+                "2026-07-25",
+                vec![minute("09:31", 10.0, volume)],
+            )
+            .is_err());
+        }
+        assert!(normalize_minute_records(
+            "test",
+            &id,
+            "2026-07-25",
+            vec![
+                minute("09:31", 10.0, f64::MAX),
+                minute("09:32", 10.0, f64::MAX),
+            ],
+        )
+        .is_err());
+        for price in [0.0, -1.0, f64::NAN] {
+            assert!(normalize_minute_records(
+                "test",
+                &id,
+                "2026-07-25",
+                vec![minute("09:31", price, 1.0)],
+            )
+            .is_err());
+        }
+    }
+
     #[test]
     fn paginates_and_normalizes_historical_trades() {
         let request = TradesRequest::new(instrument("600519"), 5)
@@ -1553,12 +1874,226 @@ mod tests {
     }
 
     #[test]
+    fn trade_date_and_record_validation_cover_current_and_historical_shapes() {
+        assert_eq!(tdx_trade_date("2026-07-25").unwrap(), 20_260_725);
+        for invalid in ["20260725", "2026/07/25", "2026-0x-25"] {
+            assert!(tdx_trade_date(invalid).is_err());
+        }
+
+        let current = TradesRequest::new(instrument("600519"), 1).unwrap();
+        assert!(normalize_trade_records("test", &current, Vec::new()).is_err());
+
+        let mut empty_time = source_trade(0, 0);
+        empty_time.time.clear();
+        assert!(normalize_trade_records("test", &current, vec![empty_time]).is_err());
+
+        for (price, volume) in [(0.0, 1.0), (10.0, -1.0), (f64::NAN, 1.0)] {
+            let mut record = source_trade(0, 0);
+            record.price = price;
+            record.vol = volume;
+            assert!(normalize_trade_records("test", &current, vec![record]).is_err());
+        }
+
+        let mut without_count = source_trade(0, 0);
+        without_count.num = 0;
+        let batch = normalize_trade_records("test", &current, vec![without_count]).unwrap();
+        assert_eq!(batch.records()[0].trade_at(), "10:00:00");
+        assert_eq!(batch.records()[0].trade_count(), None);
+        assert_eq!(batch.records()[0].status(), DataStatus::Available);
+    }
+
+    #[test]
+    fn trade_pagination_rejects_oversized_pages_and_stops_on_short_pages() {
+        let request = TradesRequest::new(instrument("600519"), 5).unwrap();
+        let oversized = paginate_trades("test", &request, 2, |_, _| {
+            Ok(vec![
+                source_trade(0, 0),
+                source_trade(1, 0),
+                source_trade(2, 0),
+            ])
+        });
+        assert!(oversized.is_err());
+
+        let mut calls = Vec::new();
+        let batch = paginate_trades("test", &request, 2, |start, count| {
+            calls.push((start, count));
+            Ok(if start == 0 {
+                vec![source_trade(0, 0), source_trade(1, 1)]
+            } else {
+                vec![source_trade(2, 2)]
+            })
+        })
+        .unwrap();
+        assert_eq!(calls, vec![(0, 2), (2, 2)]);
+        assert_eq!(batch.records().len(), 3);
+    }
+
+    #[test]
     fn marks_unknown_trade_side_without_dropping_the_record() {
         let request = TradesRequest::new(instrument("600519"), 1).unwrap();
         let batch = normalize_trade_records("test", &request, vec![source_trade(0, 9)]).unwrap();
         assert_eq!(batch.records()[0].side(), TradeSide::Unknown(9));
         assert_eq!(batch.records()[0].status(), DataStatus::Unavailable);
         assert_eq!(batch.quality().issues().len(), 1);
+    }
+
+    #[test]
+    fn unsupported_p0_capabilities_return_typed_errors() {
+        let direct = TdxHqClient::new();
+        assert!(matches!(
+            direct.money_flows(&[]),
+            Err(TdxError::Unsupported(_))
+        ));
+        assert!(matches!(
+            direct.auction_snapshots(&[]),
+            Err(TdxError::Unsupported(_))
+        ));
+
+        let smart = crate::TdxSmartClient::new();
+        assert!(matches!(
+            smart.money_flows(&[]),
+            Err(TdxError::Unsupported(_))
+        ));
+        assert!(matches!(
+            smart.auction_snapshots(&[]),
+            Err(TdxError::Unsupported(_))
+        ));
+    }
+
+    fn block_instrument() -> InstrumentId {
+        InstrumentId::new(Exchange::Shanghai, "880001", AssetClass::Equity).unwrap()
+    }
+
+    #[test]
+    fn blocking_adapter_entry_points_preserve_pre_transport_failures() {
+        let client = TdxHqClient::new();
+        client.set_auto_retry(false);
+
+        let ranged = BarsRequest::new(instrument("600001"), BarInterval::Day, 5)
+            .unwrap()
+            .with_range("2026-07-01", "2026-07-25")
+            .unwrap();
+        assert!(matches!(
+            <TdxHqClient as HistoricalBars>::historical_bars(&client, &ranged),
+            Err(TdxError::Unsupported(_))
+        ));
+
+        let block_bars = BarsRequest::new(block_instrument(), BarInterval::Day, 5).unwrap();
+        assert!(matches!(
+            <TdxHqClient as HistoricalBars>::historical_bars(&client, &block_bars),
+            Err(TdxError::Coded { .. })
+        ));
+        assert!(matches!(
+            <TdxHqClient as RealtimeQuotes>::realtime_quotes(&client, &[block_instrument()]),
+            Err(TdxError::Coded { .. })
+        ));
+        assert!(matches!(
+            <TdxHqClient as OrderBooks>::order_books(&client, &[block_instrument()]),
+            Err(TdxError::Coded { .. })
+        ));
+
+        let duplicate = [instrument("600001"), instrument("600001")];
+        assert!(
+            <TdxHqClient as SecurityMetadataProvider>::security_metadata(&client, &duplicate)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn smart_adapter_entry_points_preserve_request_validation() {
+        let client = crate::TdxSmartClient::new();
+        let ranged = BarsRequest::new(instrument("600001"), BarInterval::Day, 5)
+            .unwrap()
+            .with_range("2026-07-01", "2026-07-25")
+            .unwrap();
+        assert!(matches!(
+            <crate::TdxSmartClient as HistoricalBars>::historical_bars(&client, &ranged),
+            Err(TdxError::Unsupported(_))
+        ));
+        assert!(<crate::TdxSmartClient as OrderBooks>::order_books(&client, &[]).is_err());
+
+        let duplicate = [instrument("600001"), instrument("600001")];
+        assert!(
+            <crate::TdxSmartClient as SecurityMetadataProvider>::security_metadata(
+                &client, &duplicate
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn direct_adapter_entry_points_preserve_request_and_connection_errors() {
+        let client = crate::TdxDirectClient::new("127.0.0.1", 1, 0.01);
+
+        let ranged = BarsRequest::new(instrument("600001"), BarInterval::Day, 5)
+            .unwrap()
+            .with_range("2026-07-01", "2026-07-25")
+            .unwrap();
+        assert!(matches!(
+            <crate::TdxDirectClient as HistoricalBars>::historical_bars(&client, &ranged),
+            Err(TdxError::Unsupported(_))
+        ));
+
+        let block_bars = BarsRequest::new(block_instrument(), BarInterval::Day, 5).unwrap();
+        assert!(
+            <crate::TdxDirectClient as HistoricalBars>::historical_bars(&client, &block_bars)
+                .is_err()
+        );
+        assert!(<crate::TdxDirectClient as RealtimeQuotes>::realtime_quotes(
+            &client,
+            &[block_instrument()]
+        )
+        .is_err());
+
+        let current = TradesRequest::new(instrument("600001"), 1).unwrap();
+        assert!(<crate::TdxDirectClient as Trades>::trades(&client, &current).is_err());
+        let historical = current.with_date("2026-07-25").unwrap();
+        assert!(<crate::TdxDirectClient as Trades>::trades(&client, &historical).is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn async_adapter_entry_points_preserve_validation_and_disconnect_errors() {
+        let client = crate::AsyncTdxHqClient::new();
+
+        let ranged = BarsRequest::new(instrument("600001"), BarInterval::Day, 5)
+            .unwrap()
+            .with_range("2026-07-01", "2026-07-25")
+            .unwrap();
+        assert!(matches!(
+            <crate::AsyncTdxHqClient as AsyncHistoricalBars>::historical_bars_async(
+                &client, &ranged
+            )
+            .await,
+            Err(TdxError::Unsupported(_))
+        ));
+
+        let bars = BarsRequest::new(instrument("600001"), BarInterval::Day, 5).unwrap();
+        assert!(
+            <crate::AsyncTdxHqClient as AsyncHistoricalBars>::historical_bars_async(&client, &bars)
+                .await
+                .is_err()
+        );
+        assert!(
+            <crate::AsyncTdxHqClient as AsyncRealtimeQuotes>::realtime_quotes_async(
+                &client,
+                &[instrument("600001")]
+            )
+            .await
+            .is_err()
+        );
+
+        let current = TradesRequest::new(instrument("600001"), 1).unwrap();
+        assert!(
+            <crate::AsyncTdxHqClient as AsyncTrades>::trades_async(&client, &current)
+                .await
+                .is_err()
+        );
+        let historical = current.with_date("2026-07-25").unwrap();
+        assert!(
+            <crate::AsyncTdxHqClient as AsyncTrades>::trades_async(&client, &historical)
+                .await
+                .is_err()
+        );
     }
 }
 

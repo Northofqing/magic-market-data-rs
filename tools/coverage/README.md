@@ -25,6 +25,7 @@ empty production reports fail explicitly.
 Run the same commands used by CI:
 
 ```bash
+mkdir -p target/coverage
 cargo llvm-cov --workspace --all-features --json \
   --output-path target/coverage/coverage.json -- --test-threads=1
 python3 tools/coverage/check_thresholds.py target/coverage/coverage.json

@@ -8,7 +8,7 @@ artifacts without weakening public data contracts or quality thresholds.
 
 ## Current Phase
 
-Phase 3
+Phase 4
 
 ## Phases
 
@@ -30,18 +30,19 @@ Phase 3
 
 ### Phase 3: Correctness and Panic-Safety Fixes
 
-- [ ] Tighten Eastmoney 9-prefix exchange validation.
-- [ ] Make TDX zero current-price failure explicit and source-contextual.
-- [ ] Remove proven TDX network and synchronization panic paths.
-- [ ] Remove the crate-wide Clippy suppression and resolve resulting findings.
-- **Status:** in_progress
+- [x] Tighten Eastmoney 9-prefix exchange validation.
+- [x] Make TDX zero current-price failure explicit and source-contextual.
+- [x] Remove proven TDX network and synchronization panic paths.
+- [x] Remove the crate-wide Clippy suppression and resolve resulting findings.
+- **Status:** complete
 
 ### Phase 4: Coverage and Release Gates
 
-- [ ] Implement the documented overall and critical-path coverage contract.
-- [ ] Add behavior tests until the real report meets both thresholds.
+- [x] Implement the documented overall and critical-path coverage contract.
+- [x] Add behavior tests until the real critical set reaches 95%.
+- [ ] Add behavior tests until the real workspace report reaches 80% overall.
 - [ ] Add release compilation to preflight.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 5: Full Verification and Delivery
 
@@ -76,9 +77,19 @@ Phase 3
 |-------|---------|------------|
 | Parallel baseline commands yielded before all Cargo processes completed | 1 | Waited for the processes and reran targeted suites sequentially with quiet output. |
 | Existing coverage checker exited 1 on the real report | 1 | Recorded this as the verified 71.89% baseline; do not lower the threshold. |
+| Initial sync-module patch used the wrong `lib.rs` context order | 1 | Inspected the current module/export order and reapplied against the exact context. |
+| Initial probe-test patch assumed `get_xdxr_info` ended `client.rs` | 1 | Inspected the file tail and appended the test module after block-info methods. |
+| Cargo test name filter treated `net::client::tests|sync::tests` literally | 1 | Use separate substring filters (`probe_one` and `sync::tests`) instead of regex syntax. |
+| `cargo clippy --fix` could not create its internal locking listener in the sandbox | 1 | Re-ran the same scoped command with the approved sandbox escalation. |
+| `cargo fmt --all -- --check` found formatting changes after Clippy fixes | 1 | Ran `cargo fmt --all`, then re-ran strict Clippy and the full TDX test suite. |
+| An unquoted shell regex was parsed as pipeline commands | 1 | Re-ran the inspection with the complete expression quoted. |
+| The first llvm-cov report write failed because `target/coverage` did not exist | 1 | Created the directory and added that prerequisite to the documented command. |
+| Strict Clippy found inconsistent grouping in invalid-date test literals | 1 | Re-grouped the literals by decimal place and re-ran strict Clippy successfully. |
 
 ## Notes
 
 - The primary worktree contains user-owned uncommitted planning and integration
   files. All implementation work stays in this linked worktree.
 - Re-read this plan before scope or contract decisions.
+- The measured critical aggregate is now exactly 95.00% (3480/3663). The
+  remaining coverage work is the independent 80% whole-workspace aggregate.

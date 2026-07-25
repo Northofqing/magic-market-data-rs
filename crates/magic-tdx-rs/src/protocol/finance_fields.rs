@@ -157,4 +157,17 @@ mod tests {
         assert!(validate_fields_len(584));
         assert!(!validate_fields_len(100));
     }
+
+    #[test]
+    fn labels_and_definitions_preserve_order_names_and_absence_as_zero() {
+        let fields = vec![2.5f32];
+        let labeled = extract_with_labels(&fields);
+        assert_eq!(labeled.len(), field_definitions().len());
+        assert_eq!(labeled[0], ("eps", "基本每股收益", 2.5));
+        assert_eq!(labeled[1].0, "deducted_eps");
+        assert_eq!(labeled[1].2, 0.0);
+        assert_eq!(field_definitions()[0].0, 1);
+        assert!(!validate_fields_len(319));
+        assert!(validate_fields_len(320));
+    }
 }

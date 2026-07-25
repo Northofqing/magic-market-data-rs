@@ -153,6 +153,23 @@ mod tests {
         }
     }
 
+    fn make_bar(year: u32, month: u32, day: u32, close: f64) -> SecurityBar {
+        SecurityBar {
+            open: close,
+            close,
+            high: close,
+            low: close,
+            vol: 1.0,
+            amount: close,
+            year,
+            month,
+            day,
+            hour: 0,
+            minute: 0,
+            datetime: format!("{year:04}-{month:02}-{day:02}"),
+        }
+    }
+
     #[test]
     fn test_auto_detect_tier_empty() {
         let xdxr: Vec<XdXrInfo> = Vec::new();
@@ -234,5 +251,21 @@ mod tests {
         assert_eq!(FqService::fq_type_from_u8(1), FqType::Qfq);
         assert_eq!(FqService::fq_type_from_u8(2), FqType::Hfq);
         assert_eq!(FqService::fq_type_from_u8(3), FqType::Qfq); // 默认前复权
+    }
+
+    #[test]
+    fn fq_facade_applies_adjustment_and_exposes_factors() {
+        let events = vec![make_xdxr(2026, 7, 2, 1)];
+        let context = vec![make_bar(2026, 7, 1, 10.0)];
+        let mut bars = vec![make_bar(2026, 7, 1, 10.0), make_bar(2026, 7, 2, 9.0)];
+        let factors = FqService::calc_factors(&events, &bars, &context);
+        assert!(!factors.factors.is_empty());
+
+        let original = bars.clone();
+        FqService::apply_fq(&mut bars, &context, &events, FqType::None);
+        assert_eq!(bars[0].close, original[0].close);
+
+        FqService::apply_fq(&mut bars, &context, &events, FqType::Qfq);
+        assert!(bars.iter().all(|bar| bar.close.is_finite()));
     }
 }

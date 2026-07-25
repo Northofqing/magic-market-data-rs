@@ -335,6 +335,44 @@ pub fn adjust_index_bars(bars: &mut [IndexBar], _xdxr_list: &[XdXrInfo], _fq_typ
 mod tests {
     use super::*;
 
+    fn bar(year: u32, month: u32, day: u32, price: f64) -> SecurityBar {
+        SecurityBar {
+            open: price,
+            close: price,
+            high: price,
+            low: price,
+            vol: 100.0,
+            amount: price * 100.0,
+            year,
+            month,
+            day,
+            hour: 0,
+            minute: 0,
+            datetime: format!("{year:04}-{month:02}-{day:02}"),
+        }
+    }
+
+    fn event(year: u32, month: u32, day: u32) -> XdXrInfo {
+        XdXrInfo {
+            category: 1,
+            year,
+            month,
+            day,
+            name: String::new(),
+            fenhong: Some(10.0),
+            songzhuangu: Some(2.0),
+            peigu: Some(1.0),
+            peigujia: Some(5.0),
+            suogu: None,
+            panqianliutong: None,
+            panhouliutong: None,
+            qianzongguben: None,
+            houzongguben: None,
+            fenshu: None,
+            xingquanjia: None,
+        }
+    }
+
     #[test]
     fn test_calc_qfq_factor_cash_div() {
         // 简单分红: 前收盘 46.90, 分红 1.0/股
@@ -361,6 +399,43 @@ mod tests {
         let factor = calc_qfq_factor(20.0, &parts);
         // factor = 20 / (20 * 2) = 0.5
         assert!((factor - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn factor_calculation_covers_rights_skip_missing_close_and_zero_factor() {
+        let bars = vec![bar(2026, 7, 1, 10.0), bar(2026, 7, 3, 9.0)];
+        let mut ignored = event(2026, 7, 2);
+        ignored.category = 5;
+        let result = calc_fq_factors(&[event(2026, 7, 2), ignored, event(2020, 1, 1)], &bars, &[]);
+        assert_eq!(result.factors.len(), 1);
+        let factor = &result.factors[0];
+        assert_eq!(factor.date, 20_260_702);
+        assert_eq!(factor.close_before, 10.0);
+        assert_eq!(factor.div_per_share, 1.0);
+        assert_eq!(factor.bonus_ratio, 0.2);
+        assert_eq!(factor.rights_ratio, 0.1);
+        assert_eq!(factor.rights_price, 5.0);
+        assert!((factor.hfq_factor - 1.0 / factor.qfq_factor).abs() < 1e-10);
+        assert!((result.cumulative_hfq - 1.0 / result.cumulative_qfq).abs() < 1e-10);
+
+        let zero_parts = FactorParts {
+            div_per_share: 10.0,
+            bonus_ratio: 0.0,
+            rights_ratio: 0.0,
+            rights_price: 0.0,
+        };
+        assert_eq!(calc_qfq_factor(0.0, &zero_parts), 1.0);
+        assert_eq!(calc_qfq_factor(10.0, &zero_parts), 0.0);
+        assert_eq!(round_price(1.23456, 3), 1.235);
+
+        let mut zero_event = event(2026, 7, 2);
+        zero_event.fenhong = Some(100.0);
+        zero_event.songzhuangu = None;
+        zero_event.peigu = None;
+        zero_event.peigujia = None;
+        let zero = calc_fq_factors(&[zero_event], &bars, &[]);
+        assert_eq!(zero.factors[0].hfq_factor, 1.0);
+        assert_eq!(zero.cumulative_hfq, 1.0);
     }
 
     #[test]
@@ -419,6 +494,71 @@ mod tests {
         let result = find_close_before_event(&bars, &context, 20250101);
         assert!(result.is_some());
         assert!((result.unwrap() - 11.0).abs() < 1e-10);
+        assert_eq!(
+            find_close_before_event(
+                &[bar(2024, 1, 1, 8.0), bar(2024, 2, 1, 9.0)],
+                &[],
+                20_240_301,
+            ),
+            Some(9.0)
+        );
+        assert_eq!(
+            find_close_before_event(&[bar(2026, 1, 1, 8.0)], &[], 20_250_101),
+            None
+        );
+    }
+
+    #[test]
+    fn adjustment_covers_all_early_returns_and_qfq_boundaries() {
+        let mut one = vec![bar(2026, 7, 1, 10.0)];
+        let original = one.clone();
+        adjust_security_bars(&mut one, &[], &[event(2026, 7, 2)], FqType::None);
+        assert_eq!(one[0].close, original[0].close);
+
+        adjust_security_bars(&mut [], &[], &[event(2026, 7, 2)], FqType::Qfq);
+        adjust_security_bars(&mut one, &[], &[], FqType::Qfq);
+
+        let mut no_factor = one.clone();
+        let mut ignored = event(2026, 7, 2);
+        ignored.category = 5;
+        adjust_security_bars(&mut no_factor, &[], &[ignored], FqType::Qfq);
+        assert_eq!(no_factor[0].close, one[0].close);
+
+        let mut bars = vec![
+            bar(2026, 7, 1, 10.0),
+            bar(2026, 7, 2, 9.0),
+            bar(2026, 7, 3, 9.5),
+        ];
+        adjust_security_bars(&mut bars, &[], &[event(2026, 7, 2)], FqType::Qfq);
+        assert!(bars[0].close < 10.0);
+        assert_eq!(bars[1].close, 9.0);
+        assert_eq!(bars[2].close, 9.5);
+        assert_eq!(
+            bars[0].close,
+            round_price(bars[0].close, FQ_PRICE_PRECISION)
+        );
+    }
+
+    #[test]
+    fn index_adjustment_is_an_explicit_no_op() {
+        let mut bars = vec![IndexBar {
+            open: 10.0,
+            close: 11.0,
+            high: 12.0,
+            low: 9.0,
+            vol: 100.0,
+            amount: 1_000.0,
+            year: 2026,
+            month: 7,
+            day: 25,
+            hour: 0,
+            minute: 0,
+            datetime: "2026-07-25".into(),
+            up_count: 10,
+            down_count: 5,
+        }];
+        adjust_index_bars(&mut bars, &[event(2026, 7, 25)], FqType::Hfq);
+        assert_eq!(bars[0].close, 11.0);
     }
 
     #[test]

@@ -588,10 +588,7 @@ impl TdxHqClient {
 
     /// 从连接池借出连接并执行请求
     fn try_send_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
-        let server = self
-            .last_server
-            .lock()
-            .unwrap()
+        let server = sync::lock(&self.last_server, "last server")?
             .clone()
             .unwrap_or_else(|| (PRIMARY_SERVERS[0].1.to_string(), PRIMARY_SERVERS[0].2));
         let pool = sync::lock(&self.pool, "connection pool handle")?;

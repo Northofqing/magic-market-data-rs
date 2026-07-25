@@ -453,6 +453,12 @@ pub fn parse_transaction_data_with_coefficient(
     let mut last_price: i64 = 0;
 
     for _ in 0..count {
+        // time(2) plus five minimally one-byte variable integers.
+        if body.len().saturating_sub(pos) < 7 {
+            return Err(
+                ErrorCode::RESPONSE_LENGTH_MISMATCH.err("truncated current transaction record")
+            );
+        }
         // time (u16 minutes)
         let minutes = read_u16(body, pos) as u32;
         pos += 2;
@@ -1153,6 +1159,31 @@ mod tests {
         assert_eq!(result[0].day, 29);
     }
 
+    #[test]
+    fn security_bars_cover_intraday_deltas_and_invalid_dates() {
+        let packed_date = (((2026 - 2004) << 11) + 7 * 100 + 25) as u16;
+        let mut data = vec![1, 0];
+        data.extend_from_slice(&packed_date.to_le_bytes());
+        data.extend_from_slice(&(9 * 60 + 31u16).to_le_bytes());
+        data.extend_from_slice(&[10, 2, 3, 1]);
+        data.extend_from_slice(&5u32.to_le_bytes());
+        data.extend_from_slice(&6u32.to_le_bytes());
+        let bars = parse_security_bars(&data, 8).unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].datetime, "2026-07-25 09:31");
+        assert_eq!(bars[0].open, 0.01);
+        assert_eq!(bars[0].close, 0.012);
+        assert_eq!(bars[0].high, 0.013);
+        assert_eq!(bars[0].low, 0.011);
+
+        for date in [19_790_101_u32, 20_261_301, 20_260_132] {
+            let mut invalid = vec![1, 0];
+            invalid.extend_from_slice(&date.to_le_bytes());
+            invalid.extend_from_slice(&[0; 16]);
+            assert!(parse_security_bars(&invalid, 4).unwrap().is_empty());
+        }
+    }
+
     // --- parse_index_bars ---
 
     #[test]
@@ -1172,6 +1203,34 @@ mod tests {
         data.extend_from_slice(&[0u8; 10]);
         let result = parse_index_bars(&data, 4).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn index_bars_parse_counts_and_both_datetime_formats() {
+        let mut daily = vec![1, 0];
+        daily.extend_from_slice(&20_260_725u32.to_le_bytes());
+        daily.extend_from_slice(&[10, 1, 2, 3]);
+        daily.extend_from_slice(&5u32.to_le_bytes());
+        daily.extend_from_slice(&6u32.to_le_bytes());
+        daily.extend_from_slice(&7u16.to_le_bytes());
+        daily.extend_from_slice(&8u16.to_le_bytes());
+        daily.extend_from_slice(&[0; 4]);
+        let bars = parse_index_bars(&daily, 4).unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].datetime, "2026-07-25");
+        assert_eq!(bars[0].up_count, 7);
+        assert_eq!(bars[0].down_count, 8);
+
+        let packed_date = (((2026 - 2004) << 11) + 7 * 100 + 25) as u16;
+        let mut minute = vec![1, 0];
+        minute.extend_from_slice(&packed_date.to_le_bytes());
+        minute.extend_from_slice(&(13 * 60 + 1u16).to_le_bytes());
+        minute.extend_from_slice(&[10, 0, 1, 1]);
+        minute.extend_from_slice(&[0; 12]);
+        minute.extend_from_slice(&1u16.to_le_bytes());
+        minute.extend_from_slice(&2u16.to_le_bytes());
+        let bars = parse_index_bars(&minute, 8).unwrap();
+        assert_eq!(bars[0].datetime, "2026-07-25 13:01");
     }
 
     // --- parse_minute_time_data ---
@@ -1197,6 +1256,25 @@ mod tests {
         assert!(result.is_empty());
     }
 
+    #[test]
+    fn minute_time_grid_and_current_records_cover_average_branches() {
+        assert_eq!(minute_time_from_index(0), "09:31");
+        assert_eq!(minute_time_from_index(119), "11:30");
+        assert_eq!(minute_time_from_index(120), "13:01");
+        assert_eq!(minute_time_from_index(239), "15:00");
+
+        let mut body = vec![2, 0];
+        body.extend_from_slice(&[0; 11]);
+        body.extend_from_slice(&[10, 0, 0]);
+        body.extend_from_slice(&[10, 0, 2]);
+        let records = parse_minute_time_data(&body, 1, "600001").unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].time, "09:32");
+        assert_eq!(records[0].price, 0.2);
+        assert_eq!(records[0].avg_price, 0.2);
+        assert_eq!(records[1].avg_price, records[1].price);
+    }
+
     // --- parse_history_minute_time_data ---
 
     #[test]
@@ -1210,6 +1288,18 @@ mod tests {
         // Less than 6 bytes header
         let result = parse_history_minute_time_data(&[0u8; 5], 1, "600519").unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn history_minute_records_are_reversed_and_accumulate_average() {
+        let mut body = vec![0; 6];
+        body.extend_from_slice(&[10, 0, 1]);
+        body.extend_from_slice(&[10, 0, 3]);
+        let records = parse_history_minute_time_data(&body, 1, "600001").unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].time, "09:32");
+        assert_eq!(records[0].price, 0.2);
+        assert!((records[0].avg_price - 0.175).abs() < 1e-10);
     }
 
     // --- parse_transaction_data ---
@@ -1228,6 +1318,23 @@ mod tests {
     fn test_transaction_zero_count() {
         let result = parse_transaction_data(&[0x00, 0x00]).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn current_transactions_apply_coefficient_and_reject_truncation() {
+        let mut body = vec![1, 0];
+        body.extend_from_slice(&(10 * 60 + 2u16).to_le_bytes());
+        body.extend_from_slice(&[10, 2, 3, 1, 4]);
+        let records = parse_transaction_data_with_coefficient(&body, 0.001).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].time, "10:02");
+        assert_eq!(records[0].price, 0.01);
+        assert_eq!(records[0].vol, 2.0);
+        assert_eq!(records[0].num, 3);
+        assert_eq!(records[0].buyorsell, 1);
+        assert_eq!(records[0].reserved, 4);
+
+        assert!(parse_transaction_data(&[1, 0, 0, 0, 1]).is_err());
     }
 
     // --- parse_history_transaction_data ---
@@ -1260,6 +1367,16 @@ mod tests {
         assert!(parse_history_transaction_data(&body).is_err());
     }
 
+    #[test]
+    fn historical_transactions_apply_custom_coefficient() {
+        let body = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 2, 1, 4];
+        let records = parse_history_transaction_data_with_coefficient(&body, 0.001).unwrap();
+        assert_eq!(records[0].price, 0.01);
+        assert_eq!(records[0].vol, 2.0);
+        assert_eq!(records[0].buyorsell, 1);
+        assert_eq!(records[0].reserved, 4);
+    }
+
     // --- parse_security_quotes ---
 
     #[test]
@@ -1277,6 +1394,44 @@ mod tests {
         // b1 cb (2 bytes) + count=0 (2 bytes)
         let result = parse_security_quotes(&[0x00, 0x00, 0x00, 0x00]).unwrap();
         assert!(result.is_empty());
+    }
+
+    fn one_quote_packet() -> Vec<u8> {
+        let mut body = vec![0, 0, 1, 0, 1];
+        body.extend_from_slice(b"600001");
+        body.extend_from_slice(&2u16.to_le_bytes());
+        body.extend_from_slice(&[10, 1, 2, 3, 4, 5, 6, 7, 8]);
+        body.extend_from_slice(&0u32.to_le_bytes());
+        body.extend_from_slice(&[9, 10, 11, 12]);
+        for _ in 0..5 {
+            body.extend_from_slice(&[1, 2, 3, 4]);
+        }
+        body.extend_from_slice(&13u16.to_le_bytes());
+        body.extend_from_slice(&[14, 15, 16, 17]);
+        body.extend_from_slice(&(-2i16).to_le_bytes());
+        body.extend_from_slice(&18u16.to_le_bytes());
+        body
+    }
+
+    #[test]
+    fn quote_packet_maps_every_level_and_rejects_tail_truncation() {
+        let packet = one_quote_packet();
+        let quotes = parse_security_quotes(&packet).unwrap();
+        assert_eq!(quotes.len(), 1);
+        let quote = &quotes[0];
+        assert_eq!(quote.market, 1);
+        assert_eq!(quote.code, "600001");
+        assert_eq!(quote.price, 0.1);
+        assert_eq!(quote.last_close, 0.11);
+        assert_eq!(quote.bid1, 0.11);
+        assert_eq!(quote.ask5, 0.12);
+        assert_eq!(quote.bid_vol1, 3.0);
+        assert_eq!(quote.ask_vol5, 4.0);
+        assert_eq!(quote.reversed_bytes4, 13);
+        assert_eq!(quote.active2, 18);
+        assert!(quote.servertime.is_empty());
+
+        assert!(parse_security_quotes(&packet[..packet.len() - 1]).is_err());
     }
 
     // --- parse_finance_info ---
@@ -1305,6 +1460,27 @@ mod tests {
         assert!((result.liutongguben - 10.0).abs() < 0.1);
     }
 
+    #[test]
+    fn finance_fields_preserve_header_and_all_raw_values() {
+        let mut data = vec![0u8; 145];
+        data[9..13].copy_from_slice(&1.5f32.to_le_bytes());
+        data[13..15].copy_from_slice(&2u16.to_le_bytes());
+        data[15..17].copy_from_slice(&3u16.to_le_bytes());
+        data[17..21].copy_from_slice(&20_260_725u32.to_le_bytes());
+        data[21..25].copy_from_slice(&20_000_101u32.to_le_bytes());
+        for index in 0..30 {
+            let start = 25 + index * 4;
+            data[start..start + 4].copy_from_slice(&(index as f32 + 1.0).to_le_bytes());
+        }
+        let finance = parse_finance_info(&data, 0, "000001").unwrap();
+        assert_eq!(finance.province, 2);
+        assert_eq!(finance.industry, 3);
+        assert_eq!(finance.updated_date, 20_260_725);
+        assert_eq!(finance.ipo_date, 20_000_101);
+        assert_eq!(finance.zongguben, 1.0);
+        assert_eq!(finance.meigujingzichan, 29.0);
+    }
+
     // --- parse_xdxr_info ---
 
     #[test]
@@ -1323,6 +1499,45 @@ mod tests {
         let data = vec![0u8; 11];
         let result = parse_xdxr_info(&data).unwrap();
         assert!(result.is_empty());
+    }
+
+    fn xdxr_record(category: u8, values: [f32; 4]) -> Vec<u8> {
+        let mut record = vec![0; 8];
+        record.extend_from_slice(&20_260_725u32.to_le_bytes());
+        record.push(category);
+        for value in values {
+            record.extend_from_slice(&value.to_le_bytes());
+        }
+        record
+    }
+
+    #[test]
+    fn xdxr_categories_preserve_optional_payload_semantics_and_names() {
+        let categories = [
+            (1, [1.0, 2.0, 3.0, 4.0]),
+            (11, [0.0, 0.0, 5.0, 0.0]),
+            (13, [6.0, 0.0, 7.0, 0.0]),
+            (2, [0.0, 0.0, 0.0, 0.0]),
+            (99, [1.0, 2.0, 3.0, 4.0]),
+        ];
+        let mut body = vec![0; 9];
+        body.extend_from_slice(&(categories.len() as u16).to_le_bytes());
+        for (category, values) in categories {
+            body.extend_from_slice(&xdxr_record(category, values));
+        }
+        let records = parse_xdxr_info(&body).unwrap();
+        assert_eq!(records.len(), 5);
+        assert_eq!(records[0].name, "除权除息");
+        assert_eq!(records[0].fenhong, Some(1.0));
+        assert_eq!(records[0].peigujia, Some(2.0));
+        assert_eq!(records[0].songzhuangu, Some(3.0));
+        assert_eq!(records[0].peigu, Some(4.0));
+        assert_eq!(records[1].suogu, Some(5.0));
+        assert_eq!(records[2].xingquanjia, Some(6.0));
+        assert_eq!(records[2].fenshu, Some(7.0));
+        assert_eq!(records[3].panqianliutong, Some(0.0));
+        assert_eq!(records[4].name, "未知");
+        assert!(records[4].panqianliutong.unwrap().is_finite());
     }
 
     // --- parse_block_info_meta ---
