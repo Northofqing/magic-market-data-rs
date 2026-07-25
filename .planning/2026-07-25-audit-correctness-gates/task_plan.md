@@ -8,7 +8,7 @@ artifacts without weakening public data contracts or quality thresholds.
 
 ## Current Phase
 
-Awaiting written-spec review
+Phase 3
 
 ## Phases
 
@@ -23,10 +23,10 @@ Awaiting written-spec review
 
 ### Phase 2: Detailed Implementation Plan
 
-- [ ] Map every modified and test file.
-- [ ] Write a TDD-oriented implementation plan with exact commands.
-- [ ] Self-review the plan against the approved design.
-- **Status:** pending
+- [x] Map every modified and test file.
+- [x] Write a TDD-oriented implementation plan with exact commands.
+- [x] Self-review the plan against the approved design.
+- **Status:** complete
 
 ### Phase 3: Correctness and Panic-Safety Fixes
 
@@ -34,7 +34,7 @@ Awaiting written-spec review
 - [ ] Make TDX zero current-price failure explicit and source-contextual.
 - [ ] Remove proven TDX network and synchronization panic paths.
 - [ ] Remove the crate-wide Clippy suppression and resolve resulting findings.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 4: Coverage and Release Gates
 

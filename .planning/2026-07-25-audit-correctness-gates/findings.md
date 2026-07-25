@@ -39,6 +39,60 @@
   65.42%. The largest gaps are TDX `adapter.rs` and `protocol` modules.
 - `tools/release/preflight.sh` checks debug targets, tests, Clippy, rustdoc,
   links, and compliance, but does not compile all release targets.
+- `TdxError` has no synchronization-specific variant; `InvalidData` is the
+  existing non-breaking carrier for internal state that cannot be trusted.
+- TDX already exports a `logw!` macro controlled by `TDXRS_LOG`, so compatible
+  infallible lock recovery can emit an observable warning without adding a
+  logging dependency.
+- `RateLimiter` exposes infallible `wait`, setter, and getter methods. Its lock
+  handling must therefore use warning-backed recovery unless the public API is
+  deliberately broken.
+- `ConnectionPool::borrow` and `try_borrow` are fallible and can return a typed
+  poison error. `push`, `return_connection`, `close_all`, and `stats` are
+  compatibility-bound infallible paths and need warning-backed recovery.
+- `TdxBlockClient` has infallible server/timeout setters but fallible data
+  methods. Its mutex can therefore use recovery for setters and typed failure
+  for all data requests without changing signatures.
+- `TdxHqClient` mixes fallible connection/data operations with infallible
+  configuration, status, disconnect, heartbeat, and retry helpers. The shared
+  synchronization utility must expose both typed `lock` and warning-backed
+  `lock_recover` forms.
+- Heartbeat runs in a spawned thread and currently locks `last_server` with
+  `unwrap`; a poisoned lock would kill only the heartbeat thread and silently
+  disable liveness management. This path needs recovery plus a warning.
+- `connect_to_any`, `connect_internal`, `try_send_and_recv`, and cache-backed
+  request methods already return `Result` and can propagate lock poisoning
+  explicitly.
+- `TdxSmartClient::connect_to_any` and `try_next_server` are fallible, while
+  `lazy_health_check`, cache reporting/reset, and probe caching are infallible
+  compatibility paths. The same two lock helpers cover this module cleanly.
+- TDX cache accesses in `get_security_list` and `get_security_count` are already
+  inside `Result` APIs and should fail explicitly instead of recovering possibly
+  inconsistent cached state.
+- The largest overall coverage gaps are concentrated in TDX: synchronous client
+  (859 uncovered lines), adapter (618), async client (447), service facade
+  (400), finance client (364), direct client (346), and smart client (231).
+- The llvm-cov JSON includes per-file `segments`, so focused tests can be driven
+  by exact uncovered executable lines rather than by raw source line counts.
+- Most uncovered TDX adapter lines are concrete sync/direct/smart/async trait
+  wrappers after successful network calls, not only pure normalization
+  branches. Reaching the documented critical threshold requires deterministic
+  successful transport tests rather than superficial invalid-input calls.
+- `TcpConnection` wraps a normal `TcpStream`; an in-process loopback protocol
+  server can exercise production send/receive paths without adding a production
+  transport abstraction or external network dependency.
+- `--force-warn clippy::all` exposes 64 TDX library findings and five additional
+  test findings. They are bounded and mostly mechanical: same-type casts,
+  `Default` implementations, range checks, useless conversions, and simple
+  control-flow cleanup. The only likely narrow policy exception is the complex
+  handshake callback type, which can instead be fixed with a type alias.
+- Async TDX tests already inject responses through a private `mpsc::Sender<Request>`
+  seam. Extending that pattern is preferable to a new production transport
+  abstraction for adapter and service coverage.
+- Order-book normalization is duplicated between `adapter.rs` and
+  `service/mod.rs`. Extracting one provider-neutral private normalizer makes the
+  behavior directly testable and removes hundreds of hard-to-cover duplicate
+  branch lines without changing the public contract.
 
 ## Technical Decisions
 
@@ -70,4 +124,3 @@
 ## Visual/Browser Findings
 
 - No browser or visual research was required.
-
