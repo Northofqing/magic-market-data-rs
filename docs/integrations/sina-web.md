@@ -16,6 +16,9 @@
 - 上证 50 ETF `510050` 的合约月份、全部认购/认沽合约、最优买卖一档 T 型报价和
   希腊字母。
 
+2026-07-25 的追加真实探针覆盖华电辽能 `600396.SH` 与平安银行 `000001.SZ`
+的官方公司新闻页。
+
 一次实测只证明当时端点和字段可用，不构成厂商性能承诺。字段或协议变化后必须重新
 运行确定性测试和真实探针。
 
@@ -26,6 +29,7 @@
 | Quote / 五档 / 部分元数据 | `https://hq.sinajs.cn/list=` | 最多 50 个不重复沪深京 A 股符号；必须发送 `Referer: https://finance.sina.com.cn/` |
 | K 线 / 当前分时输入 | `https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData` | 单证券；最多 800 根 K 线；当前分时固定最多 300 根 1 分钟线 |
 | 财务三表 | `https://quotes.sina.cn/cn/api/openapi.php/CompanyFinanceService.getFinanceReport2022` | 最多 10 个沪深证券；每类默认 8 个报告期 |
+| 个股新闻 | `https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllNewsStock.php` | 单个沪深 A 股；最多 5 页、输出最多 200 条；北京暂不声明 |
 | ETF 期权月份 | `https://stock.finance.sina.com.cn/futures/api/openapi.php/StockOptionService.getStockName` | 单个受支持标的；最多 12 个月 |
 | ETF 期权合约、T 型报价、希腊字母 | `https://hq.sinajs.cn/list=` | 合约发现最多 4,096 个；单批最多 50 个；必须发送 `Referer: https://stock.finance.sina.com.cn/` |
 | 全球指数 / 外汇 | `https://hq.sinajs.cn/list=` | 精确请求、精确返回；6 个已验证指数与 8 个已验证汇率对 |
@@ -158,6 +162,25 @@ Quote 与 K 线来自不同公开端点，不是一个原子快照，累计量�
 最近 8 个报告期，批量请求最多 10 个不重复证券。真实探针逐一验证三张报表非空、报告期
 有序、字段键唯一且来源证据完整。
 
+## 个股新闻
+
+`NewsProvider::instrument_news` 使用新浪官方 AllNewsStock 公司页，只支持上海、深圳
+A 股。Provider 由请求中的交易所和代码生成精确 `sh|sz` symbol，并要求每一页的
+server-rendered `page_symbol` 与请求完全一致；不会用标题或正文推断证券归属，也不会
+跟随页面提供的 HTTP 分页链接。
+
+页面必须为 HTTP 200、无重定向、带 GBK-family charset 的 `text/html`，并包含非空
+`datelist`、完整 `YYYY-MM-DD HH:MM` 来源时间和 Sina 控制域名的 HTTPS canonical
+URL。深圳页面仍可能输出官方 `http` 文章链接；Provider 仅在结构化 URL 解析确认
+Sina host、无凭据和显式端口后，把 scheme 改为 `https`，host/path/query/fragment
+保持不变。规范化后的 HTTPS URL 是业务身份；来源标题或发布时间冲突使整批失败。
+页面请求的本地观测时间不参与重复来源事实比较。
+
+日期范围按来源日期闭区间过滤，limit 在验证和去重后应用。有效非空来源页经范围过滤
+后可以形成 complete 的零记录批次；provenance 仍保留页面观测时间、batch ID 和本次
+读取到的最新来源记录时间。缺失/空 `datelist` 则是协议失败，不是 verified-empty。
+旧 `feed.mix` pageid=155 已实证失效，pageid=153 会忽略证券代码，两者均不是 fallback。
+
 ## ETF 期权
 
 `OptionData` 已实现新浪公开期权页覆盖的四个上海 ETF 标的：
@@ -218,6 +241,15 @@ quotes=true
 greeks=true
 ```
 
+内容能力由独立的 `ContentCapabilities` 声明：
+
+```text
+instrument_news=true
+global_news=false
+announcements=false
+investor_questions=false
+```
+
 成交明细展示 HTML 不作为稳定逐笔合同。不得从 Quote、五档或 K 线推导并冒充
 MoneyFlow、集合竞价、公司行为或板块来源字段。
 
@@ -237,6 +269,16 @@ cargo run -p magic-sina-rs --example live_probe --release --locked --offline
 北京 5 分钟/日线、每个证券的当前分时点、三张财务报表的全部报告期、全部发现的
 期权合约、样本 T 型报价/希腊字母和所有不支持能力。任一预期数据族为空、数量不符
 或协议错误会退出非零。
+
+个股新闻有界真实探针：
+
+```bash
+cargo run -p magic-sina-rs --example instrument_news_probe --release --locked --offline
+```
+
+探针固定请求 `600396.SH` 与 `000001.SZ`，每只最多 3 条，只输出证券、来源发布时间、
+canonical URL 和批次 provenance。任一证券返回协议空页、错误身份、不完整证据或
+普通空批次会退出非零。
 
 有界并发探针：
 
@@ -288,6 +330,7 @@ Router 的生产依赖保持只有 Core。应用在自己的组合根使用现�
 hq.sinajs.cn:443
 quotes.sina.cn:443
 stock.finance.sina.com.cn:443
+vip.stock.finance.sina.com.cn:443
 ```
 
 Provider 不写持久缓存，不需要用户名、密码、Cookie 或本地客户端。部署与日志不得

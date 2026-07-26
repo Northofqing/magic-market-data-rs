@@ -51,19 +51,7 @@ impl TdxDirectClient {
     // 核心：send_and_recv
     // ================================================================
 
-    fn send_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
-        let mut conn = TcpConnection::connect(&self.ip, self.port, self.timeout).map_err(|e| {
-            loge!(
-                "direct",
-                "connect to {}:{} failed: {}",
-                self.ip,
-                self.port,
-                e
-            );
-            e
-        })?;
-        utils::perform_handshake(&mut conn)?;
-
+    fn send_and_recv_on(conn: &mut TcpConnection, packet: &[u8]) -> Result<Vec<u8>> {
         conn.send(packet)?;
 
         let head_buf = conn.recv(RSP_HEADER_LEN)?;
@@ -86,6 +74,21 @@ impl TdxDirectClient {
         } else {
             Ok(body_buf)
         }
+    }
+
+    fn send_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        let mut conn = TcpConnection::connect(&self.ip, self.port, self.timeout).map_err(|e| {
+            loge!(
+                "direct",
+                "connect to {}:{} failed: {}",
+                self.ip,
+                self.port,
+                e
+            );
+            e
+        })?;
+        utils::perform_handshake(&mut conn)?;
+        Self::send_and_recv_on(&mut conn, packet)
     }
 
     /// 检查代码是否为板块代码 (88xxxx)，如果是则返回错误
@@ -451,36 +454,96 @@ impl TdxDirectClient {
     // 板块信息
     // ================================================================
 
-    /// 获取板块元数据
-    pub fn get_block_info_meta(&self, block_file: &str) -> Result<BlockInfoMeta> {
+    fn block_info_meta_packet(block_file: &str) -> Vec<u8> {
         let mut name_buf = [0u8; 40];
         let bytes = block_file.as_bytes();
         let len = bytes.len().min(40);
         name_buf[..len].copy_from_slice(&bytes[..len]);
 
-        let mut pkt = Vec::with_capacity(52);
-        pkt.extend_from_slice(&[
+        let mut packet = Vec::with_capacity(52);
+        packet.extend_from_slice(&[
             0x0C, 0x39, 0x18, 0x69, 0x00, 0x01, 0x2A, 0x00, 0x2A, 0x00, 0xC5, 0x02,
         ]);
-        pkt.extend_from_slice(&name_buf);
-        parse_block_info_meta(&self.send_and_recv(&pkt)?)
+        packet.extend_from_slice(&name_buf);
+        packet
     }
 
-    /// 获取板块数据
-    pub fn get_block_info(&self, block_file: &str, start: u32, size: u32) -> Result<Vec<u8>> {
+    fn block_info_packet(block_file: &str, start: u32, size: u32) -> Vec<u8> {
         let mut name_buf = [0u8; 100];
         let bytes = block_file.as_bytes();
         let len = bytes.len().min(100);
         name_buf[..len].copy_from_slice(&bytes[..len]);
 
-        let mut pkt = Vec::with_capacity(120);
-        pkt.extend_from_slice(&[
+        let mut packet = Vec::with_capacity(120);
+        packet.extend_from_slice(&[
             0x0c, 0x37, 0x18, 0x6a, 0x00, 0x01, 0x6e, 0x00, 0x6e, 0x00, 0xb9, 0x06,
         ]);
-        pkt.extend_from_slice(&start.to_le_bytes());
-        pkt.extend_from_slice(&size.to_le_bytes());
-        pkt.extend_from_slice(&name_buf);
-        parse_block_info(&self.send_and_recv(&pkt)?)
+        packet.extend_from_slice(&start.to_le_bytes());
+        packet.extend_from_slice(&size.to_le_bytes());
+        packet.extend_from_slice(&name_buf);
+        packet
+    }
+
+    /// 获取板块元数据
+    pub fn get_block_info_meta(&self, block_file: &str) -> Result<BlockInfoMeta> {
+        parse_block_info_meta(&self.send_and_recv(&Self::block_info_meta_packet(block_file))?)
+    }
+
+    /// 获取板块数据
+    pub fn get_block_info(&self, block_file: &str, start: u32, size: u32) -> Result<Vec<u8>> {
+        parse_block_info(&self.send_and_recv(&Self::block_info_packet(block_file, start, size))?)
+    }
+
+    pub(crate) fn download_stable_block_file(
+        &self,
+        block_file: &str,
+        chunk_size: u32,
+        max_size: u32,
+    ) -> Result<(BlockInfoMeta, Vec<u8>, BlockInfoMeta)> {
+        if chunk_size == 0 || max_size == 0 {
+            return Err(TdxError::InvalidData(
+                "TDX block download chunk and maximum sizes must be positive".into(),
+            ));
+        }
+        let mut conn = TcpConnection::connect(&self.ip, self.port, self.timeout)?;
+        utils::perform_handshake(&mut conn)?;
+
+        let before = parse_block_info_meta(&Self::send_and_recv_on(
+            &mut conn,
+            &Self::block_info_meta_packet(block_file),
+        )?)?;
+        if before.size == 0 || before.size > max_size {
+            return Err(TdxError::InvalidData(format!(
+                "TDX block file {block_file} has invalid source size {}",
+                before.size
+            )));
+        }
+        let mut bytes = Vec::with_capacity(before.size as usize);
+        let mut offset = 0u32;
+        while offset < before.size {
+            let requested = chunk_size.min(before.size - offset);
+            let chunk = parse_block_info(&Self::send_and_recv_on(
+                &mut conn,
+                &Self::block_info_packet(block_file, offset, requested),
+            )?)?;
+            if chunk.len() != requested as usize {
+                return Err(TdxError::InvalidData(format!(
+                    "TDX block file {block_file} returned a partial chunk at offset {offset}: expected {requested}, received {}",
+                    chunk.len()
+                )));
+            }
+            bytes.extend_from_slice(&chunk);
+            offset = offset.checked_add(requested).ok_or_else(|| {
+                TdxError::InvalidData(format!(
+                    "TDX block file {block_file} download offset overflow"
+                ))
+            })?;
+        }
+        let after = parse_block_info_meta(&Self::send_and_recv_on(
+            &mut conn,
+            &Self::block_info_meta_packet(block_file),
+        )?)?;
+        Ok((before, bytes, after))
     }
 
     /// 获取并解析板块信息

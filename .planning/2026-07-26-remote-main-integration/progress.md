@@ -21,3 +21,32 @@
   the sandbox could not create the linked worktree's `ORIG_HEAD.lock`.
   Repository-scoped elevated permission is required for this Git metadata
   write.
+- The elevated merge reached the content phase and reported 26 conflicts.
+  No conflict was auto-resolved by discarding history; the merge remains open
+  for file-by-file resolution.
+- The first selected-file conflict checkout was blocked before changing files
+  because the linked worktree could not create `index.lock`; the retry requires
+  repository-scoped permission.
+- The first attempt to log that failure used an invalid empty patch hunk; a
+  focused planning-only patch succeeded without touching merge content.
+- Selected the remote unified-release versions for 22 shared implementation,
+  test, exchange-guide, coverage, and preflight conflicts.
+- Manually reconciled README, deployment, business rules, and compliance so
+  remote release semantics and local Yonhap/WallstreetCN registrations both
+  remain.
+- Renumbered the two local RSS rules to BR-030/BR-031 because remote already
+  owns BR-021 through BR-029.
+- Conflict-marker scan is clean; the remaining unmerged index status now only
+  requires staging the reviewed resolutions.
+- First integrated checks: formatting, documentation links, and compliance
+  passed. The all-target check failed only in the two RSS crates because
+  remote Core renamed `announcement_discovery` to `market_announcements`.
+- Updated both constructors to `market_announcements: false`. The complete
+  workspace/all-target check then passed.
+- Focused verification passed:
+  - WallstreetCN: 26/26 all-target tests;
+  - Yonhap: 30/30 all-target tests;
+  - Core Provider identity: 3/3;
+  - Router intelligence routing: 24/24.
+- Dependency trees preserve Core-only Provider boundaries and a
+  Provider-neutral Router.

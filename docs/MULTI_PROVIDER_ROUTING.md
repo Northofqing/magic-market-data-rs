@@ -20,7 +20,7 @@
 研报/一致预期/语义搜索/研报正文、板块与信号、个股/全市场龙虎榜、人气、资本事件、
 个股/全市场公告、新闻/互动、全球指数、汇率、经济日历、官方政策、期货交割日历、
 财报、涨跌停池和 ETF 期权。生产 crate 只依赖 `magic-market-core`；TDX、
-Tencent、Sina、EMQuant 及公共情报 Provider 都通过相同的薄适配器注册。
+Tencent、Sina、EMQuant、公共情报及交易所官方 Provider 都通过相同的薄适配器注册。
 
 ## 错误分类
 

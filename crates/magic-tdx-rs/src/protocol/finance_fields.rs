@@ -131,43 +131,5 @@ pub fn validate_fields_len(fields_len: usize) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_indicators_empty() {
-        let fields = vec![0.0f32; 584];
-        let result = extract_indicators(&fields);
-        assert_eq!(result.len(), INDICATORS.len());
-        assert!((result["eps"] - 0.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_extract_indicators_values() {
-        let mut fields = vec![0.0f32; 584];
-        fields[0] = 1.5; // idx 1 = eps
-        fields[5] = 12.5; // idx 6 = roe_diluted
-        let result = extract_indicators(&fields);
-        assert!((result["eps"] - 1.5).abs() < 1e-10);
-        assert!((result["roe_diluted"] - 12.5).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_validate_fields_len() {
-        assert!(validate_fields_len(584));
-        assert!(!validate_fields_len(100));
-    }
-
-    #[test]
-    fn labels_and_definitions_preserve_order_names_and_absence_as_zero() {
-        let fields = vec![2.5f32];
-        let labeled = extract_with_labels(&fields);
-        assert_eq!(labeled.len(), field_definitions().len());
-        assert_eq!(labeled[0], ("eps", "基本每股收益", 2.5));
-        assert_eq!(labeled[1].0, "deducted_eps");
-        assert_eq!(labeled[1].2, 0.0);
-        assert_eq!(field_definitions()[0].0, 1);
-        assert!(!validate_fields_len(319));
-        assert!(validate_fields_len(320));
-    }
-}
+#[path = "../../tests/internal/protocol_finance_fields.rs"]
+mod tests;

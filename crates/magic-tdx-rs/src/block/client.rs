@@ -19,9 +19,71 @@ use std::sync::Mutex;
 use crate::error::{Result, TdxError};
 use crate::net::direct_client::TdxDirectClient;
 use crate::protocol::constants::DEFAULT_PORT;
-use crate::protocol::types::{IndexBar, SecurityQuote};
-use crate::reader::block::BlockRecord;
-use crate::sync;
+use crate::protocol::types::{BlockInfoMeta, IndexBar, SecurityQuote};
+use crate::reader::block::{parse_block, BlockRecord};
+
+use super::types::BlockFileSnapshot;
+
+const BLOCK_DOWNLOAD_CHUNK_SIZE: u32 = 0x7530;
+const MAX_BLOCK_FILE_SIZE: u32 = 16 * 1024 * 1024;
+
+fn supported_block_file(filename: &str) -> bool {
+    matches!(
+        filename,
+        crate::protocol::constants::BLOCK_FG
+            | crate::protocol::constants::BLOCK_GN
+            | crate::protocol::constants::BLOCK_SZ
+    )
+}
+
+fn validate_block_meta(filename: &str, meta: &BlockInfoMeta) -> Result<()> {
+    if meta.size == 0 || meta.size > MAX_BLOCK_FILE_SIZE {
+        return Err(TdxError::InvalidData(format!(
+            "TDX block file {filename} has invalid source size {}",
+            meta.size
+        )));
+    }
+    if meta.hash_value.len() != 64 || !meta.hash_value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(TdxError::InvalidData(format!(
+            "TDX block file {filename} has invalid source hash"
+        )));
+    }
+    Ok(())
+}
+
+fn stable_block_snapshot(
+    filename: &str,
+    before: BlockInfoMeta,
+    bytes: Vec<u8>,
+    after: BlockInfoMeta,
+) -> Result<BlockFileSnapshot> {
+    validate_block_meta(filename, &before)?;
+    validate_block_meta(filename, &after)?;
+    if before.size != after.size || before.hash_value != after.hash_value {
+        return Err(TdxError::InvalidData(format!(
+            "TDX block file {filename} changed during download"
+        )));
+    }
+    if bytes.len() != before.size as usize {
+        return Err(TdxError::InvalidData(format!(
+            "TDX block file {filename} is partial: expected {} bytes, received {}",
+            before.size,
+            bytes.len()
+        )));
+    }
+    let records = parse_block(&bytes)?;
+    if records.is_empty() {
+        return Err(TdxError::InvalidData(format!(
+            "TDX block file {filename} contains no source records"
+        )));
+    }
+    Ok(BlockFileSnapshot {
+        filename: filename.to_owned(),
+        hash: before.hash_value,
+        records,
+    })
+}
 
 /// K线级别限制配置
 struct KlineLimit {
@@ -59,12 +121,12 @@ impl TdxBlockClient {
 
     /// 更新服务器地址
     pub fn set_server(&self, ip: &str, port: u16) {
-        sync::lock_recover(&self.client, "block client").set_server(ip, port);
+        self.client.lock().unwrap().set_server(ip, port);
     }
 
     /// 更新超时
     pub fn set_timeout(&self, timeout: f64) {
-        sync::lock_recover(&self.client, "block client").set_timeout(timeout);
+        self.client.lock().unwrap().set_timeout(timeout);
     }
 
     /// 获取 K 级别限制配置
@@ -151,14 +213,10 @@ impl TdxBlockClient {
             count.min(limit.max_count)
         };
 
-        sync::lock(&self.client, "block client")?.get_index_bars_inner(
-            category,
-            1,
-            code,
-            start,
-            actual_count,
-            0,
-        )
+        self.client
+            .lock()
+            .unwrap()
+            .get_index_bars_inner(category, 1, code, start, actual_count, 0)
     }
 
     /// 获取板块 K 线 (使用默认条数)
@@ -175,7 +233,10 @@ impl TdxBlockClient {
     /// `codes`: 板块代码列表 (88xxxx)
     pub fn get_block_quotes(&self, codes: &[&str]) -> Result<Vec<SecurityQuote>> {
         let pairs: Vec<(u8, &str)> = codes.iter().map(|&c| (1u8, c)).collect();
-        sync::lock(&self.client, "block client")?.get_security_quotes_inner(&pairs)
+        self.client
+            .lock()
+            .unwrap()
+            .get_security_quotes_inner(&pairs)
     }
 
     // ================================================================
@@ -189,7 +250,30 @@ impl TdxBlockClient {
     /// 返回板块成分股级别的记录。同一板块名称会出现多次（每个成分股一条）。
     /// 使用 `BlockQuery::list_blocks()` 可按板块名称去重聚合。
     pub fn get_block_list(&self, block_file: &str) -> Result<Vec<BlockRecord>> {
-        sync::lock(&self.client, "block client")?.get_and_parse_block_info(block_file)
+        self.client
+            .lock()
+            .unwrap()
+            .get_and_parse_block_info(block_file)
+    }
+
+    /// Downloads one complete block file and proves its source version stayed stable.
+    pub fn get_block_snapshot(&self, block_file: &str) -> Result<BlockFileSnapshot> {
+        if !supported_block_file(block_file) {
+            return Err(TdxError::Unsupported(format!(
+                "unsupported TDX block file {block_file:?}"
+            )));
+        }
+        let client = self
+            .client
+            .lock()
+            .map_err(|_| TdxError::Connection("TDX block client lock is poisoned".into()))?;
+        let (before, bytes, after) = client.download_stable_block_file(
+            block_file,
+            BLOCK_DOWNLOAD_CHUNK_SIZE,
+            MAX_BLOCK_FILE_SIZE,
+        )?;
+        validate_block_meta(block_file, &before)?;
+        stable_block_snapshot(block_file, before, bytes, after)
     }
 
     /// 获取行业板块列表 (block_fg.dat)
@@ -228,6 +312,53 @@ impl TdxBlockClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::types::BlockInfoMeta;
+
+    fn fixture_block_bytes() -> Vec<u8> {
+        const HEADER_SIZE: usize = 384;
+        const STOCK_AREA_SIZE: usize = 2_800;
+        let mut bytes = vec![0; HEADER_SIZE];
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(b"Power\0\0\0\0");
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(b"600396\0");
+        bytes.resize(HEADER_SIZE + 2 + 9 + 4 + STOCK_AREA_SIZE, 0);
+        bytes
+    }
+
+    fn fixture_meta(size: usize, hash_byte: char) -> BlockInfoMeta {
+        BlockInfoMeta {
+            size: u32::try_from(size).unwrap(),
+            hash_value: std::iter::repeat_n(hash_byte, 64).collect(),
+        }
+    }
+
+    #[test]
+    fn block_snapshot_rejects_source_version_change() {
+        let bytes = fixture_block_bytes();
+        let before = fixture_meta(bytes.len(), 'a');
+        let after = fixture_meta(bytes.len(), 'b');
+
+        let error = stable_block_snapshot("block_fg.dat", before, bytes, after).unwrap_err();
+
+        assert!(error.to_string().contains("changed during download"));
+    }
+
+    #[test]
+    fn block_snapshot_preserves_exact_file_hash_and_rows() {
+        let bytes = fixture_block_bytes();
+        let before = fixture_meta(bytes.len(), 'a');
+        let after = fixture_meta(bytes.len(), 'a');
+
+        let snapshot = stable_block_snapshot("block_fg.dat", before, bytes, after).unwrap();
+
+        assert_eq!(snapshot.filename, "block_fg.dat");
+        assert_eq!(snapshot.hash, "a".repeat(64));
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.records[0].blockname, "Power");
+        assert_eq!(snapshot.records[0].code, "600396");
+    }
 
     #[test]
     fn test_kline_limit_daily() {

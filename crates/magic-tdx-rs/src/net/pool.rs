@@ -1,18 +1,16 @@
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::error::Result;
 use crate::loge;
 use crate::net::connection::TcpConnection;
 use crate::protocol::constants::{CONNECT_TIMEOUT, DEFAULT_POOL_SIZE};
-use crate::sync;
-
-type HandshakeFn = dyn Fn(&mut TcpConnection) -> Result<()> + Send + Sync;
 
 /// 连接池中的单个连接
 struct PooledConnection {
     conn: TcpConnection,
     server: (String, u16),
+    generation: Arc<()>,
 }
 
 /// 连接池配置
@@ -20,7 +18,7 @@ pub struct PoolConfig {
     pub max_size: usize,
     pub connect_timeout: f64,
     /// 握手回调: 新建连接后执行 (setup commands)
-    pub handshake_fn: Option<Box<HandshakeFn>>,
+    pub handshake_fn: Option<Box<dyn Fn(&mut TcpConnection) -> Result<()> + Send + Sync>>,
 }
 
 impl PoolConfig {
@@ -54,6 +52,7 @@ struct PoolInner {
     idle: VecDeque<PooledConnection>,
     active: usize,
     total: usize,
+    generation: Arc<()>,
 }
 
 impl ConnectionPool {
@@ -64,6 +63,7 @@ impl ConnectionPool {
                 idle: VecDeque::new(),
                 active: 0,
                 total: 0,
+                generation: Arc::new(()),
             }),
             config,
         }
@@ -71,9 +71,14 @@ impl ConnectionPool {
 
     /// 将一个已握手的连接放入池中
     pub fn push(&self, conn: TcpConnection, server: (String, u16)) {
-        let mut inner = sync::lock_recover(&self.inner, "connection pool");
+        let mut inner = self.inner.lock().unwrap();
         inner.total += 1;
-        inner.idle.push_back(PooledConnection { conn, server });
+        let generation = Arc::clone(&inner.generation);
+        inner.idle.push_back(PooledConnection {
+            conn,
+            server,
+            generation,
+        });
     }
 
     /// 从池中借出一个连接
@@ -82,7 +87,7 @@ impl ConnectionPool {
     /// 如果未达上限，创建新连接；
     /// 如果已满，返回错误。
     pub fn borrow(&self, server: &(String, u16)) -> Result<PooledConnGuard<'_>> {
-        let mut inner = sync::lock(&self.inner, "connection pool")?;
+        let mut inner = self.inner.lock().unwrap();
 
         // 尝试从空闲队列获取
         if let Some(conn) = inner.idle.pop_front() {
@@ -97,22 +102,33 @@ impl ConnectionPool {
         if inner.total < self.config.max_size {
             let server_clone = server.clone();
             let has_handshake = self.config.handshake_fn.is_some();
+            let generation = Arc::clone(&inner.generation);
             inner.total += 1;
             inner.active += 1;
 
             // 释放锁后再创建连接 (避免持锁做 I/O)
             drop(inner);
 
-            let mut conn = TcpConnection::connect(
+            let mut conn = match TcpConnection::connect(
                 &server_clone.0,
                 server_clone.1,
                 self.config.connect_timeout,
-            )?;
+            ) {
+                Ok(conn) => conn,
+                Err(error) => {
+                    self.release_reservation();
+                    return Err(error);
+                }
+            };
 
             // 执行握手 (如果有)
             if has_handshake {
                 if let Some(ref handshake_fn) = self.config.handshake_fn {
-                    handshake_fn(&mut conn)?;
+                    if let Err(error) = handshake_fn(&mut conn) {
+                        conn.close();
+                        self.release_reservation();
+                        return Err(error);
+                    }
                 }
             }
 
@@ -121,6 +137,7 @@ impl ConnectionPool {
                 conn: Some(PooledConnection {
                     conn,
                     server: server_clone,
+                    generation,
                 }),
             });
         }
@@ -139,7 +156,7 @@ impl ConnectionPool {
 
     /// 尝试借出连接 (非阻塞)
     pub fn try_borrow(&self, server: &(String, u16)) -> Result<Option<PooledConnGuard<'_>>> {
-        let mut inner = sync::lock(&self.inner, "connection pool")?;
+        let mut inner = self.inner.lock().unwrap();
 
         if let Some(conn) = inner.idle.pop_front() {
             inner.active += 1;
@@ -152,19 +169,30 @@ impl ConnectionPool {
         if inner.total < self.config.max_size {
             let server_clone = server.clone();
             let has_handshake = self.config.handshake_fn.is_some();
+            let generation = Arc::clone(&inner.generation);
             inner.total += 1;
             inner.active += 1;
             drop(inner);
 
-            let mut conn = TcpConnection::connect(
+            let mut conn = match TcpConnection::connect(
                 &server_clone.0,
                 server_clone.1,
                 self.config.connect_timeout,
-            )?;
+            ) {
+                Ok(conn) => conn,
+                Err(error) => {
+                    self.release_reservation();
+                    return Err(error);
+                }
+            };
 
             if has_handshake {
                 if let Some(ref handshake_fn) = self.config.handshake_fn {
-                    handshake_fn(&mut conn)?;
+                    if let Err(error) = handshake_fn(&mut conn) {
+                        conn.close();
+                        self.release_reservation();
+                        return Err(error);
+                    }
                 }
             }
 
@@ -173,6 +201,7 @@ impl ConnectionPool {
                 conn: Some(PooledConnection {
                     conn,
                     server: server_clone,
+                    generation,
                 }),
             }));
         }
@@ -181,30 +210,78 @@ impl ConnectionPool {
     }
 
     /// 归还连接到池中
-    fn return_connection(&self, pooled: PooledConnection) {
-        let mut inner = sync::lock_recover(&self.inner, "connection pool");
+    fn release_reservation(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.active == 0 || inner.total == 0 {
+            loge!(
+                "pool",
+                "reservation accounting invariant failed (active={}, total={})",
+                inner.active,
+                inner.total
+            );
+            return;
+        }
         inner.active -= 1;
+        inner.total -= 1;
+    }
 
-        if pooled.conn.is_open() && inner.idle.len() < self.config.max_size {
+    /// 归还连接到池中
+    fn return_connection(&self, mut pooled: PooledConnection) {
+        let mut inner = self.inner.lock().unwrap();
+        let reusable = Self::settle_return_state(
+            &mut inner,
+            &pooled.generation,
+            pooled.conn.is_open(),
+            self.config.max_size,
+        );
+        if reusable {
             inner.idle.push_back(pooled);
         } else {
+            pooled.conn.close();
+        }
+    }
+
+    fn settle_return_state(
+        inner: &mut PoolInner,
+        returned_generation: &Arc<()>,
+        connection_is_open: bool,
+        max_size: usize,
+    ) -> bool {
+        if inner.active == 0 || inner.total == 0 {
+            loge!(
+                "pool",
+                "return accounting invariant failed (active={}, total={})",
+                inner.active,
+                inner.total
+            );
+            return false;
+        }
+        inner.active -= 1;
+
+        if Arc::ptr_eq(returned_generation, &inner.generation)
+            && connection_is_open
+            && inner.idle.len() < max_size
+        {
+            true
+        } else {
             inner.total -= 1;
+            false
         }
     }
 
     /// 关闭所有连接
     pub fn close_all(&self) {
-        let mut inner = sync::lock_recover(&self.inner, "connection pool");
+        let mut inner = self.inner.lock().unwrap();
+        inner.generation = Arc::new(());
         while let Some(mut conn) = inner.idle.pop_front() {
             conn.conn.close();
             inner.total -= 1;
         }
-        inner.active = 0;
     }
 
     /// 获取池状态
     pub fn stats(&self) -> PoolStats {
-        let inner = sync::lock_recover(&self.inner, "connection pool");
+        let inner = self.inner.lock().unwrap();
         PoolStats {
             idle: inner.idle.len(),
             active: inner.active,
@@ -280,6 +357,15 @@ mod tests {
         let server = ("127.0.0.1".to_string(), 1);
         let result = pool.borrow(&server);
         assert!(result.is_err());
+        let stats = pool.stats();
+        assert_eq!(stats.active, 0);
+        assert_eq!(stats.total, 0);
+
+        let result = pool.try_borrow(&server);
+        assert!(result.is_err());
+        let stats = pool.stats();
+        assert_eq!(stats.active, 0);
+        assert_eq!(stats.total, 0);
     }
 
     #[test]
@@ -289,5 +375,34 @@ mod tests {
         pool.close_all();
         let stats = pool.stats();
         assert_eq!(stats.total, 0);
+    }
+
+    #[test]
+    fn close_all_keeps_active_reservations_until_stale_guards_return() {
+        let mut config = PoolConfig::new();
+        config.max_size = 1;
+        let pool = ConnectionPool::new_single(("127.0.0.1".to_string(), 7709), config);
+        let stale_generation = {
+            let mut inner = pool.inner.lock().unwrap();
+            inner.active = 1;
+            inner.total = 1;
+            Arc::clone(&inner.generation)
+        };
+        assert_eq!(pool.stats().active, 1);
+        pool.close_all();
+        let during_close = pool.stats();
+        assert_eq!(during_close.idle, 0);
+        assert_eq!(during_close.active, 1);
+        assert_eq!(during_close.total, 1);
+
+        let reusable = {
+            let mut inner = pool.inner.lock().unwrap();
+            ConnectionPool::settle_return_state(&mut inner, &stale_generation, true, 1)
+        };
+        assert!(!reusable);
+        let after_return = pool.stats();
+        assert_eq!(after_return.idle, 0);
+        assert_eq!(after_return.active, 0);
+        assert_eq!(after_return.total, 0);
     }
 }

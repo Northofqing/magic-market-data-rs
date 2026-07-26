@@ -1,22 +1,32 @@
 # magic-exchange-rs
 
 Read-only adapters for official SSE, SZSE, HKEX and CFFEX public data. The
-crate keeps the four venues as separate Provider identities. SSE, SZSE and HKEX
+crate keeps the venues as separate Provider identities. SSE, SZSE and HKEX
 expose only families that have deterministic fixtures plus a successful
 production-trait probe. CFFEX currently exposes an unadmitted diagnostic path;
 its production capability remains false.
 
-## Admitted capabilities and unadmitted diagnostics
+## Admitted capabilities
 
-| Client | Status | Core trait or diagnostic | Exact HTTPS endpoint |
-| --- | --- | --- | --- |
-| `SseClient` | Admitted | `Announcements` | `query.sse.com.cn/security/stock/queryCompanyBulletin.do` |
-| `SseClient` | Admitted | `DragonTigerData` | `query.sse.com.cn/infodisplay/showTradePublicFile.do` |
-| `SzseClient` | Admitted | `Announcements` | `www.szse.cn/api/disc/announcement/annList` |
-| `SzseClient` | Admitted | `RealtimeQuotes`, `OrderBooks` | `www.szse.cn/api/market/ssjjhq/getTimeData` |
-| `SzseClient` | Admitted | `DragonTigerData` | `www.szse.cn/api/report/ShowReport/data` |
-| `HkexClient` | Admitted | `NorthboundDailyStatistics` | `www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js` |
-| `CffexClient` | Diagnostic only; not admitted | `probe_futures_delivery_calendar`; production trait is `Unsupported` | `www.cffex.com.cn/jystz/` and dated same-host notice details |
+| Client | Core trait | Exact HTTPS endpoint |
+| --- | --- | --- |
+| `SseClient` | `Announcements` | `query.sse.com.cn/security/stock/queryCompanyBulletin.do` |
+| `SseClient` | `DragonTigerData` | `query.sse.com.cn/infodisplay/showTradePublicFile.do` |
+| `SzseClient` | `Announcements` | `www.szse.cn/api/disc/announcement/annList` |
+| `SzseClient` | `RealtimeQuotes`, `OrderBooks` | `www.szse.cn/api/market/ssjjhq/getTimeData` |
+| `SzseClient` | `DragonTigerData` | `www.szse.cn/api/report/ShowReport/data` |
+| `HkexClient` | `NorthboundDailyStatistics` | `www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js` |
+
+## Unadmitted diagnostic
+
+`CffexClient::probe_futures_delivery_calendar` scans the exact official notice
+paths and requires IF/IH/IC/IM plus the requested delivery date and settlement
+price wording. The notice does not independently prove the settlement method,
+so records use `FuturesDeliveryMethod::NotProvided`; the implementation never
+infers cash settlement or a “third Friday”. The 2026-07-25 bounded live probe
+failed during TLS initialization with `unexpected EOF`, so
+`calendar_capabilities().futures_delivery` remains false and the production
+`FuturesDeliveryCalendar` trait returns typed `Unsupported`.
 
 SSE/SZSE announcements validate complete remote pages before local
 truncation. Dragon-tiger requests require an explicit trading date. SZSE
@@ -32,18 +42,6 @@ incomplete batch quality report. HKEX DailyStat preserves CNY totals, trade
 counts, ETF turnover, exact Top10 ranks and the quota `999,999,999` sentinel as
 `NorthboundQuotaBalance::Unavailable`.
 
-CFFEX scans at most 120 official notice-list pages for the requested contract
-month. A detail is admitted only when its title, delivery-settlement wording,
-IF/IH/IC/IM contract identities, actual delivery date, requested month, and
-delivery-settlement-price wording agree. The notice does not independently
-state the settlement method, so normalized records use
-`FuturesDeliveryMethod::NotProvided`. Holiday shifts come from the notice text;
-the Provider never substitutes a “third Friday” formula or infers cash
-settlement from the existence of a settlement price. Under BR-009,
-`calendar_capabilities().futures_delivery` remains false and the production
-`FuturesDeliveryCalendar` trait returns typed `Unsupported` until a bounded
-live probe succeeds.
-
 All transports enforce credential-free HTTPS host/path allowlists, port 443,
 zero redirects, exact final URLs, bounded content types, an 8 MiB response
 ceiling and 1–60 second timeouts. Client clones share a serial request gate and
@@ -53,11 +51,6 @@ second apart.
 ## Probes
 
 ```bash
-cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
-
-MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
-MAGIC_CFFEX_DELIVERY_YEAR=2026 \
-MAGIC_CFFEX_DELIVERY_MONTH=2 \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 
 MAGIC_EXCHANGE_LOAD_REQUESTS=8 \
@@ -72,15 +65,27 @@ Defaults:
 - SSE dragon-tiger: `600396`, `2026-07-22`;
 - SZSE dragon-tiger: `000603`, `2026-07-23`;
 - HKEX DailyStat: `2026-07-22`, both northbound channels.
-- CFFEX delivery notice: `2026-02`, exactly IF2602/IH2602/IC2602/IM2602.
 
 Override with `MAGIC_EXCHANGE_SSE_CODE`, `MAGIC_EXCHANGE_SZSE_CODE`,
 `MAGIC_EXCHANGE_SSE_DRAGON_DATE`, `MAGIC_EXCHANGE_SZSE_DRAGON_CODE`,
 `MAGIC_EXCHANGE_SZSE_DRAGON_DATE`, `MAGIC_EXCHANGE_HKEX_DATE` and
-`MAGIC_EXCHANGE_LIVE_LIMIT`. Set
-`MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery` for the isolated CFFEX probe and
-override its month with `MAGIC_CFFEX_DELIVERY_YEAR` and
-`MAGIC_CFFEX_DELIVERY_MONTH`.
+`MAGIC_EXCHANGE_LIVE_LIMIT`.
+
+Run the CFFEX diagnostic independently with:
+
+```bash
+MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
+MAGIC_CFFEX_DELIVERY_YEAR=2026 \
+MAGIC_CFFEX_DELIVERY_MONTH=2 \
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+```
+
+This command is diagnostic-only. A successful diagnostic emits
+`diagnostic_probe_status=passed` and
+`admission_state=diagnostic_complete_unadmitted`; it must not emit the
+production `live_probe_status=passed` marker. Notice publication time is kept
+as provenance. Unproved settlement method and last trading date remain
+`NotProvided` and absent respectively.
 
 The final 2026-07-23 production-trait live probe passed announcements,
 SSE/SZSE dragon-tiger entries and complete seats, SZSE Quote/five-level book,
@@ -97,14 +102,6 @@ attempt_latency_p95_ms=1201 attempt_latency_p99_ms=1201
 attempt_latency_max_ms=1201 minimum_attempt_start_gap_ms=1000
 load_probe_status=passed
 ```
-
-The deterministic CFFEX diagnostic test returns exactly four delivery events
-for IF2602, IH2602, IC2602, and IM2602 from one official-notice fixture.
-The actual date is parsed from the notice rather than derived from a calendar
-formula, and the unproved method remains `NotProvided`. On 2026-07-25, the
-isolated live command failed both inside and outside the sandbox while
-initializing TLS to `https://www.cffex.com.cn/jystz/` (`unexpected end of
-file`), so current live availability is not claimed.
 
 These are bounded connectivity/validation measurements, not exchange SLA or
 permission for sustained collection. One high-level attempt can issue

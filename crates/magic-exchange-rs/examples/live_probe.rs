@@ -31,7 +31,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             4,
             4,
         )?;
-        println!("\nlive_probe_status=passed");
+        println!("\ndiagnostic_probe_status=passed");
+        println!("admission_state=diagnostic_complete_unadmitted");
         return Ok(());
     }
     let sse_code = std::env::var("MAGIC_EXCHANGE_SSE_CODE").unwrap_or_else(|_| "600396".into());

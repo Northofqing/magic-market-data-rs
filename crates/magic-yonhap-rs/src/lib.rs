@@ -257,7 +257,7 @@ impl YonhapClient {
             instrument_news: false,
             global_news: false,
             announcements: false,
-            announcement_discovery: false,
+            market_announcements: false,
             investor_questions: false,
         }
     }

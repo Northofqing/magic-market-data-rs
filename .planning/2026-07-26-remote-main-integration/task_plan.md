@@ -9,7 +9,7 @@ uncommitted files in the primary worktree.
 
 ## Current Phase
 
-Phase 2
+Phase 3
 
 ## Phases
 
@@ -23,18 +23,18 @@ Phase 2
 
 ### Phase 2: Merge and Resolve
 
-- [ ] Merge `origin/main` without rebasing or rewriting local history.
-- [ ] Resolve conflicts by preserving both registered capabilities and
+- [x] Merge `origin/main` without rebasing or rewriting local history.
+- [x] Resolve conflicts by preserving both registered capabilities and
   explicit failure/provenance contracts.
-- [ ] Review the complete merge diff and dependency graph.
-- **Status:** in_progress
+- [x] Review the complete merge diff and dependency graph.
+- **Status:** complete
 
 ### Phase 3: Release Gates
 
 - [ ] Run formatting, workspace tests, strict Clippy, compliance, and
   documentation checks.
 - [ ] Run the complete release preflight on the integrated tree.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 4: Publish
 
@@ -65,3 +65,7 @@ Phase 2
 | --- | --- | --- |
 | `git pull --ff-only` reported divergent branches | Local merge cleanup | Preserved the explicit failure, fetched the remote state, and moved remote integration into this isolated merge workflow. |
 | Merge could not create the linked worktree's `ORIG_HEAD.lock` | First isolated merge attempt | The managed sandbox exposes common Git metadata read-only; retry the same exact merge with repository-scoped elevated permission. |
+| Automatic merge reported 26 conflicted files | Provenance-preserving merge | Resolve current shared implementations in favor of the newer remote line, then explicitly preserve and verify the local Yonhap/WallstreetCN identities, routing, documentation, compliance, and packaging registrations. |
+| Conflict checkout could not create `index.lock` | First mechanical resolution attempt | The worktree files are writable but its shared Git index metadata is sandboxed; retry the exact selected-file resolution with repository-scoped permission. |
+| Planning patch contained an empty update hunk | First error-log update | Reissued a focused patch containing only valid hunks. |
+| Both RSS crates failed `E0560` on `announcement_discovery` | First integrated all-target check | Remote Core renamed the explicit capability field to `market_announcements`; update both Provider constructors to the new field while preserving `false`. |

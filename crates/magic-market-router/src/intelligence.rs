@@ -1,66 +1,20 @@
 use crate::{FailoverChain, FailureKind, SourceError, SourceFn};
 use magic_market_core::{
-    Announcement, AnnouncementDiscovery, AnnouncementDiscoveryRequest, EconomicCalendarProvider,
-    EconomicCalendarRequest, EconomicEvent, ForeignExchangeProvider, FuturesDeliveryCalendar,
-    FuturesDeliveryEvent, FuturesDeliveryRequest, FuturesProduct, FxQuote, FxRequest,
-    GlobalIndexCode, GlobalIndexProvider, GlobalIndexQuote, GlobalIndexRequest, PolicyDocument,
-    PolicyDocuments, PolicyRequest, ProviderId, ResearchDocument, ResearchDocumentRequest,
-    ResearchDocuments,
+    EconomicCalendarProvider, EconomicCalendarRequest, EconomicEvent, ForeignExchangeProvider,
+    FuturesDeliveryCalendar, FuturesDeliveryEvent, FuturesDeliveryRequest, FuturesProduct, FxQuote,
+    FxRequest, GlobalIndexCode, GlobalIndexProvider, GlobalIndexQuote, GlobalIndexRequest,
+    PolicyDocument, PolicyDocuments, PolicyRequest, ProviderId, ResearchDocument,
+    ResearchDocumentRequest, ResearchDocuments,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
 
-pub type AnnouncementDiscoveryRouter = FailoverChain<AnnouncementDiscoveryRequest, Announcement>;
 pub type GlobalIndexRouter = FailoverChain<GlobalIndexRequest, GlobalIndexQuote>;
 pub type ForeignExchangeRouter = FailoverChain<FxRequest, FxQuote>;
 pub type EconomicCalendarRouter = FailoverChain<EconomicCalendarRequest, EconomicEvent>;
 pub type PolicyDocumentRouter = FailoverChain<PolicyRequest, PolicyDocument>;
 pub type ResearchDocumentRouter = FailoverChain<ResearchDocumentRequest, ResearchDocument>;
 pub type FuturesDeliveryRouter = FailoverChain<FuturesDeliveryRequest, FuturesDeliveryEvent>;
-
-pub fn announcement_discovery_source<Provider, Classify>(
-    provider_id: ProviderId,
-    provider: Arc<Provider>,
-    classify: Classify,
-) -> SourceFn<AnnouncementDiscoveryRequest, Announcement>
-where
-    Provider: AnnouncementDiscovery + Send + Sync + 'static,
-    Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
-{
-    SourceFn::new(provider_id, move |request| {
-        let batch = provider
-            .discover_announcements(request)
-            .map_err(&classify)?;
-        if batch.records().len() > request.limit().get() as usize {
-            return quality("announcement discovery batch exceeds requested limit");
-        }
-        let mut identities = HashSet::with_capacity(batch.records().len());
-        for record in batch.records() {
-            if record.instrument_name.is_none() {
-                return quality("announcement discovery record is missing its stock name");
-            }
-            let date = record.published_at.as_str().get(..10).ok_or_else(|| {
-                SourceError::try_next(
-                    FailureKind::Evidence,
-                    "announcement published_at has no date prefix",
-                )
-            })?;
-            if date < request.start().as_str() || date > request.end().as_str() {
-                return evidence("announcement date is outside requested discovery range");
-            }
-            if request
-                .exchange()
-                .is_some_and(|exchange| record.instrument.exchange() != exchange)
-            {
-                return evidence("announcement exchange does not match requested exchange");
-            }
-            if !identities.insert((record.announcement_id.as_str(), record.instrument.clone())) {
-                return quality("announcement discovery batch contains duplicate identities");
-            }
-        }
-        Ok(batch)
-    })
-}
 
 pub fn global_index_source<Provider, Classify>(
     provider_id: ProviderId,
@@ -239,10 +193,15 @@ where
                 return evidence("CFFEX contract code does not match requested month");
             }
             let month = format!("{:04}-{:02}", request.year().get(), request.month().get());
-            if record.delivery_date.as_str().get(..7) != Some(month.as_str())
-                || record.last_trading_date != record.delivery_date
-            {
+            if record.delivery_date.as_str().get(..7) != Some(month.as_str()) {
                 return evidence("CFFEX delivery date does not match requested month");
+            }
+            if record
+                .last_trading_date
+                .as_ref()
+                .is_some_and(|date| date.as_str().get(..7) != Some(month.as_str()))
+            {
+                return evidence("CFFEX last trading date does not match requested month");
             }
         }
         if actual != expected {

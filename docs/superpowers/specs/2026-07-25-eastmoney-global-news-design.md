@@ -38,7 +38,8 @@ Each admitted row maps to `NewsItem`:
 - `title`: decoded, non-empty HTML title text;
 - `summary` and `content`: `None`, because the list page supplies neither;
 - `publisher`: `东方财富网`;
-- `canonical_url`: normalized HTTPS URL on `finance.eastmoney.com`;
+- `canonical_url`: normalized HTTPS URL on the exact source host,
+  `finance.eastmoney.com` or `global.eastmoney.com`;
 - `published_at`: the exact `YYYY-MM-DD HH:MM` list timestamp;
 - `instruments`: empty; title mentions are not structured source identities;
 - `topics`: one source family label, `财经`;
@@ -59,7 +60,7 @@ existing JSON/JSONP media-type gate. It accepts only HTTPS
 one-second request gate across client clones.
 
 Missing `#artList`, malformed list structure, invalid calendar/clock text,
-wrong category, non-official or noncanonical article URLs, duplicate IDs,
+wrong category, non-official/lookalike or noncanonical article URLs, duplicate IDs,
 unsorted rows, truncated response, empty result and insufficient cardinality
 are explicit errors. No retry, cookie, account, article-body crawl or fallback
 HTML selector is hidden inside the Provider.

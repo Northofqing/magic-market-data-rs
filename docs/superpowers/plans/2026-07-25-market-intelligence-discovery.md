@@ -26,10 +26,13 @@ same feature branch:
 - [x] State Council official policy library Provider in `magic-gov-rs`.
 - [x] Eastmoney original research PDF body with exact identity and bounded
   content validation.
-- [x] CFFEX IF/IH/IC/IM delivery-notice calendar without formula inference.
+- [x] CFFEX IF/IH/IC/IM deterministic delivery-notice diagnostic without
+  formula inference; production capability remains unadmitted and is governed
+  by `2026-07-26-cffex-capability-remediation-design.md`.
 - [x] Eastmoney strict current-day 15:35 post-close fund-flow ranking with
   exact cardinality, common source timestamp, contiguous ranks, code and name.
-- [x] Provider-neutral router aliases and admission checks for every family.
+- [x] Provider-neutral router aliases and admission checks; CFFEX retains the
+  adapter shape but is not registered as a production-capable source.
 - [x] Business rules BR-013 through BR-019, integration documentation,
   live-probe source, release packaging and compliance registration.
 

@@ -134,21 +134,5 @@ pub struct PolicyCapabilities {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn policy_request_requires_a_complete_ordered_range() {
-        let invalid = r#"{"query":null,"start":"2026-07-01","end":null,"page":1,"page_size":5}"#;
-        assert!(serde_json::from_str::<PolicyRequest>(invalid).is_err());
-        let request =
-            PolicyRequest::new(PositiveU32::new(1).unwrap(), PositiveU32::new(5).unwrap()).unwrap();
-        assert!(request
-            .clone()
-            .with_range(
-                IsoDate::new("2026-07-02").unwrap(),
-                IsoDate::new("2026-07-01").unwrap()
-            )
-            .is_err());
-    }
-}
+#[path = "../tests/internal/policy_tests.rs"]
+mod tests;

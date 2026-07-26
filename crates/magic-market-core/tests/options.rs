@@ -98,6 +98,9 @@ fn contract_month_is_checked_and_exact_expiry_and_strike_can_be_absent() {
     assert_eq!(contract.expiry_month.as_str(), "2026-09");
     assert!(contract.expiry.is_none());
     assert!(contract.strike.is_none());
+    assert!(ContractMonth::new("202608").is_err());
+    assert!(ContractMonth::new("2026/08").is_err());
+    assert!(ContractMonth::new("202X-08").is_err());
     assert!(ContractMonth::new("2026-13").is_err());
     assert!(serde_json::from_str::<ContractMonth>("\"2026-00\"").is_err());
     assert_eq!(
@@ -150,7 +153,10 @@ fn option_quote_deserialization_rechecks_cross_field_invariants() {
         ("high", serde_json::json!(0.07)),
         ("upper_limit", serde_json::json!(0.0005)),
         ("amount", serde_json::json!(-1.0)),
+        ("amplitude", serde_json::json!(-0.01)),
         ("quote_at", serde_json::json!("2026-02-30T14:30:00+08:00")),
+        ("quote_at", serde_json::json!("2026-08-03T14:30:00+24:00")),
+        ("quote_at", serde_json::json!("2026-08-03T14:30:00+08:60")),
     ] {
         let mut candidate = valid.clone();
         candidate[field] = invalid;

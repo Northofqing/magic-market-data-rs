@@ -1,7 +1,8 @@
 # 百度技术 K 线接入
 
-`magic-baidu-rs` 是只读的日线技术指标补充 Provider，使用百度股市通公开 HTTPS
-接口，并把源端已经计算的 MA5/MA10/MA20 映射为 Core `TechnicalBar`。
+`magic-baidu-rs` 是只读的日线技术指标诊断适配器，使用百度股市通公开 HTTPS
+接口，并把源端已经计算的 MA5/MA10/MA20 映射为 Core `TechnicalBar`。当前
+`capabilities().bars=false`：能解析真实响应不等于已经满足生产准入。
 
 ## 数据源与网络边界
 
@@ -38,12 +39,16 @@ MAGIC_BAIDU_LOAD_REQUESTS=2 \
   cargo run -p magic-baidu-rs --example load_probe --release --locked --offline
 ```
 
-默认样本为华电辽能 `600396.SH`。live probe 打印 OHLC、量额、复权、MA5/10/20 和
-完整证据；load probe 串行、由客户端保证请求起始至少间隔一秒、最多三次，并输出
+默认样本为华电辽能 `600396.SH`。live probe 只请求一根记录并用公共证据门校验
+OHLC、量额、复权、MA5/10/20 和完整证据。因为当前响应合同不能独立证明最新交易
+日、可信交易日历、相邻变动及公司行动连续性，成功诊断仍只输出
+`diagnostic_complete_unadmitted`，不得输出 `admitted`。load probe 串行、由客户
+端保证请求起始至少间隔一秒、最多三次，并输出
 成功/失败、错误、RPS 和 p50/p95/p99/max。确定性 fixtures 已覆盖字段映射、缺失
 MA、真实除权日缺口、市场/代码一致性、畸形 Content-Type、clone 并发门、行数上限
-和 URL 白名单。2026-07-23 真实 probe 已返回华电辽能 5 根未复权日线及
-MA5/10/20；真实负载结果详见 `docs/PERFORMANCE_RESULTS.md`。
+和 URL 白名单。2026-07-23 的历史真实 probe 曾返回华电辽能 5 根未复权日线及
+MA5/10/20，但该记录早于当前机器准入门，不构成 capability admission；历史负载
+结果详见 `docs/PERFORMANCE_RESULTS.md`。
 
 ## 生产边界
 

@@ -1,6 +1,11 @@
 name: Live diagnostic and benchmark
 on:
   workflow_dispatch:
+    inputs:
+      eastmoney_pool_date:
+        description: Eastmoney source trading session (YYYY-MM-DD)
+        required: true
+        type: string
 jobs:
   parser-benchmark:
     runs-on: ubuntu-latest
@@ -40,13 +45,53 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo run -p magic-${{ matrix.provider }}-rs --example live_probe --release --locked | tee live-${{ matrix.provider }}.txt
-      - run: cargo run -p magic-${{ matrix.provider }}-rs --example load_probe --release --locked | tee -a live-${{ matrix.provider }}.txt
+      - name: Run unauthenticated public-web probes
+        if: ${{ matrix.provider != 'eastmoney' }}
+        run: |
+          set -o pipefail
+          cargo run -p magic-${{ matrix.provider }}-rs --example live_probe --release --locked |
+            tee live-${{ matrix.provider }}.txt
+          cargo run -p magic-${{ matrix.provider }}-rs --example load_probe --release --locked |
+            tee -a live-${{ matrix.provider }}.txt
+      - name: Run Eastmoney source-session probes
+        if: ${{ matrix.provider == 'eastmoney' }}
+        env:
+          MAGIC_EASTMONEY_POOL_DATE: ${{ inputs.eastmoney_pool_date }}
+          MAGIC_EASTMONEY_DRAGON_TIGER_DATE: ${{ inputs.eastmoney_pool_date }}
+          MAGIC_EASTMONEY_DRAGON_DATE: ${{ inputs.eastmoney_pool_date }}
+        run: |
+          set -o pipefail
+          cargo run -p magic-eastmoney-rs --example live_probe --release --locked |
+            tee live-eastmoney.txt
+          cargo run -p magic-eastmoney-rs --example load_probe --release --locked |
+            tee -a live-eastmoney.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: live-${{ matrix.provider }}-probe
           path: live-${{ matrix.provider }}.txt
+  live-cffex-delivery:
+    runs-on: ubuntu-latest
+    env:
+      MAGIC_EXCHANGE_LIVE_OPERATION: cffex-delivery
+      MAGIC_CFFEX_DELIVERY_YEAR: 2026
+      MAGIC_CFFEX_DELIVERY_MONTH: 2
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run independent official CFFEX delivery probe
+        run: |
+          set -o pipefail
+          cargo run -p magic-exchange-rs --example live_probe --release --locked |
+            tee live-cffex-delivery.txt
+          grep -qx 'diagnostic_probe_status=passed' live-cffex-delivery.txt
+          grep -qx 'admission_state=diagnostic_complete_unadmitted' live-cffex-delivery.txt
+          ! grep -qx 'live_probe_status=passed' live-cffex-delivery.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-cffex-delivery-probe
+          path: live-cffex-delivery.txt
   live-iwencai:
     runs-on: ubuntu-latest
     env:
@@ -54,12 +99,15 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run authenticated probes
+      - name: Run authenticated iWencai probes
         if: ${{ env.MAGIC_IWENCAI_API_KEY != '' }}
         run: |
-          cargo run -p magic-iwencai-rs --example live_probe --release --locked | tee live-iwencai.txt
-          cargo run -p magic-iwencai-rs --example load_probe --release --locked | tee -a live-iwencai.txt
-      - name: Record missing credential
+          set -o pipefail
+          cargo run -p magic-iwencai-rs --example live_probe --release --locked |
+            tee live-iwencai.txt
+          cargo run -p magic-iwencai-rs --example load_probe --release --locked |
+            tee -a live-iwencai.txt
+      - name: Record missing iWencai credential
         if: ${{ env.MAGIC_IWENCAI_API_KEY == '' }}
         run: printf 'iwencai_status=skipped_missing_repository_secret\n' | tee live-iwencai.txt
       - uses: actions/upload-artifact@v4

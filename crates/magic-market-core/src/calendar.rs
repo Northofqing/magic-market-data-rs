@@ -165,7 +165,11 @@ pub enum FuturesDeliveryMethod {
 pub struct FuturesDeliveryEvent {
     pub product: FuturesProduct,
     pub contract_code: NonEmptyText,
-    pub last_trading_date: IsoDate,
+    /// Last trading date when the source explicitly proves it.
+    ///
+    /// An official delivery notice can prove the delivery date without
+    /// independently proving the last trading date.
+    pub last_trading_date: Option<IsoDate>,
     pub delivery_date: IsoDate,
     pub method: FuturesDeliveryMethod,
     pub notice_url: HttpsUrl,
@@ -198,20 +202,5 @@ pub struct CalendarCapabilities {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn calendar_requests_revalidate_bounds() {
-        assert!(EconomicCalendarRequest::new(PositiveU32::new(20).unwrap()).is_ok());
-        assert!(EconomicCalendarRequest::new(PositiveU32::new(21).unwrap()).is_err());
-        assert!(FuturesDeliveryRequest::new(
-            PositiveU32::new(2026).unwrap(),
-            PositiveU32::new(13).unwrap()
-        )
-        .is_err());
-        assert!(
-            serde_json::from_str::<FuturesDeliveryRequest>(r#"{"year":2026,"month":13}"#).is_err()
-        );
-    }
-}
+#[path = "../tests/internal/calendar_tests.rs"]
+mod tests;

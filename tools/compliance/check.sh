@@ -43,7 +43,35 @@ required=(
   crates/magic-exchange-rs/Cargo.toml
   crates/magic-gov-rs/Cargo.toml
 )
-for path in "${required[@]}"; do test -s "$path" || { echo "missing required file: $path" >&2; exit 1; }; done
+for required_file in "${required[@]}"; do
+  test -s "$required_file" || {
+    echo "missing required file: $required_file" >&2
+    exit 1
+  }
+done
+
+for toolchain_file in rust-toolchain rust-toolchain.toml; do
+  if [[ -e "$toolchain_file" ]]; then
+    printf 'fixed repository toolchain selector is not allowed: %s\n' \
+      "$toolchain_file" >&2
+    exit 1
+  fi
+done
+if rg -n '^[[:space:]]*rust-version[[:space:]]*=' \
+  Cargo.toml crates/*/Cargo.toml; then
+  echo "Cargo manifests must not declare a fixed Rust version" >&2
+  exit 1
+fi
+if rg -n 'dtolnay/rust-toolchain@[0-9]+([.][0-9]+)*' .github/workflows; then
+  echo "active workflows must use the stable Rust toolchain" >&2
+  exit 1
+fi
+if rg -n 'RUSTUP_TOOLCHAIN=[0-9]+([.][0-9]+)*|cargo[[:space:]]+[+][0-9]+([.][0-9]+)*' \
+  .github/workflows tools; then
+  echo "active build and release tooling must not select a numeric Rust version" >&2
+  exit 1
+fi
+
 workspace_members=(
   crates/magic-market-core
   crates/magic-market-router
@@ -72,6 +100,26 @@ for member in "${workspace_members[@]}"; do
     exit 1
   }
 done
+expected_workspace_crate_version=0.2.0
+while IFS= read -r manifest; do
+  package_version=$(
+    awk '
+      /^\[package\]$/ { in_package=1; next }
+      /^\[/ && in_package { exit }
+      in_package && /^version = "/ {
+        gsub(/^version = "|".*$/, "")
+        print
+        exit
+      }
+    ' "$manifest"
+  )
+  if [[ "$package_version" != "$expected_workspace_crate_version" ]]; then
+    printf 'workspace crate version mismatch: %s expected=%s actual=%s\n' \
+      "$manifest" "$expected_workspace_crate_version" "$package_version" >&2
+    exit 1
+  fi
+done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml -print | LC_ALL=C sort)
+
 if rg -n 'stock_analysis' crates/*/Cargo.toml; then exit 1; fi
 router_dependencies=$(sed -n '/^\[dependencies\]/,/^\[/p' crates/magic-market-router/Cargo.toml)
 if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepaper|yonhap|wallstreetcn|baidu|iwencai|exchange)-rs' <<<"$router_dependencies"; then
@@ -80,8 +128,11 @@ if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepape
 fi
 # Imported upstream modules retain documented/test-only unwrap examples; runtime
 # hardening is tracked separately from this structural compliance gate.
-rg -q '^## BR-001 ' docs/business_rules.md
-rg -q '^## BR-020 ' docs/business_rules.md
-rg -q '^## BR-021 ' docs/business_rules.md
-rg -q '^## BR-022 ' docs/business_rules.md
+for number in $(seq 1 31); do
+  printf -v rule_id 'BR-%03d' "$number"
+  rg -q "^## $rule_id " docs/business_rules.md || {
+    echo "missing registered business rule: $rule_id" >&2
+    exit 1
+  }
+done
 rg -q '^## Gate D ' docs/ENGINEERING_RULES.md

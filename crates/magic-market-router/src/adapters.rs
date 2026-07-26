@@ -3,11 +3,12 @@ use magic_market_core::{
     Announcement, Announcements, AuctionSnapshot, Auctions, Bar, BarsRequest, BlockTrade,
     BlockTrades, BoardCategory, BoardFlow, BoardFlows, BoardMembership, BoardMembershipProvider,
     ConceptHit, ConceptHits, ConsensusData, ConsensusSnapshot, ContractMonth, DividendPlan,
-    DividendPlans, DragonTigerData, DragonTigerEntry, DragonTigerSeat, FinancialStatement,
-    FinancialStatements, FlowInterval, FundFlowPoint, FundFlowRequest, FundFlowSeries,
-    HistoricalBars, HolderCount, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
-    InstrumentSignalRequest, InvestorQuestion, InvestorQuestions, IsoDate, LimitPoolEntry,
-    LimitPoolRequest, LimitPools, LockupEvent, LockupEvents, MarginBalance, MarginData,
+    DividendPlans, DragonTigerData, DragonTigerDisclosure, DragonTigerEntry, DragonTigerSeat,
+    Exchange, FinancialStatement, FinancialStatements, FlowInterval, FundFlowPoint,
+    FundFlowRequest, FundFlowSeries, HistoricalBars, HolderCount, HolderCounts,
+    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, InvestorQuestion,
+    InvestorQuestions, IsoDate, LimitPoolEntry, LimitPoolRequest, LimitPools, LockupEvent,
+    LockupEvents, MarginBalance, MarginData, MarketDragonTigerData, MarketDragonTigerRequest,
     MarketRankingEntry, MarketRankingKind, MarketRankings, MarketStatistics,
     MarketStatisticsProvider, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
     NewsItem, NewsProvider, NonEmptyText, NorthboundDailyRequest, NorthboundDailyStat,
@@ -19,6 +20,7 @@ use magic_market_core::{
     StrongStockReason, StrongStockReasons, TechnicalBar, TechnicalBarsProvider, Trade, Trades,
     TradesRequest,
 };
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -39,6 +41,7 @@ pub type BoardMembershipRouter = FailoverChain<[InstrumentId], BoardMembership>;
 pub type StrongStockReasonRouter = FailoverChain<InstrumentSignalRequest, StrongStockReason>;
 pub type DragonTigerEntryRouter = FailoverChain<InstrumentSignalRequest, DragonTigerEntry>;
 pub type DragonTigerSeatRouter = FailoverChain<InstrumentSignalRequest, DragonTigerSeat>;
+pub type MarketDragonTigerRouter = FailoverChain<MarketDragonTigerRequest, DragonTigerDisclosure>;
 pub type MarketRankingRequest = (MarketRankingKind, PositiveU32);
 pub type MarketRankingRouter = FailoverChain<MarketRankingRequest, MarketRankingEntry>;
 pub type PopularityRouter = FailoverChain<PositiveU32, PopularityRank>;
@@ -430,6 +433,98 @@ where
         }
         Ok(batch)
     })
+}
+
+pub fn market_dragon_tiger_source<Provider, Classify>(
+    provider_id: ProviderId,
+    provider: Arc<Provider>,
+    classify: Classify,
+) -> SourceFn<MarketDragonTigerRequest, DragonTigerDisclosure>
+where
+    Provider: MarketDragonTigerData + Send + Sync + 'static,
+    Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
+{
+    SourceFn::new(provider_id, move |request| {
+        let batch = provider.market_dragon_tiger(request).map_err(&classify)?;
+        if batch.records().is_empty() {
+            return Err(SourceError::try_next(
+                FailureKind::Quality,
+                "market dragon-tiger batch is empty without verified-empty evidence",
+            ));
+        }
+        if batch.records().len() > request.limit().get() as usize {
+            return Err(SourceError::try_next(
+                FailureKind::Quality,
+                "market dragon-tiger batch exceeds requested limit",
+            ));
+        }
+        validate_signal_batch_date(
+            batch.provenance().source_at(),
+            Some(request.trading_date()),
+            "market dragon-tiger batch",
+        )?;
+
+        let mut entry_ids = HashSet::with_capacity(batch.records().len());
+        for disclosure in batch.records() {
+            let entry = disclosure.entry();
+            if entry.trading_date() != request.trading_date() {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "market dragon-tiger entry date does not match requested date",
+                ));
+            }
+            validate_signal_batch_date(
+                entry.evidence().source_at(),
+                Some(request.trading_date()),
+                "market dragon-tiger entry",
+            )?;
+            if !entry_ids.insert(entry.entry_id().as_str()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "market dragon-tiger batch contains a duplicate entry ID",
+                ));
+            }
+        }
+        if batch
+            .records()
+            .windows(2)
+            .any(|pair| market_dragon_tiger_order(&pair[0], &pair[1]) == Ordering::Greater)
+        {
+            return Err(SourceError::try_next(
+                FailureKind::Quality,
+                "market dragon-tiger batch is not in canonical order",
+            ));
+        }
+        Ok(batch)
+    })
+}
+
+fn market_dragon_tiger_order(
+    left: &DragonTigerDisclosure,
+    right: &DragonTigerDisclosure,
+) -> Ordering {
+    let left = left.entry();
+    let right = right.entry();
+    match (left.net_amount(), right.net_amount()) {
+        (Some(left), Some(right)) => right.get().total_cmp(&left.get()),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+    .then_with(|| {
+        market_exchange_order(left.instrument().exchange())
+            .cmp(&market_exchange_order(right.instrument().exchange()))
+    })
+    .then_with(|| left.instrument().code().cmp(right.instrument().code()))
+    .then_with(|| left.entry_id().as_str().cmp(right.entry_id().as_str()))
+}
+
+const fn market_exchange_order(exchange: Exchange) -> u8 {
+    match exchange {
+        Exchange::Shanghai => 0,
+        Exchange::Shenzhen => 1,
+        Exchange::Beijing => 2,
+    }
 }
 
 fn validate_signal_batch_date(

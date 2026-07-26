@@ -1,5 +1,8 @@
-use magic_iwencai_rs::IwencaiClient;
-use magic_market_core::{PositiveU32, SemanticChannel, SemanticSearch, SemanticSearchRequest};
+use magic_iwencai_rs::{IwencaiClient, IwencaiError};
+use magic_market_core::{
+    verify_serial_load, PositiveU32, ProbeStatus, SemanticChannel, SemanticSearch,
+    SemanticSearchRequest,
+};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -21,6 +24,16 @@ fn percentile(sorted: &[u128], percentile: usize) -> u128 {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    if std::env::var("MAGIC_IWENCAI_API_KEY")
+        .ok()
+        .is_none_or(|value| value.trim().is_empty())
+    {
+        println!("load_probe_status={}", ProbeStatus::SkippedMissingSecret);
+        return Err(IwencaiError::Authentication(
+            "MAGIC_IWENCAI_API_KEY is required for the load probe".to_owned(),
+        )
+        .into());
+    }
     let requests = std::env::var("MAGIC_IWENCAI_LOAD_REQUESTS")
         .ok()
         .map(|value| value.parse::<usize>())
@@ -65,25 +78,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("load_probe_error={error}");
     }
     if failures != 0 {
+        println!("load_probe_status={}", ProbeStatus::Failed);
         return Err(format!("{failures} of {requests} requests failed").into());
     }
-    println!("load_probe_status=passed");
+    let snapshot = client.load_probe_snapshot()?;
+    let load_status = verify_serial_load(&snapshot, MIN_INTERVAL)?;
+    println!("actual_request_starts={}", snapshot.request_starts());
+    println!(
+        "actual_minimum_start_gap_ms={}",
+        snapshot.minimum_start_gap().unwrap_or_default().as_millis()
+    );
+    println!(
+        "actual_maximum_concurrency={}",
+        snapshot.maximum_concurrency()
+    );
+    println!("pacing_probe_status={load_status}");
+    println!(
+        "load_probe_status={}",
+        ProbeStatus::DiagnosticCompleteUnadmitted
+    );
     Ok(())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn load_probe_is_client_paced_and_hard_bounded() {
-        assert_eq!(MIN_INTERVAL, Duration::from_secs(1));
-        assert!(validate_load(1).is_ok());
-        assert!(validate_load(3).is_ok());
-        assert!(validate_load(0).is_err());
-        assert!(validate_load(4).is_err());
-        assert_eq!(percentile(&[1, 2, 3, 4, 5], 50), 3);
-        assert_eq!(percentile(&[1, 2, 3, 4, 5], 95), 5);
-        assert_eq!(percentile(&[1, 2, 3, 4, 5], 99), 5);
-    }
-}
+#[path = "../tests/unit/load_probe_tests.rs"]
+mod tests;
