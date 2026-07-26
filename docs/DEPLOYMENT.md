@@ -21,7 +21,7 @@
 - `magic-baidu-{live,load}-probe`：百度未复权日 K 和源端 MA；
 - `magic-iwencai-{live,load}-probe`：需要授权 API Key 的语义搜索；
 - `magic-exchange-{live,load}-probe`：SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、
-  HKEX 北向日统计和 CFFEX 股指期货交割通知；
+  HKEX 北向日统计；CFFEX 股指期货交割通知当前仅提供未准入诊断入口；
 - `magic-gov-live-probe`：国务院政策库官方文件；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
@@ -111,7 +111,8 @@ shasum -a 256 -c SHA256SUMS
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
 | Eastmoney/CNInfo/THS/CLS/Jin10/The Paper/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源 |
 | State Council official | 支持 | 支持 | 支持 | Rustls HTTPS；官方政策文件 |
-| SSE/SZSE/HKEX/CFFEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
+| SSE/SZSE/HKEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
+| CFFEX official diagnostic | 仅诊断 | 仅诊断 | 仅诊断 | capability=false；生产 trait `Unsupported`；官方 TLS live 未通过 |
 | iWencai | 支持 | 支持 | 支持 | Rustls HTTPS；需要获授权 API Key |
 | EMQuant Rust 层 | 支持 | 可编译 | 可编译 | 运行还取决于厂商 SDK |
 | 当前 EMQuant C++ bridge | x86_64 macOS | 未适配 | 未适配 | 使用 `.dylib`、`dlopen` 和 POSIX API |
@@ -135,7 +136,8 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | Jin10 | `flash-api.jin10.com:443` | 无持久缓存 |
 | The Paper | `www.thepaper.cn:443` | 无持久缓存 |
 | Baidu | `finance.pae.baidu.com:443` | 无持久缓存 |
-| SSE/SZSE/HKEX/CFFEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443`、`www.cffex.com.cn:443` | 无持久缓存 |
+| SSE/SZSE/HKEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443` | 无持久缓存 |
+| CFFEX diagnostic | `www.cffex.com.cn:443` | 无持久缓存；仅有界显式 probe |
 | State Council | `sousuo.www.gov.cn:443`；返回链接仅允许 `www.gov.cn:443` | 无持久缓存 |
 | iWencai | `openapi.iwencai.com:443` | API Key 仅由环境/秘密挂载提供，不落盘 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |

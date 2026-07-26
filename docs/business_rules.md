@@ -262,10 +262,20 @@ documents remain explicit failures.
 ## BR-018 Calendar source evidence
 Economic releases preserve source indicator identity, country, schedule,
 release time, previous/consensus/actual/revised values and importance; numeric
-zero is not absence. CFFEX delivery events are admitted only from an official
-notice naming the requested contract month, all four IF/IH/IC/IM products,
-their exact date and cash-settlement wording. Formula-only calendar inference
-is prohibited.
+zero is not absence. CFFEX delivery-event diagnostic candidates are accepted
+only from an official notice naming the requested contract month, all four
+IF/IH/IC/IM products, their exact date and delivery-settlement-price wording.
+If the notice does not independently state the settlement method, the
+normalized method remains `NotProvided`; it is not inferred from a settlement
+price. The notice publication date is retained as source-time evidence; the
+delivery date is not substituted for publication time. If the notice does not
+independently state the last trading date, that field remains absent rather
+than being copied from the delivery date. Formula-only calendar inference is
+prohibited. The production capability remains false and the production trait
+returns `Unsupported` until BR-009 live admission succeeds. A successful
+diagnostic must use the `diagnostic_probe_status` and
+`diagnostic_complete_unadmitted` markers and must not emit the production
+`live_probe_status=passed` marker.
 
 ## BR-019 Strict 15:35 post-close ranking
 The post-close fund-flow ranking accepts only the current China trading date

@@ -150,9 +150,14 @@ impl<'de> Deserialize<'de> for FuturesDeliveryRequest {
     }
 }
 
+/// Delivery method supported by the normalized calendar contract.
+///
+/// `NotProvided` means the event source proves the delivery event and date but
+/// does not independently prove the settlement method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FuturesDeliveryMethod {
     Cash,
+    NotProvided,
 }
 
 /// One contract delivery event proved by an official CFFEX notice.
@@ -160,7 +165,11 @@ pub enum FuturesDeliveryMethod {
 pub struct FuturesDeliveryEvent {
     pub product: FuturesProduct,
     pub contract_code: NonEmptyText,
-    pub last_trading_date: IsoDate,
+    /// Last trading date when the source explicitly proves it.
+    ///
+    /// An official delivery notice can prove the delivery date without
+    /// independently proving the last trading date.
+    pub last_trading_date: Option<IsoDate>,
     pub delivery_date: IsoDate,
     pub method: FuturesDeliveryMethod,
     pub notice_url: HttpsUrl,

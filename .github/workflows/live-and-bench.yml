@@ -84,6 +84,9 @@ jobs:
           set -o pipefail
           cargo run -p magic-exchange-rs --example live_probe --release --locked |
             tee live-cffex-delivery.txt
+          grep -qx 'diagnostic_probe_status=passed' live-cffex-delivery.txt
+          grep -qx 'admission_state=diagnostic_complete_unadmitted' live-cffex-delivery.txt
+          ! grep -qx 'live_probe_status=passed' live-cffex-delivery.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

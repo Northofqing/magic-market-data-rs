@@ -11,7 +11,9 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 
 > 当前状态（2026-07-25）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS、Jin10、The Paper、Baidu，以及 SSE/SZSE 官方公告与龙虎榜、SZSE Quote/五档和 HKEX
-> 北向日统计已通过真实网络验收；Eastmoney 已声明能力的
+> 北向日统计已通过真实网络验收；CFFEX 交割通知的确定性解析已实现，但 2026-07-25
+> live 复验在官方目录 TLS 初始化时收到 unexpected EOF，因此 capability 保持关闭，
+> 生产 trait 显式返回 `Unsupported`。Eastmoney 已声明能力的
 > live/load 探针全部通过，
 > 分钟/日级资金流因当前网络返回 empty reply 而保持未声明能力；关键词新闻响应没有
 > 结构化证券身份，也不伪装成个股新闻。东财财经滚动页已作为独立全局最新资讯实现，
@@ -180,12 +182,13 @@ Router 适配器已经通过确定性测试。
 | The Paper | 财经频道原生文章、栏目、标签及来源时间 | 排除外链转载；不把文本证券名提升为结构化身份 |
 | Baidu | 华电辽能未复权日 K、MA5/10/20 | 不提供实时 Quote、分钟线或 Level-2 |
 | iWencai | 正式 X-Claw 鉴权和语义结果解析 | 真实数据待合法 API Key；不读取 Cookie/桌面登录态 |
-| SSE/SZSE/HKEX/CFFEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10、CFFEX 股指期货交割通知 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
+| SSE/SZSE/HKEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
+| CFFEX official diagnostic | IF/IH/IC/IM 交割通知确定性解析 | 尚未生产准入：capability 为 false，生产 trait 返回 `Unsupported`；仅保留显式诊断入口 |
 | State Council | 国务院政策库 `gongwen`/`bumenfile` 官方文件 | 仅规范 `www.gov.cn` 文件；不是新闻或行情源 |
 
 ### 市场发现、全球与日历能力
 
-| 能力 | 生产 Provider | 严格合同 |
+| 能力 | Provider / 诊断入口 | 严格合同 |
 | --- | --- | --- |
 | 全市场龙虎榜 | Eastmoney | 完整读取交易日数据后过滤/截断；源 `TRADE_ID` 唯一；代码与名称同时保留 |
 | 板块目录/成员/反查 | TDX + 名称元数据联查 | `block_fg.dat`/`block_gn.dat`；分类、成员数、重复身份和请求证券均校验；展示结果保留代码、名称及两份独立证据 |
@@ -196,7 +199,7 @@ Router 适配器已经通过确定性测试。
 | 经济日历 | Jin10 | 仅公开未锁 type-1；保留前值/预期/实际/修正值和重要性 |
 | 官方政策 | State Council | 仅国务院官方搜索与 `www.gov.cn` 规范链接，页面上限 50 |
 | 研报 PDF 正文 | Eastmoney | 精确研报身份、`application/pdf`、`%PDF-`、最大 32 MiB |
-| 期货交割日历 | CFFEX | 官方通知必须明确 IF/IH/IC/IM 日期及现金交割，不使用公式推算 |
+| 期货交割日历 | CFFEX 诊断实现（生产 capability 未准入） | 官方通知必须明确 IF/IH/IC/IM 交割日期及交割结算价；通知未独立证明方式时保留 `NotProvided`，未证明最后交易日时保留空值；不使用公式推算 |
 | 15:35 资金榜 | Eastmoney | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称 |
 
 ### TDX

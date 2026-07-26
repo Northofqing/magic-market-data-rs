@@ -193,10 +193,15 @@ where
                 return evidence("CFFEX contract code does not match requested month");
             }
             let month = format!("{:04}-{:02}", request.year().get(), request.month().get());
-            if record.delivery_date.as_str().get(..7) != Some(month.as_str())
-                || record.last_trading_date != record.delivery_date
-            {
+            if record.delivery_date.as_str().get(..7) != Some(month.as_str()) {
                 return evidence("CFFEX delivery date does not match requested month");
+            }
+            if record
+                .last_trading_date
+                .as_ref()
+                .is_some_and(|date| date.as_str().get(..7) != Some(month.as_str()))
+            {
+                return evidence("CFFEX last trading date does not match requested month");
             }
         }
         if actual != expected {

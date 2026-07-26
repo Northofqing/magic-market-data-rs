@@ -85,12 +85,17 @@ fn calendar_records_expose_source_identity() {
     let delivery = FuturesDeliveryEvent {
         product: FuturesProduct::If,
         contract_code: NonEmptyText::new("IF2607").unwrap(),
-        last_trading_date: IsoDate::new("2026-07-17").unwrap(),
+        last_trading_date: None,
         delivery_date: IsoDate::new("2026-07-17").unwrap(),
-        method: FuturesDeliveryMethod::Cash,
+        method: FuturesDeliveryMethod::NotProvided,
         notice_url: HttpsUrl::new("https://www.cffex.com.cn/notice.html").unwrap(),
         evidence,
     };
     assert_eq!(delivery.provider_id(), crate::ProviderId::Cffex);
     assert_eq!(delivery.evidence_batch_id(), "calendar-batch");
+    let restored: FuturesDeliveryEvent =
+        serde_json::from_str(&serde_json::to_string(&delivery).unwrap()).unwrap();
+    assert_eq!(restored, delivery);
+    assert_eq!(restored.method, FuturesDeliveryMethod::NotProvided);
+    assert!(restored.last_trading_date.is_none());
 }

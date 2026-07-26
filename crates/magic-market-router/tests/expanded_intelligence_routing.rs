@@ -183,9 +183,9 @@ impl FuturesDeliveryCalendar for Fixture {
         .map(|(product, contract)| FuturesDeliveryEvent {
             product,
             contract_code: text(contract),
-            last_trading_date: IsoDate::new("2026-02-24").unwrap(),
+            last_trading_date: None,
             delivery_date: IsoDate::new("2026-02-24").unwrap(),
-            method: FuturesDeliveryMethod::Cash,
+            method: FuturesDeliveryMethod::NotProvided,
             notice_url: HttpsUrl::new("https://www.cffex.com.cn/jystz/notice.html").unwrap(),
             evidence: evidence("delivery", Some("2026-02-24")),
         })
@@ -638,7 +638,7 @@ fn delivery_event(
     FuturesDeliveryEvent {
         product,
         contract_code: text(contract),
-        last_trading_date: IsoDate::new(last).unwrap(),
+        last_trading_date: Some(IsoDate::new(last).unwrap()),
         delivery_date: IsoDate::new(delivery).unwrap(),
         method: FuturesDeliveryMethod::Cash,
         notice_url: HttpsUrl::new("https://www.cffex.com.cn/notice.html").unwrap(),
@@ -672,7 +672,7 @@ fn futures_delivery_adapter_rejects_incomplete_duplicate_and_wrong_month_records
     let mut wrong_month = valid_deliveries();
     wrong_month[0].delivery_date = IsoDate::new("2026-03-24").unwrap();
     let mut mismatched_dates = valid_deliveries();
-    mismatched_dates[0].last_trading_date = IsoDate::new("2026-02-23").unwrap();
+    mismatched_dates[0].last_trading_date = Some(IsoDate::new("2026-03-23").unwrap());
     for records in [
         vec![valid_deliveries()[0].clone()],
         duplicate,
