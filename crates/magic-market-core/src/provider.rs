@@ -46,6 +46,7 @@ pub enum ProviderId {
     Jin10,
     ThePaper,
     Yonhap,
+    WallstreetCn,
     Sse,
     Szse,
     Hkex,

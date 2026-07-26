@@ -244,6 +244,68 @@ fn global_news_router_rejects_yonhap_identity_mismatch() {
 }
 
 #[test]
+fn global_news_router_accepts_wallstreetcn_identity() {
+    let provider = Arc::new(NewsFixtureProvider {
+        record_provider: ProviderId::WallstreetCn,
+        batch_source: "wallstreetcn-rss-v1",
+        item_count: 2,
+        duplicate_id: false,
+    });
+    let mut router = GlobalNewsRouter::new(AcceptancePolicy::new().with_require_source_at(true));
+    router
+        .register(global_news_source(
+            ProviderId::WallstreetCn,
+            provider,
+            classify,
+        ))
+        .unwrap();
+
+    let outcome = router.route(&PositiveU32::new(2).unwrap()).unwrap();
+    assert_eq!(outcome.selected_provider(), ProviderId::WallstreetCn);
+    assert!(matches!(
+        outcome.attempts()[0].status(),
+        AttemptStatus::Selected
+    ));
+}
+
+#[test]
+fn global_news_router_rejects_wallstreetcn_identity_mismatch() {
+    let wrong = Arc::new(NewsFixtureProvider {
+        record_provider: ProviderId::ThePaper,
+        batch_source: "wallstreetcn-rss-v1",
+        item_count: 1,
+        duplicate_id: false,
+    });
+    let valid = Arc::new(NewsFixtureProvider {
+        record_provider: ProviderId::ThePaper,
+        batch_source: "thepaper-finance-v1",
+        item_count: 1,
+        duplicate_id: false,
+    });
+    let mut router = GlobalNewsRouter::new(AcceptancePolicy::new().with_require_source_at(true));
+    router
+        .register(global_news_source(
+            ProviderId::WallstreetCn,
+            wrong,
+            classify,
+        ))
+        .unwrap();
+    router
+        .register(global_news_source(ProviderId::ThePaper, valid, classify))
+        .unwrap();
+
+    let outcome = router.route(&PositiveU32::new(1).unwrap()).unwrap();
+    assert_eq!(outcome.selected_provider(), ProviderId::ThePaper);
+    assert!(matches!(
+        outcome.attempts()[0].status(),
+        AttemptStatus::Rejected {
+            kind: FailureKind::Evidence,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn global_news_router_rejects_oversized_and_duplicate_batches() {
     let valid = || {
         Arc::new(NewsFixtureProvider {

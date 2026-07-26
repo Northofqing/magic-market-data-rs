@@ -17,12 +17,13 @@ fn intelligence_sources_have_first_class_identities() {
         ProviderId::Jin10,
         ProviderId::ThePaper,
         ProviderId::Yonhap,
+        ProviderId::WallstreetCn,
         ProviderId::Sse,
         ProviderId::Szse,
         ProviderId::Hkex,
         ProviderId::LocalAnalysis,
     ];
-    assert_eq!(providers.len(), 12);
+    assert_eq!(providers.len(), 13);
     assert_eq!(AssetClass::Option, AssetClass::Option);
 }
 
@@ -39,5 +40,9 @@ fn financial_news_provider_identity_names_are_stable() {
     assert_eq!(
         serde_json::to_string(&ProviderId::Yonhap).unwrap(),
         "\"Yonhap\""
+    );
+    assert_eq!(
+        serde_json::to_string(&ProviderId::WallstreetCn).unwrap(),
+        "\"WallstreetCn\""
     );
 }
