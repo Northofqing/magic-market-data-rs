@@ -8,7 +8,7 @@ bodies.
 
 ## Current Phase
 
-Phase 2
+Phase 3
 
 ## Phases
 
@@ -24,15 +24,15 @@ Phase 2
 
 - [x] Add strict complete-feed RSS parsing and metadata-only mapping.
 - [x] Add public capability and typed failure tests.
-- [ ] Add bounded live and load probes.
-- **Status:** in_progress
+- [x] Add bounded live and load probes.
+- **Status:** complete
 
 ### Phase 3: Admission and Release Registration
 
-- [ ] Run production-client admission probes and set the truthful capability.
+- [x] Run production-client admission probes and set the truthful capability.
 - [ ] Register README, deployment, integration, business rule, upstream,
   compliance, and packaging documentation.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 4: Gates and Review
 
@@ -57,6 +57,7 @@ Phase 2
 | Parser red test could not find `parse_response` | Parser TDD red phase | Implemented the strict RSS state machine and canonical mapping. |
 | Chinese text was placed in a raw byte string fixture | First transport format check | Used a UTF-8 string followed by `as_bytes()`. |
 | Transport-only Clippy reported parser-bound entries as dead code | Transport checkpoint | Completed the approved parser/Provider wiring instead of adding a temporary lint allowance; final crate Clippy passed. |
+| Optional title-match probe hit one DNS resolution failure | First title-match attempt | Preserved the typed `Transport` error and reran the same bounded release probe outside the sandbox; it passed without weakening any contract. |
 
 ## Notes
 

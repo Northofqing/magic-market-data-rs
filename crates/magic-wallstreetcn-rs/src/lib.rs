@@ -22,8 +22,8 @@ const MAX_RETURNED_ITEMS: u32 = 50;
 
 /// Whether WallstreetCN is admitted to the public global-news capability.
 ///
-/// This remains false until the bounded production probes pass.
-pub const GLOBAL_NEWS_ADMITTED: bool = false;
+/// The bounded production metadata and serial-load probes passed on 2026-07-26.
+pub const GLOBAL_NEWS_ADMITTED: bool = true;
 
 /// WallstreetCN adapter failures.
 #[derive(Debug, Error)]

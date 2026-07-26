@@ -47,3 +47,18 @@
   truthful to `GLOBAL_NEWS_ADMITTED`.
 - Parser tests passed 9/9, capability tests passed 5/5, all crate tests passed
   21/21, and strict crate Clippy, formatting, and diff checks passed.
+- Added bounded live and serial-load examples with pure configuration tests.
+- At 2026-07-26 08:40:27 +0800, the release live probe passed with 20
+  complete, newest-first, metadata-only records from `wallstreetcn-rss-v1`.
+  The newest source time was `2026-07-25T19:35:51+08:00`.
+- At 2026-07-26 08:41:15 +0800, the release load probe passed two serial
+  production-client requests through one client. Each returned 10 records;
+  total elapsed time was 7.529 seconds and all source/provider/batch/content
+  invariants passed.
+- Because both admission commands passed, set `GLOBAL_NEWS_ADMITTED=true`.
+- The first optional `9500亿美元` title-match attempt returned a typed DNS
+  `Transport` failure. The unchanged bounded release probe was rerun outside
+  the sandbox and passed at fetched time `2026-07-26T03:32:52.311953Z`,
+  matching article ID `3777926`.
+- After admission, all crate targets passed 24/24 tests, strict crate Clippy
+  passed, and Router intelligence tests passed 16/16.

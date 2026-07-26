@@ -10,6 +10,14 @@
 - Required item fields: title, `/articles/{decimal_id}` link, source
   `华尔街见闻`, and RFC 2822 `pubDate`.
 - RSS descriptions contain article content and are forbidden output.
+- The admitted release probe returned 20 strict metadata-only rows and the
+  two-request load probe returned 10 rows twice with a 7.529-second total.
+- The current bounded feed included article `3777926`, titled
+  `韩国绑定美国AI产业链！三星、SK海力士与英伟达、博通等签9500亿美元芯片大单`;
+  a case-sensitive local `9500亿美元` match passed.
+- Production evidence therefore admits `global_news=true`. Instrument news,
+  descriptions, bodies, article-page fetching, and inferred instruments
+  remain unsupported.
 
 ## Architecture
 
