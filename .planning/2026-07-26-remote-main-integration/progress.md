@@ -72,3 +72,11 @@
   layout. The repository checker passed both release thresholds:
   - overall production coverage: 33,669 / 38,912 = 86.53% (required 80%);
   - critical data-chain coverage: 15,476 / 16,217 = 95.43% (required 95%).
+- Re-ran the complete release preflight on final evidence commit `14315e7`;
+  every registered gate passed again.
+- Re-fetched `origin/main` and confirmed it remained at `13b0172`, which is an
+  ancestor of the verified integration commit.
+- Fast-forwarded local `main` without touching the primary worktree's
+  pre-existing uncommitted files, then pushed without force.
+- Verified `refs/heads/main` on the remote resolved to
+  `14315e732c6425c7fad1649d44b913ba8c264ae1`.

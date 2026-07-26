@@ -9,7 +9,7 @@ uncommitted files in the primary worktree.
 
 ## Current Phase
 
-Phase 4
+Phase 5
 
 ## Phases
 
@@ -39,17 +39,17 @@ Phase 4
 
 ### Phase 4: Publish
 
-- [ ] Re-fetch and confirm `origin/main` has not moved.
-- [ ] Fast-forward local `main` to the verified integration commit.
-- [ ] Push local `main` to `origin/main` without force.
-- [ ] Verify the remote branch resolves to the pushed commit.
-- **Status:** in_progress
+- [x] Re-fetch and confirm `origin/main` has not moved.
+- [x] Fast-forward local `main` to the verified integration commit.
+- [x] Push local `main` to `origin/main` without force.
+- [x] Verify the remote branch resolves to the pushed commit.
+- **Status:** complete
 
 ### Phase 5: Cleanup
 
 - [ ] Remove the integration worktree and temporary branch.
 - [ ] Verify the primary worktree's pre-existing uncommitted files remain.
-- **Status:** pending
+- **Status:** in_progress
 
 ## Decisions
 
