@@ -55,3 +55,8 @@
   did not satisfy. All 27 findings were mechanical/equivalent-form issues;
   none required changing protocol behavior, source semantics, or error
   provenance, and no lint allow-list was introduced.
+- The remote critical coverage glob now includes every TDX protocol source.
+  `protocol/types.rs` was the only matching file whose two tests were still
+  inline. Moving those bodies to `tests/internal/protocol_types.rs` preserves
+  private-module access and test behavior while keeping test lines out of the
+  production coverage denominator.

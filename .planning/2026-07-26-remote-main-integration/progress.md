@@ -59,3 +59,12 @@
   --offline -- -D warnings -D clippy::all` now passes.
 - The complete TDX all-target suite passes after the cleanup: 344 test cases
   (312 library tests plus integration/example targets), with no failures.
+- The second complete release preflight passed every registered step:
+  formatting, coverage-checker regression tests, workspace all-feature check,
+  workspace all-target tests, strict Clippy, Rustdoc, doctests, documentation
+  links, and compliance.
+- The first real llvm-cov report generated successfully, but the checker
+  rejected it before threshold evaluation because the newly critical
+  `protocol/types.rs` still contained two inline tests. Moved those test
+  bodies unchanged into a path-based external test module. Both focused tests
+  and strict TDX Clippy pass after the move; fresh coverage evidence is next.
