@@ -32,9 +32,12 @@ impl BoardFlows for EastmoneyClient {
             }
         };
         let (fid, fields) = match interval {
-            FlowInterval::Day1 => ("f62", "f12,f14,f3,f62,f184,f204,f205,f206,f66,f72,f78,f84"),
-            FlowInterval::Day5 => ("f164", "f12,f14,f109,f164,f165,f204,f205,f206"),
-            FlowInterval::Day10 => ("f174", "f12,f14,f160,f174,f175,f204,f205,f206"),
+            FlowInterval::Day1 => (
+                "f62",
+                "f12,f14,f3,f62,f184,f204,f205,f206,f66,f72,f78,f84,f124",
+            ),
+            FlowInterval::Day5 => ("f164", "f12,f14,f109,f164,f165,f204,f205,f206,f124"),
+            FlowInterval::Day10 => ("f174", "f12,f14,f160,f174,f175,f204,f205,f206,f124"),
             other => {
                 return Err(EastmoneyError::Unsupported(format!(
                     "board-flow interval {other:?} is not verified"
@@ -88,13 +91,45 @@ fn parse_board_flows(
             ))
         }
     };
-    let context = BatchContext::new("board-flow", None)?;
+    let source_at = board_source_at(rows)?;
+    let context = BatchContext::new("board-flow", Some(&source_at))?;
     let records = rows
         .iter()
         .enumerate()
         .map(|(index, row)| map_board(row, category, interval, index, &context))
         .collect::<Result<Vec<_>, _>>()?;
     context.finish(records)
+}
+
+fn board_source_at(rows: &[Value]) -> Result<String, EastmoneyError> {
+    let first = rows.first().ok_or_else(|| {
+        EastmoneyError::Protocol("board-flow response contains no source-timed rows".into())
+    })?;
+    let source_at = parse_source_epoch(first)?;
+    for row in &rows[1..] {
+        let candidate = parse_source_epoch(row)?;
+        if candidate != source_at {
+            return Err(EastmoneyError::Protocol(format!(
+                "board-flow f124 is not atomic across the batch: expected {source_at}, got {candidate}"
+            )));
+        }
+    }
+    Ok(source_at.to_string())
+}
+
+fn parse_source_epoch(row: &Value) -> Result<u64, EastmoneyError> {
+    let raw = required_string(row, "f124")?;
+    let epoch = raw.parse::<u64>().map_err(|error| {
+        EastmoneyError::Protocol(format!(
+            "board-flow f124 {raw:?} is not an integer Unix timestamp: {error}"
+        ))
+    })?;
+    if epoch == 0 {
+        return Err(EastmoneyError::Protocol(
+            "board-flow f124 must be a positive Unix timestamp".into(),
+        ));
+    }
+    Ok(epoch)
 }
 
 fn map_board(
@@ -173,51 +208,5 @@ fn map_board(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::parse_board_flows;
-    use magic_market_core::{BoardCategory, FlowInterval, RatioUnit};
-
-    #[test]
-    fn maps_daily_board_flow_rank_tiers_and_leader() {
-        let fixture = r#"{"rc":0,"data":{"diff":[{
-          "f12":"BK1200","f14":"电力设备","f3":4.6,"f62":11167410432,
-          "f66":10,"f72":20,"f78":30,"f84":40,
-          "f204":"300274","f205":"阳光电源","f206":0
-        }]}}"#
-            .as_bytes();
-        let batch =
-            parse_board_flows(fixture, BoardCategory::Industry, FlowInterval::Day1).unwrap();
-        let row = &batch.records()[0];
-        assert_eq!(row.board_code.as_str(), "BK1200");
-        assert_eq!(row.board_name.as_str(), "电力设备");
-        assert_eq!(row.category, BoardCategory::Industry);
-        assert_eq!(row.interval, FlowInterval::Day1);
-        assert_eq!(row.rank.get(), 1);
-        assert_eq!(row.return_ratio.unwrap().get(), 4.6);
-        assert_eq!(row.return_ratio.unwrap().unit(), RatioUnit::Percent);
-        assert_eq!(row.main_net.unwrap().get(), 11167410432.0);
-        assert_eq!(row.super_large_net.unwrap().get(), 10.0);
-        assert_eq!(row.large_net.unwrap().get(), 20.0);
-        assert_eq!(row.medium_net.unwrap().get(), 30.0);
-        assert_eq!(row.small_net.unwrap().get(), 40.0);
-        assert_eq!(row.leader_instrument.as_ref().unwrap().code(), "300274");
-        assert_eq!(row.leader_name.as_ref().unwrap().as_str(), "阳光电源");
-        assert!(row.leader_return_ratio.is_none());
-    }
-
-    #[test]
-    fn malformed_shapes_and_null_data_fail() {
-        assert!(parse_board_flows(
-            br#"{"rc":0,"data":null}"#,
-            BoardCategory::Concept,
-            FlowInterval::Day5
-        )
-        .is_err());
-        assert!(parse_board_flows(
-            br#"{"rc":0,"data":{"diff":{}}}"#,
-            BoardCategory::Region,
-            FlowInterval::Day10
-        )
-        .is_err());
-    }
-}
+#[path = "../tests/internal/board_flow_tests.rs"]
+mod tests;

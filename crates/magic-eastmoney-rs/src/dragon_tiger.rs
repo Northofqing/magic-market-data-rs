@@ -1,17 +1,21 @@
 use crate::datacenter_api::fetch_rows;
 use crate::mapping::{iso_date, money, optional_f64, optional_string, percent, required_string};
 use crate::{
-    validate_instrument, validate_source_instrument, validate_source_secucode, BatchContext,
-    EastmoneyClient, EastmoneyError,
+    source_instrument, validate_instrument, validate_source_instrument, validate_source_secucode,
+    BatchContext, EastmoneyClient, EastmoneyError,
 };
 use magic_market_core::{
-    DragonTigerData, DragonTigerEntry, DragonTigerSeat, DragonTigerSide, InstrumentSignalRequest,
-    Money, NonEmptyText, PositiveU32,
+    DragonTigerData, DragonTigerDisclosure, DragonTigerEntry, DragonTigerSeat, DragonTigerSide,
+    Exchange, InstrumentSignalRequest, MarketDragonTigerData, MarketDragonTigerRequest, Money,
+    NonEmptyText, PositiveU32,
 };
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 
 const SEAT_SIDE_CARDINALITY: u32 = 5;
 const SEAT_SIDE_FETCH_LIMIT: u32 = SEAT_SIDE_CARDINALITY + 1;
+const MAX_MARKET_DISCOVERY_ROWS: u32 = 10_000;
+const A_SHARE_SECURITY_TYPE_CODE: &str = "058001001";
 
 impl DragonTigerData for EastmoneyClient {
     type Error = EastmoneyError;
@@ -38,40 +42,33 @@ impl DragonTigerData for EastmoneyClient {
     ) -> Result<magic_market_core::DataBatch<DragonTigerSeat>, Self::Error> {
         validate_instrument(request.instrument())?;
         validate_seat_limit(request)?;
-        let source_date = match request.trading_date() {
-            Some(date) => Some(date.as_str().to_owned()),
-            None => {
-                let latest = fetch_rows(
-                    self,
-                    "RPT_DAILYBILLBOARD_DETAILSNEW",
-                    &signal_filter(request, None),
-                    "TRADE_DATE",
-                    1,
-                )?;
-                if let Some(row) = latest.first() {
-                    validate_signal_row(row, request, None)?;
-                }
-                latest
-                    .first()
-                    .map(|row| required_string(row, "TRADE_DATE"))
-                    .transpose()?
-                    .map(|value| {
-                        value
-                            .get(..10)
-                            .ok_or_else(|| {
-                                EastmoneyError::Protocol(
-                                    "dragon-tiger date has no YYYY-MM-DD prefix".into(),
-                                )
-                            })
-                            .map(str::to_owned)
-                    })
-                    .transpose()?
-            }
-        };
-        let Some(source_date) = source_date else {
+        let selected = fetch_rows(
+            self,
+            "RPT_DAILYBILLBOARD_DETAILSNEW",
+            &signal_filter(request, None),
+            "TRADE_DATE",
+            1,
+        )?;
+        let Some(selected) = selected.first() else {
             return BatchContext::new("dragon-tiger-seats", None)?.finish(Vec::new());
         };
-        let filter = signal_filter(request, Some(&source_date));
+        validate_signal_row(
+            selected,
+            request,
+            request.trading_date().map(|date| date.as_str()),
+        )?;
+        let source_date = required_string(selected, "TRADE_DATE")?;
+        let source_date = source_date
+            .get(..10)
+            .ok_or_else(|| {
+                EastmoneyError::Protocol("dragon-tiger date has no YYYY-MM-DD prefix".into())
+            })?
+            .to_owned();
+        let selected_trade_id = trade_id(selected)?;
+        let filter = format!(
+            "{}(TRADE_ID=\"{selected_trade_id}\")",
+            signal_filter(request, Some(&source_date))
+        );
         let mut rows = Vec::new();
         for (report, side, sort) in [
             ("RPT_BILLBOARD_DAILYDETAILSBUY", DragonTigerSide::Buy, "BUY"),
@@ -88,6 +85,56 @@ impl DragonTigerData for EastmoneyClient {
             rows.extend(side_rows.into_iter().map(|row| (side, row)));
         }
         map_seats(&rows, request, &source_date)
+    }
+}
+
+impl MarketDragonTigerData for EastmoneyClient {
+    type Error = EastmoneyError;
+
+    fn market_dragon_tiger(
+        &self,
+        request: &MarketDragonTigerRequest,
+    ) -> Result<magic_market_core::DataBatch<DragonTigerDisclosure>, Self::Error> {
+        let filter = format!(
+            "(TRADE_DATE='{}')(SECURITY_TYPE_CODE=\"{A_SHARE_SECURITY_TYPE_CODE}\")",
+            request.trading_date().as_str()
+        );
+        let rows = fetch_rows(
+            self,
+            "RPT_DAILYBILLBOARD_DETAILSNEW",
+            &filter,
+            "BILLBOARD_NET_AMT",
+            MAX_MARKET_DISCOVERY_ROWS,
+        )?;
+        if rows.len() == MAX_MARKET_DISCOVERY_ROWS as usize {
+            return Err(EastmoneyError::Protocol(format!(
+                "whole-market dragon-tiger discovery reached the {MAX_MARKET_DISCOVERY_ROWS}-row safety bound"
+            )));
+        }
+        let entries = map_market_entries(&rows, request)?;
+        let provenance = entries.provenance().clone();
+        let mut disclosures = Vec::with_capacity(entries.records().len());
+        for entry in entries.records() {
+            let filter = market_seat_filter(entry)?;
+            let mut rows = Vec::with_capacity(10);
+            for (report, side, sort) in [
+                ("RPT_BILLBOARD_DAILYDETAILSBUY", DragonTigerSide::Buy, "BUY"),
+                (
+                    "RPT_BILLBOARD_DAILYDETAILSSELL",
+                    DragonTigerSide::Sell,
+                    "SELL",
+                ),
+            ] {
+                let side_rows = fetch_rows(self, report, &filter, sort, SEAT_SIDE_FETCH_LIMIT)?;
+                rows.extend(side_rows.into_iter().map(|row| (side, row)));
+            }
+            let seats = map_market_seats(&rows, entry)?;
+            disclosures.push(DragonTigerDisclosure::new(entry.clone(), seats)?);
+        }
+        Ok(magic_market_core::DataBatch::strict(
+            disclosures,
+            provenance,
+        ))
     }
 }
 
@@ -132,8 +179,9 @@ fn map_entries(
                 request.trading_date().map(|date| date.as_str()),
             )?;
             let date = required_string(row, "TRADE_DATE")?;
+            let trade_id = trade_id(row)?;
             Ok(DragonTigerEntry::new(
-                entry_id(request.instrument().code(), &date)?,
+                entry_id(request.instrument().code(), &date, &trade_id)?,
                 request.instrument().clone(),
                 iso_date(&date)?,
                 optional_string(row.get("EXPLANATION"))?
@@ -147,7 +195,89 @@ fn map_entries(
             )?)
         })
         .collect::<Result<Vec<_>, EastmoneyError>>()?;
+    reject_duplicates(
+        records.iter().map(|record| record.entry_id().as_str()),
+        "dragon-tiger entry",
+    )?;
     context.finish(records)
+}
+
+fn map_market_entries(
+    rows: &[Value],
+    request: &MarketDragonTigerRequest,
+) -> Result<magic_market_core::DataBatch<DragonTigerEntry>, EastmoneyError> {
+    let context = BatchContext::new(
+        "market-dragon-tiger-entries",
+        Some(request.trading_date().as_str()),
+    )?;
+    let mapped = rows
+        .iter()
+        .map(|row| {
+            let instrument = source_signal_instrument(row)?;
+            let source_date = required_string(row, "TRADE_DATE")?;
+            let trading_date = iso_date(&source_date)?;
+            if &trading_date != request.trading_date() {
+                return Err(EastmoneyError::Protocol(format!(
+                    "Eastmoney dragon-tiger source date {} does not match requested date {}",
+                    trading_date.as_str(),
+                    request.trading_date().as_str()
+                )));
+            }
+            let trade_id = trade_id(row)?;
+            Ok(DragonTigerEntry::new(
+                entry_id(instrument.code(), &source_date, &trade_id)?,
+                instrument,
+                trading_date,
+                optional_string(row.get("EXPLANATION"))?
+                    .map(NonEmptyText::new)
+                    .transpose()?,
+                opt_money(row, "BILLBOARD_BUY_AMT")?,
+                opt_money(row, "BILLBOARD_SELL_AMT")?,
+                opt_money(row, "BILLBOARD_NET_AMT")?,
+                percent(optional_f64(row.get("TURNOVERRATE"))?)?,
+                context.evidence()?,
+            )?)
+        })
+        .collect::<Result<Vec<_>, EastmoneyError>>()?;
+    let mut records = Vec::with_capacity(mapped.len());
+    let mut positions = HashMap::with_capacity(mapped.len());
+    for record in mapped {
+        let identity = record.entry_id().as_str().to_owned();
+        if let Some(index) = positions.get(&identity).copied() {
+            if records.get(index) == Some(&record) {
+                continue;
+            }
+            return Err(EastmoneyError::Protocol(format!(
+                "conflicting duplicate dragon-tiger entry {identity}"
+            )));
+        }
+        positions.insert(identity, records.len());
+        records.push(record);
+    }
+    records.sort_by(|left, right| {
+        match (left.net_amount(), right.net_amount()) {
+            (Some(left), Some(right)) => right.get().total_cmp(&left.get()),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+        .then_with(|| {
+            exchange_order(left.instrument().exchange())
+                .cmp(&exchange_order(right.instrument().exchange()))
+        })
+        .then_with(|| left.instrument().code().cmp(right.instrument().code()))
+        .then_with(|| left.entry_id().as_str().cmp(right.entry_id().as_str()))
+    });
+    records.truncate(request.limit().get() as usize);
+    context.finish(records)
+}
+
+const fn exchange_order(exchange: Exchange) -> u8 {
+    match exchange {
+        Exchange::Shanghai => 0,
+        Exchange::Shenzhen => 1,
+        Exchange::Beijing => 2,
+    }
 }
 
 fn map_seats(
@@ -197,17 +327,21 @@ fn map_seats(
                 DragonTigerSide::Sell => "SELL",
             };
             let amount = required_money(row, amount_key)?;
+            let buy_amount = opt_money(row, "BUY")?;
+            let sell_amount = opt_money(row, "SELL")?;
+            let net_amount = opt_money(row, "NET")?;
+            let seat_name = NonEmptyText::new(required_string(row, "OPERATEDEPT_NAME")?)?;
             Ok(DragonTigerSeat::new(
-                entry_id(request.instrument().code(), source_date)?,
+                entry_id(request.instrument().code(), source_date, &trade_id(row)?)?,
                 request.instrument().clone(),
                 iso_date(source_date)?,
                 *side,
                 PositiveU32::new(rank)?,
-                NonEmptyText::new(required_string(row, "OPERATEDEPT_NAME")?)?,
+                seat_name,
                 amount,
-                opt_money(row, "BUY")?,
-                opt_money(row, "SELL")?,
-                opt_money(row, "NET")?,
+                buy_amount,
+                sell_amount,
+                net_amount,
                 context.evidence_at(Some(source_date))?,
             )?)
         })
@@ -215,11 +349,155 @@ fn map_seats(
     context.finish(records)
 }
 
-fn entry_id(code: &str, date: &str) -> Result<NonEmptyText, EastmoneyError> {
+fn map_market_seats(
+    rows: &[(DragonTigerSide, Value)],
+    entry: &DragonTigerEntry,
+) -> Result<Vec<DragonTigerSeat>, EastmoneyError> {
+    let buy_count = rows
+        .iter()
+        .filter(|(side, _)| *side == DragonTigerSide::Buy)
+        .count();
+    let sell_count = rows
+        .iter()
+        .filter(|(side, _)| *side == DragonTigerSide::Sell)
+        .count();
+    if rows.len() != 10
+        || buy_count != SEAT_SIDE_CARDINALITY as usize
+        || sell_count != SEAT_SIDE_CARDINALITY as usize
+    {
+        return Err(EastmoneyError::Protocol(format!(
+            "dragon-tiger entry {} requires exactly five buy and five sell rows; got {buy_count} buy and {sell_count} sell",
+            entry.entry_id()
+        )));
+    }
+    let expected_trade_id = entry_trade_id(entry)?;
+    let mut buy_rank = 0_u32;
+    let mut sell_rank = 0_u32;
+    rows.iter()
+        .map(|(side, row)| {
+            let instrument = source_signal_instrument(row)?;
+            if &instrument != entry.instrument() {
+                return Err(EastmoneyError::Protocol(
+                    "dragon-tiger seat instrument does not match its discovered entry".into(),
+                ));
+            }
+            let source_date = required_string(row, "TRADE_DATE")?;
+            if iso_date(&source_date)? != *entry.trading_date() {
+                return Err(EastmoneyError::Protocol(
+                    "dragon-tiger seat date does not match its discovered entry".into(),
+                ));
+            }
+            let actual_trade_id = trade_id(row)?;
+            if actual_trade_id != expected_trade_id {
+                return Err(EastmoneyError::Protocol(format!(
+                    "dragon-tiger seat TRADE_ID {actual_trade_id} does not match discovered entry TRADE_ID {expected_trade_id}"
+                )));
+            }
+            let seat_name = NonEmptyText::new(required_string(row, "OPERATEDEPT_NAME")?)?;
+            let amount_key = match side {
+                DragonTigerSide::Buy => "BUY",
+                DragonTigerSide::Sell => "SELL",
+            };
+            let amount = required_money(row, amount_key)?;
+            let buy_amount = opt_money(row, "BUY")?;
+            let sell_amount = opt_money(row, "SELL")?;
+            let net_amount = opt_money(row, "NET")?;
+            let rank = match side {
+                DragonTigerSide::Buy => {
+                    buy_rank = buy_rank
+                        .checked_add(1)
+                        .ok_or_else(|| EastmoneyError::Protocol("buy rank overflow".into()))?;
+                    buy_rank
+                }
+                DragonTigerSide::Sell => {
+                    sell_rank = sell_rank
+                        .checked_add(1)
+                        .ok_or_else(|| EastmoneyError::Protocol("sell rank overflow".into()))?;
+                    sell_rank
+                }
+            };
+            Ok(DragonTigerSeat::new(
+                entry.entry_id().clone(),
+                entry.instrument().clone(),
+                entry.trading_date().clone(),
+                *side,
+                PositiveU32::new(rank)?,
+                seat_name,
+                amount,
+                buy_amount,
+                sell_amount,
+                net_amount,
+                entry.evidence().clone(),
+            )?)
+        })
+        .collect()
+}
+
+fn market_seat_filter(entry: &DragonTigerEntry) -> Result<String, EastmoneyError> {
+    Ok(format!(
+        "(SECURITY_CODE=\"{}\")(TRADE_DATE='{}')(TRADE_ID=\"{}\")",
+        entry.instrument().code(),
+        entry.trading_date().as_str(),
+        entry_trade_id(entry)?
+    ))
+}
+
+fn entry_trade_id(entry: &DragonTigerEntry) -> Result<&str, EastmoneyError> {
+    let (_, trade_id) = entry.entry_id().as_str().rsplit_once(':').ok_or_else(|| {
+        EastmoneyError::Protocol(format!(
+            "dragon-tiger entry ID {} has no TRADE_ID segment",
+            entry.entry_id()
+        ))
+    })?;
+    if !trade_id.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(EastmoneyError::Protocol(format!(
+            "dragon-tiger entry ID {} has an invalid TRADE_ID segment",
+            entry.entry_id()
+        )));
+    }
+    Ok(trade_id)
+}
+
+fn entry_id(code: &str, date: &str, trade_id: &str) -> Result<NonEmptyText, EastmoneyError> {
     let date = date
         .get(..10)
         .ok_or_else(|| EastmoneyError::Protocol("dragon-tiger date is too short".into()))?;
-    Ok(NonEmptyText::new(format!("{code}:{date}"))?)
+    Ok(NonEmptyText::new(format!("{code}:{date}:{trade_id}"))?)
+}
+
+fn trade_id(row: &Value) -> Result<String, EastmoneyError> {
+    let value = required_string(row, "TRADE_ID")?;
+    if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(EastmoneyError::Protocol(format!(
+            "dragon-tiger TRADE_ID {value:?} must contain only ASCII digits"
+        )));
+    }
+    Ok(value)
+}
+
+fn source_signal_instrument(
+    row: &Value,
+) -> Result<magic_market_core::InstrumentId, EastmoneyError> {
+    let code = required_string(row, "SECURITY_CODE")?;
+    let secucode = required_string(row, "SECUCODE")?;
+    let (_, suffix) = secucode.split_once('.').ok_or_else(|| {
+        EastmoneyError::Protocol(format!(
+            "Eastmoney source SECUCODE {secucode:?} has no exchange suffix"
+        ))
+    })?;
+    let exchange = match suffix.to_ascii_uppercase().as_str() {
+        "SH" => Exchange::Shanghai,
+        "SZ" => Exchange::Shenzhen,
+        "BJ" => Exchange::Beijing,
+        _ => {
+            return Err(EastmoneyError::Protocol(format!(
+                "unsupported Eastmoney SECUCODE suffix {suffix:?}"
+            )))
+        }
+    };
+    let instrument = source_instrument(&code, exchange)?;
+    validate_source_secucode(&instrument, &secucode)?;
+    Ok(instrument)
 }
 
 fn validate_signal_row(
@@ -258,344 +536,21 @@ fn required_money(row: &Value, key: &'static str) -> Result<Money, EastmoneyErro
         .ok_or_else(|| EastmoneyError::Protocol(format!("dragon-tiger field {key} is absent")))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{
-        map_entries, map_seats, validate_seat_limit, SEAT_SIDE_CARDINALITY, SEAT_SIDE_FETCH_LIMIT,
-    };
-    use crate::{EastmoneyClient, EastmoneyError, EastmoneyTransport};
-    use magic_market_core::{
-        AssetClass, DragonTigerData, DragonTigerSide, Exchange, InstrumentId,
-        InstrumentSignalRequest, IsoDate, PositiveU32, RatioUnit,
-    };
-    use serde_json::json;
-    use std::sync::{Arc, Mutex};
-
-    struct SeatTransport {
-        buy_rows: usize,
-        sell_rows: usize,
-        requests: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl EastmoneyTransport for SeatTransport {
-        fn get(
-            &self,
-            url: &str,
-            _headers: &[(&str, &str)],
-            _max_bytes: usize,
-        ) -> Result<Vec<u8>, EastmoneyError> {
-            self.requests.lock().unwrap().push(url.to_owned());
-            let (side, count) = if url.contains("reportName=RPT_BILLBOARD_DAILYDETAILSBUY") {
-                (DragonTigerSide::Buy, self.buy_rows)
-            } else if url.contains("reportName=RPT_BILLBOARD_DAILYDETAILSSELL") {
-                (DragonTigerSide::Sell, self.sell_rows)
-            } else {
-                return Err(EastmoneyError::InvalidRequest(
-                    "seat fixture received an unexpected report".into(),
-                ));
-            };
-            let rows = (1..=count)
-                .map(|rank| scripted_seat_row(side, rank))
-                .collect::<Vec<_>>();
-            serde_json::to_vec(&json!({
-                "success": true,
-                "code": 0,
-                "result": {"data": rows, "pages": 1}
-            }))
-            .map_err(|error| EastmoneyError::Decode(error.to_string()))
-        }
-
-        fn post_json(
-            &self,
-            _url: &str,
-            _headers: &[(&str, &str)],
-            _body: &[u8],
-            _max_bytes: usize,
-        ) -> Result<Vec<u8>, EastmoneyError> {
-            Err(EastmoneyError::InvalidRequest(
-                "seat fixture does not accept POST".into(),
-            ))
+fn reject_duplicates<'a>(
+    identities: impl IntoIterator<Item = &'a str>,
+    family: &str,
+) -> Result<(), EastmoneyError> {
+    let mut seen = HashSet::new();
+    for identity in identities {
+        if !seen.insert(identity) {
+            return Err(EastmoneyError::Protocol(format!(
+                "duplicate {family} business identity {identity}"
+            )));
         }
     }
-
-    fn scripted_seat_row(side: DragonTigerSide, rank: usize) -> serde_json::Value {
-        let (buy, sell, name) = match side {
-            DragonTigerSide::Buy => (100 + rank, 10, format!("买方机构{rank}")),
-            DragonTigerSide::Sell => (5, 80 + rank, format!("卖方机构{rank}")),
-        };
-        json!({
-            "SECURITY_CODE":"002475",
-            "SECUCODE":"002475.SZ",
-            "TRADE_DATE":"2026-07-23 00:00:00",
-            "OPERATEDEPT_NAME":name,
-            "BUY":buy,
-            "SELL":sell,
-            "NET":buy as isize - sell as isize
-        })
-    }
-
-    fn request() -> InstrumentSignalRequest {
-        InstrumentSignalRequest::new(
-            InstrumentId::new(Exchange::Shenzhen, "002475", AssetClass::Equity).unwrap(),
-            PositiveU32::new(10).unwrap(),
-        )
-        .unwrap()
-    }
-
-    fn dated_request() -> InstrumentSignalRequest {
-        request().with_trading_date(IsoDate::new("2026-07-23").unwrap())
-    }
-
-    fn complete_seat_rows() -> Vec<(DragonTigerSide, serde_json::Value)> {
-        let mut rows = Vec::new();
-        for rank in 1..=5 {
-            let buy = 100 + rank;
-            rows.push((
-                DragonTigerSide::Buy,
-                json!({
-                    "SECURITY_CODE":"002475",
-                    "SECUCODE":"002475.SZ",
-                    "TRADE_DATE":"2026-07-23 00:00:00",
-                    "OPERATEDEPT_NAME":format!("买方机构{rank}"),
-                    "BUY":buy,
-                    "SELL":10,
-                    "NET":buy - 10
-                }),
-            ));
-        }
-        for rank in 1..=5 {
-            let sell = 80 + rank;
-            rows.push((
-                DragonTigerSide::Sell,
-                json!({
-                    "SECURITY_CODE":"002475",
-                    "SECUCODE":"002475.SZ",
-                    "TRADE_DATE":"2026-07-23 00:00:00",
-                    "OPERATEDEPT_NAME":format!("卖方机构{rank}"),
-                    "BUY":5,
-                    "SELL":sell,
-                    "NET":5 - sell
-                }),
-            ));
-        }
-        rows
-    }
-
-    #[test]
-    fn seat_request_limit_reserves_one_atomic_top_five_group() {
-        let instrument =
-            InstrumentId::new(Exchange::Shenzhen, "002475", AssetClass::Equity).unwrap();
-        let too_small =
-            InstrumentSignalRequest::new(instrument.clone(), PositiveU32::new(9).unwrap()).unwrap();
-        let exact = InstrumentSignalRequest::new(instrument.clone(), PositiveU32::new(10).unwrap())
-            .unwrap();
-        let larger =
-            InstrumentSignalRequest::new(instrument, PositiveU32::new(100).unwrap()).unwrap();
-        assert!(validate_seat_limit(&too_small).is_err());
-        assert!(validate_seat_limit(&exact).is_ok());
-        assert!(validate_seat_limit(&larger).is_ok());
-        assert_eq!(SEAT_SIDE_CARDINALITY, 5);
-        assert_eq!(SEAT_SIDE_FETCH_LIMIT, 6);
-    }
-
-    #[test]
-    fn maps_entry_amounts_reason_turnover_and_evidence() {
-        let batch = map_entries(
-            &[json!({"SECURITY_CODE":"002475","SECUCODE":"002475.SZ",
-                "TRADE_DATE":"2026-07-23 00:00:00",
-                "EXPLANATION":"日涨幅偏离值达到7%",
-                "BILLBOARD_BUY_AMT":100,"BILLBOARD_SELL_AMT":40,
-                "BILLBOARD_NET_AMT":60,"TURNOVERRATE":12.5})],
-            &request(),
-        )
-        .unwrap();
-        let entry = &batch.records()[0];
-        assert_eq!(entry.entry_id().as_str(), "002475:2026-07-23");
-        assert_eq!(entry.trading_date().as_str(), "2026-07-23");
-        assert_eq!(entry.reason().unwrap().as_str(), "日涨幅偏离值达到7%");
-        assert_eq!(entry.buy_amount().unwrap().get(), 100.0);
-        assert_eq!(entry.sell_amount().unwrap().get(), 40.0);
-        assert_eq!(entry.net_amount().unwrap().get(), 60.0);
-        assert_eq!(entry.turnover_rate().unwrap().get(), 12.5);
-        assert_eq!(entry.turnover_rate().unwrap().unit(), RatioUnit::Percent);
-        assert_eq!(entry.evidence().source_at(), Some("2026-07-23 00:00:00"));
-    }
-
-    #[test]
-    fn maps_buy_and_sell_seats_with_independent_ranks() {
-        let rows = complete_seat_rows();
-        let batch = map_seats(&rows, &request(), "2026-07-23").unwrap();
-        assert_eq!(batch.records().len(), 10);
-        assert_eq!(batch.records()[0].side(), DragonTigerSide::Buy);
-        assert_eq!(batch.records()[0].rank().get(), 1);
-        assert_eq!(batch.records()[0].seat_name().as_str(), "买方机构1");
-        assert_eq!(batch.records()[0].amount().get(), 101.0);
-        assert_eq!(batch.records()[0].buy_amount().unwrap().get(), 101.0);
-        assert_eq!(batch.records()[0].sell_amount().unwrap().get(), 10.0);
-        assert_eq!(batch.records()[0].net_amount().unwrap().get(), 91.0);
-        assert_eq!(batch.records()[5].side(), DragonTigerSide::Sell);
-        assert_eq!(batch.records()[5].rank().get(), 1);
-        assert_eq!(batch.records()[5].amount().get(), 81.0);
-    }
-
-    #[test]
-    fn rejects_incomplete_or_oversized_seat_groups() {
-        let mut incomplete = complete_seat_rows();
-        incomplete.pop();
-        assert!(map_seats(&incomplete, &request(), "2026-07-23").is_err());
-
-        let mut oversized = complete_seat_rows();
-        oversized.push(oversized[0].clone());
-        assert!(map_seats(&oversized, &request(), "2026-07-23").is_err());
-    }
-
-    #[test]
-    fn trait_path_uses_the_sixth_row_sentinel_before_local_truncation() {
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let client = EastmoneyClient::with_transport(SeatTransport {
-            buy_rows: 5,
-            sell_rows: 5,
-            requests: Arc::clone(&requests),
-        });
-        let batch = client.dragon_tiger_seats(&dated_request()).unwrap();
-        assert_eq!(batch.records().len(), 10);
-        let requests = requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert!(requests
-            .iter()
-            .any(|url| url.contains("reportName=RPT_BILLBOARD_DAILYDETAILSBUY")));
-        assert!(requests
-            .iter()
-            .any(|url| url.contains("reportName=RPT_BILLBOARD_DAILYDETAILSSELL")));
-        drop(requests);
-
-        for (buy_rows, sell_rows, expected) in [
-            (6, 5, "got 6 buy and 5 sell"),
-            (5, 6, "got 5 buy and 6 sell"),
-        ] {
-            let client = EastmoneyClient::with_transport(SeatTransport {
-                buy_rows,
-                sell_rows,
-                requests: Arc::new(Mutex::new(Vec::new())),
-            });
-            let error = client.dragon_tiger_seats(&dated_request()).unwrap_err();
-            assert!(
-                matches!(error, EastmoneyError::Protocol(message) if message.contains(expected))
-            );
-        }
-    }
-
-    #[test]
-    fn source_code_and_requested_trading_date_must_match() {
-        let request =
-            request().with_trading_date(magic_market_core::IsoDate::new("2026-07-23").unwrap());
-        let wrong_code = map_entries(
-            &[json!({
-                "SECURITY_CODE":"600396",
-                "SECUCODE":"600396.SH",
-                "TRADE_DATE":"2026-07-23",
-                "BILLBOARD_BUY_AMT":1
-            })],
-            &request,
-        );
-        assert!(matches!(
-            wrong_code,
-            Err(crate::EastmoneyError::Protocol(_))
-        ));
-        let wrong_date = map_entries(
-            &[json!({
-                "SECURITY_CODE":"002475",
-                "SECUCODE":"002475.SZ",
-                "TRADE_DATE":"2026-07-22",
-                "BILLBOARD_BUY_AMT":1
-            })],
-            &request,
-        );
-        assert!(matches!(
-            wrong_date,
-            Err(crate::EastmoneyError::Protocol(_))
-        ));
-        let wrong_seat = map_seats(
-            &[(
-                DragonTigerSide::Buy,
-                json!({
-                    "SECURITY_CODE":"600396",
-                    "SECUCODE":"600396.SH",
-                    "TRADE_DATE":"2026-07-23",
-                    "OPERATEDEPT_NAME":"x",
-                    "BUY":1
-                }),
-            )],
-            &request,
-            "2026-07-23",
-        );
-        assert!(matches!(
-            wrong_seat,
-            Err(crate::EastmoneyError::Protocol(_))
-        ));
-    }
-
-    #[test]
-    fn every_entry_and_seat_requires_the_real_identity_pair() {
-        for row in [
-            json!({
-                "SECURITY_CODE":"002475",
-                "TRADE_DATE":"2026-07-23",
-                "BILLBOARD_BUY_AMT":1
-            }),
-            json!({
-                "SECUCODE":"002475.SZ",
-                "TRADE_DATE":"2026-07-23",
-                "BILLBOARD_BUY_AMT":1
-            }),
-        ] {
-            assert!(matches!(
-                map_entries(&[row], &request()),
-                Err(crate::EastmoneyError::Protocol(_))
-            ));
-        }
-        for row in [
-            json!({
-                "SECURITY_CODE":"002475",
-                "TRADE_DATE":"2026-07-23",
-                "OPERATEDEPT_NAME":"x",
-                "BUY":1
-            }),
-            json!({
-                "SECUCODE":"002475.SZ",
-                "TRADE_DATE":"2026-07-23",
-                "OPERATEDEPT_NAME":"x",
-                "BUY":1
-            }),
-        ] {
-            assert!(matches!(
-                map_seats(&[(DragonTigerSide::Buy, row)], &request(), "2026-07-23"),
-                Err(crate::EastmoneyError::Protocol(_))
-            ));
-        }
-    }
-
-    #[test]
-    fn every_seat_requires_a_matching_source_trade_date() {
-        for row in [
-            json!({
-                "SECURITY_CODE":"002475",
-                "SECUCODE":"002475.SZ",
-                "OPERATEDEPT_NAME":"x",
-                "BUY":1
-            }),
-            json!({
-                "SECURITY_CODE":"002475",
-                "SECUCODE":"002475.SZ",
-                "TRADE_DATE":"2026-07-22",
-                "OPERATEDEPT_NAME":"x",
-                "BUY":1
-            }),
-        ] {
-            assert!(matches!(
-                map_seats(&[(DragonTigerSide::Buy, row)], &request(), "2026-07-23"),
-                Err(crate::EastmoneyError::Protocol(_))
-            ));
-        }
-    }
+    Ok(())
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/dragon_tiger_tests.rs"]
+mod tests;

@@ -23,6 +23,21 @@ fn all_four_limit_pool_kinds_are_explicit() {
         PositiveU32::new(1_001).unwrap()
     )
     .is_err());
+
+    let request = LimitPoolRequest::new(
+        LimitPoolKind::Broken,
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(100).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(request.kind(), LimitPoolKind::Broken);
+    assert_eq!(request.trading_date().as_str(), "2026-07-23");
+    assert_eq!(request.limit().get(), 100);
+    assert_eq!(
+        serde_json::from_value::<LimitPoolRequest>(serde_json::to_value(&request).unwrap())
+            .unwrap(),
+        request
+    );
 }
 
 #[test]
@@ -48,6 +63,7 @@ fn limit_entry_round_trips_with_optional_reason() {
         evidence: SourceEvidence::new(ProviderId::Eastmoney, "observed", "pool").unwrap(),
     };
     assert_eq!(entry.provider_id(), ProviderId::Eastmoney);
+    assert_eq!(entry.evidence_batch_id(), "pool");
     assert_eq!(
         serde_json::from_str::<LimitPoolEntry>(&serde_json::to_string(&entry).unwrap()).unwrap(),
         entry

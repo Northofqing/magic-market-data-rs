@@ -6,16 +6,18 @@ use crate::protocol::constants::{
 use crate::protocol::types::{MinuteTimePrice, SecurityInfo, TickData};
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use magic_market_core::{
-    AsyncHistoricalBars, AsyncRealtimeQuotes, AsyncTrades, AuctionSnapshot, Auctions, BarInterval,
-    BarsRequest, Board, BookLevel, DataBatch, DataStatus, HistoricalBars, InstrumentId, MinuteData,
-    MinuteDataRequest, MinutePoint, Money, MoneyFlow, MoneyFlows, OrderBook, OrderBooks, Price,
-    PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
-    SecurityMetadata, SecurityMetadataProvider, Trade, TradeSide, Trades, TradesRequest,
+    Adjustment, AsyncHistoricalBars, AsyncRealtimeQuotes, AsyncTrades, AuctionSnapshot, Auctions,
+    Bar, BarInterval, BarsRequest, Board, BookLevel, DataBatch, DataStatus, HistoricalBars,
+    InstrumentId, IsoDate, MinuteData, MinuteDataRequest, MinutePoint, Money, MoneyFlow,
+    MoneyFlows, OrderBook, OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio,
+    RatioUnit, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, TradeSide,
+    Trades, TradesRequest,
 };
 use std::collections::{HashMap, HashSet};
 
 const CURRENT_TRADE_PAGE_SIZE: u16 = 1_800;
 const HISTORICAL_TRADE_PAGE_SIZE: u16 = 2_000;
+const SHARES_PER_LOT: f64 = 100.0;
 
 impl TdxHqClient {
     /// Returns the data families exposed through the core provider boundary.
@@ -85,23 +87,805 @@ fn fetched_at() -> Result<String, TdxError> {
             TdxError::InvalidData(format!("system clock is before UNIX epoch: {error}"))
         })
 }
-fn bars_provenance(
-    source: &str,
-    records: &[SecurityBar],
-) -> Result<magic_market_core::Provenance, TdxError> {
-    let p = magic_market_core::Provenance::new(source, fetched_at()?)?;
-    match records.first() {
-        Some(bar) => Ok(p.with_source_at(bar.datetime.clone())?),
-        None => Ok(p),
+fn ensure_current_session_at(unix_seconds: u64, family: &str) -> Result<(), TdxError> {
+    const SECONDS_PER_DAY: u64 = 86_400;
+    const CHINA_OFFSET_SECONDS: u64 = 8 * 60 * 60;
+
+    let local_seconds = unix_seconds
+        .checked_add(CHINA_OFFSET_SECONDS)
+        .ok_or_else(|| TdxError::InvalidData("TDX current-session clock overflow".into()))?;
+    let local_days = local_seconds / SECONDS_PER_DAY;
+    let local_day_seconds = local_seconds % SECONDS_PER_DAY;
+    // 1970-01-01 was Thursday. Sunday=0 and Saturday=6.
+    let weekday = (local_days + 4) % 7;
+    let is_weekday = !matches!(weekday, 0 | 6);
+    let morning = (9 * 3_600 + 30 * 60..=11 * 3_600 + 30 * 60).contains(&local_day_seconds);
+    let afternoon = (13 * 3_600..=15 * 3_600).contains(&local_day_seconds);
+
+    if is_weekday && (morning || afternoon) {
+        Ok(())
+    } else {
+        Err(TdxError::InvalidData(format!(
+            "TDX normalized current {family} is unavailable outside an active A-share weekday session"
+        )))
     }
 }
-fn strict_bars(
+
+fn ensure_current_session(family: &str) -> Result<(), TdxError> {
+    let unix_seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| {
+            TdxError::InvalidData(format!("system clock is before UNIX epoch: {error}"))
+        })?
+        .as_secs();
+    ensure_current_session_at(unix_seconds, family)
+}
+fn normalized_bar_time(
+    interval: BarInterval,
+    record: &SecurityBar,
+) -> Result<(String, String, i64), TdxError> {
+    let date = format!("{:04}-{:02}-{:02}", record.year, record.month, record.day);
+    IsoDate::new(date.clone()).map_err(|error| {
+        TdxError::InvalidData(format!(
+            "TDX bar has invalid calendar components for {}: {error}",
+            record.datetime
+        ))
+    })?;
+    let intraday = matches!(
+        interval,
+        BarInterval::Minute1
+            | BarInterval::Minute5
+            | BarInterval::Minute15
+            | BarInterval::Minute30
+            | BarInterval::Hour1
+    );
+    let (expected_source_at, bar_time) = if intraday {
+        if record.hour > 23 || record.minute > 59 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar has invalid intraday components for {}",
+                record.datetime
+            )));
+        }
+        let source_at = format!("{date} {:02}:{:02}", record.hour, record.minute);
+        let bar_time = format!("{source_at}:00");
+        (source_at, bar_time)
+    } else {
+        if record.hour != 0 || record.minute != 0 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX non-intraday bar has unexpected time components for {}",
+                record.datetime
+            )));
+        }
+        (date.clone(), date)
+    };
+    if record.datetime != expected_source_at {
+        return Err(TdxError::InvalidData(format!(
+            "TDX bar datetime {:?} contradicts decoded components {expected_source_at:?}",
+            record.datetime
+        )));
+    }
+
+    let adjusted_year = i64::from(record.year) - i64::from(record.month <= 2);
+    let era = adjusted_year.div_euclid(400);
+    let year_of_era = adjusted_year - era * 400;
+    let month = i64::from(record.month);
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + i64::from(record.day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days_since_epoch = era * 146_097 + day_of_era - 719_468;
+    let source_epoch = days_since_epoch
+        .checked_mul(86_400)
+        .and_then(|value| value.checked_add(i64::from(record.hour) * 3_600))
+        .and_then(|value| value.checked_add(i64::from(record.minute) * 60))
+        // TDX A-share timestamps are Asia/Shanghai source time.
+        .and_then(|value| value.checked_sub(8 * 3_600))
+        .ok_or_else(|| TdxError::InvalidData("TDX bar timestamp overflow".into()))?;
+    Ok((expected_source_at, bar_time, source_epoch))
+}
+
+fn validate_bar_jump(previous: &SecurityBar, current: &SecurityBar) -> Result<(), TdxError> {
+    let change = current.close / previous.close - 1.0;
+    if change.abs() > 0.20 {
+        return Err(TdxError::InvalidData(format!(
+            "TDX bar close change {:.4}% from {} to {} exceeds 20%; manual corporate-action confirmation required",
+            change * 100.0,
+            previous.datetime,
+            current.datetime
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn normalize_bars(
     source: &str,
+    request: &BarsRequest,
     records: Vec<SecurityBar>,
-) -> Result<DataBatch<SecurityBar>, TdxError> {
+) -> Result<DataBatch<Bar>, TdxError> {
     ensure_nonempty(&records)?;
-    let provenance = bars_provenance(source, &records)?;
-    Ok(DataBatch::strict(records, provenance))
+    if records.len() != usize::from(request.limit()) {
+        return Err(TdxError::InvalidData(format!(
+            "TDX returned {} bars for strict request limit {}",
+            records.len(),
+            request.limit()
+        )));
+    }
+    if !matches!(source, "tdx" | "tdx-smart" | "tdx-direct" | "tdx-async") {
+        return Err(TdxError::InvalidData(format!(
+            "unexpected TDX bar source {source:?}"
+        )));
+    }
+
+    let observed_at = fetched_at()?;
+    let observed_epoch = observed_at.parse::<i64>().map_err(|error| {
+        TdxError::InvalidData(format!("invalid TDX observation timestamp: {error}"))
+    })?;
+    let mut times = Vec::with_capacity(records.len());
+    let mut previous_source_at: Option<String> = None;
+    for record in &records {
+        let (source_at, bar_time, source_epoch) = normalized_bar_time(request.interval(), record)?;
+        if source_epoch > observed_epoch {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar source time {source_at} is newer than observation {observed_at}"
+            )));
+        }
+        if previous_source_at
+            .as_deref()
+            .is_some_and(|previous| previous >= source_at.as_str())
+        {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar times are duplicate or non-increasing at {source_at}"
+            )));
+        }
+        if !record.amount.is_finite() || record.amount < 0.0 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar amount is invalid at {source_at}"
+            )));
+        }
+        if record.vol > 0.0 && record.amount == 0.0 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX bar has positive volume with zero amount at {source_at}"
+            )));
+        }
+        previous_source_at = Some(source_at.clone());
+        times.push((source_at, bar_time));
+    }
+    for pair in records.windows(2) {
+        validate_bar_jump(&pair[0], &pair[1])?;
+    }
+
+    let latest_source_at = times
+        .last()
+        .map(|(source_at, _)| source_at.clone())
+        .ok_or_else(|| TdxError::InvalidData("TDX bar batch has no source time".into()))?;
+    let provenance = magic_market_core::Provenance::new(source, observed_at)?
+        .with_source_at(latest_source_at)?;
+    let batch_id = provenance
+        .batch_id()
+        .ok_or_else(|| TdxError::InvalidData("TDX bar batch has no batch ID".into()))?
+        .to_owned();
+    let mut normalized = Vec::with_capacity(records.len());
+    for (record, (source_at, bar_time)) in records.into_iter().zip(times) {
+        let bar = Bar::new(
+            request.instrument().clone(),
+            request.interval(),
+            bar_time.clone(),
+            bar_time,
+            Price::new(record.open)?,
+            Price::new(record.high)?,
+            Price::new(record.low)?,
+            Price::new(record.close)?,
+            Quantity::new(record.vol / SHARES_PER_LOT)?,
+            Some(Money::new(record.amount)?),
+            Adjustment::Unadjusted,
+            ProviderId::Tdx,
+            batch_id.clone(),
+        )?
+        .with_source_at(source_at)?;
+        normalized.push(bar);
+    }
+    Ok(DataBatch::strict(normalized, provenance))
+}
+
+pub(crate) trait BlockingTdxQuery {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError>;
+
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError>;
+
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError>;
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError>;
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError>;
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError>;
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError>;
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError>;
+}
+
+impl BlockingTdxQuery for TdxHqClient {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        TdxHqClient::get_security_bars(self, category, market, code, start, count, adjust)
+    }
+
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError> {
+        TdxHqClient::get_security_quotes(self, instruments)
+    }
+
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        TdxHqClient::get_minute_time_data(self, market, code)
+    }
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        TdxHqClient::get_history_minute_time_data(self, market, code, date)
+    }
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        TdxHqClient::get_transaction_data(self, market, code, start, count)
+    }
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        TdxHqClient::get_history_transaction_data(self, market, code, start, count, date)
+    }
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        TdxHqClient::get_security_count(self, market)
+    }
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
+        TdxHqClient::get_security_list(self, market, start)
+    }
+}
+
+impl BlockingTdxQuery for crate::TdxSmartClient {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        crate::TdxSmartClient::get_security_bars(self, category, market, code, start, count, adjust)
+    }
+
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError> {
+        crate::TdxSmartClient::get_security_quotes(self, instruments)
+    }
+
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        TdxHqClient::get_minute_time_data(self.inner(), market, code)
+    }
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        TdxHqClient::get_history_minute_time_data(self.inner(), market, code, date)
+    }
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        TdxHqClient::get_transaction_data(self.inner(), market, code, start, count)
+    }
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        TdxHqClient::get_history_transaction_data(self.inner(), market, code, start, count, date)
+    }
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        TdxHqClient::get_security_count(self.inner(), market)
+    }
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
+        TdxHqClient::get_security_list(self.inner(), market, start)
+    }
+}
+
+impl BlockingTdxQuery for crate::TdxDirectClient {
+    fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        crate::TdxDirectClient::get_security_bars(
+            self, category, market, code, start, count, adjust,
+        )
+    }
+
+    fn security_quotes(&self, instruments: &[(u8, &str)]) -> Result<Vec<SecurityQuote>, TdxError> {
+        crate::TdxDirectClient::get_security_quotes(self, instruments)
+    }
+
+    fn minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        crate::TdxDirectClient::get_minute_time_data(self, market, code)
+    }
+
+    fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        crate::TdxDirectClient::get_history_minute_time_data(self, market, code, date)
+    }
+
+    fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        crate::TdxDirectClient::get_transaction_data(self, market, code, start, count)
+    }
+
+    fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        crate::TdxDirectClient::get_history_transaction_data(self, market, code, start, count, date)
+    }
+
+    fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        crate::TdxDirectClient::get_security_count(self, market)
+    }
+
+    fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
+        crate::TdxDirectClient::get_security_list(self, market, start)
+    }
+}
+
+pub(crate) trait AsyncTdxQuery {
+    async fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError>;
+
+    async fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError>;
+
+    async fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError>;
+
+    async fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError>;
+
+    async fn security_count(&self, market: u8) -> Result<u16, TdxError>;
+
+    async fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError>;
+
+    async fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError>;
+
+    async fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError>;
+}
+
+impl AsyncTdxQuery for crate::AsyncTdxHqClient {
+    async fn security_bars(
+        &self,
+        category: u8,
+        market: u8,
+        code: &str,
+        start: u32,
+        count: u16,
+        adjust: u8,
+    ) -> Result<Vec<SecurityBar>, TdxError> {
+        crate::AsyncTdxHqClient::get_security_bars(
+            self, category, market, code, start, count, adjust,
+        )
+        .await
+    }
+
+    async fn security_quotes(
+        &self,
+        instruments: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>, TdxError> {
+        crate::AsyncTdxHqClient::get_security_quotes(self, instruments).await
+    }
+
+    async fn transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+    ) -> Result<Vec<TickData>, TdxError> {
+        crate::AsyncTdxHqClient::get_transaction_data(self, market, code, start, count).await
+    }
+
+    async fn history_transaction_data(
+        &self,
+        market: u8,
+        code: &str,
+        start: u16,
+        count: u16,
+        date: u32,
+    ) -> Result<Vec<TickData>, TdxError> {
+        crate::AsyncTdxHqClient::get_history_transaction_data(
+            self, market, code, start, count, date,
+        )
+        .await
+    }
+
+    async fn security_count(&self, market: u8) -> Result<u16, TdxError> {
+        crate::AsyncTdxHqClient::get_security_count(self, market).await
+    }
+
+    async fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
+        crate::AsyncTdxHqClient::get_security_list(self, market, start).await
+    }
+
+    async fn minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        crate::AsyncTdxHqClient::get_minute_time_data(self, market, code).await
+    }
+
+    async fn history_minute_time_data(
+        &self,
+        market: u8,
+        code: &str,
+        date: u32,
+    ) -> Result<Vec<MinuteTimePrice>, TdxError> {
+        crate::AsyncTdxHqClient::get_history_minute_time_data(self, market, code, date).await
+    }
+}
+
+fn historical_bars_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &BarsRequest,
+) -> Result<DataBatch<Bar>, TdxError> {
+    reject_unsupported_bar_range(request)?;
+    let records = query.security_bars(
+        category(request.interval())?,
+        market(request.instrument())?,
+        request.instrument().code(),
+        0,
+        request.limit(),
+        0,
+    )?;
+    normalize_bars(source, request, records)
+}
+
+async fn historical_bars_async_with(
+    query: &impl AsyncTdxQuery,
+    source: &str,
+    request: &BarsRequest,
+) -> Result<DataBatch<Bar>, TdxError> {
+    reject_unsupported_bar_range(request)?;
+    let records = query
+        .security_bars(
+            category(request.interval())?,
+            market(request.instrument())?,
+            request.instrument().code(),
+            0,
+            request.limit(),
+            0,
+        )
+        .await?;
+    normalize_bars(source, request, records)
+}
+
+async fn realtime_quotes_async_with(
+    query: &impl AsyncTdxQuery,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<Quote>, TdxError> {
+    let pairs: Vec<(u8, &str)> = instruments
+        .iter()
+        .map(|id| market(id).map(|market| (market, id.code())))
+        .collect::<Result<_, _>>()?;
+    let records = query.security_quotes(&pairs).await?;
+    normalize_quotes(source, instruments, records)
+}
+
+async fn trades_async_with(
+    query: &impl AsyncTdxQuery,
+    request: &TradesRequest,
+) -> Result<DataBatch<Trade>, TdxError> {
+    trades_async_with_session(query, request, ensure_current_session).await
+}
+
+async fn trades_async_with_session(
+    query: &impl AsyncTdxQuery,
+    request: &TradesRequest,
+    session_check: impl FnOnce(&str) -> Result<(), TdxError>,
+) -> Result<DataBatch<Trade>, TdxError> {
+    let historical_date = request.date().map(tdx_trade_date).transpose()?;
+    if historical_date.is_none() {
+        session_check("trades")?;
+    }
+    let request_market = market(request.instrument())?;
+    let page_size = if historical_date.is_some() {
+        HISTORICAL_TRADE_PAGE_SIZE
+    } else {
+        CURRENT_TRADE_PAGE_SIZE
+    };
+    let mut records = Vec::with_capacity(usize::from(request.limit()));
+    let mut start = 0u16;
+    let mut remaining = request.limit();
+    while remaining != 0 {
+        let requested = remaining.min(page_size);
+        let page = match historical_date {
+            Some(date) => {
+                query
+                    .history_transaction_data(
+                        request_market,
+                        request.instrument().code(),
+                        start,
+                        requested,
+                        date,
+                    )
+                    .await?
+            }
+            None => {
+                query
+                    .transaction_data(
+                        request_market,
+                        request.instrument().code(),
+                        start,
+                        requested,
+                    )
+                    .await?
+            }
+        };
+        if page.len() > usize::from(requested) {
+            return Err(TdxError::InvalidData(
+                "TDX async trade page exceeds requested cardinality".into(),
+            ));
+        }
+        let fetched = u16::try_from(page.len())
+            .map_err(|_| TdxError::InvalidData("TDX trade page is too large".into()))?;
+        records.extend(page);
+        if fetched < requested {
+            break;
+        }
+        remaining -= fetched;
+        if remaining == 0 {
+            break;
+        }
+        start = start
+            .checked_add(fetched)
+            .ok_or_else(|| TdxError::InvalidData("TDX trade offset overflow".into()))?;
+    }
+    normalize_trade_records(
+        if historical_date.is_some() {
+            "tdx-async-history"
+        } else {
+            "tdx-async-current"
+        },
+        request,
+        records,
+    )
+}
+
+fn realtime_quotes_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<Quote>, TdxError> {
+    let pairs: Vec<(u8, &str)> = instruments
+        .iter()
+        .map(|id| market(id).map(|market| (market, id.code())))
+        .collect::<Result<_, _>>()?;
+    let records = query.security_quotes(&pairs)?;
+    normalize_quotes(source, instruments, records)
+}
+
+fn minute_data_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &MinuteDataRequest,
+) -> Result<DataBatch<MinutePoint>, TdxError> {
+    minute_data_with_session(query, source, request, ensure_current_session)
+}
+
+fn minute_data_with_session(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &MinuteDataRequest,
+    session_check: impl FnOnce(&str) -> Result<(), TdxError>,
+) -> Result<DataBatch<MinutePoint>, TdxError> {
+    let (date, records) = match request.date() {
+        Some(date) => (
+            date.to_owned(),
+            query.history_minute_time_data(
+                market(request.instrument())?,
+                request.instrument().code(),
+                compact_date(date)?,
+            )?,
+        ),
+        None => {
+            session_check("minute data")?;
+            let compact = crate::net::utils::today_yyyymmdd();
+            (
+                display_date(compact)?,
+                query
+                    .minute_time_data(market(request.instrument())?, request.instrument().code())?,
+            )
+        }
+    };
+    normalize_minute_records(source, request.instrument(), &date, records)
+}
+
+fn trades_with(
+    query: &impl BlockingTdxQuery,
+    current_source: &str,
+    history_source: &str,
+    request: &TradesRequest,
+) -> Result<DataBatch<Trade>, TdxError> {
+    trades_with_session(
+        query,
+        current_source,
+        history_source,
+        request,
+        ensure_current_session,
+    )
+}
+
+fn trades_with_session(
+    query: &impl BlockingTdxQuery,
+    current_source: &str,
+    history_source: &str,
+    request: &TradesRequest,
+    session_check: impl FnOnce(&str) -> Result<(), TdxError>,
+) -> Result<DataBatch<Trade>, TdxError> {
+    let request_market = market(request.instrument())?;
+    match request.date() {
+        Some(date) => {
+            let date = tdx_trade_date(date)?;
+            paginate_trades(
+                history_source,
+                request,
+                HISTORICAL_TRADE_PAGE_SIZE,
+                |start, count| {
+                    query.history_transaction_data(
+                        request_market,
+                        request.instrument().code(),
+                        start,
+                        count,
+                        date,
+                    )
+                },
+            )
+        }
+        None => {
+            session_check("trades")?;
+            paginate_trades(
+                current_source,
+                request,
+                CURRENT_TRADE_PAGE_SIZE,
+                |start, count| {
+                    query.transaction_data(
+                        request_market,
+                        request.instrument().code(),
+                        start,
+                        count,
+                    )
+                },
+            )
+        }
+    }
+}
+
+fn security_metadata_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<SecurityMetadata>, TdxError> {
+    validate_security_metadata_request(instruments)?;
+    let records = fetch_security_records(
+        instruments,
+        |market| query.security_count(market),
+        |market, start| query.security_list(market, start),
+    )?;
+    normalize_security_metadata(source, instruments, records)
 }
 
 fn compact_date(value: &str) -> Result<u32, TdxError> {
@@ -656,13 +1440,7 @@ impl SecurityMetadataProvider for TdxHqClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<SecurityMetadata>, Self::Error> {
-        validate_security_metadata_request(instruments)?;
-        let records = fetch_security_records(
-            instruments,
-            |value| self.get_security_count(value),
-            |value, start| self.get_security_list(value, start),
-        )?;
-        normalize_security_metadata("tdx", instruments, records)
+        security_metadata_with(self, "tdx", instruments)
     }
 }
 
@@ -673,24 +1451,15 @@ impl SecurityMetadataProvider for crate::TdxSmartClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<SecurityMetadata>, Self::Error> {
-        <TdxHqClient as SecurityMetadataProvider>::security_metadata(self.inner(), instruments)
+        security_metadata_with(self, "tdx", instruments)
     }
 }
 
 impl HistoricalBars for TdxHqClient {
-    type Bar = SecurityBar;
+    type Bar = Bar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        reject_unsupported_bar_range(request)?;
-        let records = self.get_security_bars(
-            category(request.interval())?,
-            market(request.instrument())?,
-            request.instrument().code(),
-            0,
-            request.limit(),
-            0,
-        )?;
-        strict_bars("tdx", records)
+        historical_bars_with(self, "tdx", request)
     }
 }
 
@@ -701,27 +1470,7 @@ impl MinuteData for TdxHqClient {
         &self,
         request: &MinuteDataRequest,
     ) -> Result<DataBatch<MinutePoint>, Self::Error> {
-        let (date, records) = match request.date() {
-            Some(date) => (
-                date.to_owned(),
-                self.get_history_minute_time_data(
-                    market(request.instrument())?,
-                    request.instrument().code(),
-                    compact_date(date)?,
-                )?,
-            ),
-            None => {
-                let compact = crate::net::utils::today_yyyymmdd();
-                (
-                    display_date(compact)?,
-                    self.get_minute_time_data(
-                        market(request.instrument())?,
-                        request.instrument().code(),
-                    )?,
-                )
-            }
-        };
-        normalize_minute_records("tdx", request.instrument(), &date, records)
+        minute_data_with(self, "tdx", request)
     }
 }
 
@@ -732,12 +1481,7 @@ impl RealtimeQuotes for TdxHqClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
-        let records = self.get_security_quotes(&pairs)?;
-        normalize_quotes("tdx", instruments, records)
+        realtime_quotes_with(self, "tdx", instruments)
     }
 }
 
@@ -745,39 +1489,7 @@ impl Trades for TdxHqClient {
     type Error = TdxError;
 
     fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        let request_market = market(request.instrument())?;
-        match request.date() {
-            Some(date) => {
-                let date = tdx_trade_date(date)?;
-                paginate_trades(
-                    "tdx-history",
-                    request,
-                    HISTORICAL_TRADE_PAGE_SIZE,
-                    |start, count| {
-                        self.get_history_transaction_data(
-                            request_market,
-                            request.instrument().code(),
-                            start,
-                            count,
-                            date,
-                        )
-                    },
-                )
-            }
-            None => paginate_trades(
-                "tdx-current",
-                request,
-                CURRENT_TRADE_PAGE_SIZE,
-                |start, count| {
-                    self.get_transaction_data(
-                        request_market,
-                        request.instrument().code(),
-                        start,
-                        count,
-                    )
-                },
-            ),
-        }
+        trades_with(self, "tdx-current", "tdx-history", request)
     }
 }
 
@@ -882,66 +1594,84 @@ pub(crate) fn ordered_order_book_quotes<'a>(
         .collect()
 }
 
+pub(crate) fn normalize_order_books(
+    provider: &str,
+    source: &str,
+    instruments: &[InstrumentId],
+    quotes: Vec<SecurityQuote>,
+) -> Result<DataBatch<OrderBook>, TdxError> {
+    let ordered = ordered_order_book_quotes(instruments, quotes, provider)?;
+    let observed_at = fetched_at()?;
+    let batch_id = format!("{source}:{observed_at}:order-book");
+    let mut books = Vec::with_capacity(ordered.len());
+    let mut issues = Vec::new();
+    for (id, quote) in ordered {
+        let bids = [
+            book_level(quote.bid1, quote.bid_vol1)?,
+            book_level(quote.bid2, quote.bid_vol2)?,
+            book_level(quote.bid3, quote.bid_vol3)?,
+            book_level(quote.bid4, quote.bid_vol4)?,
+            book_level(quote.bid5, quote.bid_vol5)?,
+        ];
+        let asks = [
+            book_level(quote.ask1, quote.ask_vol1)?,
+            book_level(quote.ask2, quote.ask_vol2)?,
+            book_level(quote.ask3, quote.ask_vol3)?,
+            book_level(quote.ask4, quote.ask_vol4)?,
+            book_level(quote.ask5, quote.ask_vol5)?,
+        ];
+        let total_bid_quantity = book_depth(&bids)?;
+        let total_ask_quantity = book_depth(&asks)?;
+        let levels_complete = bids
+            .iter()
+            .chain(&asks)
+            .all(|level| level.price().is_some());
+        if !levels_complete {
+            issues.push(format!(
+                "{}: one or more normalized order-book fields unavailable",
+                id.code()
+            ));
+        }
+        issues.push(format!(
+            "{}: TDX order-book source timestamp format is unverified",
+            id.code()
+        ));
+        books.push(OrderBook::new(
+            id.clone(),
+            bids,
+            asks,
+            total_bid_quantity,
+            total_ask_quantity,
+            DataStatus::Unavailable,
+            None,
+            observed_at.clone(),
+            ProviderId::Tdx,
+            batch_id.clone(),
+        )?);
+    }
+    let provenance =
+        magic_market_core::Provenance::new(source, observed_at)?.with_batch_id(batch_id)?;
+    Ok(DataBatch::best_effort(books, provenance, issues)?)
+}
+
+fn order_books_with(
+    query: &impl BlockingTdxQuery,
+    provider: &str,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<DataBatch<OrderBook>, TdxError> {
+    let pairs = order_book_pairs(instruments, provider)?;
+    let quotes = query.security_quotes(&pairs)?;
+    normalize_order_books(provider, source, instruments, quotes)
+}
+
 impl OrderBooks for TdxHqClient {
     type Error = TdxError;
     fn order_books(
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<OrderBook>, Self::Error> {
-        let pairs = order_book_pairs(instruments, "TDX")?;
-        let quotes = self.get_security_quotes(&pairs)?;
-        let ordered = ordered_order_book_quotes(instruments, quotes, "TDX")?;
-        let observed_at = fetched_at()?;
-        let batch_id = format!("tdx:{observed_at}:order-book");
-        let mut books = Vec::with_capacity(ordered.len());
-        let mut issues = Vec::new();
-        for (id, quote) in ordered {
-            let bids = [
-                book_level(quote.bid1, quote.bid_vol1)?,
-                book_level(quote.bid2, quote.bid_vol2)?,
-                book_level(quote.bid3, quote.bid_vol3)?,
-                book_level(quote.bid4, quote.bid_vol4)?,
-                book_level(quote.bid5, quote.bid_vol5)?,
-            ];
-            let asks = [
-                book_level(quote.ask1, quote.ask_vol1)?,
-                book_level(quote.ask2, quote.ask_vol2)?,
-                book_level(quote.ask3, quote.ask_vol3)?,
-                book_level(quote.ask4, quote.ask_vol4)?,
-                book_level(quote.ask5, quote.ask_vol5)?,
-            ];
-            let total_bid_quantity = book_depth(&bids)?;
-            let total_ask_quantity = book_depth(&asks)?;
-            let levels_complete = bids
-                .iter()
-                .chain(&asks)
-                .all(|level| level.price().is_some());
-            if !levels_complete {
-                issues.push(format!(
-                    "{}: one or more normalized order-book fields unavailable",
-                    id.code()
-                ));
-            }
-            issues.push(format!(
-                "{}: TDX order-book source timestamp format is unverified",
-                id.code()
-            ));
-            books.push(OrderBook::new(
-                id.clone(),
-                bids,
-                asks,
-                total_bid_quantity,
-                total_ask_quantity,
-                magic_market_core::DataStatus::Unavailable,
-                None,
-                observed_at.clone(),
-                magic_market_core::ProviderId::Tdx,
-                batch_id.clone(),
-            )?);
-        }
-        let provenance =
-            magic_market_core::Provenance::new("tdx", observed_at)?.with_batch_id(batch_id)?;
-        Ok(DataBatch::best_effort(books, provenance, issues)?)
+        order_books_with(self, "TDX", "tdx", instruments)
     }
 }
 
@@ -951,77 +1681,15 @@ impl OrderBooks for crate::TdxSmartClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<OrderBook>, Self::Error> {
-        let pairs = order_book_pairs(instruments, "TDX smart")?;
-        let quotes = self.get_security_quotes(&pairs)?;
-        let ordered = ordered_order_book_quotes(instruments, quotes, "TDX smart")?;
-        let observed_at = fetched_at()?;
-        let batch_id = format!("tdx-smart:{observed_at}:order-book");
-        let mut books = Vec::with_capacity(ordered.len());
-        let mut issues = Vec::new();
-        for (id, quote) in ordered {
-            let bids = [
-                book_level(quote.bid1, quote.bid_vol1)?,
-                book_level(quote.bid2, quote.bid_vol2)?,
-                book_level(quote.bid3, quote.bid_vol3)?,
-                book_level(quote.bid4, quote.bid_vol4)?,
-                book_level(quote.bid5, quote.bid_vol5)?,
-            ];
-            let asks = [
-                book_level(quote.ask1, quote.ask_vol1)?,
-                book_level(quote.ask2, quote.ask_vol2)?,
-                book_level(quote.ask3, quote.ask_vol3)?,
-                book_level(quote.ask4, quote.ask_vol4)?,
-                book_level(quote.ask5, quote.ask_vol5)?,
-            ];
-            let total_bid_quantity = book_depth(&bids)?;
-            let total_ask_quantity = book_depth(&asks)?;
-            let levels_complete = bids
-                .iter()
-                .chain(&asks)
-                .all(|level| level.price().is_some());
-            if !levels_complete {
-                issues.push(format!(
-                    "{}: one or more normalized order-book fields unavailable",
-                    id.code()
-                ));
-            }
-            issues.push(format!(
-                "{}: TDX order-book source timestamp format is unverified",
-                id.code()
-            ));
-            books.push(OrderBook::new(
-                id.clone(),
-                bids,
-                asks,
-                total_bid_quantity,
-                total_ask_quantity,
-                magic_market_core::DataStatus::Unavailable,
-                None,
-                observed_at.clone(),
-                magic_market_core::ProviderId::Tdx,
-                batch_id.clone(),
-            )?);
-        }
-        let provenance = magic_market_core::Provenance::new("tdx-smart", observed_at)?
-            .with_batch_id(batch_id)?;
-        Ok(DataBatch::best_effort(books, provenance, issues)?)
+        order_books_with(self, "TDX smart", "tdx-smart", instruments)
     }
 }
 
 impl HistoricalBars for crate::TdxSmartClient {
-    type Bar = SecurityBar;
+    type Bar = Bar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        reject_unsupported_bar_range(request)?;
-        let records = self.get_security_bars(
-            category(request.interval())?,
-            market(request.instrument())?,
-            request.instrument().code(),
-            0,
-            request.limit(),
-            0,
-        )?;
-        strict_bars("tdx-smart", records)
+        historical_bars_with(self, "tdx-smart", request)
     }
 }
 
@@ -1032,7 +1700,7 @@ impl MinuteData for crate::TdxSmartClient {
         &self,
         request: &MinuteDataRequest,
     ) -> Result<DataBatch<MinutePoint>, Self::Error> {
-        <TdxHqClient as MinuteData>::minute_data(self.inner(), request)
+        minute_data_with(self, "tdx", request)
     }
 }
 
@@ -1043,12 +1711,7 @@ impl RealtimeQuotes for crate::TdxSmartClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
-        let records = self.get_security_quotes(&pairs)?;
-        normalize_quotes("tdx-smart", instruments, records)
+        realtime_quotes_with(self, "tdx-smart", instruments)
     }
 }
 
@@ -1056,24 +1719,15 @@ impl Trades for crate::TdxSmartClient {
     type Error = TdxError;
 
     fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        <TdxHqClient as Trades>::trades(self.inner(), request)
+        trades_with(self, "tdx-current", "tdx-history", request)
     }
 }
 
 impl HistoricalBars for crate::TdxDirectClient {
-    type Bar = SecurityBar;
+    type Bar = Bar;
     type Error = TdxError;
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        reject_unsupported_bar_range(request)?;
-        let records = self.get_security_bars(
-            category(request.interval())?,
-            market(request.instrument())?,
-            request.instrument().code(),
-            0,
-            request.limit(),
-            0,
-        )?;
-        strict_bars("tdx-direct", records)
+        historical_bars_with(self, "tdx-direct", request)
     }
 }
 
@@ -1084,12 +1738,7 @@ impl RealtimeQuotes for crate::TdxDirectClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
-        let records = self.get_security_quotes(&pairs)?;
-        normalize_quotes("tdx-direct", instruments, records)
+        realtime_quotes_with(self, "tdx-direct", instruments)
     }
 }
 
@@ -1097,61 +1746,18 @@ impl Trades for crate::TdxDirectClient {
     type Error = TdxError;
 
     fn trades(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        let request_market = market(request.instrument())?;
-        match request.date() {
-            Some(date) => {
-                let date = tdx_trade_date(date)?;
-                paginate_trades(
-                    "tdx-direct-history",
-                    request,
-                    HISTORICAL_TRADE_PAGE_SIZE,
-                    |start, count| {
-                        self.get_history_transaction_data(
-                            request_market,
-                            request.instrument().code(),
-                            start,
-                            count,
-                            date,
-                        )
-                    },
-                )
-            }
-            None => paginate_trades(
-                "tdx-direct-current",
-                request,
-                CURRENT_TRADE_PAGE_SIZE,
-                |start, count| {
-                    self.get_transaction_data(
-                        request_market,
-                        request.instrument().code(),
-                        start,
-                        count,
-                    )
-                },
-            ),
-        }
+        trades_with(self, "tdx-direct-current", "tdx-direct-history", request)
     }
 }
 
 impl AsyncHistoricalBars for crate::AsyncTdxHqClient {
-    type Bar = SecurityBar;
+    type Bar = Bar;
     type Error = TdxError;
     async fn historical_bars_async(
         &self,
         request: &BarsRequest,
     ) -> Result<DataBatch<Self::Bar>, Self::Error> {
-        reject_unsupported_bar_range(request)?;
-        let records = self
-            .get_security_bars(
-                category(request.interval())?,
-                market(request.instrument())?,
-                request.instrument().code(),
-                0,
-                request.limit(),
-                0,
-            )
-            .await?;
-        strict_bars("tdx-async", records)
+        historical_bars_async_with(self, "tdx-async", request).await
     }
 }
 
@@ -1162,12 +1768,7 @@ impl AsyncRealtimeQuotes for crate::AsyncTdxHqClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let pairs: Vec<(u8, &str)> = instruments
-            .iter()
-            .map(|id| market(id).map(|market| (market, id.code())))
-            .collect::<Result<_, _>>()?;
-        let records = self.get_security_quotes(&pairs).await?;
-        normalize_quotes("tdx-async", instruments, records)
+        realtime_quotes_async_with(self, "tdx-async", instruments).await
     }
 }
 
@@ -1175,361 +1776,13 @@ impl AsyncTrades for crate::AsyncTdxHqClient {
     type Error = TdxError;
 
     async fn trades_async(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error> {
-        let historical_date = request.date().map(tdx_trade_date).transpose()?;
-        let request_market = market(request.instrument())?;
-        let page_size = if historical_date.is_some() {
-            HISTORICAL_TRADE_PAGE_SIZE
-        } else {
-            CURRENT_TRADE_PAGE_SIZE
-        };
-        let mut records = Vec::with_capacity(usize::from(request.limit()));
-        let mut start = 0u16;
-        let mut remaining = request.limit();
-        while remaining != 0 {
-            let requested = remaining.min(page_size);
-            let page = match historical_date {
-                Some(date) => {
-                    self.get_history_transaction_data(
-                        request_market,
-                        request.instrument().code(),
-                        start,
-                        requested,
-                        date,
-                    )
-                    .await?
-                }
-                None => {
-                    self.get_transaction_data(
-                        request_market,
-                        request.instrument().code(),
-                        start,
-                        requested,
-                    )
-                    .await?
-                }
-            };
-            if page.len() > usize::from(requested) {
-                return Err(TdxError::InvalidData(
-                    "TDX async trade page exceeds requested cardinality".into(),
-                ));
-            }
-            let fetched = u16::try_from(page.len())
-                .map_err(|_| TdxError::InvalidData("TDX trade page is too large".into()))?;
-            records.extend(page);
-            if fetched < requested {
-                break;
-            }
-            remaining -= fetched;
-            if remaining == 0 {
-                break;
-            }
-            start = start
-                .checked_add(fetched)
-                .ok_or_else(|| TdxError::InvalidData("TDX trade offset overflow".into()))?;
-        }
-        normalize_trade_records(
-            if historical_date.is_some() {
-                "tdx-async-history"
-            } else {
-                "tdx-async-current"
-            },
-            request,
-            records,
-        )
+        trades_async_with(self, request).await
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_bar_ranges_instead_of_silently_ignoring_them() {
-        let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 5)
-            .unwrap()
-            .with_range("2026-07-01", "2026-07-22")
-            .unwrap();
-        assert!(matches!(
-            reject_unsupported_bar_range(&request),
-            Err(TdxError::Unsupported(_))
-        ));
-    }
-
-    #[test]
-    fn maps_standard_one_minute_monthly_and_yearly_categories_exactly() {
-        assert_eq!(category(BarInterval::Minute1).unwrap(), 8);
-        assert_eq!(category(BarInterval::Month).unwrap(), 6);
-        assert_eq!(category(BarInterval::Year).unwrap(), 11);
-    }
-
-    #[test]
-    fn order_book_levels_preserve_absence_atomically() {
-        let absent = book_level(0.0, 0.0).unwrap();
-        assert!(absent.price().is_none());
-        assert!(absent.quantity().is_none());
-        let half_present = book_level(0.0, 1.0).unwrap();
-        assert!(half_present.price().is_none());
-        assert!(half_present.quantity().is_none());
-        assert!(book_level(10.0, -1.0).is_err());
-    }
-    use magic_market_core::{AssetClass, Exchange};
-
-    fn instrument(code: &str) -> InstrumentId {
-        InstrumentId::new(Exchange::Shanghai, code, AssetClass::Equity).unwrap()
-    }
-
-    fn source_quote(code: &str, price: f64) -> SecurityQuote {
-        SecurityQuote {
-            market: 1,
-            code: code.into(),
-            active1: 0,
-            price,
-            last_close: 100.0,
-            open: 101.0,
-            high: 103.0,
-            low: 99.0,
-            servertime: "10:00:01".into(),
-            vol: 1_000.0,
-            cur_vol: 10.0,
-            amount: 102_000.0,
-            s_vol: 400.0,
-            b_vol: 600.0,
-            bid1: 101.9,
-            bid_vol1: 10.0,
-            bid2: 101.8,
-            bid_vol2: 11.0,
-            bid3: 101.7,
-            bid_vol3: 12.0,
-            bid4: 101.6,
-            bid_vol4: 13.0,
-            bid5: 101.5,
-            bid_vol5: 14.0,
-            ask1: 102.1,
-            ask_vol1: 15.0,
-            ask2: 102.2,
-            ask_vol2: 16.0,
-            ask3: 102.3,
-            ask_vol3: 17.0,
-            ask4: 102.4,
-            ask_vol4: 18.0,
-            ask5: 102.5,
-            ask_vol5: 19.0,
-            reversed_bytes0: 0,
-            reversed_bytes1: 0,
-            reversed_bytes2: 0,
-            reversed_bytes3: 0,
-            reversed_bytes4: 0,
-            reversed_bytes5: 0,
-            reversed_bytes6: 0,
-            reversed_bytes7: 0,
-            reversed_bytes8: 0,
-            reversed_bytes9: 0,
-            active2: 0,
-        }
-    }
-
-    #[test]
-    fn order_book_quotes_are_keyed_by_market_and_code() {
-        let instruments = [instrument("600001"), instrument("600002")];
-        let ordered = ordered_order_book_quotes(
-            &instruments,
-            vec![source_quote("600002", 102.0), source_quote("600001", 101.0)],
-            "test",
-        )
-        .unwrap();
-        assert_eq!(ordered[0].0.code(), "600001");
-        assert_eq!(ordered[0].1.price, 101.0);
-        assert_eq!(ordered[1].0.code(), "600002");
-        assert_eq!(ordered[1].1.price, 102.0);
-
-        assert!(ordered_order_book_quotes(&[], Vec::new(), "test").is_err());
-        assert!(ordered_order_book_quotes(
-            &[instrument("600001"), instrument("600001")],
-            vec![source_quote("600001", 101.0)],
-            "test",
-        )
-        .is_err());
-        assert!(ordered_order_book_quotes(
-            &instruments,
-            vec![source_quote("600001", 101.0), source_quote("600001", 102.0)],
-            "test",
-        )
-        .is_err());
-        assert!(ordered_order_book_quotes(
-            &instruments,
-            vec![source_quote("600001", 101.0), source_quote("600003", 103.0)],
-            "test",
-        )
-        .is_err());
-        assert!(ordered_order_book_quotes(
-            &instruments,
-            vec![source_quote("600001", 101.0)],
-            "test",
-        )
-        .is_err());
-    }
-
-    fn source_trade(index: u32, side: u32) -> TickData {
-        TickData {
-            time: format!("10:00:{index:02}"),
-            price: 1_300.0 + f64::from(index),
-            vol: 100.0 + f64::from(index),
-            num: index + 1,
-            buyorsell: side,
-            reserved: 0,
-        }
-    }
-
-    #[test]
-    fn normalized_quotes_restore_request_order_and_mark_missing_name() {
-        let instruments = [instrument("600001"), instrument("600002")];
-        let batch = normalize_quotes(
-            "test",
-            &instruments,
-            vec![source_quote("600002", 101.0), source_quote("600001", 102.0)],
-        )
-        .unwrap();
-        assert_eq!(batch.records()[0].instrument().code(), "600001");
-        assert_eq!(batch.records()[0].price(), Price::new(102.0).unwrap());
-        assert_eq!(
-            batch.records()[0].change_percent(),
-            Some(Ratio::new(2.0, RatioUnit::Percent).unwrap())
-        );
-        assert_eq!(batch.records()[0].status(), DataStatus::Unavailable);
-        assert!(batch.records()[0].name().is_none());
-        assert!(batch.records()[0].source_at().is_none());
-        assert!(batch.provenance().source_at().is_none());
-        assert_eq!(batch.quality().issues().len(), 6);
-    }
-
-    #[test]
-    fn normalized_quotes_reject_duplicates_and_missing_records() {
-        let duplicated = [instrument("600001"), instrument("600001")];
-        assert!(normalize_quotes("test", &duplicated, Vec::new()).is_err());
-
-        let requested = [instrument("600001"), instrument("600002")];
-        assert!(normalize_quotes("test", &requested, vec![source_quote("600001", 102.0)]).is_err());
-    }
-
-    #[test]
-    fn normalizes_only_source_backed_security_metadata() {
-        let star = instrument("688001");
-        let chinext = InstrumentId::new(Exchange::Shenzhen, "300001", AssetClass::Equity).unwrap();
-        let records = vec![
-            (
-                0,
-                SecurityInfo {
-                    code: "300001".into(),
-                    volunit: 100,
-                    decimal_point: 2,
-                    name: "*ST示例".into(),
-                    pre_close: 10.0,
-                },
-            ),
-            (
-                1,
-                SecurityInfo {
-                    code: "688001".into(),
-                    volunit: 100,
-                    decimal_point: 2,
-                    name: "科创示例".into(),
-                    pre_close: 20.0,
-                },
-            ),
-        ];
-
-        let batch = normalize_security_metadata("test", &[star, chinext], records).unwrap();
-        assert_eq!(batch.records()[0].board(), Some(Board::Star));
-        assert_eq!(batch.records()[0].is_st(), Some(false));
-        assert_eq!(batch.records()[1].board(), Some(Board::ChiNext));
-        assert_eq!(batch.records()[1].is_st(), Some(true));
-        assert!(batch
-            .records()
-            .iter()
-            .all(|record| record.listed_on().is_none()
-                && record.price_limit().percent().is_none()
-                && record.price_limit().version().is_none()
-                && record.status() == DataStatus::Unavailable));
-        assert!(!batch.quality().is_complete());
-    }
-
-    #[test]
-    fn beijing_uses_the_live_verified_tdx_market_number() {
-        let beijing = InstrumentId::new(Exchange::Beijing, "920001", AssetClass::Equity).unwrap();
-        assert_eq!(market(&beijing).unwrap(), 2);
-        assert_eq!(market(&instrument("600001")).unwrap(), 1);
-        let shenzhen = InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity).unwrap();
-        assert_eq!(market(&shenzhen).unwrap(), 0);
-    }
-
-    #[test]
-    fn rejects_beijing_security_metadata_before_transport() {
-        let beijing = InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity).unwrap();
-        let error = validate_security_metadata_request(&[beijing]).unwrap_err();
-        assert!(matches!(error, TdxError::Unsupported(_)));
-        assert!(error.to_string().contains("security-list"));
-    }
-
-    #[test]
-    fn normalizes_tdx_minute_rows_into_cumulative_chronological_points() {
-        let records = vec![
-            MinuteTimePrice {
-                time: "09:32".into(),
-                price: 15.6,
-                avg_price: 15.5,
-                vol: 20.0,
-            },
-            MinuteTimePrice {
-                time: "09:31".into(),
-                price: 15.4,
-                avg_price: 15.4,
-                vol: 10.0,
-            },
-        ];
-        let batch =
-            normalize_minute_records("test", &instrument("600396"), "2026-07-23", records).unwrap();
-        assert_eq!(batch.records()[0].minute_at(), "2026-07-23 09:31");
-        assert_eq!(batch.records()[0].cumulative_quantity().get(), 10.0);
-        assert_eq!(batch.records()[1].cumulative_quantity().get(), 30.0);
-        assert_eq!(
-            batch.records()[1].source_at(),
-            Some("2026-07-23T09:32:00+08:00")
-        );
-        assert!(batch.records()[1].cumulative_amount().is_none());
-    }
-
-    #[test]
-    fn paginates_and_normalizes_historical_trades() {
-        let request = TradesRequest::new(instrument("600519"), 5)
-            .unwrap()
-            .with_date("2026-07-21")
-            .unwrap();
-        let mut calls = Vec::new();
-        let batch = paginate_trades("test", &request, 2, |start, count| {
-            calls.push((start, count));
-            Ok((start..start + count)
-                .map(|index| source_trade(u32::from(index), u32::from(index % 3)))
-                .collect())
-        })
-        .unwrap();
-        assert_eq!(calls, vec![(0, 2), (2, 2), (4, 1)]);
-        assert_eq!(batch.records().len(), 5);
-        assert_eq!(batch.records()[0].trade_at(), "2026-07-21 10:00:00");
-        assert_eq!(batch.records()[0].source_at(), Some("2026-07-21 10:00:00"));
-        assert_eq!(batch.records()[0].side(), TradeSide::Buy);
-        assert_eq!(batch.records()[1].side(), TradeSide::Sell);
-        assert_eq!(batch.records()[2].side(), TradeSide::Neutral);
-    }
-
-    #[test]
-    fn marks_unknown_trade_side_without_dropping_the_record() {
-        let request = TradesRequest::new(instrument("600519"), 1).unwrap();
-        let batch = normalize_trade_records("test", &request, vec![source_trade(0, 9)]).unwrap();
-        assert_eq!(batch.records()[0].side(), TradeSide::Unknown(9));
-        assert_eq!(batch.records()[0].status(), DataStatus::Unavailable);
-        assert_eq!(batch.quality().issues().len(), 1);
-    }
-}
+#[path = "../tests/internal/adapter.rs"]
+mod tests;
 
 macro_rules! unsupported_p0 {
     ($client:ty) => {

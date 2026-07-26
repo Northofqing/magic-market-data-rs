@@ -481,4 +481,192 @@ fn board_name_join_requires_exact_metadata_and_keeps_both_evidence_records() {
         "wrong-name",
     );
     assert!(join_board_membership_names(&membership_batch, &wrong).is_err());
+
+    let duplicate_names = metadata_batch(
+        vec![
+            metadata(
+                joined[0].membership.instrument.clone(),
+                Some("科大讯飞"),
+                "duplicate-names",
+            ),
+            metadata(
+                joined[0].membership.instrument.clone(),
+                Some("科大讯飞"),
+                "duplicate-names",
+            ),
+        ],
+        "duplicate-names",
+    );
+    assert!(matches!(
+        join_board_membership_names(&membership_batch, &duplicate_names),
+        Err(error) if error.kind() == FailureKind::Quality
+    ));
+
+    let no_names = metadata_batch(Vec::new(), "no-names");
+    assert!(matches!(
+        join_board_membership_names(&membership_batch, &no_names),
+        Err(error) if error.kind() == FailureKind::Quality
+    ));
+}
+
+#[derive(Clone, Copy)]
+enum InvalidDragon {
+    MissingName,
+    WrongDate,
+    BadSourceDate,
+    MissingSourceDateSeparator,
+}
+
+struct InvalidDragonFixture(InvalidDragon);
+
+impl DragonTigerDiscovery for InvalidDragonFixture {
+    type Error = FixtureError;
+
+    fn discover_dragon_tiger(
+        &self,
+        request: &DragonTigerDiscoveryRequest,
+    ) -> Result<DataBatch<DragonTigerEntry>, Self::Error> {
+        let record_source_at = match self.0 {
+            InvalidDragon::WrongDate => "2026-07-23T16:00:00+08:00",
+            _ => "2026-07-24T16:00:00+08:00",
+        };
+        let batch_source_at = match self.0 {
+            InvalidDragon::WrongDate => None,
+            InvalidDragon::BadSourceDate => Some("2026-07-23T16:00:00+08:00"),
+            InvalidDragon::MissingSourceDateSeparator => Some("2026-07-24bad"),
+            InvalidDragon::MissingName => Some("2026-07-24T16:00:00+08:00"),
+        };
+        let trading_date = match self.0 {
+            InvalidDragon::WrongDate => IsoDate::new("2026-07-23").unwrap(),
+            _ => request.trading_date().clone(),
+        };
+        let mut record = DragonTigerEntry::new(
+            NonEmptyText::new("invalid-entry").unwrap(),
+            instrument(Exchange::Shanghai, "600396"),
+            trading_date,
+            None,
+            None,
+            None,
+            None,
+            None,
+            evidence(ProviderId::Custom, "invalid-dragon", Some(record_source_at)),
+        )
+        .unwrap();
+        if !matches!(self.0, InvalidDragon::MissingName) {
+            record = record.with_instrument_name(NonEmptyText::new("华电辽能").unwrap());
+        }
+        Ok(batch(vec![record], "invalid-dragon", batch_source_at))
+    }
+}
+
+#[test]
+fn dragon_discovery_rejects_missing_names_and_every_date_mismatch_shape() {
+    let request = DragonTigerDiscoveryRequest::new(
+        IsoDate::new("2026-07-24").unwrap(),
+        PositiveU32::new(2).unwrap(),
+    )
+    .unwrap();
+    for invalid in [
+        InvalidDragon::MissingName,
+        InvalidDragon::WrongDate,
+        InvalidDragon::BadSourceDate,
+        InvalidDragon::MissingSourceDateSeparator,
+    ] {
+        let mut router = DragonTigerDiscoveryRouter::new(AcceptancePolicy::new());
+        router
+            .register(dragon_tiger_discovery_source(
+                ProviderId::Custom,
+                Arc::new(InvalidDragonFixture(invalid)),
+                classify,
+            ))
+            .unwrap();
+        let error = router.route(&request).unwrap_err();
+        assert_eq!(error.attempts().len(), 1);
+    }
+}
+
+struct DuplicateBoardFixture;
+
+impl BoardDirectoryProvider for DuplicateBoardFixture {
+    type Error = FixtureError;
+
+    fn boards(
+        &self,
+        request: &BoardDirectoryRequest,
+    ) -> Result<DataBatch<BoardDefinition>, Self::Error> {
+        let record = || {
+            BoardDefinition::new(
+                NonEmptyText::new("tdx:concept:人工智能").unwrap(),
+                NonEmptyText::new("人工智能").unwrap(),
+                request.category(),
+                PositiveU32::new(2).unwrap(),
+                evidence(ProviderId::Tdx, "duplicate-directory", None),
+            )
+            .unwrap()
+        };
+        Ok(batch(vec![record(), record()], "duplicate-directory", None))
+    }
+}
+
+impl BoardConstituentProvider for DuplicateBoardFixture {
+    type Error = FixtureError;
+
+    fn board_constituents(
+        &self,
+        request: &BoardConstituentRequest,
+    ) -> Result<DataBatch<BoardMembership>, Self::Error> {
+        let record = || BoardMembership {
+            instrument: instrument(Exchange::Shanghai, "600000"),
+            board_code: request.board_code().clone(),
+            board_name: NonEmptyText::new("人工智能").unwrap(),
+            category: BoardCategory::Concept,
+            evidence: evidence(ProviderId::Tdx, "duplicate-constituent", None),
+        };
+        Ok(batch(
+            vec![record(), record()],
+            "duplicate-constituent",
+            None,
+        ))
+    }
+}
+
+#[test]
+fn board_directory_and_constituent_batches_reject_duplicates_and_limits() {
+    let directory =
+        BoardDirectoryRequest::new(BoardCategory::Concept, PositiveU32::new(2).unwrap()).unwrap();
+    let mut directory_router = BoardDirectoryRouter::new(AcceptancePolicy::new());
+    directory_router
+        .register(board_directory_source(
+            ProviderId::Tdx,
+            Arc::new(DuplicateBoardFixture),
+            classify,
+        ))
+        .unwrap();
+    assert!(directory_router.route(&directory).is_err());
+
+    let limited_directory =
+        BoardDirectoryRequest::new(BoardCategory::Concept, PositiveU32::new(1).unwrap()).unwrap();
+    assert!(directory_router.route(&limited_directory).is_err());
+
+    let constituents = BoardConstituentRequest::new(
+        NonEmptyText::new("tdx:concept:人工智能").unwrap(),
+        PositiveU32::new(2).unwrap(),
+    )
+    .unwrap();
+    let mut constituent_router = BoardConstituentRouter::new(AcceptancePolicy::new());
+    constituent_router
+        .register(board_constituent_source(
+            ProviderId::Tdx,
+            Arc::new(DuplicateBoardFixture),
+            classify,
+        ))
+        .unwrap();
+    assert!(constituent_router.route(&constituents).is_err());
+
+    let limited_constituents = BoardConstituentRequest::new(
+        NonEmptyText::new("tdx:concept:人工智能").unwrap(),
+        PositiveU32::new(1).unwrap(),
+    )
+    .unwrap();
+    assert!(constituent_router.route(&limited_constituents).is_err());
 }

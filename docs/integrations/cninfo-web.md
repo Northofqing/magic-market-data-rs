@@ -1,7 +1,7 @@
 # 巨潮资讯公告与互动易接入
 
 `magic-cninfo-rs` 是只读的公告/互动问答 Provider，实现
-`Announcements`、`AnnouncementDiscovery` 与 `InvestorQuestions`。它不读取浏览器
+`Announcements`、`MarketAnnouncements` 与 `InvestorQuestions`。它不读取浏览器
 Cookie、桌面客户端、账户、持仓或交易信息。
 
 ## 数据源与映射
@@ -67,9 +67,10 @@ cargo run -p magic-cninfo-rs --example load_probe --release --locked --offline
 
 live probe 默认使用华电辽能 `600396.SH` 验证映射和公告、用
 `MAGIC_CNINFO_DISCOVERY_DATE`（默认 `2026-07-24`）验证全市场代码+名称，并使用
-比亚迪 `002594.SZ` 验证互动易。所有批次都打印 provenance、quality 和全部记录；
-任何一项失败都会非零退出。load probe 只压个股公告链路，最多五次，不代表服务
-SLA。
+比亚迪 `002594.SZ` 验证互动易。所有批次都打印 provenance、quality 和全部记录，
+并以公共门校验完整质量、CNInfo provider、源时间、观察时间、批次 ID 和唯一业务
+ID；只有全部已声明 family 都通过才输出总状态 `admitted`，任何一项失败都会非零
+退出。load probe 只压个股公告链路，最多五次，不代表服务 SLA。
 
 ## 生产边界
 

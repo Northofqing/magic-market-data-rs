@@ -12,8 +12,10 @@ mod evidence;
 mod global;
 mod instrument;
 mod limit_pool;
+mod market_announcements;
 mod options;
 mod policy;
+mod probe;
 mod provenance;
 mod provider;
 mod research;
@@ -39,8 +41,8 @@ pub use company::{
     SecurityProfile, SecurityProfiles, StatementKind,
 };
 pub use content::{
-    Announcement, AnnouncementDiscovery, AnnouncementDiscoveryRequest, Announcements,
-    ContentCapabilities, InvestorQuestion, InvestorQuestions, NewsItem, NewsProvider,
+    Announcement, Announcements, ContentCapabilities, InvestorQuestion, InvestorQuestions,
+    NewsItem, NewsProvider,
 };
 pub use discovery::{
     BoardConstituentProvider, BoardConstituentRequest, BoardDefinition, BoardDirectoryProvider,
@@ -60,11 +62,17 @@ pub use instrument::{AssetClass, Exchange, InstrumentId};
 pub use limit_pool::{
     LimitPoolCapabilities, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools,
 };
+pub use market_announcements::{MarketAnnouncementRequest, MarketAnnouncements};
 pub use options::{
     ContractMonth, OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind,
     OptionQuote,
 };
 pub use policy::{PolicyCapabilities, PolicyDocument, PolicyDocuments, PolicyRequest};
+pub use probe::{
+    verify_admitted_batch, verify_serial_load, verify_verified_empty, LoadProbeError,
+    LoadProbeSnapshot, ProbeAdmissionError, ProbeAdmissionPolicy, ProbeRequestTracker, ProbeStatus,
+    VerifiedEmpty,
+};
 pub use provenance::Provenance;
 pub use provider::{
     Adjustment, AsyncHistoricalBars, AsyncMinuteData, AsyncRealtimeQuotes, AsyncTrades,
@@ -81,9 +89,10 @@ pub use research::{
 };
 pub use signals::{
     BoardCategory, BoardMembership, BoardMembershipProvider, ConceptHit, ConceptHits,
-    DragonTigerData, DragonTigerEntry, DragonTigerSeat, DragonTigerSide, InstrumentSignalRequest,
-    MarketRankingEntry, MarketRankingKind, MarketRankings, PopularityData, PopularityRank,
-    SignalCapabilities, StrongStockReason, StrongStockReasons,
+    DragonTigerData, DragonTigerDisclosure, DragonTigerEntry, DragonTigerSeat, DragonTigerSide,
+    InstrumentSignalRequest, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingEntry,
+    MarketRankingKind, MarketRankings, PopularityData, PopularityRank, SignalCapabilities,
+    StrongStockReason, StrongStockReasons,
 };
 pub use validated::{FiniteNumber, HttpsUrl, IsoDate, NonEmptyText, PositiveU32};
 pub use value::{Money, Price, Quantity, Ratio, RatioUnit};

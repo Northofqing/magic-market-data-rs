@@ -1,37 +1,62 @@
 use magic_cninfo_rs::CninfoClient;
 use magic_market_core::{
-    AnnouncementDiscovery, AnnouncementDiscoveryRequest, Announcements, AssetClass, DataBatch,
-    Exchange, InstrumentDateRangeRequest, InstrumentId, InvestorQuestions, IsoDate, PositiveU32,
+    verify_admitted_batch, Announcements, AssetClass, DataBatch, Exchange,
+    InstrumentDateRangeRequest, InstrumentId, InvestorQuestions, IsoDate,
+    MarketAnnouncementRequest, MarketAnnouncements, PositiveU32, ProbeAdmissionPolicy, ProbeStatus,
+    ProviderId,
 };
 use std::error::Error;
 use std::fmt::Debug;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    match run_probe() {
+        Ok(status) => {
+            println!("admitted={}", status.satisfies_capability());
+            println!("live_probe_status={status}");
+            Ok(())
+        }
+        Err(error) => {
+            println!("live_probe_status={}", ProbeStatus::Failed);
+            Err(error)
+        }
+    }
+}
+
+fn run_probe() -> Result<ProbeStatus, Box<dyn Error>> {
     let client = CninfoClient::new()?;
+    let capabilities = CninfoClient::capabilities();
     let announcement_instrument =
         equity(std::env::var("MAGIC_CNINFO_CODE").unwrap_or_else(|_| "600396".into()))?;
     let question_instrument =
         equity(std::env::var("MAGIC_CNINFO_QUESTION_CODE").unwrap_or_else(|_| "002594".into()))?;
-    let limit = PositiveU32::new(3)?;
+    let limit = PositiveU32::new(1)?;
 
     println!("provider=cninfo");
-    println!("capabilities={:#?}", CninfoClient::capabilities());
+    println!("capabilities={capabilities:#?}");
 
     let mapping = client.organization_mapping(&announcement_instrument)?;
     println!("organization_mapping={mapping:#?}");
 
     let announcements = InstrumentDateRangeRequest::new(announcement_instrument, limit)?;
-    print_batch("announcements", &client.announcements(&announcements)?);
+    let announcement_batch = client.announcements(&announcements)?;
+    let announcement_status = verify_admitted_batch(
+        &announcement_batch,
+        &ProbeAdmissionPolicy::new(ProviderId::Cninfo).require_source_at(),
+        |record| &record.evidence,
+        |record| record.announcement_id.as_str().to_owned(),
+    )?;
+    print_batch("announcements", &announcement_batch);
+    println!("announcements_probe_status={announcement_status}");
 
     let discovery_date =
         std::env::var("MAGIC_CNINFO_DISCOVERY_DATE").unwrap_or_else(|_| "2026-07-24".into());
     let discovery_date = IsoDate::new(discovery_date)?;
-    let discovery = AnnouncementDiscoveryRequest::new(
+    let discovery = MarketAnnouncementRequest::new(
         discovery_date.clone(),
         discovery_date,
-        PositiveU32::new(10_000)?,
+        PositiveU32::new(300)?,
     )?;
-    let discovered = client.discover_announcements(&discovery)?;
+    let discovered = client.market_announcements(&discovery)?;
     if discovered
         .records()
         .iter()
@@ -39,14 +64,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     {
         return Err("full-market announcement record is missing its stock name".into());
     }
-    print_batch("announcement_discovery", &discovered);
+    print_batch("market_announcements", &discovered);
 
     let questions = InstrumentDateRangeRequest::new(question_instrument, limit)?;
-    print_batch(
-        "investor_questions",
-        &client.investor_questions(&questions)?,
-    );
-    Ok(())
+    let question_batch = client.investor_questions(&questions)?;
+    let question_status = verify_admitted_batch(
+        &question_batch,
+        &ProbeAdmissionPolicy::new(ProviderId::Cninfo).require_source_at(),
+        |record| record.evidence(),
+        |record| record.question_id().as_str().to_owned(),
+    )?;
+    print_batch("investor_questions", &question_batch);
+    println!("investor_questions_probe_status={question_status}");
+
+    Ok(combined_probe_status(
+        capabilities.announcements,
+        capabilities.investor_questions,
+        announcement_status,
+        question_status,
+    ))
 }
 
 fn equity(code: String) -> Result<InstrumentId, Box<dyn Error>> {
@@ -69,3 +105,28 @@ fn print_batch<T: Debug>(label: &str, batch: &DataBatch<T>) {
         println!("record[{index}]={record:#?}");
     }
 }
+
+fn combined_probe_status(
+    announcements_advertised: bool,
+    questions_advertised: bool,
+    announcement_status: ProbeStatus,
+    question_status: ProbeStatus,
+) -> ProbeStatus {
+    if matches!(announcement_status, ProbeStatus::Failed)
+        || matches!(question_status, ProbeStatus::Failed)
+    {
+        ProbeStatus::Failed
+    } else if announcements_advertised
+        && questions_advertised
+        && announcement_status.satisfies_capability()
+        && question_status.satisfies_capability()
+    {
+        ProbeStatus::Admitted
+    } else {
+        ProbeStatus::DiagnosticCompleteUnadmitted
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/live_probe_tests.rs"]
+mod tests;

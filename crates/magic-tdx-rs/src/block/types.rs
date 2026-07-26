@@ -1,5 +1,7 @@
 //! 板块数据类型定义
 
+use crate::reader::block::BlockRecord;
+
 /// 板块类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockType {
@@ -51,4 +53,12 @@ pub struct BlockConstituents {
     pub block_name: String,
     pub block_type: BlockType,
     pub codes: Vec<String>,
+}
+
+/// One complete, version-stable TDX block file.
+#[derive(Debug, Clone)]
+pub struct BlockFileSnapshot {
+    pub filename: String,
+    pub hash: String,
+    pub records: Vec<BlockRecord>,
 }

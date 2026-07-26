@@ -109,8 +109,19 @@ impl CffexClient {
     pub const fn calendar_capabilities() -> CalendarCapabilities {
         CalendarCapabilities {
             economic_releases: false,
-            futures_delivery: true,
+            futures_delivery: false,
         }
+    }
+
+    /// Exercises the bounded official-notice implementation without advertising
+    /// the capability before a current live acceptance succeeds.
+    pub fn probe_futures_delivery_calendar(
+        &self,
+        request: &FuturesDeliveryRequest,
+    ) -> Result<DataBatch<FuturesDeliveryEvent>, ExchangeError> {
+        let (notice_url, published_date, detail) = self.find_notice(request)?;
+        let observed_at = now()?;
+        parse_delivery_notice(&detail, request, &notice_url, &published_date, &observed_at)
     }
 
     fn get_html(&self, url: &str) -> Result<Vec<u8>, ExchangeError> {
@@ -133,7 +144,7 @@ impl CffexClient {
     fn find_notice(
         &self,
         request: &FuturesDeliveryRequest,
-    ) -> Result<(String, Vec<u8>), ExchangeError> {
+    ) -> Result<(String, IsoDate, Vec<u8>), ExchangeError> {
         let target_month = format!("{:04}-{:02}", request.year().get(), request.month().get());
         for page in 1..=self.config.max_pages {
             let page_url = if page == 1 {
@@ -153,8 +164,9 @@ impl CffexClient {
             for link in &links {
                 if link.title.contains(DELIVERY_TITLE) && link.date.starts_with(&target_month) {
                     let url = official_notice_url(&link.href)?;
+                    let published_date = IsoDate::new(link.date.clone())?;
                     let detail = self.get_html(&url)?;
-                    return Ok((url, detail));
+                    return Ok((url, published_date, detail));
                 }
             }
             let oldest = links
@@ -183,11 +195,12 @@ impl FuturesDeliveryCalendar for CffexClient {
 
     fn futures_delivery_calendar(
         &self,
-        request: &FuturesDeliveryRequest,
+        _request: &FuturesDeliveryRequest,
     ) -> Result<DataBatch<FuturesDeliveryEvent>, Self::Error> {
-        let (notice_url, detail) = self.find_notice(request)?;
-        let observed_at = now()?;
-        parse_delivery_notice(&detail, request, &notice_url, &observed_at)
+        Err(ExchangeError::Unsupported(
+            "CFFEX futures delivery calendar is not admitted until a bounded live probe passes"
+                .into(),
+        ))
     }
 }
 
@@ -329,6 +342,7 @@ fn parse_delivery_notice(
     body: &[u8],
     request: &FuturesDeliveryRequest,
     notice_url: &str,
+    published_date: &IsoDate,
     observed_at: &str,
 ) -> Result<DataBatch<FuturesDeliveryEvent>, ExchangeError> {
     validate_cffex_url(notice_url)?;
@@ -382,19 +396,19 @@ fn parse_delivery_notice(
     let mut records = Vec::with_capacity(products.len());
     for (product, prefix) in products {
         let evidence = SourceEvidence::new(ProviderId::Cffex, observed_at, batch_id.clone())?
-            .with_source_at(delivery_date.as_str())?;
+            .with_source_at(published_date.as_str())?;
         records.push(FuturesDeliveryEvent {
             product,
             contract_code: NonEmptyText::new(format!("{prefix}{suffix}"))?,
-            last_trading_date: delivery_date.clone(),
+            last_trading_date: None,
             delivery_date: delivery_date.clone(),
-            method: FuturesDeliveryMethod::Cash,
+            method: FuturesDeliveryMethod::NotProvided,
             notice_url: url.clone(),
             evidence,
         });
     }
     let provenance = Provenance::new("cffex-official-notice", observed_at)?
-        .with_source_at(delivery_date.as_str())?
+        .with_source_at(published_date.as_str())?
         .with_batch_id(batch_id)?;
     Ok(DataBatch::strict(records, provenance))
 }
@@ -500,6 +514,14 @@ mod tests {
         }
     }
 
+    struct RejectTransport;
+
+    impl ExchangeTransport for RejectTransport {
+        fn execute(&self, _request: &HttpRequest) -> Result<HttpResponse, ExchangeError> {
+            panic!("production CFFEX trait must not touch transport while capability is false");
+        }
+    }
+
     fn response(body: &str) -> HttpResponse {
         HttpResponse {
             status: 200,
@@ -518,10 +540,20 @@ mod tests {
     }
 
     #[test]
-    fn scans_official_list_and_parses_holiday_adjusted_delivery_notice() {
+    fn production_trait_returns_unsupported_without_touching_transport() {
+        let client = CffexClient::with_transport(CffexConfig::default(), RejectTransport).unwrap();
+
+        assert!(matches!(
+            client.futures_delivery_calendar(&request()),
+            Err(ExchangeError::Unsupported(_))
+        ));
+    }
+
+    #[test]
+    fn parses_holiday_adjusted_notice_without_inventing_delivery_method() {
         let list = r#"
           <ul><li><a href="/jystz/20260224/46999.html">
-          关于股指期货和股指期权合约交割的通知</a><span>2026-02-24</span></li></ul>
+          关于股指期货和股指期权合约交割的通知</a><span>2026-02-23</span></li></ul>
         "#;
         let detail = r#"
           <html><h1>关于股指期货和股指期权合约交割的通知</h1>
@@ -541,11 +573,20 @@ mod tests {
             },
         )
         .unwrap();
-        let batch = client.futures_delivery_calendar(&request()).unwrap();
+        assert!(matches!(
+            client.futures_delivery_calendar(&request()),
+            Err(ExchangeError::Unsupported(_))
+        ));
+        let batch = client.probe_futures_delivery_calendar(&request()).unwrap();
         assert_eq!(batch.records().len(), 4);
         assert_eq!(batch.records()[0].contract_code.as_str(), "IF2602");
         assert_eq!(batch.records()[0].delivery_date.as_str(), "2026-02-24");
-        assert_eq!(batch.records()[0].method, FuturesDeliveryMethod::Cash);
+        assert_eq!(batch.provenance().source_at(), Some("2026-02-23"));
+        assert!(batch.records().iter().all(|record| {
+            record.last_trading_date.is_none()
+                && record.method == FuturesDeliveryMethod::NotProvided
+                && record.evidence.source_at() == Some("2026-02-23")
+        }));
     }
 
     #[test]
@@ -559,6 +600,7 @@ mod tests {
             detail.as_bytes(),
             &request(),
             "https://www.cffex.com.cn/jystz/20260220/1.html",
+            &IsoDate::new("2026-02-20").unwrap(),
             "observed"
         )
         .is_err());

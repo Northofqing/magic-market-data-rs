@@ -198,39 +198,32 @@ and enforce at least one second between request starts. These runs verify
 current connectivity, non-empty parsing and pacing only; they are not endpoint
 SLAs or permission for sustained traffic.
 
+This historical Tonghuashun run predates the Task 8 machine admission gate. It
+must not be relabelled as current live admission. The current probe additionally
+requires `status=admitted` or source-evidenced `status=verified_empty`; a
+quality-incomplete empty-estimate pseudo-record now fails construction.
+
 ## SSE/SZSE/HKEX official mixed probes
 
-On 2026-07-23 the production-trait live probe passed all admitted official
-families: SSE/SZSE announcements, SSE/SZSE dragon-tiger entries and one
-complete buy-five/sell-five seat group per venue, SZSE Quote/five-level book,
-and HKEX DailyStat for both northbound channels. SSE returned three
-dragon-tiger entries for `600396 / 2026-07-22`; SZSE returned two for
-`000603 / 2026-07-23`. HKEX returned one strict record and ten ranked
-turnover securities for each channel.
+Commit `904bd19` documented an upstream eight-operation historical baseline for
+SSE/SZSE announcements, SZSE Quote/order book, SSE/SZSE dragon-tiger entries
+and both HKEX northbound channels. That parent-commit result is not production
+admission evidence for the merged tree and is intentionally not reported here
+as a merged-tree pass.
 
-The final alternating serial mixed run exercised eight high-level operations:
+Regenerate evidence from the exact candidate revision with:
 
-```text
-attempts=8 successes=8 failures=0
-measurement_elapsed_ms_excluding_output=7510
-wall_elapsed_ms_including_attempt_output=7511
-operation_elapsed_total_ms=2771 pacing_wait_total_ms=4738
-attempt_throughput_per_second=1.0652
-attempt_latency_min_ms=36
-attempt_latency_p50_ms=120
-attempt_latency_p95_ms=1201
-attempt_latency_p99_ms=1201
-attempt_latency_max_ms=1201
-minimum_attempt_start_gap_ms=1000
-load_probe_status=passed
+```bash
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+MAGIC_EXCHANGE_LOAD_REQUESTS=8 MAGIC_EXCHANGE_LOAD_CONCURRENCY=1 \
+  MAGIC_EXCHANGE_LOAD_PACING_MS=1000 \
+  cargo run -p magic-exchange-rs --example load_probe --release --locked --offline
 ```
 
-The eight operations were SSE/SZSE announcements, SZSE Quote/order book,
-SSE/SZSE dragon-tiger entries and both HKEX northbound channels. These are
-high-level attempt metrics sampled before batch output, not HTTP throughput:
-pagination and seat detail retrieval can issue multiple internally paced
-requests. The run verifies current connectivity, parsing, evidence and pacing
-only; it is not an exchange SLA or sustained-traffic permission.
+Archive the revision, compiler/Cargo versions, complete attempt output and
+timestamps. High-level attempts may include multiple internally paced HTTP
+requests, so their metrics are not HTTP throughput, an exchange SLA or
+permission for sustained traffic.
 
 ## Eastmoney public-web probe status
 

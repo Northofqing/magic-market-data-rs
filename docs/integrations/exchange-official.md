@@ -1,7 +1,7 @@
 # 交易所官方数据接入
 
-`magic-exchange-rs` 将上交所、深交所、港交所和中金所保留为独立的一手来源身份。当前已通过
-生产 trait 真实验收的能力如下：
+`magic-exchange-rs` 将上交所、深交所、港交所和中金所保留为独立的一手来源身份。下表
+区分已通过生产 trait 真实验收和当前仅可诊断的能力：
 
 | 来源 | 标准化入口 | 真实验收 | 明确边界 |
 | --- | --- | --- | --- |
@@ -11,7 +11,7 @@
 | SZSE | `RealtimeQuotes`、`OrderBooks` | `000858`：Quote + 完整五档 | 数量按源端“手”保留；不推断集合竞价 |
 | SZSE | `DragonTigerData` | `000603 / 2026-07-23`：2 条榜单；首条完整买五卖五 | 完整拉取列表分页，详情按完整席位组返回 |
 | HKEX | `NorthboundDailyStatistics` | `2026-07-22` 沪股通/深股通各 1 条及各自 Top10 | quota 的 `999,999,999` 哨兵保留为 `Unavailable`，不猜测余额 |
-| CFFEX | `FuturesDeliveryCalendar` | 官方交割通知解析 IF/IH/IC/IM 四个股指期货合约 | 只接受通知明确写出的日期与现金交割，不按“第三个周五”推算 |
+| CFFEX | 诊断 `probe_futures_delivery_calendar`；生产 trait 当前 `Unsupported` | 确定性解析 IF/IH/IC/IM；2026-07-25 live 在官方目录 TLS 初始化时收到 unexpected EOF | capability 为 false；方式未被通知独立证明时保留 `NotProvided`，不按“第三个周五”推算 |
 
 ## 端点和请求边界
 
@@ -43,9 +43,12 @@ HKEX DailyStat 映射两个北向通道的 CNY 成交额、成交笔数、ETF �
 非 JavaScript MIME 或不完整 Top10 都会失败。
 
 CFFEX Provider 在官方交易通知目录中有界扫描最多 120 页，解析同站详情，并要求标题
-精确对应请求年月。详情必须同时明确 IF、IH、IC、IM 合约、同一最后交易/交割日及
-现金交割结算措辞，才输出四条事件。节假日顺延由通知原文证明；公式计算或交易日历
-猜测均不准入。
+精确对应请求年月。详情必须同时明确 IF、IH、IC、IM 合约、交割日及交割结算价措辞，
+才输出四条事件。通知发布日期写入 source-time evidence；交割日只作为事件字段。
+通知未独立说明最后交易日时该字段留空，未独立说明交割方式时使用 `NotProvided`，
+不会从交割日或交割结算价推导其他事实。节假日顺延由通知原文证明；公式计算或交易
+日历猜测均不准入。BR-009 live 验收通过前 capability 保持 false，生产 trait 返回
+typed `Unsupported`。
 
 ## 传输与部署
 
@@ -78,7 +81,7 @@ MAGIC_EXCHANGE_LOAD_PACING_MS=1000 \
 cargo run -p magic-exchange-rs --example load_probe --release --locked --offline
 ```
 
-CFFEX 探针可用 `MAGIC_CFFEX_DELIVERY_YEAR` 和
+CFFEX 诊断探针可用 `MAGIC_CFFEX_DELIVERY_YEAR` 和
 `MAGIC_CFFEX_DELIVERY_MONTH` 覆盖默认的 `2026-02`，并要求精确四条事件。只验收
 CFFEX、避免其他交易所的网络状态阻断时使用：
 
@@ -88,6 +91,12 @@ MAGIC_CFFEX_DELIVERY_YEAR=2026 \
 MAGIC_CFFEX_DELIVERY_MONTH=2 \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
+
+该命令只验证诊断实现，不表示生产 capability 已准入。成功标记必须是
+`diagnostic_probe_status=passed` 与
+`admission_state=diagnostic_complete_unadmitted`，不得输出生产
+`live_probe_status=passed`。确定性测试精确验证四条记录、节假日顺延日期、
+`NotProvided` 方法、缺失最后交易日和通知发布日期证据。
 
 默认测试证券/日期和覆盖变量见
 [`crates/magic-exchange-rs/README.md`](../../crates/magic-exchange-rs/README.md)。

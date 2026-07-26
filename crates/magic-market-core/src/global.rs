@@ -177,21 +177,5 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn global_requests_reject_empty_and_duplicate_identities() {
-        assert!(GlobalIndexRequest::new(Vec::new()).is_err());
-        assert!(
-            GlobalIndexRequest::new(vec![GlobalIndexCode::Sp500, GlobalIndexCode::Sp500]).is_err()
-        );
-        assert!(FxRequest::new(vec![FxPair::UsdCny, FxPair::UsdCny]).is_err());
-    }
-
-    #[test]
-    fn global_requests_revalidate_deserialized_values() {
-        let duplicate = r#"{"indices":["DowJones","DowJones"]}"#;
-        assert!(serde_json::from_str::<GlobalIndexRequest>(duplicate).is_err());
-    }
-}
+#[path = "../tests/internal/global_tests.rs"]
+mod tests;

@@ -148,6 +148,16 @@ fn classify(_: FixtureError) -> SourceError {
     SourceError::try_next(FailureKind::Provider, "fixture provider failure")
 }
 
+fn classify_tdx(error: magic_tdx_rs::TdxError) -> SourceError {
+    SourceError::try_next(FailureKind::Provider, error.to_string())
+}
+
+#[test]
+fn magic_tdx_registers_directly_as_a_provider_neutral_bar_source() {
+    let provider = Arc::new(magic_tdx_rs::TdxHqClient::new());
+    let _source = bars_source(ProviderId::Tdx, provider, classify_tdx);
+}
+
 #[test]
 fn every_core_family_has_a_provider_neutral_adapter() {
     let provider = Arc::new(FixtureProvider::new(true));

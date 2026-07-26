@@ -109,6 +109,14 @@ fn maps_official_records_and_truncates_after_fixed_remote_page() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method, HttpMethod::Get);
     assert!(requests[0].url.contains("pageHelp.pageSize=50"));
+    assert!(requests[0].headers.iter().any(|(name, value)| {
+        name == "User-Agent"
+            && value == "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    }));
+    assert!(requests[0]
+        .headers
+        .iter()
+        .any(|(name, value)| name == "X-Requested-With" && value == "XMLHttpRequest"));
 }
 
 #[test]

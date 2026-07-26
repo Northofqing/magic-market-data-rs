@@ -1,9 +1,10 @@
 # magic-exchange-rs
 
-Read-only adapters for admitted SSE, SZSE and HKEX official public data. The
-crate keeps the three venues as separate Provider identities and exposes only
-families that have deterministic fixtures plus a successful production-trait
-probe.
+Read-only adapters for official SSE, SZSE, HKEX and CFFEX public data. The
+crate keeps the venues as separate Provider identities. SSE, SZSE and HKEX
+expose only families that have deterministic fixtures plus a successful
+production-trait probe. CFFEX currently exposes an unadmitted diagnostic path;
+its production capability remains false.
 
 ## Admitted capabilities
 
@@ -15,6 +16,17 @@ probe.
 | `SzseClient` | `RealtimeQuotes`, `OrderBooks` | `www.szse.cn/api/market/ssjjhq/getTimeData` |
 | `SzseClient` | `DragonTigerData` | `www.szse.cn/api/report/ShowReport/data` |
 | `HkexClient` | `NorthboundDailyStatistics` | `www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js` |
+
+## Unadmitted diagnostic
+
+`CffexClient::probe_futures_delivery_calendar` scans the exact official notice
+paths and requires IF/IH/IC/IM plus the requested delivery date and settlement
+price wording. The notice does not independently prove the settlement method,
+so records use `FuturesDeliveryMethod::NotProvided`; the implementation never
+infers cash settlement or a “third Friday”. The 2026-07-25 bounded live probe
+failed during TLS initialization with `unexpected EOF`, so
+`calendar_capabilities().futures_delivery` remains false and the production
+`FuturesDeliveryCalendar` trait returns typed `Unsupported`.
 
 SSE/SZSE announcements validate complete remote pages before local
 truncation. Dragon-tiger requests require an explicit trading date. SZSE
@@ -58,6 +70,22 @@ Override with `MAGIC_EXCHANGE_SSE_CODE`, `MAGIC_EXCHANGE_SZSE_CODE`,
 `MAGIC_EXCHANGE_SSE_DRAGON_DATE`, `MAGIC_EXCHANGE_SZSE_DRAGON_CODE`,
 `MAGIC_EXCHANGE_SZSE_DRAGON_DATE`, `MAGIC_EXCHANGE_HKEX_DATE` and
 `MAGIC_EXCHANGE_LIVE_LIMIT`.
+
+Run the CFFEX diagnostic independently with:
+
+```bash
+MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
+MAGIC_CFFEX_DELIVERY_YEAR=2026 \
+MAGIC_CFFEX_DELIVERY_MONTH=2 \
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+```
+
+This command is diagnostic-only. A successful diagnostic emits
+`diagnostic_probe_status=passed` and
+`admission_state=diagnostic_complete_unadmitted`; it must not emit the
+production `live_probe_status=passed` marker. Notice publication time is kept
+as provenance. Unproved settlement method and last trading date remain
+`NotProvided` and absent respectively.
 
 The final 2026-07-23 production-trait live probe passed announcements,
 SSE/SZSE dragon-tiger entries and complete seats, SZSE Quote/five-level book,

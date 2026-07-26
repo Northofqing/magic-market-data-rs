@@ -13,6 +13,7 @@
 | 板块资金流 | `BoardFlows` | 行业、概念、地域的涨跌、分档净流入和领涨股 |
 | 龙虎榜 | `DragonTigerData` | 个股上榜明细；席位保守返回一个完整买五/卖五原子组，席位请求 `limit >= 10` |
 | 全市场龙虎榜 | `DragonTigerDiscovery` | 指定交易日完整读取沪深京股票/可转债；每条保留代码、名称和源 `TRADE_ID` |
+| 全市场龙虎榜席位 | `MarketDragonTigerData` | 按显式交易日发现全市场上榜项，并按源 `TRADE_ID` 返回每项完整买五/卖五原子组 |
 | 资本数据 | `MarginData`、`BlockTrades`、`HolderCounts`、`LockupEvents`、`DividendPlans` | 融资融券、大宗交易、股东户数、限售解禁、分红送转 |
 | 打板 | `LimitPools` | 涨停、炸板、跌停、昨日涨停 |
 | 热度 | `PopularityData` | 当前人气排名，并保留榜单与行情的两份证据 |
@@ -59,20 +60,46 @@ typed error。
 - 比率保留 `RatioUnit::Percent`，不会混成 0–1 小数；
 - 数量字段按 Core 类型声明的股/手语义输出；
 - `source_at` 只取源端明确日期/时间，网页没有可靠批次时间时保持 `None`；
+- 板块资金流必须返回正整数 Unix 更新时间字段 `f124`，且同一原子批次
+  的全部记录必须一致；缺失、零值或批次内不一致都会拒绝整个批次；
 - 每条记录及批次均保留 Provider、源时间、观察时间和批次 ID；
 - 人气榜与 Quote 来自两个请求，分别保留 ranking/quote evidence，禁止伪装成原子快照。
+- 龙虎榜买入/卖出总额必须非负；买、卖、净额同时存在时必须满足
+  `净额 = 买入 - 卖出`。全市场发现以 `TRADE_ID` 区分同股同日不同上榜原因；
+  等价重复稳定保留首条，身份相同但内容冲突会拒绝整批。席位请求同时过滤证券、
+  日期和 `TRADE_ID`，每项必须恰有买五和卖五，禁止跨原因混组。
 - 全市场龙虎榜在 limit/交易所过滤前验证完整日数据，股票记录必须同时有代码和名称；
 - 15:35 资金榜只接受中国当前日期、捕获时间不早于 15:35、所有行 `f124` 完全一致，
   按 `f62` 非递增且 rank 连续；每条保留 `f14` 名称和 `f184` 主力净占比。
 
 ## 探针
 
-完整 live probe 会打印所有 capability、provenance、quality 和记录字段：
+完整 live probe 会打印所有 capability、provenance、quality 和记录字段。每个已声明
+数据族还必须通过公共 admission verifier：非空、质量完整、记录/批次证据一致、
+源时间不晚于观察时间且业务身份唯一。最终成功标记为
+`live_probe_status=admitted`；未声明诊断只能输出
+`diagnostic_complete_unadmitted` 或 `failed`，不能冒充能力成功：
 
 ```bash
+MAGIC_EASTMONEY_POOL_DATE=2026-07-24 \
+MAGIC_EASTMONEY_DRAGON_TIGER_DATE=2026-07-24 \
 cargo run -p magic-eastmoney-rs --example live_probe --release --locked --offline
 ```
 
+`MAGIC_EASTMONEY_POOL_DATE` 必须由操作者或调度器提供，表示本次验证的源交易
+会话；缺失、空值或非法 ISO 日期会显式失败。探针不会用系统日期、工作日猜测或
+仓库内硬编码日期代替源会话。`MAGIC_EASTMONEY_DRAGON_TIGER_DATE` 同样必须显式
+提供，用于全市场龙虎榜发现与每个 `TRADE_ID` 的 5+5 席位原子性验证。需要只验证
+该链路时可运行：
+
+```bash
+MAGIC_EASTMONEY_DRAGON_TIGER_DATE=2026-07-22 \
+MAGIC_EASTMONEY_DRAGON_TIGER_LIMIT=5 \
+cargo run -p magic-eastmoney-rs --example market_dragon_tiger_probe --release --locked
+```
+
+独立探针只打印标准化证券身份、源 `entry_id`、席位数量、净买额和批次证据，不输出
+原始响应。手动 GitHub Actions 工作流也将源交易日期设为必填输入。
 有界 load probe 支持 `research`、`fund-flow`、`board-flow`、`limit-pool`、
 `popularity`、`news` 和 `mixed`；其中 `news` 是已准入的全局最新资讯：
 

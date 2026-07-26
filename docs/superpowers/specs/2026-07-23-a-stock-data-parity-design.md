@@ -37,7 +37,8 @@ commercial SLA.
 
 ## 2. Non-negotiable rules
 
-- Rust stable remains the minimum supported toolchain.
+- The repository does not declare an MSRV or select an exact Rust release.
+  Developers use their default toolchain and CI uses current stable.
 - Workspace libraries keep `#![forbid(unsafe_code)]`.
 - Core never depends on a concrete Provider.
 - Every accepted record carries provider, source timestamp when supplied,
@@ -369,6 +370,12 @@ endpoint has:
 
 There is no insecure-TLS or guessed-schema compatibility mode.
 
+The release live gate executes the official CFFEX delivery-calendar probe as
+an independent job. A transport or authentication failure at SSE, SZSE or HKEX
+must remain visible, but it must not prevent CFFEX from producing its own
+source evidence. Public-web probes use browser-equivalent static request
+headers only; they do not persist cookies, credentials or account identity.
+
 ## 6. Router and aggregation
 
 `magic-market-router` keeps its generic `FailoverChain<Request, Record>`
@@ -490,7 +497,8 @@ The release package contains:
 No API key, cookie, activation state, downloaded PDF, source fixture containing
 personal data or desktop-client artifact is packaged.
 
-Preflight expands to cover every workspace member on Rust stable:
+Preflight expands to cover every workspace member on the active default
+toolchain and records the actual compiler/Cargo versions:
 
 - format
 - locked build/check

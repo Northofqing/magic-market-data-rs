@@ -52,24 +52,42 @@ impl HttpsTransport {
         let status = response.status();
         let final_url = response.get_url().to_owned();
         let content_type = response.header("Content-Type").map(str::to_owned);
-        let mut body = Vec::new();
-        response
-            .into_reader()
-            .take((MAX_RESPONSE_BYTES + 1) as u64)
-            .read_to_end(&mut body)
-            .map_err(|error| ThsError::Transport(error.to_string()))?;
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(ThsError::Incomplete(format!(
-                "response body exceeds {MAX_RESPONSE_BYTES} bytes"
-            )));
-        }
-        Ok(HttpResponse {
-            status,
-            final_url,
-            content_type,
-            body,
-        })
+        read_http_response(status, final_url, content_type, response.into_reader())
     }
+}
+
+pub(crate) fn collect_transport_result(
+    result: Result<ureq::Response, ureq::Error>,
+) -> Result<HttpResponse, ThsError> {
+    match result {
+        Ok(response) => HttpsTransport::collect(response),
+        Err(ureq::Error::Status(_, response)) => HttpsTransport::collect(response),
+        Err(ureq::Error::Transport(error)) => Err(ThsError::Transport(error.to_string())),
+    }
+}
+
+pub(crate) fn read_http_response(
+    status: u16,
+    final_url: String,
+    content_type: Option<String>,
+    reader: impl Read,
+) -> Result<HttpResponse, ThsError> {
+    let mut body = Vec::new();
+    reader
+        .take((MAX_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut body)
+        .map_err(|error| ThsError::Transport(error.to_string()))?;
+    if body.len() > MAX_RESPONSE_BYTES {
+        return Err(ThsError::Incomplete(format!(
+            "response body exceeds {MAX_RESPONSE_BYTES} bytes"
+        )));
+    }
+    Ok(HttpResponse {
+        status,
+        final_url,
+        content_type,
+        body,
+    })
 }
 
 impl ThsTransport for HttpsTransport {
@@ -80,10 +98,6 @@ impl ThsTransport for HttpsTransport {
         for (name, value) in &request.headers {
             wire = wire.set(name, value);
         }
-        match wire.call() {
-            Ok(response) => Self::collect(response),
-            Err(ureq::Error::Status(_, response)) => Self::collect(response),
-            Err(ureq::Error::Transport(error)) => Err(ThsError::Transport(error.to_string())),
-        }
+        collect_transport_result(wire.call())
     }
 }

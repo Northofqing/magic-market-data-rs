@@ -134,10 +134,13 @@ conversion inside the market-data adapter.
 
 #### Futures delivery calendar
 
-The first production family is deliberately bounded to CFFEX equity-index
-futures IF, IH, IC, and IM. An official CFFEX delivery notice is the
-event-level source. The provider parses the notice publication/delivery date,
-contract identities, and explicit delivery wording. It never derives a
+This section is superseded by
+`2026-07-26-cffex-capability-remediation-design.md`. CFFEX equity-index
+futures IF, IH, IC, and IM currently have a deterministic diagnostic only;
+the production capability is false and its production trait returns typed
+`Unsupported`. An official notice can prove publication date, delivery date,
+contract identities, and explicit delivery wording. Unproved settlement
+method and last trading date remain `NotProvided`/absent. It never derives a
 holiday-adjusted date from the third-Friday rule alone. A missing monthly
 notice is an explicit incomplete-source failure.
 

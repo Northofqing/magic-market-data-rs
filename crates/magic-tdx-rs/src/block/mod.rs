@@ -45,4 +45,4 @@ pub mod types;
 
 pub use client::TdxBlockClient;
 pub use query::{block_query, index_code_to_name, BlockQuery};
-pub use types::{BlockConstituents, BlockInfo, BlockType};
+pub use types::{BlockConstituents, BlockFileSnapshot, BlockInfo, BlockType};

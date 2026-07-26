@@ -21,27 +21,28 @@
 - `magic-baidu-{live,load}-probe`：百度未复权日 K 和源端 MA；
 - `magic-iwencai-{live,load}-probe`：需要授权 API Key 的语义搜索；
 - `magic-exchange-{live,load}-probe`：SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、
-  HKEX 北向日统计和 CFFEX 股指期货交割通知；
+  HKEX 北向日统计；CFFEX 股指期货交割通知当前仅提供未准入诊断入口；
 - `magic-gov-live-probe`：国务院政策库官方文件；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建
 
-仓库跟随 Rust stable，不声明固定 MSRV。`Cargo.lock` 固定已验证的完整依赖图；
-发布构建必须使用 `--locked`，不能删除锁文件后直接升级依赖。
+仓库不固定具体 Rust/Cargo 版本。开发与发布使用运行主机的默认工具链，CI 使用当前
+stable；发布包会保存实际 `rustc -vV` 与 `cargo -V` 输出。`Cargo.lock` 固定依赖
+解析结果，发布构建必须使用 `--locked`，不能删除锁文件后直接升级依赖。
 
 ```bash
-rustup toolchain install stable --profile minimal --component rustfmt --component clippy
 cargo fetch --locked
 bash tools/release/preflight.sh
 git commit
 bash tools/release/package.sh
 ```
 
-预检在每次新建的隔离 target 目录中，以离线模式运行格式、stable Rust 全目标编译、
-全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff 空白检查，避免
-本机其他 Rust 工具链的旧元数据污染门禁。打包脚本随后用锁文件构建二十六个 release
-探针，复制为不冲突的文件名，并生成 SHA-256 清单：
+预检先打印当前工具链版本，再在每次新建的隔离 target 目录中，以离线模式运行格式、
+全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
+空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
+构建二十六个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
+可重复流程，不代表当前未完成合并的工作树已经通过 release gate：
 
 ```text
 target/dist/GIT_SHA/
@@ -110,7 +111,8 @@ shasum -a 256 -c SHA256SUMS
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
 | Eastmoney/CNInfo/THS/CLS/Jin10/The Paper/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源 |
 | State Council official | 支持 | 支持 | 支持 | Rustls HTTPS；官方政策文件 |
-| SSE/SZSE/HKEX/CFFEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
+| SSE/SZSE/HKEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
+| CFFEX official diagnostic | 仅诊断 | 仅诊断 | 仅诊断 | capability=false；生产 trait `Unsupported`；官方 TLS live 未通过 |
 | iWencai | 支持 | 支持 | 支持 | Rustls HTTPS；需要获授权 API Key |
 | EMQuant Rust 层 | 支持 | 可编译 | 可编译 | 运行还取决于厂商 SDK |
 | 当前 EMQuant C++ bridge | x86_64 macOS | 未适配 | 未适配 | 使用 `.dylib`、`dlopen` 和 POSIX API |
@@ -134,7 +136,8 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | Jin10 | `flash-api.jin10.com:443` | 无持久缓存 |
 | The Paper | `www.thepaper.cn:443` | 无持久缓存 |
 | Baidu | `finance.pae.baidu.com:443` | 无持久缓存 |
-| SSE/SZSE/HKEX/CFFEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443`、`www.cffex.com.cn:443` | 无持久缓存 |
+| SSE/SZSE/HKEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443` | 无持久缓存 |
+| CFFEX diagnostic | `www.cffex.com.cn:443` | 无持久缓存；仅有界显式 probe |
 | State Council | `sousuo.www.gov.cn:443`；返回链接仅允许 `www.gov.cn:443` | 无持久缓存 |
 | iWencai | `openapi.iwencai.com:443` | API Key 仅由环境/秘密挂载提供，不落盘 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
@@ -324,8 +327,8 @@ EMQuant 只有在厂商许可证允许、架构匹配、SDK 能在容器中激�
 升级依赖时必须：
 
 1. 在单独提交中更新 `Cargo.lock`；
-2. 用当前 stable Cargo 运行全工作区 `--locked --offline` 检查；
-3. 扫描选中依赖清单和安全公告；
+2. 用当前默认 Cargo 运行全工作区 `--locked --offline` 检查并记录版本；
+3. 扫描选中依赖清单和安全公告，并确认其编译器要求符合当前 stable；
 4. 运行确定性测试、真实探针和小规模负载探针；
 5. 比较能力、字段单位、源时间、错误率和延迟后再放量。
 

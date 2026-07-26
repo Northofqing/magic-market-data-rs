@@ -1,7 +1,7 @@
 use magic_cninfo_rs::CninfoClient;
 use magic_market_core::{
-    Announcements, AssetClass, DataBatch, Exchange, InstrumentDateRangeRequest, InstrumentId,
-    PositiveU32,
+    verify_serial_load, Announcements, AssetClass, DataBatch, Exchange, InstrumentDateRangeRequest,
+    InstrumentId, InvestorQuestions, PositiveU32, ProbeStatus,
 };
 use std::error::Error;
 use std::fmt::Debug;
@@ -12,8 +12,8 @@ const MIN_PACING_MS: u64 = 1_000;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let requests = env_u32("MAGIC_CNINFO_LOAD_REQUESTS", 3)?;
-    if requests == 0 || requests > MAX_REQUESTS {
-        return Err(format!("MAGIC_CNINFO_LOAD_REQUESTS must be in 1..={MAX_REQUESTS}").into());
+    if !(2..=MAX_REQUESTS).contains(&requests) {
+        return Err(format!("MAGIC_CNINFO_LOAD_REQUESTS must be in 2..={MAX_REQUESTS}").into());
     }
     let concurrency = env_u32("MAGIC_CNINFO_LOAD_CONCURRENCY", 1)?;
     if concurrency != 1 {
@@ -27,7 +27,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let client = CninfoClient::new()?;
     let instrument =
         equity(std::env::var("MAGIC_CNINFO_CODE").unwrap_or_else(|_| "600396".into()))?;
-    let request = InstrumentDateRangeRequest::new(instrument, PositiveU32::new(1)?)?;
+    let question_instrument =
+        equity(std::env::var("MAGIC_CNINFO_QUESTION_CODE").unwrap_or_else(|_| "002594".into()))?;
+    let announcement_request = InstrumentDateRangeRequest::new(instrument, PositiveU32::new(1)?)?;
+    let question_request =
+        InstrumentDateRangeRequest::new(question_instrument, PositiveU32::new(1)?)?;
     let mut latencies = Vec::with_capacity(requests as usize);
     let mut successes = 0_u32;
     let mut failures = 0_u32;
@@ -43,11 +47,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             minimum_start_gap = Some(minimum_start_gap.map_or(gap, |value| value.min(gap)));
         }
         previous_started = Some(started);
-        println!("\n--- attempt={} operation=announcements ---", attempt + 1);
-        match client.announcements(&request) {
-            Ok(batch) => {
+        let operation = select_operation(attempt);
+        println!("\n--- attempt={} operation={operation} ---", attempt + 1);
+        let result = match operation {
+            "announcements" => client.announcements(&announcement_request).map(print_batch),
+            "investor_questions" => client
+                .investor_questions(&question_request)
+                .map(print_batch),
+            _ => unreachable!("operation selector is exhaustive"),
+        };
+        match result {
+            Ok(()) => {
                 successes += 1;
-                print_batch(batch);
             }
             Err(error) => {
                 failures += 1;
@@ -80,9 +91,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         minimum_start_gap.unwrap_or_default().as_millis()
     );
     if failures > 0 {
+        println!("load_probe_status={}", ProbeStatus::Failed);
         return Err(format!("{failures} load-probe attempts failed").into());
     }
+    let snapshot = client.load_probe_snapshot()?;
+    let status = verify_serial_load(&snapshot, Duration::from_millis(MIN_PACING_MS))?;
+    println!("actual_request_starts={}", snapshot.request_starts());
+    println!(
+        "actual_minimum_start_gap_ms={}",
+        snapshot.minimum_start_gap().unwrap_or_default().as_millis()
+    );
+    println!(
+        "actual_maximum_concurrency={}",
+        snapshot.maximum_concurrency()
+    );
+    println!("load_probe_status={status}");
     Ok(())
+}
+
+fn select_operation(attempt: u32) -> &'static str {
+    ["announcements", "investor_questions"][attempt as usize % 2]
 }
 
 fn equity(code: String) -> Result<InstrumentId, Box<dyn Error>> {
@@ -129,3 +157,7 @@ fn percentile(values: &[Duration], percentile: usize) -> Duration {
     let index = (last * percentile).div_ceil(100);
     values[index.min(last)]
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/load_probe_tests.rs"]
+mod tests;

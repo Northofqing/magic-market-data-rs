@@ -20,9 +20,13 @@ mod post_close;
 mod reports;
 mod transport;
 
+#[cfg(test)]
+#[path = "../tests/internal/support.rs"]
+mod test_support;
+
 use magic_market_core::{
     AssetClass, CapitalCapabilities, ContentCapabilities, DataBatch, Exchange, InstrumentId,
-    LimitPoolCapabilities, MarketDiscoveryCapabilities, Provenance, ProviderId,
+    LimitPoolCapabilities, LoadProbeSnapshot, MarketDiscoveryCapabilities, Provenance, ProviderId,
     ResearchCapabilities, SignalCapabilities, SourceEvidence,
 };
 use std::sync::Arc;
@@ -69,6 +73,14 @@ impl EastmoneyClient {
         Self {
             transport: Arc::new(transport),
         }
+    }
+
+    pub fn load_probe_snapshot(&self) -> Result<LoadProbeSnapshot, EastmoneyError> {
+        self.transport.load_probe_snapshot().ok_or_else(|| {
+            EastmoneyError::Unsupported(
+                "request-start telemetry is unavailable for the configured transport".into(),
+            )
+        })
     }
 
     /// Capabilities proved for research-report endpoints.
@@ -126,7 +138,7 @@ impl EastmoneyClient {
             instrument_news: false,
             global_news: true,
             announcements: false,
-            announcement_discovery: false,
+            market_announcements: false,
             investor_questions: false,
         }
     }
@@ -228,12 +240,22 @@ impl BatchContext {
                 "Eastmoney response contains no usable records".into(),
             ));
         }
-        self.finish_allow_empty(records)
+        self.finish_with_issues(records, Vec::new())
     }
 
     pub(crate) fn finish_allow_empty<T>(
         &self,
         records: Vec<T>,
+    ) -> Result<DataBatch<T>, EastmoneyError> {
+        self.finish_with_issues(records, Vec::new())
+    }
+
+    /// Finishes a source-counted family that can prove an empty response and
+    /// can explicitly report a caller-truncated page.
+    pub(crate) fn finish_with_issues<T>(
+        &self,
+        records: Vec<T>,
+        issues: Vec<String>,
     ) -> Result<DataBatch<T>, EastmoneyError> {
         let provenance = Provenance::new(SOURCE_NAME, self.observed_at.clone())?
             .with_batch_id(self.batch_id.clone())?;
@@ -241,7 +263,11 @@ impl BatchContext {
             Some(source_at) => provenance.with_source_at(source_at.clone())?,
             None => provenance,
         };
-        Ok(DataBatch::strict(records, provenance))
+        if issues.is_empty() {
+            Ok(DataBatch::strict(records, provenance))
+        } else {
+            Ok(DataBatch::best_effort(records, provenance, issues)?)
+        }
     }
 }
 
@@ -413,77 +439,9 @@ fn observed_at() -> Result<String, EastmoneyError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        instrument_from_market, query_url, secid, validate_instrument, BatchContext,
-        EastmoneyClient,
-    };
-    use magic_market_core::{AssetClass, Exchange, InstrumentId, ProviderId};
+#[path = "../tests/internal/lib_tests.rs"]
+mod tests;
 
-    #[test]
-    fn query_values_are_utf8_percent_encoded() {
-        assert_eq!(
-            query_url(
-                "https://push2.eastmoney.com/x",
-                &[("filter", "电力 A".into())]
-            ),
-            "https://push2.eastmoney.com/x?filter=%E7%94%B5%E5%8A%9B%20A"
-        );
-    }
-
-    #[test]
-    fn secid_preserves_verified_exchange_routing() {
-        let instrument =
-            InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity).unwrap();
-        assert_eq!(secid(&instrument).unwrap(), "1.600396");
-    }
-
-    #[test]
-    fn code_prefix_must_match_declared_and_source_exchange() {
-        let mismatches = [
-            (Exchange::Shanghai, "002475"),
-            (Exchange::Shenzhen, "600396"),
-            (Exchange::Beijing, "300001"),
-        ];
-        for (exchange, code) in mismatches {
-            let instrument = InstrumentId::new(exchange, code, AssetClass::Equity).unwrap();
-            assert!(matches!(
-                validate_instrument(&instrument),
-                Err(super::EastmoneyError::InvalidRequest(message))
-                    if message.contains("exchange")
-            ));
-        }
-        assert!(matches!(
-            instrument_from_market("002475", 1),
-            Err(super::EastmoneyError::Protocol(message))
-                if message.contains("market")
-        ));
-    }
-
-    #[test]
-    fn unverified_fund_flow_is_not_admitted_as_a_capability() {
-        assert!(!EastmoneyClient::capital_capabilities().fund_flow_series);
-    }
-
-    #[test]
-    fn keyword_only_instrument_news_is_not_admitted_as_a_capability() {
-        assert!(!EastmoneyClient::content_capabilities().instrument_news);
-        assert!(EastmoneyClient::content_capabilities().global_news);
-    }
-
-    #[test]
-    fn batch_and_record_evidence_share_identity() {
-        let context = BatchContext::new("fixture", Some("2026-07-23")).unwrap();
-        let evidence = context.evidence().unwrap();
-        let batch = context.finish(vec![1_u8]).unwrap();
-        assert_eq!(evidence.provider(), ProviderId::Eastmoney);
-        assert_eq!(Some(evidence.batch_id()), batch.provenance().batch_id());
-        assert_eq!(evidence.source_at(), Some("2026-07-23"));
-    }
-
-    #[test]
-    fn empty_batches_are_explicit_protocol_failures() {
-        let context = BatchContext::new("fixture", None).unwrap();
-        assert!(context.finish::<u8>(Vec::new()).is_err());
-    }
-}
+#[cfg(test)]
+#[path = "../tests/internal/discovery_and_news_regression_tests.rs"]
+mod discovery_and_news_regression_tests;
