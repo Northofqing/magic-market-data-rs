@@ -148,4 +148,9 @@
 - Strict coverage was regenerated at 23,511 / 29,274 = 80.31% overall and
   1,881 / 1,960 = 95.97% critical. The final complete isolated release
   preflight passed after these changes.
-- Final independent review of this second remediation remains before handoff.
+- Final independent review of `660c6f9..f9e3fba` found no Critical,
+  Important, or Minor issues and returned `Ready: yes`.
+- The committed `f9e3fba` tree then passed
+  `cargo test --workspace --all-targets --locked --offline`, documentation
+  links, and compliance checks.
+- **Final status:** complete and ready for branch integration.
