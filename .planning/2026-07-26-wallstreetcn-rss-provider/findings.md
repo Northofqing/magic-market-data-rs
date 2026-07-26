@@ -43,3 +43,15 @@
   content.
 - Descriptions, bodies, excerpts, images, article pages, hidden APIs, login
   state, storage, caching, indexing, and inferred instruments are excluded.
+
+## Release Evidence
+
+- Strict coverage passed at 80.28% overall and 95.97% for critical modules.
+- Formatting, locked offline check/test/Clippy, warning-free Rustdoc,
+  documentation tests, documentation links, compliance, and the complete
+  isolated release preflight all passed.
+- The standalone crate has no downstream path dependency. Router remains
+  Provider-neutral and does not depend on the WallstreetCN crate.
+- Cargo reports a non-fatal workspace warning because several Providers use
+  the conventional example names `live_probe` and `load_probe`; the release
+  package script already emits Provider-qualified artifact names.

@@ -8,7 +8,7 @@ bodies.
 
 ## Current Phase
 
-Phase 3
+Phase 4
 
 ## Phases
 
@@ -30,15 +30,15 @@ Phase 3
 ### Phase 3: Admission and Release Registration
 
 - [x] Run production-client admission probes and set the truthful capability.
-- [ ] Register README, deployment, integration, business rule, upstream,
+- [x] Register README, deployment, integration, business rule, upstream,
   compliance, and packaging documentation.
-- **Status:** in_progress
+- **Status:** complete
 
 ### Phase 4: Gates and Review
 
-- [ ] Pass strict coverage and all release gates.
+- [x] Pass strict coverage and all release gates.
 - [ ] Complete independent code review and final handoff.
-- **Status:** pending
+- **Status:** in_progress
 
 ## Decisions
 
@@ -58,6 +58,7 @@ Phase 3
 | Chinese text was placed in a raw byte string fixture | First transport format check | Used a UTF-8 string followed by `as_bytes()`. |
 | Transport-only Clippy reported parser-bound entries as dead code | Transport checkpoint | Completed the approved parser/Provider wiring instead of adding a temporary lint allowance; final crate Clippy passed. |
 | Optional title-match probe hit one DNS resolution failure | First title-match attempt | Preserved the typed `Transport` error and reran the same bounded release probe outside the sandbox; it passed without weakening any contract. |
+| Cargo warned that several Provider examples share `live_probe` and `load_probe` output names | Full preflight | Preserved the workspace-wide warning because it does not affect correctness or release packaging; the package script gives Provider probes distinct artifact names. |
 
 ## Notes
 

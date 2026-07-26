@@ -33,7 +33,7 @@
 
 ## Phase 2
 
-- **Status:** in progress
+- **Status:** complete
 - Parser red failed only because `rss::parse_response` was absent.
 - Added a complete-feed `quick-xml` state machine with an RSS 2.0 root,
   exact channel identity, required item fields, ignored description/extension
@@ -62,3 +62,41 @@
   matching article ID `3777926`.
 - After admission, all crate targets passed 24/24 tests, strict crate Clippy
   passed, and Router intelligence tests passed 16/16.
+
+## Phase 3
+
+- **Status:** complete
+- Registered WallstreetCN in the root and Provider READMEs, deployment and
+  integration guidance, `BR-022`, upstream-source documentation, compliance
+  checks, release packaging, and live-probe packaging.
+- Packaging expects exactly 30 Provider probes after the WallstreetCN live and
+  load probes were added.
+- Documentation links, compliance checks, and the package manifest all passed.
+
+## Phase 4
+
+- **Status:** in progress
+- Strict coverage passed:
+  - overall: 23,459 / 29,221 lines, 80.28% (required 80%)
+  - critical: 1,881 / 1,960 lines, 95.97% (required 95%)
+- The following release checks passed from the isolated feature worktree:
+  - `cargo fmt --all -- --check`
+  - `cargo check --workspace --all-targets --locked --offline`
+  - `cargo test --workspace --all-targets --locked --offline`
+  - `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`
+  - `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked --offline`
+  - `cargo test --workspace --doc --locked --offline`
+  - `bash tools/docs/check_links.sh`
+  - `bash tools/compliance/check.sh`
+  - `bash tools/release/preflight.sh`
+- The complete preflight independently rebuilt and tested all workspace targets
+  in its isolated target directory and ended with
+  `release preflight: passed`.
+- `git diff --check` passed. Dependency inspection confirmed that the
+  WallstreetCN crate depends on Core plus registry dependencies only, Router
+  still depends only on Core plus `thiserror`, and no downstream
+  `stock_analysis` path dependency was introduced.
+- Cargo emitted the existing workspace-wide warning for same-named Provider
+  examples (`live_probe` and `load_probe`). It is non-fatal, and release
+  packaging assigns Provider-specific output names.
+- Independent code review remains before final handoff.
