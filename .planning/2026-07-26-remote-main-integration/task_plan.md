@@ -64,3 +64,4 @@ Phase 2
 | Error | Attempt | Resolution |
 | --- | --- | --- |
 | `git pull --ff-only` reported divergent branches | Local merge cleanup | Preserved the explicit failure, fetched the remote state, and moved remote integration into this isolated merge workflow. |
+| Merge could not create the linked worktree's `ORIG_HEAD.lock` | First isolated merge attempt | The managed sandbox exposes common Git metadata read-only; retry the same exact merge with repository-scoped elevated permission. |

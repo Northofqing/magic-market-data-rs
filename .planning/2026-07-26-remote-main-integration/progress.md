@@ -17,3 +17,7 @@
   `cargo test --workspace --all-targets --locked --offline` in the primary
   worktree immediately before isolation; the integration worktree starts from
   that same commit.
+- The first isolated merge attempt stopped before changing the index because
+  the sandbox could not create the linked worktree's `ORIG_HEAD.lock`.
+  Repository-scoped elevated permission is required for this Git metadata
+  write.
