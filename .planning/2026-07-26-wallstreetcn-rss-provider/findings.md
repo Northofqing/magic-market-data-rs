@@ -46,7 +46,7 @@
 
 ## Release Evidence
 
-- Strict coverage passed at 80.32% overall and 95.97% for critical modules.
+- Strict coverage passed at 80.31% overall and 95.97% for critical modules.
 - Formatting, locked offline check/test/Clippy, warning-free Rustdoc,
   documentation tests, documentation links, compliance, and the complete
   isolated release preflight all passed.
@@ -71,5 +71,13 @@
 - Ignored Text and CDATA are no longer decoded or normalized. Their literal
   characters are covered by the document scan, references remain validated by
   the existing entity path, and no content is accumulated or emitted.
-- Post-fix live, two-request load, focused tests, strict coverage, and the
-  complete isolated release preflight all passed.
+- Follow-up review found that numeric references to `U+FFFE` / `U+FFFF`
+  bypassed the literal-character scan and that declaration attribute
+  normalization could turn entity references into accepted fixed values.
+- Numeric references now use the same XML 1.0 repertoire predicate as literal
+  characters, while declaration values are compared as raw UTF-8 and cannot
+  contain entity spellings that merely normalize to an accepted value.
+  Adversarial tests cover both recognized and ignored content, plus encoded
+  declaration values; positive declaration forms remain covered.
+- Final live, two-request load, focused tests, strict coverage, and the
+  complete isolated release preflight all passed after the second remediation.

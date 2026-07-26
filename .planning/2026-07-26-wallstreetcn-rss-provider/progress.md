@@ -77,7 +77,7 @@
 
 - **Status:** in progress
 - Strict coverage passed:
-  - overall: 23,514 / 29,277 lines, 80.32% (required 80%)
+  - overall: 23,511 / 29,274 lines, 80.31% (required 80%)
   - critical: 1,881 / 1,960 lines, 95.97% (required 95%)
 - The following release checks passed from the isolated feature worktree:
   - `cargo fmt --all -- --check`
@@ -120,7 +120,32 @@
   present. The post-fix load probe used one client for two serial requests,
   returned 10 rows each, and passed in 9.295 seconds.
 - Strict coverage was regenerated after the production change and passed at
-  23,514 / 29,277 = 80.32% overall and 1,881 / 1,960 = 95.97% critical.
+  23,511 / 29,274 = 80.31% overall and 1,881 / 1,960 = 95.97% critical.
 - The complete isolated release preflight was rerun after the fix and ended
   with `release preflight: passed`.
-- Follow-up independent review of the remediation remains before handoff.
+- Follow-up independent review found two remaining Important XML boundaries:
+  numeric references to the XML-forbidden noncharacters `U+FFFE` and `U+FFFF`
+  were accepted, and declaration attributes were normalized before comparison,
+  allowing entity references to synthesize permitted `encoding` or
+  `standalone` values. No Critical or Minor issues were reported.
+- Added adversarial tests for recognized and ignored-content `&#xFFFE;` /
+  `&#xFFFF;` references and for entity-encoded declaration values. The tests
+  failed on the prior implementation, then passed after numeric references
+  were checked with the same XML 1.0 predicate as literal characters and
+  declaration values were validated as raw UTF-8 bytes. Positive declaration
+  forms remain covered.
+- The first focused test command supplied two filter arguments, which Cargo
+  rejected as `unexpected argument`; rerunning the two filters separately
+  provided the intended red/green evidence.
+- Strict crate Clippy then identified a `needless_borrow` in the raw
+  declaration-value comparison. Removing that borrow preserved the behavior
+  and strict crate Clippy passed.
+- The final release live probe passed at fetched time
+  `2026-07-26T04:53:08.727987Z`, returned 20 complete metadata-only rows, and
+  still matched article `3777926` containing `9500亿美元`.
+- The final load probe used one production client for two serial requests,
+  returned 10 rows each, and passed in 7.043 seconds.
+- Strict coverage was regenerated at 23,511 / 29,274 = 80.31% overall and
+  1,881 / 1,960 = 95.97% critical. The final complete isolated release
+  preflight passed after these changes.
+- Final independent review of this second remediation remains before handoff.

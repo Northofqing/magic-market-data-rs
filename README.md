@@ -356,7 +356,7 @@ python3 tools/coverage/check_thresholds.py target/coverage/coverage.json
 
 门槛是生产代码整体 `80.00%`、codec/protocol/adjustment、
 `service/common.rs` 和 `adapter.rs` 关键集合 `95.00%`。2026-07-25 最终报告为
-`23514/29277 = 80.32%` 和 `1881/1960 = 95.97%`。合同和失败语义见
+`23511/29274 = 80.31%` 和 `1881/1960 = 95.97%`。合同和失败语义见
 [覆盖率门说明](tools/coverage/README.md)。
 
 ## 真实数据探针
@@ -734,7 +734,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | 项目 | 结果 | 证据摘要 |
 | --- | --- | --- |
 | stable Rust 全工作区门禁 | 通过 | debug/release 全目标编译、全部测试、严格 Clippy、rustdoc/doctest、链接、合规和 diff |
-| 严格生产覆盖率门 | 通过 | 整体 23514/29277 = 80.32%；关键集合 1881/1960 = 95.97%；内联测试项不计入 |
+| 严格生产覆盖率门 | 通过 | 整体 23511/29274 = 80.31%；关键集合 1881/1960 = 95.97%；内联测试项不计入 |
 | TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
 | Tencent live probe | 通过 | 沪深京基础行情；股票/指数/ETF 行情统计；沪深当日逐笔 |
 | Tencent load probe | 通过 | mixed 100/8 为 100/100；统计 12/3 为 12/12 |

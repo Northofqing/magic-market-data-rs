@@ -369,7 +369,7 @@ pub(crate) fn parse_response(
                         "RSS XML declaration must be unique and precede the document root".into(),
                     ));
                 }
-                validate_xml_declaration(&declaration, reader.decoder())?;
+                validate_xml_declaration(&declaration)?;
                 saw_declaration = true;
             }
             Event::Comment(_) | Event::PI(_) => {}
@@ -506,10 +506,7 @@ fn validate_attributes(
     Ok(())
 }
 
-fn validate_xml_declaration(
-    declaration: &BytesDecl<'_>,
-    decoder: Decoder,
-) -> Result<(), WallstreetCnError> {
+fn validate_xml_declaration(declaration: &BytesDecl<'_>) -> Result<(), WallstreetCnError> {
     let version = declaration.version().map_err(|error| {
         WallstreetCnError::Protocol(format!("invalid RSS XML declaration: {error}"))
     })?;
@@ -529,14 +526,14 @@ fn validate_xml_declaration(
             WallstreetCnError::Protocol(format!("invalid RSS XML declaration: {error}"))
         })?;
         let key = xml_name(attribute.key.as_ref())?;
-        let value = attribute
-            .decoded_and_normalized_value(XmlVersion::Explicit1_0, decoder)
-            .map_err(|error| WallstreetCnError::Decode(format!("RSS XML declaration: {error}")))?;
-        validate_xml10_characters("RSS XML declaration", &value)?;
+        let value = std::str::from_utf8(attribute.value.as_ref()).map_err(|error| {
+            WallstreetCnError::Decode(format!("RSS XML declaration is not UTF-8: {error}"))
+        })?;
+        validate_xml10_characters("RSS XML declaration", value)?;
         match (position, key.as_str()) {
-            (0, "version") if value.as_ref() == "1.0" => position = 1,
+            (0, "version") if value == "1.0" => position = 1,
             (1, "encoding") if value.eq_ignore_ascii_case("utf-8") => position = 2,
-            (1 | 2, "standalone") if value.as_ref() == "yes" || value.as_ref() == "no" => {
+            (1 | 2, "standalone") if value == "yes" || value == "no" => {
                 position = 3;
             }
             _ => {
@@ -583,9 +580,9 @@ fn resolve_reference(reference: &BytesRef<'_>) -> Result<String, WallstreetCnErr
         .resolve_char_ref()
         .map_err(|error| WallstreetCnError::Protocol(format!("invalid numeric entity: {error}")))?
     {
-        if character.is_control() {
+        if !is_xml10_character(character) || character.is_control() {
             return Err(WallstreetCnError::Protocol(
-                "RSS numeric entities must not resolve to control characters".into(),
+                "RSS numeric entities must resolve to permitted XML 1.0 characters".into(),
             ));
         }
         return Ok(character.to_string());
@@ -841,6 +838,8 @@ mod tests {
             feed(&valid.replace("合成标题", "合成&custom;标题")),
             feed(&valid.replace("合成标题", "合成&#xZZ;标题")),
             feed(&valid.replace("合成标题", "合成&#1;标题")),
+            feed(&valid.replace("合成标题", "合成&#xFFFE;标题")),
+            feed(&valid.replace("合成标题", "合成&#xFFFF;标题")),
             feed(&valid.replace("<item>", "<item unexpected=\"x\">")),
             feed(&valid).replace("<rss version=\"2.0\"", "<rss version=\"1.0\""),
             feed(&valid).replace(
@@ -863,6 +862,14 @@ mod tests {
             feed(&valid).replace(
                 "<description></description>",
                 "<description hidden=\"&#1;\"></description>",
+            ),
+            feed(&valid).replace(
+                "<description></description>",
+                "<description>忽略&#xFFFE;正文</description>",
+            ),
+            feed(&valid).replace(
+                "<description></description>",
+                "<description>忽略&#xFFFF;正文</description>",
             ),
             feed(&valid).replace(
                 "<description></description>",
@@ -891,6 +898,8 @@ mod tests {
             "<?xml version=\"1.0\" unexpected=\"x\"?>",
             "<?xml version=\"1.0\" standalone=\"maybe\"?>",
             "<?xml encoding=\"utf-8\" version=\"1.0\"?>",
+            "<?xml version=\"1.0\" encoding=\"UTF&#45;8\"?>",
+            "<?xml version=\"1.0\" standalone=\"y&#101;s\"?>",
         ] {
             let body = format!("{declaration}{rss}");
             assert!(parse(body.as_bytes(), 1).is_err(), "{declaration}");
@@ -899,6 +908,17 @@ mod tests {
         let duplicate =
             format!("<?xml version=\"1.0\"?><?xml version=\"1.0\" encoding=\"utf-8\"?>{rss}");
         assert!(parse(duplicate.as_bytes(), 1).is_err());
+
+        for declaration in [
+            "",
+            "<?xml version='1.0'?>",
+            "<?xml version='1.0' encoding='UTF-8'?>",
+            "<?xml version='1.0' standalone='yes'?>",
+            "<?xml version='1.0' encoding='utf-8' standalone='no'?>",
+        ] {
+            let body = format!("{declaration}{rss}");
+            assert!(parse(body.as_bytes(), 1).is_ok(), "{declaration}");
+        }
     }
 
     #[test]
