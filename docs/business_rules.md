@@ -129,3 +129,14 @@ newest-first and 100-row bounds before caller-limit truncation. Public global
 news capability is true only after the production Rust client passes bounded
 live admission; otherwise the trait remains explicitly unsupported and only
 the named diagnostic method may perform the fetch.
+
+## BR-022 WallstreetCN RSS metadata boundary
+The WallstreetCN Provider may read only
+`https://dedicated.wallstreetcn.com/rss.xml`. It may expose only title,
+decimal article ID, exact canonical URL, publication time, publisher,
+language, topic, and provenance. RSS descriptions, article bodies, media,
+article-page fetching, undocumented APIs, authenticated content, storage,
+caching, search indexing, and inferred instruments are prohibited.
+`global_news` may be advertised only after two consecutive bounded
+production-client live probes pass; otherwise the trait remains typed
+`Unsupported` and only the explicit diagnostic path may access the feed.

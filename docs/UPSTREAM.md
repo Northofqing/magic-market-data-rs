@@ -23,3 +23,11 @@ Chinese terms at <https://cn.yna.co.kr/aboutus/copyright>, reviewed on
 2026-07-25. It reads bounded RSS metadata only, does not copy upstream source
 code, does not fetch article pages, and does not store or redistribute article
 bodies.
+
+The WallstreetCN adapter is an independent local implementation against the
+public first-party feed at <https://dedicated.wallstreetcn.com/rss.xml>, the
+publisher website at <https://wallstreetcn.com/>, and the first-party user
+agreement at <https://wallstreetcn.com/articles/3522782>, reviewed on
+2026-07-26. No WallstreetCN source code, private API, login state, cookie,
+description, or article body is included. The adapter reads bounded RSS
+metadata only and does not fetch article pages.

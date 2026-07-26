@@ -93,6 +93,8 @@ build_probe magic-exchange-rs load_probe magic-exchange-load-probe
 build_probe magic-gov-rs live_probe magic-gov-live-probe
 build_probe magic-yonhap-rs live_probe magic-yonhap-live-probe
 build_probe magic-yonhap-rs load_probe magic-yonhap-load-probe
+build_probe magic-wallstreetcn-rs live_probe magic-wallstreetcn-live-probe
+build_probe magic-wallstreetcn-rs load_probe magic-wallstreetcn-load-probe
 
 while IFS= read -r -d '' tracked_doc; do
   target_parent="$dist_dir/$(dirname "$tracked_doc")"

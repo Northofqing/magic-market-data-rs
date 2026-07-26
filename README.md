@@ -20,6 +20,9 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 > 韩联社简体中文 7 路 RSS 的 metadata-only Provider、严格解析和探针已实现；2026-07-26
 > release Rust 客户端在沙箱内外访问 Rolling/Economy 均收到 TLS unexpected EOF，
 > 因此 `global_news=false`、生产 trait 返回 `Unsupported`，只保留显式诊断入口。
+> 华尔街见闻单一公开 RSS 的 metadata-only Provider 已通过 release live 和同一客户端
+> 两次串行负载验收，`global_news=true`；只输出标题、数字 ID、规范链接、发布时间和
+> 证据，不读取或输出 description/正文，也不从标题推断证券身份。
 > Choice/EMQuant 已完成设备激活和 API 登录，日线与日级资金流已取得
 > 真实记录，Quote、盘口和分钟线仍因 `10001012/EQERR_ACCESS_INSUFFICIENCE` 待补
 > 权限。iWencai 已实现正式 API Key 鉴权，当前没有授权 Key，因此真实 401 会按设计
@@ -60,6 +63,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | `magic-jin10-rs` | 金十公开 7x24 财经快讯 | 只接收未锁定的公开新闻，不请求受保护详情 |
 | `magic-thepaper-rs` | 澎湃新闻财经频道原生文章 | 外链转载不归因给澎湃；不伪造个股过滤 |
 | `magic-yonhap-rs` | 韩联社官方简体中文 RSS metadata | 当前 live 未准入；不抓正文、不存储、不伪造个股过滤 |
+| `magic-wallstreetcn-rs` | 华尔街见闻公开 RSS metadata | 已 live 准入；只读单一 RSS，不抓正文/文章页、不存储、不伪造个股过滤 |
 | `magic-baidu-rs` | 百度未复权日线和源端 MA5/10/20 | 不提供 Quote/分钟/Level-2 |
 | `magic-iwencai-rs` | 获授权 API Key 的语义搜索 | 无 Key 明确鉴权失败，不复用 Cookie |
 | `magic-exchange-rs` | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 北向日统计、CFFEX 官方交割通知 | 官方公共只读端点，无 SLA；不提供 Level-2、集合竞价或 SSE Quote |
@@ -82,6 +86,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
    ├── magic-jin10-rs ───────→ magic-market-core
    ├── magic-thepaper-rs ────→ magic-market-core
    ├── magic-yonhap-rs ──────→ magic-market-core
+   ├── magic-wallstreetcn-rs ─→ magic-market-core
    └── magic-market-analysis → magic-market-core
 ```
 
@@ -131,7 +136,7 @@ Router 适配器已经通过确定性测试。
 | 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 与 SSE/SZSE 龙虎榜、TDX 行业/概念目录和成员、Eastmoney/THS 人气、THS 强势原因实盘 |
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
 | 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Eastmoney 严格当前日 15:35 后榜单 Provider 与二次路由校验完成 |
-| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10 全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；Yonhap 中文 RSS metadata 已实现但 live 未准入；个股新闻仍待结构化证券身份来源 |
+| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10、WallstreetCN 全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；Yonhap 中文 RSS metadata 已实现但 live 未准入；个股新闻仍待结构化证券身份来源 |
 | 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | Sina 沪深三表实盘；SecurityProfile/TDX 映射待接 |
 | 打板 | 四类 `LimitPoolEntry` | Eastmoney 四类池与 THS 涨停池实盘；字段缺失不跨源猜测 |
 | ETF 期权 | `OptionContract`、`OptionQuote`、`OptionGreeks` | Sina 510050 实盘；510300/588000/510500 已实现待实测 |
@@ -185,6 +190,7 @@ Router 适配器已经通过确定性测试。
 | Jin10 | 公开 7x24 财经快讯/文章及来源时间、主题；公开经济日历 | 排除锁定 VIP 行；不请求受保护详情；不伪造个股过滤 |
 | The Paper | 财经频道原生文章、栏目、标签及来源时间 | 排除外链转载；不把文本证券名提升为结构化身份 |
 | Yonhap Chinese RSS diagnostic | 7 个官方简体中文 RSS 的严格 metadata 解析已通过；2026-07-26 Rolling/Economy release 探针均在 TLS 初始化时收到 unexpected EOF | 尚未生产准入：`global_news=false`、trait 返回 `Unsupported`；只映射标题/ID/链接/时间/频道/证据，不抓正文 |
+| WallstreetCN RSS | 单一公开 RSS 的严格 metadata 解析；2026-07-26 live 和两次串行 load 均通过 | `global_news=true`；只映射标题/数字 ID/链接/时间/证据，summary/content 恒缺失，不抓文章页或推断证券 |
 | Baidu | 华电辽能未复权日 K、MA5/10/20 | 不提供实时 Quote、分钟线或 Level-2 |
 | iWencai | 正式 X-Claw 鉴权和语义结果解析 | 真实数据待合法 API Key；不读取 Cookie/桌面登录态 |
 | SSE/SZSE/HKEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
@@ -471,6 +477,7 @@ cargo run -p magic-cls-rs --example live_probe --release --locked --offline
 cargo run -p magic-jin10-rs --example live_probe --release --locked --offline
 cargo run -p magic-thepaper-rs --example live_probe --release --locked --offline
 cargo run -p magic-yonhap-rs --example live_probe --release --locked --offline
+cargo run -p magic-wallstreetcn-rs --example live_probe --release --locked --offline
 cargo run -p magic-baidu-rs --example live_probe --release --locked --offline
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
@@ -490,7 +497,7 @@ cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 
 每个 crate 另有同名 `load_probe`。Eastmoney 最多 20 次高层数据族 attempt
 （部分数据族内部包含多个 HTTP 请求），CNInfo/THS 最多 5 请求，
-CLS/Jin10/The Paper/Baidu/Yonhap 最多 3 请求，official-exchange 最多 8 次 mixed 高层 attempt；这些
+CLS/Jin10/The Paper/Baidu/Yonhap/WallstreetCN 最多 3 请求，official-exchange 最多 8 次 mixed 高层 attempt；这些
 公共/官方网页 probe 都强制并发 1、请求间隔至少 1 秒。默认
 证券和日期可以通过各 crate 文档列出的 `MAGIC_*` 环境变量覆盖。
 
@@ -502,6 +509,15 @@ Yonhap 默认读取 Rolling，可用 `MAGIC_YONHAP_CHANNEL` 选择 `economy` 等
 ```bash
 MAGIC_YONHAP_CHANNEL=economy MAGIC_YONHAP_MATCH='半导体' \
 cargo run -p magic-yonhap-rs --example live_probe --release --locked --offline
+```
+
+WallstreetCN 只读取精确的 `https://dedicated.wallstreetcn.com/rss.xml`；
+`MAGIC_WALLSTREETCN_LIMIT` 为 1–50，`MAGIC_WALLSTREETCN_MATCH` 只在当前有界
+feed 上做区分大小写的本地标题匹配，`MAGIC_WALLSTREETCN_LOAD_REQUESTS` 为 1–3：
+
+```bash
+MAGIC_WALLSTREETCN_LIMIT=20 MAGIC_WALLSTREETCN_MATCH='半导体' \
+cargo run -p magic-wallstreetcn-rs --example live_probe --release --locked --offline
 ```
 
 iWencai 必须使用单独获授权的 API Key：
@@ -628,7 +644,9 @@ target/dist/GIT_SHA/
 │   ├── magic-ths-live-probe
 │   ├── magic-ths-load-probe
 │   ├── magic-yonhap-live-probe
-│   └── magic-yonhap-load-probe
+│   ├── magic-yonhap-load-probe
+│   ├── magic-wallstreetcn-live-probe
+│   └── magic-wallstreetcn-load-probe
 ├── docs/
 ├── licenses/
 ├── Cargo.lock
@@ -665,6 +683,7 @@ Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架�
 | Jin10 | macOS、Linux、Windows | `flash-api.jin10.com` 的 HTTPS |
 | The Paper | macOS、Linux、Windows | `www.thepaper.cn` 的 HTTPS |
 | Yonhap | macOS、Linux、Windows | `cn.yna.co.kr` 7 个固定 RSS 路径的 HTTPS；当前 live TLS 未准入 |
+| WallstreetCN | macOS、Linux、Windows | `dedicated.wallstreetcn.com` 精确 `/rss.xml` 的 HTTPS |
 | Baidu | macOS、Linux、Windows | `finance.pae.baidu.com` 的 HTTPS |
 | SSE/SZSE/HKEX official | macOS、Linux、Windows | `query.sse.com.cn`、`www.szse.cn`、`www.hkex.com.hk` 的 HTTPS |
 | iWencai | macOS、Linux、Windows | `openapi.iwencai.com` 的 HTTPS；需要获授权 API Key |
@@ -701,7 +720,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
   源码、fixture、日志、镜像或 release 包。
 - EMQuant 厂商动态库、加密服务器列表和图片资源受厂商许可证约束，只能在获授权
   主机本地准备。
-- Tencent、Sina、Eastmoney、CNInfo、THS、CLS、Jin10、The Paper、Yonhap、Baidu 和交易所公共网页端点没有本项目
+- Tencent、Sina、Eastmoney、CNInfo、THS、CLS、Jin10、The Paper、Yonhap、WallstreetCN、Baidu 和交易所公共网页端点没有本项目
   可证明的 SLA 或再分发许可，部署方必须自行确认服务条款。
 - 未验证字段必须保持 `None`/`Unavailable` 或返回 `Unsupported`，不得通过猜测、
   跨源填补或模拟记录“修好”。
@@ -730,11 +749,12 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Jin10 live | 通过 | 公开财经新闻 5 条；锁定 VIP 行被排除；短暂 21 行滚动窗口单独受界 |
 | The Paper live | 通过 | 财经频道原生文章 5 条；栏目/标签、来源时间和原生 canonical URL 完整 |
 | Yonhap Chinese RSS | 确定性实现通过；生产未准入 | 22 个库测试、4 个能力测试和 4 个 probe 配置测试通过；Rolling/Economy release live 均为 TLS unexpected EOF，故 capability 保持 false |
+| WallstreetCN RSS live/load | 通过 | live 20 条严格 metadata；同一客户端 load 2/2、各 10 条、总耗时 7.529 秒；`global_news=true`，summary/content 恒缺失 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 公告、SSE/SZSE 龙虎榜与完整席位、SZSE Quote/五档、HKEX 两通道 Top10；mixed load 8/8、最小 attempt 起始间隔 1000 ms |
 | CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602 四条事件；生产 capability 为 false、trait 返回 `Unsupported`；2026-07-25 沙箱内外 live 均在官方目录 TLS 初始化时收到 unexpected EOF |
 | iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
-| Release package | 每个提交独立构建 | 二十八个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
+| Release package | 每个提交独立构建 | 三十个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 
 任何 Provider 字段、授权、服务器或网页协议发生变化后，都必须重新运行对应的
 确定性测试和真实 probe。旧验收记录不能自动证明新版本仍然可用。
@@ -755,6 +775,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | [Jin10 接入](docs/integrations/jin10-web.md) | 公开财经快讯、VIP 排除、字段和限流边界 |
 | [The Paper 接入](docs/integrations/thepaper-web.md) | 财经频道原生文章、转载排除和字段边界 |
 | [Yonhap RSS 接入](docs/integrations/yonhap-rss.md) | 7 个官方中文 feed、metadata-only 合同、探针与当前 TLS 未准入状态 |
+| [WallstreetCN RSS 接入](docs/integrations/wallstreetcn-rss.md) | 单一公开 feed、metadata-only 合同、生产准入与条款边界 |
 | [Baidu 接入](docs/integrations/baidu-web.md) | 未复权日 K 与源端 MA5/10/20 |
 | [iWencai 接入](docs/integrations/iwencai-api.md) | API Key 鉴权、语义搜索和脱敏错误 |
 | [交易所官方源](docs/integrations/exchange-official.md) | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 北向日统计 |
