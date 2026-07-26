@@ -14,7 +14,7 @@
 
 ## Phase 1
 
-- **Status:** in progress
+- **Status:** complete
 - Started Core Provider identity and provider-neutral Router evidence tests.
 - Core red test failed with two `E0599` errors because
   `ProviderId::WallstreetCn` did not exist.
@@ -24,3 +24,26 @@
   new Router test; `cargo fmt --all` applied the canonical layout.
 - Core identity tests passed 3/3 and Router intelligence tests passed 16/16,
   including WallstreetCN acceptance and evidence-mismatch rejection.
+- Registered the standalone `magic-wallstreetcn-rs` crate without adding a new
+  registry dependency resolution.
+- Added the one exact request URL, closed RSS-compatible MIME set, 2 MiB body
+  bound, 1–60 second timeout bound, 1–50 caller limit, typed status/network
+  failures, injected-response revalidation, and clone-shared pacing.
+- Request, response-bound, status, and shared-gate tests all passed.
+
+## Phase 2
+
+- **Status:** in progress
+- Parser red failed only because `rss::parse_response` was absent.
+- Added a complete-feed `quick-xml` state machine with an RSS 2.0 root,
+  exact channel identity, required item fields, ignored description/extension
+  subtrees, strict entity handling, a 100-item source bound, canonical article
+  URLs and decimal IDs, RFC 2822 source times, newest-first ordering, and
+  duplicate rejection before caller truncation.
+- Metadata mapping emits no summary, content, or inferred instruments and uses
+  `ProviderId::WallstreetCn` with `wallstreetcn-rss-v1` provenance.
+- Added `NewsProvider` boundaries: instrument news is typed unsupported,
+  diagnostic global-news fetches are available, and public global news remains
+  truthful to `GLOBAL_NEWS_ADMITTED`.
+- Parser tests passed 9/9, capability tests passed 5/5, all crate tests passed
+  21/21, and strict crate Clippy, formatting, and diff checks passed.

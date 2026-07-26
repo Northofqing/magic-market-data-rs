@@ -8,7 +8,7 @@ bodies.
 
 ## Current Phase
 
-Phase 1
+Phase 2
 
 ## Phases
 
@@ -16,16 +16,16 @@ Phase 1
 
 - [x] Add the Core Provider identity and provider-neutral Router evidence
   tests.
-- [ ] Add the standalone crate, exact request contract, bounded HTTPS
+- [x] Add the standalone crate, exact request contract, bounded HTTPS
   transport, and clone-shared pacing.
-- **Status:** in_progress
+- **Status:** complete
 
 ### Phase 2: Parser and Public Contract
 
-- [ ] Add strict complete-feed RSS parsing and metadata-only mapping.
-- [ ] Add public capability and typed failure tests.
+- [x] Add strict complete-feed RSS parsing and metadata-only mapping.
+- [x] Add public capability and typed failure tests.
 - [ ] Add bounded live and load probes.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 3: Admission and Release Registration
 
@@ -53,6 +53,10 @@ Phase 1
 
 | Error | Attempt | Resolution |
 | --- | --- | --- |
+| Locked manifest initially required a local lock refresh | First crate test | Ran Cargo offline without `--locked` once, then restored locked verification. |
+| Parser red test could not find `parse_response` | Parser TDD red phase | Implemented the strict RSS state machine and canonical mapping. |
+| Chinese text was placed in a raw byte string fixture | First transport format check | Used a UTF-8 string followed by `as_bytes()`. |
+| Transport-only Clippy reported parser-bound entries as dead code | Transport checkpoint | Completed the approved parser/Provider wiring instead of adding a temporary lint allowance; final crate Clippy passed. |
 
 ## Notes
 

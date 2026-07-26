@@ -515,6 +515,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-wallstreetcn-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "quick-xml",
+ "serde_json",
+ "thiserror",
+ "time",
+ "ureq",
+]
+
+[[package]]
 name = "magic-yonhap-rs"
 version = "0.2.0"
 dependencies = [

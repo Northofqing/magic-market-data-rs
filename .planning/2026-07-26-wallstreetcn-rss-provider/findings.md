@@ -21,6 +21,13 @@
 - The currently observed `text/html` media type is accepted only for the exact
   RSS URL and only when the complete document satisfies the strict RSS
   contract.
+- Descriptions and extension subtrees are structurally consumed but their text
+  is never accumulated, mapped, or serialized.
+- The full source document is validated before the requested 1–50 row limit is
+  applied, so malformed or duplicate later rows cannot be hidden by
+  truncation.
+- Cloned clients share one request gate and hold it through the transport call,
+  preventing concurrent clones from bypassing the one-second start interval.
 
 ## Rights Boundary
 
