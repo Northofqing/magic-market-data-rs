@@ -13,6 +13,44 @@ fail explicitly. Source-proven empty is distinct from unavailable. Local
 observation time, effective date, security-code prefixes and downstream
 mutable caches must not be presented as provider source evidence.
 
+## BR-033 Strict source-time freshness
+Realtime freshness is measured only from a provider-supplied, parseable
+`source_at`; local `observed_at`, fetch completion time and cache insertion time
+must never substitute for it. A strict quote route validates batch and record
+timestamps, rejects missing, malformed, future, inconsistent or mixed times and
+uses the oldest record time for admission. During continuous trading a configured
+five-second policy accepts age exactly five seconds and rejects any greater age.
+Pre-open, lunch break, post-close, replay and historical use an explicitly
+different policy. A source without trustworthy provider time, including current
+TDX quote packets, remains eligible only for routes that do not require the strict
+freshness contract.
+
+## BR-034 Full-market ranking and breadth evidence
+Every instrument ranking row retains normalized instrument code and the
+source-supplied name together, an explicit metric and unit, source session/date,
+continuous unique rank and atomic evidence. Full-market claims additionally
+prove the requested Shanghai, Shenzhen and Beijing universe coverage, pagination,
+unique identity, ordering and a bounded source-time skew before applying a caller
+limit. A composed multi-request snapshot reports its coverage and maximum skew
+and must not be labelled an atomic provider ranking. Market breadth uses a
+separate typed snapshot: valid count equals up plus down plus flat, limit-up/down
+sets are subsets of valid instruments, and every derived value retains its input
+evidence. Missing names, units, source times or coverage fail instead of becoming
+successful partial rankings.
+
+## BR-035 Licensed and authenticated data boundaries
+The complete opening-auction contract requires provider-backed matched price,
+previous close, change, matched quantity and amount, unmatched bid and ask
+quantities, volume ratio, exact instrument identity and provider source time.
+Ordinary quotes, trades and public HTML must not be used to infer unmatched
+queues or fabricate source time. Public partial auction observations may use a
+separately named diagnostic contract but do not advertise `Auctions`; production
+admission requires an authorized Level-2 or broker Provider passing the common
+conformance suite. Broker cash, positions, orders and executions belong to a
+separate authenticated account gateway. Browser cookies and logged-in page
+scraping are not a production account API, and this workspace must not add a
+downstream account path dependency.
+
 ## BR-001 Quote request cardinality
 Strict quote requests accept 1 through 60 instruments. `quotes_chunked` is the only API that may split a larger request.
 ## BR-002 Strict pagination

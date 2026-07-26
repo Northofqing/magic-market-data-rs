@@ -26,7 +26,6 @@ existing `DataBatch`/`SourceEvidence`/Router abstractions, Cargo release gates.
 **Files:**
 
 - Modify: `docs/business_rules.md`
-- Modify: `docs/requirements_traceability.md`
 - Test: `tools/compliance/check.sh`
 
 1. Add a failing compliance assertion for rule identifiers BR-033 through BR-035.
@@ -35,7 +34,8 @@ existing `DataBatch`/`SourceEvidence`/Router abstractions, Cargo release gates.
    - BR-033: strict source-time freshness never substitutes observed time;
    - BR-034: full-market ranking/breadth coverage, units, code+name, and skew;
    - BR-035: licensed auction and authenticated account boundaries.
-4. Map each rule to its Core/provider/Router/tests/live evidence.
+4. Map each rule to its Core/provider/Router/tests/live evidence in this plan and
+   the production-data-closure design.
 5. Re-run compliance and commit the documentation gate.
 
 ## Task 2: Add provider-neutral corporate-action contracts

@@ -782,6 +782,8 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | [Baidu 接入](docs/integrations/baidu-web.md) | 未复权日 K 与源端 MA5/10/20 |
 | [iWencai 接入](docs/integrations/iwencai-api.md) | API Key 鉴权、语义搜索和脱敏错误 |
 | [交易所官方源](docs/integrations/exchange-official.md) | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 北向日统计 |
+| [授权 Level-2 集合竞价](docs/integrations/level2-auction.md) | 完整字段、Provider conformance、凭据和准入边界 |
+| [券商账户边界](docs/integrations/broker-account-boundary.md) | 现金、持仓、委托、成交的独立 authenticated gateway 约束 |
 | [多数据源路由](docs/MULTI_PROVIDER_ROUTING.md) | 错误分类、接受政策、attempt trace 和真实切源 |
 | [性能结果](docs/PERFORMANCE_RESULTS.md) | 可复现性能证据及适用范围 |
 | [业务规则](docs/business_rules.md) | Smart server、重试和服务行为规则 |

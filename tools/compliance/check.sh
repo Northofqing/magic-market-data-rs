@@ -25,6 +25,8 @@ required=(
   docs/integrations/baidu-web.md
   docs/integrations/iwencai-api.md
   docs/integrations/exchange-official.md
+  docs/integrations/level2-auction.md
+  docs/integrations/broker-account-boundary.md
   docs/integrations/gov-policy.md
   crates/magic-market-router/Cargo.toml
   crates/magic-market-analysis/Cargo.toml
@@ -128,7 +130,7 @@ if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepape
 fi
 # Imported upstream modules retain documented/test-only unwrap examples; runtime
 # hardening is tracked separately from this structural compliance gate.
-for number in $(seq 1 31); do
+for number in $(seq 1 35); do
   printf -v rule_id 'BR-%03d' "$number"
   rg -q "^## $rule_id " docs/business_rules.md || {
     echo "missing registered business rule: $rule_id" >&2
