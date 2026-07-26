@@ -50,3 +50,12 @@
   - Router intelligence routing: 24/24.
 - Dependency trees preserve Core-only Provider boundaries and a
   Provider-neutral Router.
+- The first complete release preflight passed all workspace/all-target tests
+  and then stopped at strict Clippy with 27 TDX findings. The findings were
+  limited to equivalent-form static checks: redundant casts, manual range
+  checks, no-op conversions, a derivable default, and complex type spellings.
+- Corrected every reported TDX finding without adding lint exemptions.
+  `cargo clippy -p magic-tdx-rs --all-targets --all-features --locked
+  --offline -- -D warnings -D clippy::all` now passes.
+- The complete TDX all-target suite passes after the cleanup: 344 test cases
+  (312 library tests plus integration/example targets), with no failures.

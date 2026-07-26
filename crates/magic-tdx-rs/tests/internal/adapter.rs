@@ -3,6 +3,9 @@ use magic_market_core::Adjustment;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 
+type SecurityBarsCall = (u8, u8, String, u32, u16, u8);
+type HistoryTransactionCall = (u8, String, u16, u16, u32);
+
 #[test]
 fn rejects_bar_ranges_instead_of_silently_ignoring_them() {
     let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 5)
@@ -57,7 +60,7 @@ fn source_bar() -> SecurityBar {
 
 #[derive(Default)]
 struct ScriptedBarsQuery {
-    calls: RefCell<Vec<(u8, u8, String, u32, u16, u8)>>,
+    calls: RefCell<Vec<SecurityBarsCall>>,
     response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
     quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
     quote_response: RefCell<Option<Result<Vec<SecurityQuote>, TdxError>>>,
@@ -67,7 +70,7 @@ struct ScriptedBarsQuery {
     history_minute_response: RefCell<Option<Result<Vec<MinuteTimePrice>, TdxError>>>,
     transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
     transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
-    history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
+    history_transaction_calls: RefCell<Vec<HistoryTransactionCall>>,
     history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
     security_count_calls: RefCell<Vec<u8>>,
     security_count_responses: RefCell<VecDeque<Result<u16, TdxError>>>,
@@ -400,13 +403,13 @@ fn blocking_order_book_seam_normalizes_five_levels_once() {
 
 #[derive(Default)]
 struct ScriptedAsyncBarsQuery {
-    calls: RefCell<Vec<(u8, u8, String, u32, u16, u8)>>,
+    calls: RefCell<Vec<SecurityBarsCall>>,
     response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
     quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
     quote_response: RefCell<Option<Result<Vec<SecurityQuote>, TdxError>>>,
     transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
     transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
-    history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
+    history_transaction_calls: RefCell<Vec<HistoryTransactionCall>>,
     history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
 }
 

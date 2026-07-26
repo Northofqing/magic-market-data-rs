@@ -370,10 +370,7 @@ impl AsyncTdxService {
     }
     /// Fetches decoded finance fields.
     pub async fn finance(&self, market: u8, code: &str) -> Result<FinanceInfo, TdxError> {
-        self.client
-            .get_finance_info(market, code)
-            .await
-            .map_err(Into::into)
+        self.client.get_finance_info(market, code).await
     }
     /// Fetches corporate-action history.
     pub async fn corporate_actions(
@@ -381,10 +378,7 @@ impl AsyncTdxService {
         market: u8,
         code: &str,
     ) -> Result<Vec<XdXrInfo>, TdxError> {
-        self.client
-            .get_xdxr_info(market, code)
-            .await
-            .map_err(Into::into)
+        self.client.get_xdxr_info(market, code).await
     }
 }
 impl Default for AsyncTdxService {

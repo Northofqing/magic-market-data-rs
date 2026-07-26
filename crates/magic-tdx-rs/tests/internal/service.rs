@@ -5,6 +5,8 @@ use magic_market_core::{
 use std::cell::RefCell;
 use std::collections::VecDeque;
 
+type HistoryTransactionCall = (u8, String, u16, u16, u32);
+
 fn instrument(exchange: Exchange, code: &str) -> InstrumentId {
     InstrumentId::new(exchange, code, AssetClass::Equity).unwrap()
 }
@@ -23,7 +25,7 @@ struct ScriptedBlockingServiceQuery {
     history_minute_responses: RefCell<VecDeque<Result<Vec<MinuteTimePrice>, TdxError>>>,
     transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
     transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
-    history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
+    history_transaction_calls: RefCell<Vec<HistoryTransactionCall>>,
     history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
 }
 
@@ -397,7 +399,7 @@ struct ScriptedAsyncServiceQuery {
     history_minute_responses: RefCell<VecDeque<Result<Vec<MinuteTimePrice>, TdxError>>>,
     transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
     transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
-    history_transaction_calls: RefCell<Vec<(u8, String, u16, u16, u32)>>,
+    history_transaction_calls: RefCell<Vec<HistoryTransactionCall>>,
     history_transaction_responses: RefCell<VecDeque<Result<Vec<TickData>, TdxError>>>,
 }
 

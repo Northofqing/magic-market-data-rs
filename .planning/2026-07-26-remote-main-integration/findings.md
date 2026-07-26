@@ -51,3 +51,7 @@
   crates. No downstream `stock_analysis` path dependency was introduced.
 - The integrated Router intelligence suite contains 24 tests and retains both
   acceptance and identity-mismatch cases for Yonhap and WallstreetCN.
+- Rust 1.97 enables strict Clippy findings that the merged TDX implementation
+  did not satisfy. All 27 findings were mechanical/equivalent-form issues;
+  none required changing protocol behavior, source semantics, or error
+  provenance, and no lint allow-list was introduced.
