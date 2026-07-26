@@ -1,4 +1,18 @@
 # Business rules
+## BR-032 Security lifecycle atomic evidence
+Listing dates and corporate actions may authorize historical price-continuity
+exceptions only through provider-neutral records with exact instrument
+identity, validated source dates, record evidence and atomic batch provenance.
+TDX finance `ipo_date` and raw XDXR DTOs are not consumer contracts. A listing
+date must be a calendar-valid non-future `YYYYMMDD` from the matching finance
+packet. Corporate-action records must use normalized status and terms; only an
+implemented action with an exact effective date can explain a discontinuity.
+Unknown categories, proposed/cancelled actions, invalid values, identity or
+batch conflicts, duplicates, unordered/partial packets and transport failure
+fail explicitly. Source-proven empty is distinct from unavailable. Local
+observation time, effective date, security-code prefixes and downstream
+mutable caches must not be presented as provider source evidence.
+
 ## BR-001 Quote request cardinality
 Strict quote requests accept 1 through 60 instruments. `quotes_chunked` is the only API that may split a larger request.
 ## BR-002 Strict pagination
