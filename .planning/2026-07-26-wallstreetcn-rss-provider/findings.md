@@ -46,7 +46,7 @@
 
 ## Release Evidence
 
-- Strict coverage passed at 80.28% overall and 95.97% for critical modules.
+- Strict coverage passed at 80.32% overall and 95.97% for critical modules.
 - Formatting, locked offline check/test/Clippy, warning-free Rustdoc,
   documentation tests, documentation links, compliance, and the complete
   isolated release preflight all passed.
@@ -55,3 +55,21 @@
 - Cargo reports a non-fatal workspace warning because several Providers use
   the conventional example names `live_probe` and `load_probe`; the release
   package script already emits Provider-qualified artifact names.
+
+## Independent Review
+
+- The first final review found no Critical issue and returned “with fixes”
+  because ignored XML content did not receive complete XML 1.0 validation and
+  declarations were not fully constrained.
+- Adversarial tests proved that literal forbidden characters inside ignored
+  content, forbidden character references in ignored attributes, invalid
+  comments, malformed declarations, and duplicate declarations could pass.
+- The parser now validates the complete UTF-8 document against the XML 1.0
+  character repertoire, revalidates every decoded attribute, enables comment
+  checks, and permits at most one ordered `version="1.0"` declaration with
+  optional UTF-8 encoding and valid standalone state.
+- Ignored Text and CDATA are no longer decoded or normalized. Their literal
+  characters are covered by the document scan, references remain validated by
+  the existing entity path, and no content is accumulated or emitted.
+- Post-fix live, two-request load, focused tests, strict coverage, and the
+  complete isolated release preflight all passed.

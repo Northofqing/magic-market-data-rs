@@ -77,7 +77,7 @@
 
 - **Status:** in progress
 - Strict coverage passed:
-  - overall: 23,459 / 29,221 lines, 80.28% (required 80%)
+  - overall: 23,514 / 29,277 lines, 80.32% (required 80%)
   - critical: 1,881 / 1,960 lines, 95.97% (required 95%)
 - The following release checks passed from the isolated feature worktree:
   - `cargo fmt --all -- --check`
@@ -99,4 +99,28 @@
 - Cargo emitted the existing workspace-wide warning for same-named Provider
   examples (`live_probe` and `load_probe`). It is non-fatal, and release
   packaging assigns Provider-specific output names.
-- Independent code review remains before final handoff.
+- Independent review found no Critical issues, two Important XML strictness
+  gaps, and one related Minor allocation/documentation issue:
+  - ignored text, attributes, comments, and processing instructions did not all
+    receive XML 1.0 legal-character validation;
+  - XML declarations were not required to have a unique, ordered
+    `version="1.0"` contract;
+  - ignored Text and CDATA were decoded before being discarded.
+- Added two adversarial parser tests first. Both failed on the prior
+  implementation, reproducing the review findings.
+- Added document-wide XML 1.0 character validation, decoded-attribute
+  validation, quick-xml comment checking, unique and ordered declaration
+  validation, and a no-decode path for ignored Text and CDATA. The focused
+  rejection tests then passed.
+- All WallstreetCN targets passed 26/26 after the fix, including 18 library
+  tests, 5 capability tests, and 3 example-configuration tests. Formatting,
+  strict crate Clippy, and `git diff --check` passed.
+- The post-fix release live probe passed with 20 complete metadata-only rows at
+  fetched time `2026-07-26T04:28:48.638367Z`; article `3777926` remained
+  present. The post-fix load probe used one client for two serial requests,
+  returned 10 rows each, and passed in 9.295 seconds.
+- Strict coverage was regenerated after the production change and passed at
+  23,514 / 29,277 = 80.32% overall and 1,881 / 1,960 = 95.97% critical.
+- The complete isolated release preflight was rerun after the fix and ended
+  with `release preflight: passed`.
+- Follow-up independent review of the remediation remains before handoff.

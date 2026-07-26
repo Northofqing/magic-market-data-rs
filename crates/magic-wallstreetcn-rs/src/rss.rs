@@ -3,7 +3,7 @@ use magic_market_core::{
     DataBatch, HttpsUrl, NewsItem, NonEmptyText, Provenance, ProviderId, SourceEvidence,
 };
 use quick_xml::encoding::Decoder;
-use quick_xml::events::{BytesRef, BytesStart, Event};
+use quick_xml::events::{BytesDecl, BytesRef, BytesStart, Event};
 use quick_xml::reader::Reader;
 use quick_xml::XmlVersion;
 use std::collections::HashSet;
@@ -303,8 +303,9 @@ pub(crate) fn parse_response(
 ) -> Result<DataBatch<NewsItem>, WallstreetCnError> {
     validate_returned_limit(limit)?;
     crate::transport::ensure_body_size(body)?;
-    std::str::from_utf8(body)
+    let document = std::str::from_utf8(body)
         .map_err(|error| WallstreetCnError::Decode(format!("RSS is not UTF-8: {error}")))?;
+    validate_xml10_characters("RSS document", document)?;
     if body.iter().all(u8::is_ascii_whitespace) {
         return Err(WallstreetCnError::Protocol(
             "WallstreetCN returned an empty RSS body".into(),
@@ -314,7 +315,9 @@ pub(crate) fn parse_response(
     let mut reader = Reader::from_reader(body);
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
+    reader.config_mut().check_comments = true;
     let mut state = RssState::default();
+    let mut saw_declaration = false;
     loop {
         let event = reader
             .read_event()
@@ -336,16 +339,20 @@ pub(crate) fn parse_response(
                 state.end(&name)?;
             }
             Event::Text(text) => {
-                let decoded = text
-                    .xml10_content()
-                    .map_err(|error| WallstreetCnError::Decode(format!("RSS text: {error}")))?;
-                state.append_text(&decoded)?;
+                if state.ignored_depth == 0 {
+                    let decoded = text
+                        .xml10_content()
+                        .map_err(|error| WallstreetCnError::Decode(format!("RSS text: {error}")))?;
+                    state.append_text(&decoded)?;
+                }
             }
             Event::CData(text) => {
-                let decoded = text
-                    .xml10_content()
-                    .map_err(|error| WallstreetCnError::Decode(format!("RSS CDATA: {error}")))?;
-                state.append_text(&decoded)?;
+                if state.ignored_depth == 0 {
+                    let decoded = text.xml10_content().map_err(|error| {
+                        WallstreetCnError::Decode(format!("RSS CDATA: {error}"))
+                    })?;
+                    state.append_text(&decoded)?;
+                }
             }
             Event::GeneralRef(reference) => {
                 let resolved = resolve_reference(&reference)?;
@@ -357,21 +364,13 @@ pub(crate) fn parse_response(
                 ));
             }
             Event::Decl(declaration) => {
-                if !state.stack.is_empty() || state.saw_rss {
+                if saw_declaration || !state.stack.is_empty() || state.saw_rss {
                     return Err(WallstreetCnError::Protocol(
-                        "RSS XML declaration must precede the document root".into(),
+                        "RSS XML declaration must be unique and precede the document root".into(),
                     ));
                 }
-                if let Some(encoding) = declaration.encoding() {
-                    let encoding = encoding.map_err(|error| {
-                        WallstreetCnError::Decode(format!("RSS XML declaration: {error}"))
-                    })?;
-                    if !encoding.eq_ignore_ascii_case(b"utf-8") {
-                        return Err(WallstreetCnError::Protocol(
-                            "WallstreetCN RSS must declare UTF-8 when encoding is present".into(),
-                        ));
-                    }
-                }
+                validate_xml_declaration(&declaration, reader.decoder())?;
+                saw_declaration = true;
             }
             Event::Comment(_) | Event::PI(_) => {}
             Event::Eof => break,
@@ -480,6 +479,7 @@ fn validate_attributes(
         let value = attribute
             .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
             .map_err(|error| WallstreetCnError::Decode(format!("RSS XML attribute: {error}")))?;
+        validate_xml10_characters("RSS XML attribute", &value)?;
         if root && key == "version" {
             if version.replace(value.into_owned()).is_some() {
                 return Err(WallstreetCnError::Protocol(
@@ -506,12 +506,76 @@ fn validate_attributes(
     Ok(())
 }
 
+fn validate_xml_declaration(
+    declaration: &BytesDecl<'_>,
+    decoder: Decoder,
+) -> Result<(), WallstreetCnError> {
+    let version = declaration.version().map_err(|error| {
+        WallstreetCnError::Protocol(format!("invalid RSS XML declaration: {error}"))
+    })?;
+    if version.as_ref() != b"1.0" {
+        return Err(WallstreetCnError::Protocol(
+            "WallstreetCN RSS XML declaration must use version 1.0".into(),
+        ));
+    }
+
+    let raw = std::str::from_utf8(declaration.as_ref()).map_err(|error| {
+        WallstreetCnError::Decode(format!("RSS XML declaration is not UTF-8: {error}"))
+    })?;
+    let start = BytesStart::from_content(raw, 3);
+    let mut position = 0_u8;
+    for attribute in start.attributes() {
+        let attribute = attribute.map_err(|error| {
+            WallstreetCnError::Protocol(format!("invalid RSS XML declaration: {error}"))
+        })?;
+        let key = xml_name(attribute.key.as_ref())?;
+        let value = attribute
+            .decoded_and_normalized_value(XmlVersion::Explicit1_0, decoder)
+            .map_err(|error| WallstreetCnError::Decode(format!("RSS XML declaration: {error}")))?;
+        validate_xml10_characters("RSS XML declaration", &value)?;
+        match (position, key.as_str()) {
+            (0, "version") if value.as_ref() == "1.0" => position = 1,
+            (1, "encoding") if value.eq_ignore_ascii_case("utf-8") => position = 2,
+            (1 | 2, "standalone") if value.as_ref() == "yes" || value.as_ref() == "no" => {
+                position = 3;
+            }
+            _ => {
+                return Err(WallstreetCnError::Protocol(format!(
+                    "unexpected or out-of-order RSS XML declaration attribute {key}"
+                )));
+            }
+        }
+    }
+    if position == 0 {
+        return Err(WallstreetCnError::Protocol(
+            "WallstreetCN RSS XML declaration is missing version 1.0".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn xml_name(bytes: &[u8]) -> Result<String, WallstreetCnError> {
     std::str::from_utf8(bytes)
         .map(str::to_owned)
         .map_err(|error| {
             WallstreetCnError::Decode(format!("RSS element name is not UTF-8: {error}"))
         })
+}
+
+fn validate_xml10_characters(context: &str, value: &str) -> Result<(), WallstreetCnError> {
+    if value.chars().all(is_xml10_character) {
+        return Ok(());
+    }
+    Err(WallstreetCnError::Protocol(format!(
+        "{context} contains characters forbidden by XML 1.0"
+    )))
+}
+
+fn is_xml10_character(character: char) -> bool {
+    matches!(character, '\u{9}' | '\u{A}' | '\u{D}')
+        || ('\u{20}'..='\u{D7FF}').contains(&character)
+        || ('\u{E000}'..='\u{FFFD}').contains(&character)
+        || ('\u{10000}'..='\u{10FFFF}').contains(&character)
 }
 
 fn resolve_reference(reference: &BytesRef<'_>) -> Result<String, WallstreetCnError> {
@@ -786,6 +850,55 @@ mod tests {
         ] {
             assert!(parse(body.as_bytes(), 1).is_err());
         }
+    }
+
+    #[test]
+    fn parser_rejects_invalid_xml_inside_ignored_content() {
+        let valid = item("1", "合成标题", "Sun, 26 Jul 2026 10:30:00 +0800");
+        for body in [
+            feed(&valid).replace(
+                "<description></description>",
+                "<description>忽略\u{1}正文</description>",
+            ),
+            feed(&valid).replace(
+                "<description></description>",
+                "<description hidden=\"&#1;\"></description>",
+            ),
+            feed(&valid).replace(
+                "<description></description>",
+                "<description><!--invalid--comment--></description>",
+            ),
+            feed(&valid).replace(
+                "<description></description>",
+                "<description><?ignored value\u{1}?></description>",
+            ),
+        ] {
+            assert!(parse(body.as_bytes(), 1).is_err());
+        }
+    }
+
+    #[test]
+    fn parser_rejects_invalid_or_duplicate_xml_declarations() {
+        let valid = item("1", "合成标题", "Sun, 26 Jul 2026 10:30:00 +0800");
+        let document = feed(&valid);
+        let rss = document
+            .strip_prefix("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
+            .unwrap();
+        for declaration in [
+            "<?xml encoding=\"utf-8\"?>",
+            "<?xml version=\"1.1\" encoding=\"utf-8\"?>",
+            "<?xml version=\"1.0\" version=\"1.0\"?>",
+            "<?xml version=\"1.0\" unexpected=\"x\"?>",
+            "<?xml version=\"1.0\" standalone=\"maybe\"?>",
+            "<?xml encoding=\"utf-8\" version=\"1.0\"?>",
+        ] {
+            let body = format!("{declaration}{rss}");
+            assert!(parse(body.as_bytes(), 1).is_err(), "{declaration}");
+        }
+
+        let duplicate =
+            format!("<?xml version=\"1.0\"?><?xml version=\"1.0\" encoding=\"utf-8\"?>{rss}");
+        assert!(parse(duplicate.as_bytes(), 1).is_err());
     }
 
     #[test]

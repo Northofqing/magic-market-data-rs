@@ -59,6 +59,7 @@ Phase 4
 | Transport-only Clippy reported parser-bound entries as dead code | Transport checkpoint | Completed the approved parser/Provider wiring instead of adding a temporary lint allowance; final crate Clippy passed. |
 | Optional title-match probe hit one DNS resolution failure | First title-match attempt | Preserved the typed `Transport` error and reran the same bounded release probe outside the sandbox; it passed without weakening any contract. |
 | Cargo warned that several Provider examples share `live_probe` and `load_probe` output names | Full preflight | Preserved the workspace-wide warning because it does not affect correctness or release packaging; the package script gives Provider probes distinct artifact names. |
+| Independent review found that ignored XML content and declarations were not fully strict | Final review | Added adversarial red tests, document-wide XML 1.0 character validation, checked comments and attributes, unique ordered XML 1.0 declaration validation, and skipped decoding ignored text before rerunning live/load, coverage, and full preflight gates. |
 
 ## Notes
 
