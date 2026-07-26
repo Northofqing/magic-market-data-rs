@@ -9,7 +9,7 @@ uncommitted files in the primary worktree.
 
 ## Current Phase
 
-Phase 3
+Phase 4
 
 ## Phases
 
@@ -31,10 +31,11 @@ Phase 3
 
 ### Phase 3: Release Gates
 
-- [ ] Run formatting, workspace tests, strict Clippy, compliance, and
+- [x] Run formatting, workspace tests, strict Clippy, compliance, and
   documentation checks.
-- [ ] Run the complete release preflight on the integrated tree.
-- **Status:** in_progress
+- [x] Run the complete release preflight on the integrated tree.
+- [x] Generate fresh strict coverage evidence and pass both thresholds.
+- **Status:** complete
 
 ### Phase 4: Publish
 
@@ -42,7 +43,7 @@ Phase 3
 - [ ] Fast-forward local `main` to the verified integration commit.
 - [ ] Push local `main` to `origin/main` without force.
 - [ ] Verify the remote branch resolves to the pushed commit.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 5: Cleanup
 

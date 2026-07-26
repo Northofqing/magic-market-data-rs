@@ -67,4 +67,8 @@
   rejected it before threshold evaluation because the newly critical
   `protocol/types.rs` still contained two inline tests. Moved those test
   bodies unchanged into a path-based external test module. Both focused tests
-  and strict TDX Clippy pass after the move; fresh coverage evidence is next.
+  and strict TDX Clippy pass after the move.
+- Regenerated coverage from clean profiles on the committed external-test
+  layout. The repository checker passed both release thresholds:
+  - overall production coverage: 33,669 / 38,912 = 86.53% (required 80%);
+  - critical data-chain coverage: 15,476 / 16,217 = 95.43% (required 95%).

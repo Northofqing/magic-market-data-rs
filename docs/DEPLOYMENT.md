@@ -44,7 +44,8 @@ bash tools/release/package.sh
 全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
 空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
 构建三十个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
-可重复流程，不代表当前未完成合并的工作树已经通过 release gate：
+可重复流程，不自动证明任意未来工作树已经通过 release gate；当前合并版本的实际
+门禁和覆盖率证据记录在根目录 README 的“当前验收状态”：
 
 ```text
 target/dist/GIT_SHA/

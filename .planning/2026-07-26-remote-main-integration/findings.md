@@ -60,3 +60,7 @@
   inline. Moving those bodies to `tests/internal/protocol_types.rs` preserves
   private-module access and test behavior while keeping test lines out of the
   production coverage denominator.
+- Fresh committed-tree coverage passes with 86.53% overall production
+  coverage and 95.43% critical data-chain coverage. The report contains
+  38,912 production lines and 16,217 critical lines after external test paths
+  are excluded.
