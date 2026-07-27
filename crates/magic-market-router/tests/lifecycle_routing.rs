@@ -43,11 +43,27 @@ fn action(
     date: &str,
     category: CorporateActionCategory,
 ) -> CorporateAction {
+    action_with_status(
+        provider,
+        batch_id,
+        date,
+        category,
+        CorporateActionStatus::Implemented,
+    )
+}
+
+fn action_with_status(
+    provider: ProviderId,
+    batch_id: &str,
+    date: &str,
+    category: CorporateActionCategory,
+    status: CorporateActionStatus,
+) -> CorporateAction {
     CorporateAction::new(
         instrument(),
         category,
         IsoDate::new(date).unwrap(),
-        CorporateActionStatus::Implemented,
+        status,
         CorporateActionTerms::capital_rescaling(
             category,
             Ratio::new(2.0, RatioUnit::Decimal).unwrap(),
@@ -674,6 +690,37 @@ fn corporate_action_facade_exposes_policy_sources_debug_and_owned_outcomes() {
     assert_eq!(batch.records().len(), 1);
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0].status(), &AttemptStatus::Selected);
+}
+
+#[test]
+fn corporate_action_router_preserves_source_status_and_projects_only_implemented_actions() {
+    let request = CorporateActionRequest::new(instrument());
+    let response = action_batch(
+        &request,
+        "status-batch",
+        vec![action_with_status(
+            ProviderId::Eastmoney,
+            "status-batch",
+            "2026-07-01",
+            CorporateActionCategory::CapitalRescaling,
+            CorporateActionStatus::Proposed,
+        )],
+    );
+    let mut router = CorporateActionRouter::new(AcceptancePolicy::new(), admission_as_of());
+    router
+        .register(corporate_action_source(
+            ProviderId::Eastmoney,
+            Arc::new(ActionProvider(Ok(response))),
+            classify,
+        ))
+        .unwrap();
+
+    let outcome = router.route(&request).unwrap();
+    assert_eq!(
+        outcome.batch().records()[0].status(),
+        CorporateActionStatus::Proposed
+    );
+    assert_eq!(outcome.implemented_actions().count(), 0);
 }
 
 #[test]

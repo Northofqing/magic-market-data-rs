@@ -464,6 +464,21 @@ fn checked_transaction_varint(
     Ok((value, new_pos))
 }
 
+fn checked_transaction_u32(
+    body: &[u8],
+    pos: usize,
+    row_index: usize,
+    field: &str,
+) -> Result<(u32, usize)> {
+    let (value, new_pos) = checked_transaction_varint(body, pos, row_index, field)?;
+    let value = u32::try_from(value).map_err(|_| {
+        ErrorCode::TYPE_MISMATCH.err(format!(
+            "current transaction row {row_index} {field} is outside the unsigned 32-bit domain"
+        ))
+    })?;
+    Ok((value, new_pos))
+}
+
 pub fn parse_transaction_data(body: &[u8]) -> Result<Vec<TickData>> {
     parse_transaction_data_with_coefficient(body, 0.01)
 }
@@ -498,28 +513,39 @@ pub fn parse_transaction_data_with_coefficient(
 
         // price (delta encoded)
         let (price_diff, new_pos) = checked_transaction_varint(body, pos, row_index, "price")?;
-        last_price += price_diff;
+        last_price = last_price.checked_add(price_diff).ok_or_else(|| {
+            ErrorCode::TYPE_MISMATCH.err(format!(
+                "current transaction row {row_index} cumulative price overflow"
+            ))
+        })?;
+        if last_price < 0 {
+            return Err(ErrorCode::TYPE_MISMATCH.err(format!(
+                "current transaction row {row_index} cumulative price is negative"
+            )));
+        }
         let price = last_price as f64 * coefficient;
         pos = new_pos;
 
         // vol
-        let (vol, new_pos) = checked_transaction_varint(body, pos, row_index, "volume")?;
-        let vol = vol as f64;
+        let (vol, new_pos) = checked_transaction_u32(body, pos, row_index, "volume")?;
+        let vol = f64::from(vol);
         pos = new_pos;
 
         // num
-        let (num, new_pos) = checked_transaction_varint(body, pos, row_index, "trade count")?;
-        let num = num as u32;
+        let (num, new_pos) = checked_transaction_u32(body, pos, row_index, "trade count")?;
         pos = new_pos;
 
         // buyorsell
-        let (buyorsell, new_pos) = checked_transaction_varint(body, pos, row_index, "trade side")?;
-        let buyorsell = buyorsell as u32;
+        let (buyorsell, new_pos) = checked_transaction_u32(body, pos, row_index, "trade side")?;
+        if buyorsell > 2 {
+            return Err(ErrorCode::TYPE_MISMATCH.err(format!(
+                "current transaction row {row_index} trade side {buyorsell} is outside 0..=2"
+            )));
+        }
         pos = new_pos;
 
         // reserved (原 extra field，具体含义待确认)
-        let (reserved, new_pos) = checked_transaction_varint(body, pos, row_index, "reserved")?;
-        let reserved = reserved as u32;
+        let (reserved, new_pos) = checked_transaction_u32(body, pos, row_index, "reserved")?;
         pos = new_pos;
 
         result.push(TickData {

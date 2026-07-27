@@ -191,6 +191,15 @@ impl CorporateActionRouteOutcome {
         self.outcome.batch()
     }
 
+    /// Projects only implemented actions for continuity and adjustment logic.
+    pub fn implemented_actions(&self) -> impl Iterator<Item = &CorporateAction> {
+        self.outcome
+            .batch()
+            .records()
+            .iter()
+            .filter(|record| record.is_implemented())
+    }
+
     pub fn attempts(&self) -> &[RouteAttempt] {
         self.outcome.attempts()
     }
@@ -467,12 +476,6 @@ where
                 let mut identities = HashSet::with_capacity(batch.records().len());
                 let mut previous = None;
                 for record in batch.records() {
-                    if record.status() != magic_market_core::CorporateActionStatus::Implemented {
-                        return Err(SourceError::try_next(
-                            FailureKind::Quality,
-                            "corporate-action batch contains a non-implemented action",
-                        ));
-                    }
                     if record.evidence().provider() != provider_id {
                         return Err(SourceError::try_next(
                             FailureKind::Evidence,

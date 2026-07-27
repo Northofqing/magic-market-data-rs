@@ -202,6 +202,12 @@ fn assert_transaction_length_mismatch(body: &[u8], message: &str) {
     assert!(error.to_string().contains(message), "{error}");
 }
 
+fn assert_transaction_type_mismatch(body: &[u8], message: &str) {
+    let error = parse_transaction_data(body).unwrap_err();
+    assert_eq!(error.error_code(), Some(ErrorCode::TYPE_MISMATCH));
+    assert!(error.to_string().contains(message), "{error}");
+}
+
 #[test]
 fn current_transaction_rejects_declared_short_record() {
     assert_transaction_length_mismatch(&[1, 0], "row 0 is truncated");
@@ -278,6 +284,54 @@ fn current_transaction_accepts_exact_single_and_multiple_record_framing() {
     let records = parse_transaction_data(&valid_multibyte).unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].price, 0.64);
+}
+
+#[test]
+fn current_transaction_rejects_negative_or_oversized_unsigned_fields() {
+    for (offset, field) in [
+        (3, "volume"),
+        (4, "trade count"),
+        (5, "trade side"),
+        (6, "reserved"),
+    ] {
+        let mut packet = vec![1, 0];
+        let mut row = current_transaction_row();
+        row[offset] = 0x41;
+        packet.extend_from_slice(&row);
+        assert_transaction_type_mismatch(
+            &packet,
+            &format!("{field} is outside the unsigned 32-bit domain"),
+        );
+    }
+
+    let mut oversized_count = vec![1, 0, 0x5a, 0x02, 10, 2];
+    oversized_count.extend_from_slice(&[0xbf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f]);
+    oversized_count.extend_from_slice(&[1, 0]);
+    assert_transaction_type_mismatch(
+        &oversized_count,
+        "trade count is outside the unsigned 32-bit domain",
+    );
+
+    let mut invalid_side = vec![1, 0];
+    let mut row = current_transaction_row();
+    row[5] = 3;
+    invalid_side.extend_from_slice(&row);
+    assert_transaction_type_mismatch(&invalid_side, "trade side 3 is outside 0..=2");
+}
+
+#[test]
+fn current_transaction_rejects_negative_and_overflowed_cumulative_prices() {
+    let negative_price = [1, 0, 0x5a, 0x02, 0x41, 2, 3, 1, 0];
+    assert_transaction_type_mismatch(&negative_price, "cumulative price is negative");
+
+    let max_positive = [0xbf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
+    let mut overflow = vec![3, 0];
+    for price in [&max_positive[..], &max_positive[..], &[2][..]] {
+        overflow.extend_from_slice(&[0x5a, 0x02]);
+        overflow.extend_from_slice(price);
+        overflow.extend_from_slice(&[2, 3, 1, 0]);
+    }
+    assert_transaction_type_mismatch(&overflow, "cumulative price overflow");
 }
 
 // --- parse_history_transaction_data ---

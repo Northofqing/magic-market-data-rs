@@ -227,7 +227,7 @@ fn checked_term_deserialization_rejects_mismatched_categories_and_bad_quantities
 }
 
 #[test]
-fn action_rejects_category_status_or_terms_disagreement_and_negative_distribution_values() {
+fn action_rejects_category_or_terms_disagreement_but_preserves_source_status() {
     let split = CorporateActionTerms::capital_rescaling(
         CorporateActionCategory::CapitalRescaling,
         Ratio::new(2.0, RatioUnit::Decimal).unwrap(),
@@ -247,7 +247,7 @@ fn action_rejects_category_status_or_terms_disagreement_and_negative_distributio
         CorporateActionStatus::Cancelled,
         CorporateActionStatus::Unknown,
     ] {
-        assert!(CorporateAction::new(
+        let action = CorporateAction::new(
             instrument(),
             CorporateActionCategory::CapitalRescaling,
             IsoDate::new("2025-06-27").unwrap(),
@@ -259,7 +259,9 @@ fn action_rejects_category_status_or_terms_disagreement_and_negative_distributio
             .unwrap(),
             evidence("tdx-actions"),
         )
-        .is_err());
+        .unwrap();
+        assert_eq!(action.status(), status);
+        assert!(!action.is_implemented());
     }
 
     assert!(CorporateActionTerms::distribution(
@@ -343,7 +345,9 @@ fn action_checked_serde_rejects_invalid_terms_and_security_metadata_is_sourced()
     assert!(serde_json::from_value::<CorporateActionTerms>(invalid_terms).is_err());
     let mut non_implemented = serde_json::to_value(action).unwrap();
     non_implemented["status"] = serde_json::json!("Proposed");
-    assert!(serde_json::from_value::<CorporateAction>(non_implemented).is_err());
+    let proposed = serde_json::from_value::<CorporateAction>(non_implemented).unwrap();
+    assert_eq!(proposed.status(), CorporateActionStatus::Proposed);
+    assert!(!proposed.is_implemented());
 
     fn assert_sourced<T: SourcedRecord>() {}
     assert_sourced::<SecurityMetadata>();
@@ -407,10 +411,39 @@ fn corporate_action_response_checks_coverage_and_atomic_evidence() {
     assert_eq!(response.coverage(), &request);
     assert_eq!(response.evidence(), &matched_evidence);
     assert_eq!(response.batch().records().len(), 1);
+    assert_eq!(response.implemented_actions().count(), 1);
     assert_eq!(
         response.batch().records()[0].evidence_source_at(),
         Some(source_at)
     );
+
+    let proposed_response = CorporateActionResponse::new(
+        request.clone(),
+        admission_as_of(),
+        matched_evidence.clone(),
+        action_batch(
+            CorporateAction::new(
+                instrument(),
+                CorporateActionCategory::CapitalRescaling,
+                IsoDate::new("2025-06-27").unwrap(),
+                CorporateActionStatus::Proposed,
+                CorporateActionTerms::capital_rescaling(
+                    CorporateActionCategory::CapitalRescaling,
+                    Ratio::new(2.0, RatioUnit::Decimal).unwrap(),
+                )
+                .unwrap(),
+                matched_evidence.clone(),
+            )
+            .unwrap(),
+            provenance.clone(),
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        proposed_response.batch().records()[0].status(),
+        CorporateActionStatus::Proposed
+    );
+    assert_eq!(proposed_response.implemented_actions().count(), 0);
 
     let other = InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity).unwrap();
     assert!(CorporateActionResponse::new(

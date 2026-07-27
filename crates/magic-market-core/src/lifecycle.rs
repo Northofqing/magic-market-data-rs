@@ -446,11 +446,6 @@ impl CorporateAction {
                 "corporate-action category does not match its terms".into(),
             ));
         }
-        if status != CorporateActionStatus::Implemented {
-            return Err(CoreError::InvalidRequest(
-                "only implemented corporate actions are admitted".into(),
-            ));
-        }
         Ok(Self {
             instrument,
             category,
@@ -503,6 +498,14 @@ impl CorporateAction {
 
     pub fn status(&self) -> CorporateActionStatus {
         self.status
+    }
+
+    /// Whether this source fact may explain an observed historical discontinuity.
+    ///
+    /// Proposed, cancelled and unknown records remain representable so providers
+    /// do not have to erase source-published lifecycle state.
+    pub fn is_implemented(&self) -> bool {
+        self.status == CorporateActionStatus::Implemented
     }
 
     pub fn terms(&self) -> &CorporateActionTerms {
@@ -676,6 +679,14 @@ impl CorporateActionResponse {
         &self.batch
     }
 
+    /// Projects only implemented actions for continuity and adjustment logic.
+    pub fn implemented_actions(&self) -> impl Iterator<Item = &CorporateAction> {
+        self.batch
+            .records()
+            .iter()
+            .filter(|record| record.is_implemented())
+    }
+
     pub fn into_batch(self) -> DataBatch<CorporateAction> {
         self.batch
     }
@@ -749,11 +760,6 @@ fn validate_response_evidence(
 
     let mut previous_identity = None;
     for record in batch.records() {
-        if record.status() != CorporateActionStatus::Implemented {
-            return Err(CoreError::InvalidRequest(
-                "corporate-action response contains a non-implemented action".into(),
-            ));
-        }
         if record.instrument() != coverage.instrument() {
             return Err(CoreError::InvalidRequest(
                 "corporate-action record instrument is outside response coverage".into(),

@@ -373,7 +373,7 @@ python3 tools/coverage/check_thresholds.py target/coverage/coverage.json
 
 门槛是生产代码整体 `80.00%`，Core、Router、TDX 关键协议/适配/服务入口及公共
 资讯 Provider 集合 `95.00%`。2026-07-27 当前版本最终报告为
-`37596/43241 = 86.95%` 和 `18717/19689 = 95.06%`。合同、关键集合和失败语义见
+`37630/43268 = 86.97%` 和 `18751/19716 = 95.11%`。合同、关键集合和失败语义见
 [覆盖率门说明](tools/coverage/README.md)。
 
 ## 真实数据探针
@@ -758,7 +758,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | 项目 | 结果 | 证据摘要 |
 | --- | --- | --- |
 | 默认工具链全工作区门禁 | 通过 | 2026-07-27 使用 rustc 1.95.0 / Cargo 1.95.0；check、全部测试、严格 Clippy、rustdoc/doctest、链接和合规均通过 |
-| 严格生产覆盖率门 | 通过 | 整体 `37596/43241 = 86.95%`；关键集合 `18717/19689 = 95.06%` |
+| 严格生产覆盖率门 | 通过 | 整体 `37630/43268 = 86.97%`；关键集合 `18751/19716 = 95.11%` |
 | TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
 | TDX lifecycle live | 通过 | 600396/000001/600519 上市日；600519 2024 两条标准化企业行动；1900 范围 verified-empty |
 | Tencent live probe | 通过 | 沪深京基础行情；股票/指数/ETF 行情统计；沪深当日逐笔 |
@@ -778,7 +778,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 2026-07-27 当前树 live 覆盖 SSE 公告/龙虎榜、SZSE 公告/Quote/五档/龙虎榜及 HKEX 两条北向日统计；load 8/8、零失败，最小请求起始间隔 1001 ms |
 | Router strict 5-second quote | 通过 | 2026-07-27 13:01 连续竞价：TDX 因缺可信源时间被拒绝，Tencent 600519.SH 被选中，源龄 3613 ms |
-| Eastmoney target price / THS consensus | 通过 | 600519.SH 两项均同时保留代码和“贵州茅台”名称；目标价 6 样本/4 机构并由 `TargetPriceRouter` 严格准入，THS Router 选中 1 条一致预期 |
+| Eastmoney target price / THS consensus | 通过 | 600519.SH 两项均同时保留代码和“贵州茅台”名称；东财 Provider 实网返回目标价 6 样本/4 机构，`TargetPriceRouter` 的严格准入由 7 个确定性路由测试证明；THS Router 实网选中 1 条一致预期 |
 | Full-market rankings | 未准入 | 源端每页上限 100；主入口传输失败时丢弃全部分页并从 `push2delay` 第 1 页重启，绝不混拼快照。5,541 行全量探针分别因部分证券缺 `f10`/`f62` 被原子拒绝；末页还有 19 个 `f124`，跨度 08:00:00–16:11:58，无法证明同一源快照，两个 per-metric capability 保持 false |
 | Eastmoney strict 15:35 post-close flow | 诊断实现通过；生产未准入 | 正式 trait 返回 typed `Unsupported` 且 capability=false；当前日全量诊断因证券间源时间不一致返回 `diagnostic_probe_status=unadmitted`，不输出生产成功标记 |
 | CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602；2026-07-27 双 TLS 均未取得 HTTP。官方明文页诊断确认 2026-07-17 及 IF/IH/IC/IM 结算价，但明文不进入 Provider，capability 仍为 false |

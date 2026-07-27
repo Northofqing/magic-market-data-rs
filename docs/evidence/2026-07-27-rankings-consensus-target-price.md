@@ -19,6 +19,7 @@ cargo test -p magic-tdx-rs --test concept_hits --locked --offline
 cargo test -p magic-tdx-rs service::blocks::tests --locked --offline
 cargo test -p magic-ths-rs consensus --locked --offline
 cargo test -p magic-market-router --example consensus_live --locked --offline
+cargo test -p magic-market-router --test target_price_routing --locked --offline
 ```
 
 The checked contracts establish:
@@ -53,7 +54,11 @@ The checked contracts establish:
 - exact first-page `hits=0,size=0,TotalPage=0,data=[]` returns typed
   `VerifiedEmpty` with request identity and batch evidence. Partial-zero shapes
   and a later-page transition from non-empty to zero fail as pagination
-  contradictions.
+  contradictions;
+- `TargetPriceRouter` deterministic tests require exactly one complete
+  aggregate for the requested instrument/range, matching registered Provider,
+  provenance batch ID, aggregate/input evidence and valid source/observation
+  ordering before selection.
 
 ## THS consensus live admission
 
@@ -78,9 +83,9 @@ stock=600519.Shanghai name=贵州茅台 estimates=3 contributor_count=None sourc
 consensus_router_status=selected
 ```
 
-## Eastmoney target-price live admission
+## Eastmoney target-price Provider live admission
 
-The formal provider operation completed at
+The formal Eastmoney Provider operation completed at
 `2026-07-27T13:01:13+08:00`:
 
 ```bash
@@ -105,6 +110,10 @@ batch_id=eastmoney-web:target-price:unix-ms:1785128461215
 input_evidence=6
 live_probe_status=admitted
 ```
+
+This command exercises `EastmoneyClient` directly. It does not claim a
+Router-backed live selection; the provider-neutral `TargetPriceRouter`
+admission boundary is proved by the deterministic routing suite above.
 
 One live interval row proved distinct lower/upper fields:
 
@@ -203,7 +212,8 @@ cargo clippy -p magic-market-core -p magic-market-analysis \
 Focused results included Core ranking `6`, Core research `4`, Core target price
 `4`, breadth `9`, Eastmoney ranking unit `11`, Eastmoney target price `4`,
 Eastmoney reports `9`, TDX concept integration `2`, TDX block projection `9`,
-THS consensus `6`, and Router consensus example `2`, all passed.
+THS consensus `6`, Router consensus example `2`, and target-price routing `7`,
+all passed.
 
 ## Strict post-close diagnostic
 
