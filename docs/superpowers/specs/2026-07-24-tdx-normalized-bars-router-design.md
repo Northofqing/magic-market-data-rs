@@ -117,8 +117,9 @@ The whole batch fails explicitly for any of the following:
 - non-finite fields, non-positive prices, negative quantity/amount, or
   inconsistent OHLC;
 - positive quantity with zero amount;
-- adjacent close change beyond ±20% without same-batch corporate-action
-  evidence; the error says manual confirmation is required;
+- non-finite/non-positive prices, invalid OHLC/volume/amount, duplicate or
+  non-increasing timestamps; large but structurally valid close changes are
+  preserved and never rejected by a fixed percentage threshold;
 - a source time newer than local observation time;
 - an adjustment other than the actually requested `adjust=0`.
 

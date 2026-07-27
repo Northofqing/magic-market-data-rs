@@ -51,8 +51,10 @@
   `source_at`, and identical record/provenance batch IDs.
 - [ ] Add failing tests for empty/oversized batches, invalid component/time
   identity, duplicate/non-increasing time, NaN/Inf, non-positive prices,
-  negative volume/amount, positive volume with zero amount, OHLC conflict and
-  adjacent close change beyond 20%.
+  negative volume/amount, positive volume with zero amount and OHLC conflict.
+- [ ] Add a regression proving large but structurally valid adjacent changes
+  are preserved; fixed percentage thresholds cannot stand in for corporate
+  action or source-consistency evidence.
 - [ ] Implement canonical intraday time and checked batch normalization. Build
   provenance first, read its generated batch ID, then construct every `Bar`
   with that exact ID and record source time.

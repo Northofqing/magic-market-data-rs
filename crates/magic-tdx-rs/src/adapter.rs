@@ -183,19 +183,6 @@ fn normalized_bar_time(
     Ok((expected_source_at, bar_time, source_epoch))
 }
 
-fn validate_bar_jump(previous: &SecurityBar, current: &SecurityBar) -> Result<(), TdxError> {
-    let change = current.close / previous.close - 1.0;
-    if change.abs() > 0.20 {
-        return Err(TdxError::InvalidData(format!(
-            "TDX bar close change {:.4}% from {} to {} exceeds 20%; manual corporate-action confirmation required",
-            change * 100.0,
-            previous.datetime,
-            current.datetime
-        )));
-    }
-    Ok(())
-}
-
 pub(crate) fn normalize_bars(
     source: &str,
     request: &BarsRequest,
@@ -249,10 +236,6 @@ pub(crate) fn normalize_bars(
         previous_source_at = Some(source_at.clone());
         times.push((source_at, bar_time));
     }
-    for pair in records.windows(2) {
-        validate_bar_jump(&pair[0], &pair[1])?;
-    }
-
     let latest_source_at = times
         .last()
         .map(|(source_at, _)| source_at.clone())

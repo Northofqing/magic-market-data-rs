@@ -302,7 +302,7 @@ git commit -m "feat(core): add time and request contracts"
 - [ ] **Step 1: Write failing provenance and quality tests**
 
 ```rust
-use magic_market_core::{BatchCompleteness, DataBatch, Price, Provenance, QualityIssueKind, validate_price_series};
+use magic_market_core::{BatchCompleteness, DataBatch, Price, Provenance, validate_price_series};
 
 #[test]
 fn fetched_time_never_becomes_source_time() {
@@ -312,11 +312,10 @@ fn fetched_time_never_becomes_source_time() {
 }
 
 #[test]
-fn price_jump_over_twenty_percent_blocks() {
-    let prices = [Price::new(10.0).unwrap(), Price::new(12.01).unwrap()];
+fn large_valid_price_change_is_preserved() {
+    let prices = [Price::new(10.0).unwrap(), Price::new(20.0).unwrap()];
     let report = validate_price_series(&prices);
-    assert!(report.issues().iter().any(|issue| matches!(issue.kind(), QualityIssueKind::PriceJump)));
-    assert!(report.is_blocking());
+    assert!(!report.is_blocking());
 }
 ```
 
@@ -336,7 +335,7 @@ Store `Vec<T>`, `Provenance`, and `QualityReport` behind private fields. `DataBa
 
 - [ ] **Step 5: Implement quality issues and deterministic validators**
 
-Define non-exhaustive `QualityIssueKind::{NonPositivePrice, PriceJump, DuplicateTimestamp, TimeGap, CorporateActionDiscontinuity, MissingField}` and severity `Warning | Blocking`. `validate_price_series` computes adjacent relative change from the earlier positive price and emits blocking `PriceJump` only when `abs(change) > 0.20`, not when equal. Add timestamp uniqueness/order validation and merge reports without losing issue context.
+Define non-exhaustive `QualityIssueKind::{NonPositivePrice, DuplicateTimestamp, TimeGap, CorporateActionDiscontinuity, MissingField}` and severity `Warning | Blocking`. `validate_price_series` rejects invalid numeric values but preserves large valid changes; corporate-action and source-consistency checks require explicit evidence rather than a fixed percentage threshold. Add timestamp uniqueness/order validation and merge reports without losing issue context.
 
 - [ ] **Step 6: Verify source-time and quality behavior**
 
@@ -347,7 +346,7 @@ cargo test -p magic-market-core --test quality
 cargo test -p magic-market-core
 ```
 
-Expected: all tests pass; add assertions for exactly 20%, duplicate timestamps, complete/partial batch construction, and cache age.
+Expected: all tests pass; add assertions for large valid changes, duplicate timestamps, complete/partial batch construction, and cache age.
 
 - [ ] **Step 7: Commit provenance and quality contracts**
 

@@ -301,7 +301,7 @@ git commit -m "feat(tdx): complete fund block and profile services"
 
 - [ ] **Step 1: Write conversion failure and source-time tests**
 
-Test non-finite/zero/negative source price, negative volume, invalid OHLC relationship, invalid market/code/date, absent finance field, unknown ratio unit, duplicate timestamp, >20% adjacent price event, valid corporate-action discontinuity, quote without trustworthy source time, and bars with valid source timestamp. Assert conversion errors name record index/field/value and quote batch `source_at` stays absent.
+Test non-finite/zero/negative source price, negative volume, invalid OHLC relationship, invalid market/code/date, absent finance field, unknown ratio unit, duplicate timestamp, a large structurally valid adjacent change, valid corporate-action discontinuity, quote without trustworthy source time, and bars with valid source timestamp. Assert conversion errors name record index/field/value and quote batch `source_at` stays absent.
 
 - [ ] **Step 2: Run and verify the adapter is absent**
 

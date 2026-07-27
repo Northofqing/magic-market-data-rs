@@ -1002,7 +1002,7 @@ fn normalized_bar_batches_reject_incomplete_or_ambiguous_sequences() {
 }
 
 #[test]
-fn normalized_bar_batches_reject_bad_values_and_unconfirmed_jumps() {
+fn normalized_bar_batches_reject_bad_values_but_accept_large_valid_changes() {
     let one = BarsRequest::new(instrument("600396"), BarInterval::Day, 1).unwrap();
     let two = BarsRequest::new(instrument("600396"), BarInterval::Day, 2).unwrap();
 
@@ -1022,15 +1022,15 @@ fn normalized_bar_batches_reject_bad_values_and_unconfirmed_jumps() {
     assert!(normalize_bars(
         "tdx",
         &two,
-        vec![source_bar_at(22, 10.0), source_bar_at(23, 12.0)],
+        vec![source_bar_at(22, 10.0), source_bar_at(23, 12.01)],
     )
     .is_ok());
     assert!(normalize_bars(
         "tdx",
         &two,
-        vec![source_bar_at(22, 10.0), source_bar_at(23, 12.01)],
+        vec![source_bar_at(22, 10.0), source_bar_at(23, 20.0)],
     )
-    .is_err());
+    .is_ok());
 }
 
 #[test]
