@@ -37,6 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::env::var("MAGIC_THS_TRADING_DATE").unwrap_or_else(|_| "2026-07-23".into()),
     )?;
     let small = PositiveU32::new(1)?;
+    let whole_limit_pool = PositiveU32::new(200)?;
     let mut latencies = Vec::with_capacity(requests as usize);
     let mut successes = 0_u32;
     let mut failures = 0_u32;
@@ -72,8 +73,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 client.strong_stock_reasons(&request).map(print_batch)
             }
             "upper_limit_pool" => {
-                let request =
-                    LimitPoolRequest::new(LimitPoolKind::Upper, trading_date.clone(), small)?;
+                let request = LimitPoolRequest::new(
+                    LimitPoolKind::Upper,
+                    trading_date.clone(),
+                    whole_limit_pool,
+                )?;
                 client.limit_pool(&request).map(print_batch)
             }
             "popularity" => client.popularity(small).map(print_batch),

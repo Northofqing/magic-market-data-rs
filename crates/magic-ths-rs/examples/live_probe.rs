@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::env::var("MAGIC_THS_TRADING_DATE").unwrap_or_else(|_| "2026-07-22".into()),
     )?;
     let small = PositiveU32::new(3)?;
+    let whole_limit_pool = PositiveU32::new(200)?;
 
     println!("provider=tonghuashun");
     println!("capabilities={:#?}", ThsClient::capabilities());
@@ -59,7 +60,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             )
         },
     )?;
-    let pool_request = LimitPoolRequest::new(LimitPoolKind::Upper, trading_date, small)?;
+    let pool_request = LimitPoolRequest::new(LimitPoolKind::Upper, trading_date, whole_limit_pool)?;
     let pool = client.limit_pool(&pool_request)?;
     print_admitted_batch(
         "upper_limit_pool",

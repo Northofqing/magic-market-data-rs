@@ -511,6 +511,45 @@ impl LimitPools for ThsClient {
         }
         let document = self.limit_json(request)?;
         require_status(&document, "status_code")?;
+        let data = document
+            .get("data")
+            .and_then(Value::as_object)
+            .ok_or_else(|| ThsError::Schema("upper-limit data is missing".into()))?;
+        let source_date = required_string(data.get("date"), "limit reveal date")?;
+        let expected_date = request.trading_date().as_str().replace('-', "");
+        if source_date != expected_date {
+            return Err(ThsError::Incomplete(format!(
+                "limit reveal source date {source_date} differs from requested {expected_date}"
+            )));
+        }
+        let page = data
+            .get("page")
+            .and_then(Value::as_object)
+            .ok_or_else(|| ThsError::Schema("upper-limit page metadata is missing".into()))?;
+        let page_number = required_u64(page.get("page"), "limit reveal page")?;
+        if page_number != 1 {
+            return Err(ThsError::Incomplete(format!(
+                "limit reveal returned page {page_number}, expected page 1"
+            )));
+        }
+        let source_limit = required_u64(page.get("limit"), "limit reveal page limit")?;
+        let requested_limit = u64::from(request.limit().get());
+        if source_limit != requested_limit {
+            return Err(ThsError::Incomplete(format!(
+                "limit reveal page limit {source_limit} differs from requested {requested_limit}"
+            )));
+        }
+        let source_total = required_u64(page.get("total"), "limit reveal total")?;
+        if source_total > u64::from(MAX_LIMIT_POOL) {
+            return Err(ThsError::Incomplete(format!(
+                "limit reveal total {source_total} exceeds verified bound {MAX_LIMIT_POOL}"
+            )));
+        }
+        if source_total > requested_limit {
+            return Err(ThsError::Incomplete(format!(
+                "limit reveal total {source_total} exceeds caller transport bound {requested_limit}"
+            )));
+        }
         let rows = document
             .pointer("/data/info")
             .and_then(Value::as_array)
@@ -520,16 +559,12 @@ impl LimitPools for ThsClient {
                     request.trading_date()
                 ))
             })?;
-        if rows.len() > MAX_LIMIT_POOL as usize {
-            return Err(ThsError::Schema(format!(
-                "limit reveal contains {} rows, above the verified bound",
-                rows.len()
-            )));
-        }
-        if rows.is_empty() {
+        let validated_total = usize::try_from(source_total)
+            .map_err(|_| ThsError::Schema("limit reveal total exceeds usize".into()))?;
+        if rows.len() != validated_total {
             return Err(ThsError::Incomplete(format!(
-                "upper-limit pool is empty for {}",
-                request.trading_date().as_str()
+                "limit reveal returned {} rows but source total is {source_total}",
+                rows.len()
             )));
         }
         let observed_at = now()?;
@@ -539,7 +574,7 @@ impl LimitPools for ThsClient {
         );
         let mut records = Vec::with_capacity(rows.len());
         let mut seen = HashSet::new();
-        for row in rows.iter().take(request.limit().get() as usize) {
+        for row in rows {
             let code = required_string(row.get("code"), "limit reveal code")?;
             if !seen.insert(code.clone()) {
                 return Err(ThsError::Schema(format!(

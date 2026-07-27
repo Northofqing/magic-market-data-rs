@@ -492,7 +492,7 @@ fn absent_or_null_popularity_metadata_remains_none() {
 }
 
 #[test]
-fn empty_or_unmatched_signal_results_are_explicitly_incomplete() {
+fn unmatched_signal_is_incomplete_but_exact_date_empty_limit_pool_is_complete() {
     let date = magic_market_core::IsoDate::new("2026-07-22").unwrap();
     let strong_url = format!(
             "{DEFAULT_STRONG_ORIGIN}/event/api/getharden/date/{}/orderby/date/orderway/desc/charset/GBK/",
@@ -529,12 +529,13 @@ fn empty_or_unmatched_signal_results_are_explicitly_incomplete() {
     };
     let limit = ThsClient::with_test_transport(FixtureTransport::new(vec![json_response(
         &limit_url,
-        r#"{"status_code":0,"data":{"info":[]}}"#,
+        r#"{"status_code":0,"data":{"date":"20260722","page":{"page":1,"limit":1,"total":0},"info":[]}}"#,
     )]));
-    assert!(matches!(
-        limit.limit_pool(&limit_request),
-        Err(ThsError::Incomplete(message)) if message.contains("empty")
-    ));
+    let empty = limit
+        .limit_pool(&limit_request)
+        .expect("source-proven empty limit pool");
+    assert!(empty.records().is_empty());
+    assert!(empty.quality().is_complete());
 
     let popularity_url = {
         let mut url = Url::parse(DEFAULT_POPULARITY_URL).unwrap();
@@ -1065,6 +1066,80 @@ fn limit_pool_schema_bounds_duplicates_and_numbers_fail_closed() {
             ThsClient::with_test_transport(FixtureTransport::new(vec![json_response(&url, &body)]));
         assert!(client.limit_pool(&request).is_err());
     }
+}
+
+#[test]
+fn limit_pool_requires_exact_source_date_and_complete_page_total() {
+    let request = LimitPoolRequest::new(
+        LimitPoolKind::Upper,
+        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+        PositiveU32::new(200).unwrap(),
+    )
+    .unwrap();
+    let url = limit_url_for(&request);
+    let row = serde_json::json!({
+        "code":"600396","latest":16.0,"change_rate":10.0
+    });
+    let cases = [
+        serde_json::json!({
+            "status_code":0,
+            "data":{"date":"20260723","page":{"page":1,"limit":200,"total":1},"info":[row.clone()]}
+        }),
+        serde_json::json!({
+            "status_code":0,
+            "data":{"date":"20260724","page":{"page":2,"limit":200,"total":1},"info":[row.clone()]}
+        }),
+        serde_json::json!({
+            "status_code":0,
+            "data":{"date":"20260724","page":{"page":1,"limit":100,"total":1},"info":[row.clone()]}
+        }),
+        serde_json::json!({
+            "status_code":0,
+            "data":{"date":"20260724","page":{"page":1,"limit":200,"total":2},"info":[row.clone()]}
+        }),
+        serde_json::json!({
+            "status_code":0,
+            "data":{"date":"20260724","page":{"page":1,"limit":200,"total":201},"info":[row.clone()]}
+        }),
+        serde_json::json!({
+            "status_code":0,
+            "data":{"date":"20260724","page":{"page":1,"limit":1,"total":2},"info":[row.clone()]}
+        }),
+    ];
+    for document in cases {
+        let body = serde_json::to_string(&document).unwrap();
+        let client =
+            ThsClient::with_test_transport(FixtureTransport::new(vec![json_response(&url, &body)]));
+        assert!(client.limit_pool(&request).is_err(), "{document}");
+    }
+}
+
+#[test]
+fn limit_pool_admits_source_proven_exact_date_empty_batch() {
+    let request = LimitPoolRequest::new(
+        LimitPoolKind::Upper,
+        magic_market_core::IsoDate::new("2026-07-24").unwrap(),
+        PositiveU32::new(200).unwrap(),
+    )
+    .unwrap();
+    let url = limit_url_for(&request);
+    let document = serde_json::json!({
+        "status_code":0,
+        "data":{
+            "date":"20260724",
+            "page":{"page":1,"limit":200,"total":0},
+            "info":[]
+        }
+    });
+    let body = serde_json::to_string(&document).unwrap();
+    let client =
+        ThsClient::with_test_transport(FixtureTransport::new(vec![json_response(&url, &body)]));
+    let batch = client
+        .limit_pool(&request)
+        .expect("source-proven empty batch");
+    assert!(batch.records().is_empty());
+    assert!(batch.quality().is_complete());
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-24"));
 }
 
 #[test]

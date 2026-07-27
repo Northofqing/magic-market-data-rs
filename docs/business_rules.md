@@ -332,3 +332,16 @@ caching, search indexing, and inferred instruments are prohibited.
 `global_news` may be advertised only after two consecutive bounded
 production-client live probes pass; otherwise the trait remains typed
 `Unsupported` and only the explicit diagnostic path may access the feed.
+
+## BR-032 Tonghuashun exact-date limit-pool completeness
+The Tonghuashun upper-limit pool must preserve the requested trading date and
+admit only the complete first page. The source `data.date` must equal the
+requested date after canonical `YYYYMMDD` normalization. `data.page.page` must
+be one, `data.page.limit` must equal the request limit, `data.page.total` must
+be a non-negative integer no greater than the verified 200-row provider bound,
+and the validated unique `data.info` row count must equal `total`. A caller
+limit below `total`, a missing or contradictory page field, a mismatched date,
+or duplicate identity is an explicit incomplete/protocol failure, never a
+truncated success. Source-proven `total=0` plus an empty row array and exact
+date is a complete empty batch with provenance. Consumer sorting, filtering
+and display limits run only after this whole-batch admission.
