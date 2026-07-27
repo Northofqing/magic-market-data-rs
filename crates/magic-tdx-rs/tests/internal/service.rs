@@ -1,6 +1,7 @@
 use super::*;
 use magic_market_core::{
-    AssetClass, BarInterval, Exchange, InstrumentId, MinuteDataRequest, TradesRequest,
+    AssetClass, BarInterval, CorporateActionRequest, Exchange, InstrumentId, MinuteDataRequest,
+    TradesRequest,
 };
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -716,6 +717,74 @@ fn blocking_service_facade_preserves_every_explicit_unsupported_capability() {
     ));
 }
 
+#[test]
+fn blocking_service_maps_disconnected_failures_for_raw_facade_families() {
+    let service = TdxService::new();
+    service.client().inner().set_auto_retry(false);
+    let id = instrument(Exchange::Shanghai, "600396");
+    let historical_trades = TradesRequest::new(id.clone(), 1)
+        .unwrap()
+        .with_date("2026-07-23")
+        .unwrap();
+
+    for (operation, failed) in [
+        (
+            "historical trades",
+            service.trades(&historical_trades).is_err(),
+        ),
+        (
+            "security metadata",
+            service
+                .security_metadata(std::slice::from_ref(&id))
+                .is_err(),
+        ),
+        ("security count", service.security_count(1).is_err()),
+        ("security list", service.security_list(1, 0).is_err()),
+        (
+            "complete security list",
+            service.security_list_all(1).is_err(),
+        ),
+        ("minute data", service.minute_data(1, "600396").is_err()),
+        (
+            "historical minute data",
+            service.history_minute_data(1, "600396", 20260723).is_err(),
+        ),
+        (
+            "transactions",
+            service.transactions(1, "600396", 0, 1).is_err(),
+        ),
+        (
+            "historical transactions",
+            service
+                .history_transactions(1, "600396", 0, 1, 20260723)
+                .is_err(),
+        ),
+        ("finance", service.finance(1, "600396").is_err()),
+        (
+            "corporate actions",
+            service.corporate_actions(1, "600396").is_err(),
+        ),
+    ] {
+        assert!(failed, "{operation} must preserve the disconnected failure");
+    }
+
+    let actions = CorporateActionRequest::new(id);
+    assert!(service.normalized_corporate_actions(&actions).is_err());
+}
+
+#[test]
+fn blocking_query_defaults_keep_optional_metadata_explicitly_unsupported() {
+    let query = ScriptedBlockingServiceQuery::default();
+    assert!(matches!(
+        crate::adapter::BlockingTdxQuery::finance_info(&query, 1, "600396"),
+        Err(TdxError::Unsupported(_))
+    ));
+    assert!(matches!(
+        crate::adapter::BlockingTdxQuery::xdxr_info(&query, 1, "600396"),
+        Err(TdxError::Unsupported(_))
+    ));
+}
+
 #[tokio::test]
 async fn async_service_maps_disconnected_failures_for_every_facade_family() {
     let service = AsyncTdxService::new();
@@ -781,4 +850,10 @@ async fn async_service_maps_disconnected_failures_for_every_facade_family() {
     ] {
         assert!(failed);
     }
+
+    let actions = CorporateActionRequest::new(instrument(Exchange::Beijing, "920118"));
+    assert!(service
+        .normalized_corporate_actions(&actions)
+        .await
+        .is_err());
 }

@@ -23,8 +23,9 @@ its production capability remains false.
 paths and requires IF/IH/IC/IM plus the requested delivery date and settlement
 price wording. The notice does not independently prove the settlement method,
 so records use `FuturesDeliveryMethod::NotProvided`; the implementation never
-infers cash settlement or a “third Friday”. The 2026-07-25 bounded live probe
-failed during TLS initialization with `unexpected EOF`, so
+infers cash settlement or a “third Friday”. On 2026-07-27, bounded probes using
+explicit Rustls and Native TLS backends both failed during TLS initialization
+before an official HTTP response was received, so
 `calendar_capabilities().futures_delivery` remains false and the production
 `FuturesDeliveryCalendar` trait returns typed `Unsupported`.
 
@@ -77,8 +78,15 @@ Run the CFFEX diagnostic independently with:
 MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
 MAGIC_CFFEX_DELIVERY_YEAR=2026 \
 MAGIC_CFFEX_DELIVERY_MONTH=2 \
+MAGIC_CFFEX_TLS_BACKEND=rustls \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
+
+`rustls` is the default and does not require system OpenSSL. To diagnose the
+system TLS stack explicitly, set `MAGIC_CFFEX_TLS_BACKEND=native-tls` and add
+`--features native-tls` to the Cargo command. The client never silently falls
+back between backends. Selecting Native TLS without compiling that feature
+returns typed `Unsupported` before networking.
 
 This command is diagnostic-only. A successful diagnostic emits
 `diagnostic_probe_status=passed` and
@@ -87,19 +95,19 @@ production `live_probe_status=passed` marker. Notice publication time is kept
 as provenance. Unproved settlement method and last trading date remain
 `NotProvided` and absent respectively.
 
-The final 2026-07-23 production-trait live probe passed announcements,
+The final 2026-07-27 current-tree production-trait live probe passed announcements,
 SSE/SZSE dragon-tiger entries and complete seats, SZSE Quote/five-level book,
 and both HKEX northbound channels. The final serial mixed load run passed 8/8
 high-level attempts:
 
 ```text
 attempts=8 successes=8 failures=0
-measurement_elapsed_ms_excluding_output=7510
-operation_elapsed_total_ms=2771 pacing_wait_total_ms=4738
-attempt_throughput_per_second=1.0652
-attempt_latency_min_ms=36 attempt_latency_p50_ms=120
-attempt_latency_p95_ms=1201 attempt_latency_p99_ms=1201
-attempt_latency_max_ms=1201 minimum_attempt_start_gap_ms=1000
+measurement_elapsed_ms_excluding_output=7423
+operation_elapsed_total_ms=2697 pacing_wait_total_ms=4726
+attempt_throughput_per_second=1.0776
+attempt_latency_min_ms=37 attempt_latency_p50_ms=137
+attempt_latency_p95_ms=1203 attempt_latency_p99_ms=1203
+attempt_latency_max_ms=1203 minimum_attempt_start_gap_ms=1001
 load_probe_status=passed
 ```
 
@@ -116,6 +124,9 @@ MSRV.
 cargo test -p magic-exchange-rs --all-targets --locked --offline
 cargo clippy -p magic-exchange-rs --all-targets --locked --offline -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc -p magic-exchange-rs --no-deps --locked --offline
+
+cargo test -p magic-exchange-rs --all-targets --features native-tls --locked --offline
+cargo clippy -p magic-exchange-rs --all-targets --features native-tls --locked --offline -- -D warnings
 ```
 
 No client reads cookies, account state or desktop-terminal traffic. There is

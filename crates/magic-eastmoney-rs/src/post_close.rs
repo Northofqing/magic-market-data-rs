@@ -8,7 +8,10 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const ENDPOINT: &str = "https://push2.eastmoney.com/api/qt/clist/get";
+const PRIMARY_ENDPOINT: &str = "https://push2.eastmoney.com/api/qt/clist/get";
+const DELAY_ENDPOINT: &str = "https://push2delay.eastmoney.com/api/qt/clist/get";
+const ENDPOINTS: [&str; 2] = [PRIMARY_ENDPOINT, DELAY_ENDPOINT];
+const MAX_ENDPOINT_ATTEMPTS: usize = 3;
 const TOKEN: &str = "8dec03ba335b81bf4ebdf7b29ec27d15";
 const A_SHARE_FILTER: &str =
     "m:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:81+s:262144+f:!2";
@@ -19,35 +22,90 @@ impl PostCloseFlows for EastmoneyClient {
 
     fn post_close_flows(
         &self,
-        request: &PostCloseFlowRequest,
+        _request: &PostCloseFlowRequest,
     ) -> Result<DataBatch<PostCloseFlow>, Self::Error> {
-        let observed_at = china_now()?;
-        validate_capture_window(request, &observed_at)?;
-        let limit = request.limit().get();
-        let url = query_url(
-            ENDPOINT,
-            &[
-                ("pn", "1".into()),
-                ("pz", limit.to_string()),
-                ("po", "1".into()),
-                ("np", "1".into()),
-                ("ut", TOKEN.into()),
-                ("fltt", "2".into()),
-                ("invt", "2".into()),
-                ("fid", "f62".into()),
-                ("fs", A_SHARE_FILTER.into()),
-                ("fields", FIELDS.into()),
-            ],
-        );
-        let bytes = self.get(
-            &url,
-            &[
-                ("Accept", "application/json"),
-                ("Referer", "https://data.eastmoney.com/zjlx/list.html"),
-            ],
-        )?;
-        parse_post_close(&bytes, request, &observed_at)
+        Err(EastmoneyError::Unsupported(
+            "Eastmoney strict post-close flow has not passed production admission; use diagnose_post_close_flows for bounded diagnostics".into(),
+        ))
     }
+}
+
+impl EastmoneyClient {
+    /// Runs the strict current-day source contract without advertising it as an
+    /// admitted production capability.
+    ///
+    /// The diagnostic still rejects partial universes, missing names, mixed
+    /// provider timestamps, and pre-15:35 captures. A successful diagnostic is
+    /// evidence for operator review, not automatic capability admission.
+    pub fn diagnose_post_close_flows(
+        &self,
+        request: &PostCloseFlowRequest,
+    ) -> Result<DataBatch<PostCloseFlow>, EastmoneyError> {
+        self.diagnose_post_close_flows_with_clock(request, china_now)
+    }
+
+    fn diagnose_post_close_flows_with_clock<Clock>(
+        &self,
+        request: &PostCloseFlowRequest,
+        clock: Clock,
+    ) -> Result<DataBatch<PostCloseFlow>, EastmoneyError>
+    where
+        Clock: Fn() -> Result<String, EastmoneyError>,
+    {
+        let capture_started_at = clock()?;
+        validate_capture_window(request, &capture_started_at)?;
+        let limit = request.limit().get();
+        let mut last_transport_error = None;
+        for endpoint in ENDPOINTS {
+            let url = post_close_url(endpoint, limit)?;
+            for attempt in 1..=MAX_ENDPOINT_ATTEMPTS {
+                match self.get(
+                    &url,
+                    &[
+                        ("Accept", "application/json"),
+                        ("Referer", "https://data.eastmoney.com/zjlx/list.html"),
+                    ],
+                ) {
+                    Ok(bytes) => {
+                        let observed_at = clock()?;
+                        return parse_post_close(&bytes, request, &observed_at);
+                    }
+                    Err(EastmoneyError::Transport(message)) => {
+                        last_transport_error =
+                            Some(format!("{endpoint} attempt {attempt}: {message}"));
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        Err(EastmoneyError::Transport(format!(
+            "all Eastmoney post-close HTTPS endpoints failed without a complete snapshot: {}",
+            last_transport_error.unwrap_or_else(|| "no endpoint attempted".into())
+        )))
+    }
+}
+
+fn post_close_url(endpoint: &str, limit: u32) -> Result<String, EastmoneyError> {
+    if !ENDPOINTS.contains(&endpoint) || limit == 0 {
+        return Err(EastmoneyError::InvalidRequest(
+            "unregistered Eastmoney post-close endpoint or zero limit".into(),
+        ));
+    }
+    Ok(query_url(
+        endpoint,
+        &[
+            ("pn", "1".into()),
+            ("pz", limit.to_string()),
+            ("po", "1".into()),
+            ("np", "1".into()),
+            ("ut", TOKEN.into()),
+            ("fltt", "2".into()),
+            ("invt", "2".into()),
+            ("fid", "f62".into()),
+            ("fs", A_SHARE_FILTER.into()),
+            ("fields", FIELDS.into()),
+        ],
+    ))
 }
 
 fn parse_post_close(
@@ -216,7 +274,7 @@ fn china_now() -> Result<String, EastmoneyError> {
         .ok_or_else(|| EastmoneyError::Transport("system clock is outside supported years".into()))
 }
 
-fn unix_seconds_to_china_iso(seconds: i64) -> Option<String> {
+pub(crate) fn unix_seconds_to_china_iso(seconds: i64) -> Option<String> {
     let local = seconds.checked_add(8 * 60 * 60)?;
     let days = local.div_euclid(86_400);
     let day_seconds = local.rem_euclid(86_400);

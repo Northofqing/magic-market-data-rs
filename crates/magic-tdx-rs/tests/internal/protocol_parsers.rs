@@ -189,6 +189,97 @@ fn test_transaction_zero_count() {
     assert!(result.is_empty());
 }
 
+fn current_transaction_row() -> [u8; 7] {
+    [0x5a, 0x02, 10, 2, 3, 1, 0]
+}
+
+fn assert_transaction_length_mismatch(body: &[u8], message: &str) {
+    let error = parse_transaction_data(body).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains(message), "{error}");
+}
+
+#[test]
+fn current_transaction_rejects_declared_short_record() {
+    assert_transaction_length_mismatch(&[1, 0], "row 0 is truncated");
+
+    let mut missing_reserved = vec![1, 0];
+    missing_reserved.extend_from_slice(&current_transaction_row()[..6]);
+    assert_transaction_length_mismatch(&missing_reserved, "row 0 is truncated");
+}
+
+#[test]
+fn current_transaction_rejects_unterminated_variable_integer() {
+    for (offset, field) in [
+        (2, "price"),
+        (3, "volume"),
+        (4, "trade count"),
+        (5, "trade side"),
+        (6, "reserved"),
+    ] {
+        let mut packet = vec![1, 0];
+        let mut row = current_transaction_row();
+        row[offset..].fill(0x80);
+        packet.extend_from_slice(&row);
+
+        assert_transaction_length_mismatch(
+            &packet,
+            &format!("{field} has invalid variable-length framing"),
+        );
+    }
+
+    let mut overlong = vec![1, 0, 0x5a, 0x02];
+    overlong.extend_from_slice(&[0x80; 9]);
+    overlong.push(0);
+    overlong.extend_from_slice(&[0; 4]);
+    assert_transaction_length_mismatch(&overlong, "price has invalid variable-length framing");
+}
+
+#[test]
+fn current_transaction_rejects_second_truncated_record_atomically() {
+    let mut packet = vec![2, 0];
+    packet.extend_from_slice(&current_transaction_row());
+    packet.extend_from_slice(&current_transaction_row()[..6]);
+
+    assert_transaction_length_mismatch(&packet, "row 1 is truncated");
+}
+
+#[test]
+fn current_transaction_rejects_zero_and_nonzero_count_trailing_bytes() {
+    assert_transaction_length_mismatch(&[0, 0, 0], "1 trailing bytes");
+
+    let mut packet = vec![1, 0];
+    packet.extend_from_slice(&current_transaction_row());
+    packet.push(0);
+    assert_transaction_length_mismatch(&packet, "1 trailing bytes");
+}
+
+#[test]
+fn current_transaction_accepts_exact_single_and_multiple_record_framing() {
+    let mut one = vec![1, 0];
+    one.extend_from_slice(&current_transaction_row());
+    let records = parse_transaction_data(&one).unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].time, "10:02");
+    assert_eq!(records[0].price, 0.1);
+    assert_eq!(records[0].num, 3);
+
+    let mut two = vec![2, 0];
+    two.extend_from_slice(&current_transaction_row());
+    two.extend_from_slice(&current_transaction_row());
+    let records = parse_transaction_data(&two).unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[1].price, 0.2);
+
+    let valid_multibyte = [1, 0, 0x5a, 0x02, 0x80, 0x01, 2, 3, 1, 0];
+    let records = parse_transaction_data(&valid_multibyte).unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].price, 0.64);
+}
+
 // --- parse_history_transaction_data ---
 
 #[test]
@@ -240,6 +331,20 @@ fn test_quotes_zero_count() {
 
 // --- parse_finance_info ---
 
+fn finance_record(market: u8, code: &str, ipo_date: u32) -> Vec<u8> {
+    let mut data = vec![0u8; 143];
+    data[0] = market;
+    data[1..7].copy_from_slice(code.as_bytes());
+    data[19..23].copy_from_slice(&ipo_date.to_le_bytes());
+    data
+}
+
+fn finance_packet(market: u8, code: &str, ipo_date: u32) -> Vec<u8> {
+    let mut data = 1u16.to_le_bytes().to_vec();
+    data.extend_from_slice(&finance_record(market, code, ipo_date));
+    data
+}
+
 #[test]
 fn test_finance_empty() {
     assert!(parse_finance_info(&[], 1, "600519").is_err());
@@ -253,7 +358,7 @@ fn test_finance_short() {
 #[test]
 fn test_finance_valid() {
     // 9 bytes header + 136 bytes struct = 145 bytes minimum
-    let mut data = vec![0u8; 145];
+    let mut data = finance_packet(1, "600519", 20010827);
     // Set liutongguben (first f32 at pos 9)
     let liutongguben: f32 = 10.0;
     data[9..13].copy_from_slice(&liutongguben.to_le_bytes());
@@ -262,9 +367,108 @@ fn test_finance_valid() {
     assert_eq!(result.market, 1);
     // raw value, no unit conversion
     assert!((result.liutongguben - 10.0).abs() < 0.1);
+    assert_eq!(result.ipo_date, 20010827);
+}
+
+#[test]
+fn finance_rejects_response_identity_mismatch() {
+    assert!(parse_finance_info(&finance_packet(0, "600519", 20010827), 1, "600519").is_err());
+    assert!(parse_finance_info(&finance_packet(1, "000001", 20010827), 1, "600519").is_err());
+}
+
+#[test]
+fn finance_rejects_malformed_and_future_ipo_dates() {
+    assert!(parse_finance_info(&finance_packet(1, "600519", 20260231), 1, "600519").is_err());
+    assert!(parse_finance_info(&finance_packet(1, "600519", 99991231), 1, "600519").is_err());
+    assert!(parse_finance_info(&finance_packet(1, "600519", 0), 1, "600519").is_ok());
+}
+
+#[test]
+fn finance_requires_one_declared_record_and_exact_framing() {
+    assert!(parse_finance_info(&0u16.to_le_bytes(), 1, "600519").is_err());
+
+    let mut declared_two = 2u16.to_le_bytes().to_vec();
+    declared_two.extend_from_slice(&finance_record(1, "600519", 20010827));
+    declared_two.extend_from_slice(&finance_record(1, "600519", 20010827));
+    assert!(parse_finance_info(&declared_two, 1, "600519").is_err());
+
+    let mut undeclared_second = finance_packet(1, "600519", 20010827);
+    undeclared_second.extend_from_slice(&finance_record(1, "600519", 20010827));
+    assert!(parse_finance_info(&undeclared_second, 1, "600519").is_err());
+
+    let mut trailing = finance_packet(1, "600519", 20010827);
+    trailing.push(0);
+    assert!(parse_finance_info(&trailing, 1, "600519").is_err());
+}
+
+#[test]
+fn finance_rejects_non_ascii_identity_and_non_finite_fields() {
+    let mut non_ascii = finance_packet(1, "600519", 20010827);
+    non_ascii[3] = 0xff;
+    assert!(parse_finance_info(&non_ascii, 1, "600519")
+        .unwrap_err()
+        .to_string()
+        .contains("not valid ASCII"));
+
+    let mut non_finite_circulating_shares = finance_packet(1, "600519", 20010827);
+    non_finite_circulating_shares[9..13].copy_from_slice(&f32::NAN.to_le_bytes());
+    assert!(
+        parse_finance_info(&non_finite_circulating_shares, 1, "600519")
+            .unwrap_err()
+            .to_string()
+            .contains("non-finite circulating-share")
+    );
+
+    let mut non_finite_finance_field = finance_packet(1, "600519", 20010827);
+    non_finite_finance_field[25..29].copy_from_slice(&f32::INFINITY.to_le_bytes());
+    assert!(parse_finance_info(&non_finite_finance_field, 1, "600519")
+        .unwrap_err()
+        .to_string()
+        .contains("non-finite numeric field"));
+}
+
+#[test]
+fn finance_rejects_non_eight_digit_ipo_date() {
+    let error =
+        parse_finance_info(&finance_packet(1, "600519", 100_000_000), 1, "600519").unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("must contain exactly eight digits"));
 }
 
 // --- parse_xdxr_info ---
+
+fn xdxr_packet_with_rows(
+    outer_market: u8,
+    outer_code: &str,
+    rows: &[(u8, &str, u32, u8, f32)],
+) -> Vec<u8> {
+    let mut data = vec![0u8; 11];
+    data[2] = outer_market;
+    data[3..9].copy_from_slice(outer_code.as_bytes());
+    data[9..11].copy_from_slice(&(rows.len() as u16).to_le_bytes());
+    for (market, code, date, category, value) in rows {
+        data.push(*market);
+        data.extend_from_slice(code.as_bytes());
+        data.push(0);
+        data.extend_from_slice(&date.to_le_bytes());
+        data.push(*category);
+        let mut terms = [0u8; 16];
+        terms[8..12].copy_from_slice(&value.to_le_bytes());
+        data.extend_from_slice(&terms);
+    }
+    data
+}
+
+fn xdxr_packet(date: u32, category: u8, value: f32) -> Vec<u8> {
+    xdxr_packet_with_rows(1, "600519", &[(1, "600519", date, category, value)])
+}
+
+fn xdxr_packet_with_terms(date: u32, category: u8, terms: [u8; 16]) -> Vec<u8> {
+    let mut packet = xdxr_packet(date, category, 0.0);
+    packet[24..40].copy_from_slice(&terms);
+    packet
+}
 
 #[test]
 fn test_xdxr_empty() {
@@ -282,6 +486,132 @@ fn test_xdxr_zero_count() {
     let data = vec![0u8; 11];
     let result = parse_xdxr_info(&data).unwrap();
     assert!(result.is_empty());
+}
+
+#[test]
+fn xdxr_rejects_declared_count_truncation_and_trailing_bytes() {
+    let mut truncated = xdxr_packet(20260101, 11, 2.0);
+    truncated.pop();
+    assert!(parse_xdxr_info(&truncated).is_err());
+
+    let mut trailing = xdxr_packet(20260101, 11, 2.0);
+    trailing.push(0);
+    assert!(parse_xdxr_info(&trailing).is_err());
+}
+
+#[test]
+fn xdxr_rejects_invalid_dates_and_non_finite_values() {
+    assert!(parse_xdxr_info(&xdxr_packet(20260231, 11, 2.0)).is_err());
+    assert!(parse_xdxr_info(&xdxr_packet(99991231, 11, 2.0)).is_err());
+    assert!(parse_xdxr_info(&xdxr_packet(20260101, 11, f32::NAN)).is_err());
+    assert!(parse_xdxr_info(&xdxr_packet(20260101, 11, f32::INFINITY)).is_err());
+}
+
+#[test]
+fn xdxr_request_parser_rejects_response_identity_mismatch() {
+    let packet = xdxr_packet(20260101, 11, 2.0);
+    assert!(parse_xdxr_info_for(&packet, 1, "600519").is_ok());
+    assert!(parse_xdxr_info_for(&packet, 0, "600519").is_err());
+    assert!(parse_xdxr_info_for(&packet, 1, "000001").is_err());
+}
+
+#[test]
+fn xdxr_request_parser_rejects_each_mismatched_row_identity_atomically() {
+    let wrong_market = xdxr_packet_with_rows(1, "600519", &[(0, "600519", 20260101, 11, 2.0)]);
+    assert!(parse_xdxr_info_for(&wrong_market, 1, "600519").is_err());
+
+    let wrong_code = xdxr_packet_with_rows(1, "600519", &[(1, "000001", 20260101, 11, 2.0)]);
+    assert!(parse_xdxr_info_for(&wrong_code, 1, "600519").is_err());
+
+    let mixed = xdxr_packet_with_rows(
+        1,
+        "600519",
+        &[
+            (1, "600519", 20250101, 11, 2.0),
+            (1, "000001", 20260101, 11, 2.0),
+        ],
+    );
+    assert!(parse_xdxr_info_for(&mixed, 1, "600519").is_err());
+}
+
+#[test]
+fn xdxr_empty_response_still_requires_matching_outer_identity() {
+    let empty = xdxr_packet_with_rows(1, "600519", &[]);
+    assert!(parse_xdxr_info_for(&empty, 1, "600519").unwrap().is_empty());
+    assert!(parse_xdxr_info_for(&empty, 0, "600519").is_err());
+    assert!(parse_xdxr_info_for(&empty, 1, "000001").is_err());
+}
+
+#[test]
+fn xdxr_request_parser_rejects_short_and_non_ascii_outer_identity() {
+    assert!(parse_xdxr_info_for(&[0u8; 8], 1, "600519")
+        .unwrap_err()
+        .to_string()
+        .contains("too short for XDXR identity"));
+
+    let mut non_ascii = xdxr_packet(20260101, 11, 2.0);
+    non_ascii[3] = 0xff;
+    assert!(parse_xdxr_info_for(&non_ascii, 1, "600519")
+        .unwrap_err()
+        .to_string()
+        .contains("not valid ASCII"));
+}
+
+#[test]
+fn xdxr_decodes_distribution_capital_and_warrant_term_layouts() {
+    let mut distribution_terms = [0u8; 16];
+    for (index, value) in [1.0f32, 2.0, 3.0, 4.0].into_iter().enumerate() {
+        let start = index * 4;
+        distribution_terms[start..start + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let distribution =
+        parse_xdxr_info(&xdxr_packet_with_terms(20260101, 1, distribution_terms)).unwrap();
+    assert_eq!(distribution[0].name, "除权除息");
+    assert_eq!(distribution[0].fenhong, Some(1.0));
+    assert_eq!(distribution[0].peigujia, Some(2.0));
+    assert_eq!(distribution[0].songzhuangu, Some(3.0));
+    assert_eq!(distribution[0].peigu, Some(4.0));
+
+    let mut capital_terms = [0u8; 16];
+    for (index, value) in [1u32, 2, 3, 4].into_iter().enumerate() {
+        let start = index * 4;
+        capital_terms[start..start + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let capital = parse_xdxr_info(&xdxr_packet_with_terms(20260101, 2, capital_terms)).unwrap();
+    assert_eq!(capital[0].name, "送配股上市");
+    assert!(capital[0].panqianliutong.is_some_and(|value| value > 0.0));
+    assert!(capital[0].panhouliutong.is_some_and(|value| value > 0.0));
+    assert!(capital[0].qianzongguben.is_some_and(|value| value > 0.0));
+    assert!(capital[0].houzongguben.is_some_and(|value| value > 0.0));
+
+    let mut warrant_terms = [0u8; 16];
+    warrant_terms[0..4].copy_from_slice(&30.5f32.to_le_bytes());
+    warrant_terms[8..12].copy_from_slice(&2.5f32.to_le_bytes());
+    let warrant = parse_xdxr_info(&xdxr_packet_with_terms(20260101, 13, warrant_terms)).unwrap();
+    assert_eq!(warrant[0].name, "送认购权证");
+    assert_eq!(warrant[0].xingquanjia, Some(30.5));
+    assert_eq!(warrant[0].fenshu, Some(2.5));
+}
+
+#[test]
+fn xdxr_rejects_non_finite_distribution_and_warrant_terms() {
+    let mut distribution_terms = [0u8; 16];
+    distribution_terms[0..4].copy_from_slice(&f32::NAN.to_le_bytes());
+    assert!(
+        parse_xdxr_info(&xdxr_packet_with_terms(20260101, 1, distribution_terms))
+            .unwrap_err()
+            .to_string()
+            .contains("non-finite numeric field")
+    );
+
+    let mut warrant_terms = [0u8; 16];
+    warrant_terms[0..4].copy_from_slice(&f32::INFINITY.to_le_bytes());
+    assert!(
+        parse_xdxr_info(&xdxr_packet_with_terms(20260101, 13, warrant_terms))
+            .unwrap_err()
+            .to_string()
+            .contains("non-finite numeric field")
+    );
 }
 
 // --- parse_block_info_meta ---

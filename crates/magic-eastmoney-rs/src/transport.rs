@@ -13,6 +13,7 @@ const ALLOWED_HOSTS: &[&str] = &[
     "datacenter-web.eastmoney.com",
     "emappdata.eastmoney.com",
     "push2.eastmoney.com",
+    "push2delay.eastmoney.com",
     "push2ex.eastmoney.com",
     "push2his.eastmoney.com",
     "reportapi.eastmoney.com",

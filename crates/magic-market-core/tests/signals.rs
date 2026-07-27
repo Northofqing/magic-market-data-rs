@@ -2,8 +2,8 @@ use magic_market_core::{
     AssetClass, BoardCategory, BoardMembership, ConceptHit, DragonTigerDisclosure,
     DragonTigerEntry, DragonTigerSeat, DragonTigerSide, Exchange, FiniteNumber, InstrumentId,
     InstrumentSignalRequest, IsoDate, MarketDragonTigerRequest, MarketRankingEntry,
-    MarketRankingKind, Money, NonEmptyText, PopularityRank, PositiveU32, ProviderId, Ratio,
-    RatioUnit, SourceEvidence, SourcedRecord, StrongStockReason,
+    MarketRankingKind, MarketRankingUnit, MarketSession, Money, NonEmptyText, PopularityRank,
+    PositiveU32, ProviderId, Ratio, RatioUnit, SourceEvidence, SourcedRecord, StrongStockReason,
 };
 
 fn instrument() -> InstrumentId {
@@ -171,15 +171,22 @@ fn popularity_join_retains_both_evidence_records() {
         detail: None,
         evidence: evidence(ProviderId::Eastmoney, "concept"),
     };
-    let ranking = MarketRankingEntry {
-        kind: MarketRankingKind::Popularity,
-        rank: PositiveU32::new(1).unwrap(),
-        instrument: Some(instrument()),
-        label: NonEmptyText::new("热度").unwrap(),
-        return_ratio: None,
-        value: Some(FiniteNumber::new(99.0).unwrap()),
-        evidence: evidence(ProviderId::Eastmoney, "ranking"),
-    };
+    let ranking = MarketRankingEntry::new(
+        MarketRankingKind::Popularity,
+        PositiveU32::new(1).unwrap(),
+        Some(instrument()),
+        NonEmptyText::new("热度").unwrap(),
+        FiniteNumber::new(99.0).unwrap(),
+        MarketRankingUnit::Score,
+        IsoDate::new("2026-07-23").unwrap(),
+        MarketSession::Continuous,
+        NonEmptyText::new("A-share-equities").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        PositiveU32::new(1).unwrap(),
+        0,
+        dated_evidence(ProviderId::Eastmoney, "ranking"),
+    )
+    .unwrap();
 
     assert_eq!(rank.provider_id(), ProviderId::Eastmoney);
     assert_eq!(rank.evidence_batch_id(), "rank");

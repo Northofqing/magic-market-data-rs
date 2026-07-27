@@ -11,8 +11,8 @@ services and local TDX file readers.
 | Five-level books | `OrderBooks` with visible bid/ask depth and record evidence; Shanghai, Shenzhen and Beijing |
 | Minute data | Current and dated history plus normalized `MinuteData`; cumulative quantity, no source amount |
 | Executed trades | Current and dated history with automatic paging and unknown source sides preserved |
-| Security list/metadata | Full count/list and partial normalized metadata for Shanghai/Shenzhen |
-| Finance/actions | Realtime 34 fields, market archives, 45 named indicators and XDXR |
+| Security list/metadata | Full count/list plus finance-backed listing dates in the normalized Gateway for Shanghai/Shenzhen; rule and board authority remain partial |
+| Finance/actions | Realtime 34 fields, market archives, 45 named indicators, raw XDXR and normalized `CorporateActions` for Shanghai/Shenzhen |
 | Funds | Quotes, bars, finance and XDXR |
 | Blocks | Industry, concept and index classifications |
 | F10/profile | Categories, named sections and complete payloads |
@@ -56,9 +56,34 @@ cannot enter a downstream five-second freshness gate that requires an
 auditable source timestamp.
 
 The security-list packet supplies name and enough evidence to identify ST
-names. It does not supply listing date, versioned price-limit rules, board or
-source timestamp. Board is visibly derived from exchange/code and the
-normalized metadata record remains `Unavailable` with field-level issues.
+names. The normalized Gateway joins it with the exact requested finance record
+to supply a validated listing date; mismatched identities, malformed dates and
+future dates fail explicitly. TDX still does not supply versioned price-limit
+rules, authoritative board identity or source timestamp. Board is visibly
+derived from exchange/code and the normalized metadata record remains
+`Unavailable` with field-level issues for those fields.
+
+The raw XDXR parser validates complete response framing, the returned
+market/code identity, Gregorian dates and finite source terms across the entire
+response. The normalized `CorporateActions` Gateway validates the whole
+response before applying the requested inclusive date range, so an invalid or
+unknown row outside the range cannot be hidden by projection. The contract maps
+all 14 protocol categories without inventing unverified units. Categories 2
+through 10 preserve the complete before/after tradable/total tuple; categories
+13 and 14 preserve exercise price and source quantity. Category 11 preserves
+the provider's broader “capital rescaling” classification, rather than
+narrowing it to a split. The physical units of those quantities and the
+category 11/12 `suogu` field are not independently proved by the upstream
+decoder, so they carry `UnverifiedSourceUnit::ProviderNative` and cannot be
+interpreted as shares, lots or adjustment ratios. All records carry
+`InstrumentId`, `SourceEvidence` and request-bound `DataBatch` provenance. A
+complete historical response with no records in the requested range is
+represented as a verified empty batch.
+The response also carries an explicit China `admission_as_of`; future request
+coverage or effective dates fail before they can authorize a discontinuity.
+TDX does not provide an auditable XDXR source timestamp, so `source_at` remains
+`None`. Beijing requests return `Unsupported` before transport rather than
+being remapped to another market.
 
 TDX current trade direction values `0/1/2` map to buy/sell/neutral. Other
 observed values, including post-market values such as `5` and `8`, remain
@@ -73,7 +98,25 @@ quantities; the implemented packets do not provide those fields. Both traits
 are callable but capabilities remain `false`, and both return field-specific
 `Unsupported` errors instead of zeros or empty successful batches.
 
-## Real-network acceptance result
+## Real-network acceptance results
+
+On 2026-07-27 the lifecycle raw-inventory command exited zero:
+
+```bash
+TDX_LIFECYCLE_RAW_ONLY=1 \
+  cargo run -p magic-tdx-rs --example live_probe --locked --offline
+```
+
+Using `杭州联通J2 (60.12.136.250:7709)`, it returned 45 `600519` rows with
+category histogram `{1: 30, 2: 7, 3: 1, 5: 5, 9: 1, 14: 1}`. A subsequent full
+probe validated listing dates for 华电辽能 `600396` (`2001-03-28`), 平安银行
+`000001` (`1991-04-03`) and 贵州茅台 `600519` (`2001-08-27`). Its lifecycle
+section validated every raw row before returning the exact two complete 2024
+distribution records and a complete request-bound empty 1900 result. The full
+multipurpose process later exited one for unrelated five-minute timestamp and
+block-index transport checks; it is not recorded as a whole-probe pass. Exact
+commands, terms and boundaries are recorded in
+[the 2026-07-27 TDX lifecycle evidence](evidence/2026-07-27-tdx-lifecycle.md).
 
 On 2026-07-23 this command exited zero with
 `live_probe_status=passed`:

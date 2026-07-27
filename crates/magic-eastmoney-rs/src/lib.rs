@@ -14,6 +14,7 @@ mod error;
 mod fund_flow;
 mod limit_pool;
 mod mapping;
+mod market_rankings;
 mod news;
 mod popularity;
 mod post_close;
@@ -26,8 +27,9 @@ mod test_support;
 
 use magic_market_core::{
     AssetClass, CapitalCapabilities, ContentCapabilities, DataBatch, Exchange, InstrumentId,
-    LimitPoolCapabilities, LoadProbeSnapshot, MarketDiscoveryCapabilities, Provenance, ProviderId,
-    ResearchCapabilities, SignalCapabilities, SourceEvidence,
+    LimitPoolCapabilities, LoadProbeSnapshot, MarketDiscoveryCapabilities,
+    MarketRankingCapabilities, Provenance, ProviderId, ResearchCapabilities, SignalCapabilities,
+    SourceEvidence,
 };
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -88,6 +90,7 @@ impl EastmoneyClient {
         ResearchCapabilities {
             reports: true,
             consensus: false,
+            target_price_consensus: true,
             semantic_search: false,
             pdf_download: true,
             document_body: true,
@@ -104,20 +107,29 @@ impl EastmoneyClient {
             holder_count: true,
             lockups: true,
             dividends: true,
-            post_close_flow: true,
+            post_close_flow: false,
             northbound_daily_statistics: false,
         }
     }
 
     /// Capabilities proved for bounded public signal endpoints.
     pub const fn signal_capabilities() -> SignalCapabilities {
+        let rankings = Self::market_ranking_capabilities();
         SignalCapabilities {
             board_memberships: false,
             strong_stock_reasons: false,
             dragon_tiger: true,
-            market_rankings: false,
+            market_rankings: rankings.all_admitted(),
             popularity: true,
             concept_hits: false,
+        }
+    }
+
+    /// Per-metric ranking admission; one live probe never enables another metric.
+    pub const fn market_ranking_capabilities() -> MarketRankingCapabilities {
+        MarketRankingCapabilities {
+            volume_ratio: false,
+            main_net_inflow: false,
         }
     }
 

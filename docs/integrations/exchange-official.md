@@ -11,7 +11,7 @@
 | SZSE | `RealtimeQuotes`、`OrderBooks` | `000858`：Quote + 完整五档 | 数量按源端“手”保留；不推断集合竞价 |
 | SZSE | `DragonTigerData` | `000603 / 2026-07-23`：2 条榜单；首条完整买五卖五 | 完整拉取列表分页，详情按完整席位组返回 |
 | HKEX | `NorthboundDailyStatistics` | `2026-07-22` 沪股通/深股通各 1 条及各自 Top10 | quota 的 `999,999,999` 哨兵保留为 `Unavailable`，不猜测余额 |
-| CFFEX | 诊断 `probe_futures_delivery_calendar`；生产 trait 当前 `Unsupported` | 确定性解析 IF/IH/IC/IM；2026-07-25 live 在官方目录 TLS 初始化时收到 unexpected EOF | capability 为 false；方式未被通知独立证明时保留 `NotProvided`，不按“第三个周五”推算 |
+| CFFEX | 诊断 `probe_futures_delivery_calendar`；生产 trait 当前 `Unsupported` | 确定性解析 IF/IH/IC/IM；2026-07-27 Rustls 与 Native TLS 均在官方目录握手失败，未取得 HTTP 响应 | capability 为 false；方式未被通知独立证明时保留 `NotProvided`，不按“第三个周五”推算 |
 
 ## 端点和请求边界
 
@@ -24,8 +24,9 @@ www.szse.cn/api/disc/announcement/annList
 www.szse.cn/api/market/ssjjhq/getTimeData
 www.szse.cn/api/report/ShowReport/data
 www.hkex.com.hk/eng/csm/DailyStat/data_tab_daily_<YYYYMMDD>e.js
-www.cffex.com.cn/jystz/
-www.cffex.com.cn/jystz/index_<N>.html
+www.cffex.com.cn/cn/jystz.html
+www.cffex.com.cn/cn/jystz_<N>.html
+www.cffex.com.cn/cn/jystz/<YYYYMMDD>/<ID>.html
 ```
 
 公告固定按完整远程页校验后本地截断。SZSE 龙虎榜完整读取源端声明的所有页面，要求
@@ -55,6 +56,13 @@ typed `Unsupported`。
 生产 transport 禁止凭据、非 443 端口和跳转，校验最终 URL、精确
 JSON/JavaScript media type、8 MiB 上限和 1–60 秒超时。每个客户端 clone 共享串行
 请求门，完整响应读取期间不释放，请求起始至少间隔 1 秒。
+
+CFFEX 诊断 transport 必须由操作方明确选择 `rustls` 或 `native-tls`，默认
+`rustls`，禁止一次请求失败后静默切换 TLS 实现。两种实现共享相同的 official URL、
+超时、无跳转、MIME、body 上限和 pacing 合同。握手/证书类错误携带所选 backend
+作为 typed `ExchangeError::Tls` 返回。默认构建只启用纯 Rust 的 Rustls；Native TLS
+是可选 crate feature，避免默认 Linux 构建引入 `openssl-sys`。未编译该 feature
+却选择 `native-tls` 会在联网前返回 typed `Unsupported`。
 
 部署需要下列 443 出站访问：
 
@@ -89,8 +97,14 @@ CFFEX、避免其他交易所的网络状态阻断时使用：
 MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
 MAGIC_CFFEX_DELIVERY_YEAR=2026 \
 MAGIC_CFFEX_DELIVERY_MONTH=2 \
+MAGIC_CFFEX_TLS_BACKEND=rustls \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
+
+若要显式诊断系统 TLS backend，将 `MAGIC_CFFEX_TLS_BACKEND` 改为
+`native-tls`，并给 Cargo 增加 `--features native-tls`；其他值会在发起网络请求前
+失败。Linux 使用该可选 feature 时需要系统 OpenSSL 开发库；默认 Rustls 构建没有此
+要求。
 
 该命令只验证诊断实现，不表示生产 capability 已准入。成功标记必须是
 `diagnostic_probe_status=passed` 与
@@ -98,10 +112,24 @@ cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 `live_probe_status=passed`。确定性测试精确验证四条记录、节假日顺延日期、
 `NotProvided` 方法、缺失最后交易日和通知发布日期证据。
 
+2026-07-27 对 `2026-07` 的最新双 backend 准入结果：
+
+```text
+rustls:
+  tls connection init failed: unexpected end of file
+native-tls:
+  native_tls connect failed: connection closed via error
+```
+
+两次均未取得官方目录 HTTP 响应，因此没有证明 `IF2607/IH2607/IC2607/IM2607`
+及其交割日期，`calendar_capabilities.futures_delivery` 继续为 `false`，正式 trait
+继续返回 typed `Unsupported`。精确命令、时间和完整结果见
+[`2026-07-27-cffex-delivery.md`](../evidence/2026-07-27-cffex-delivery.md)。
+
 默认测试证券/日期和覆盖变量见
 [`crates/magic-exchange-rs/README.md`](../../crates/magic-exchange-rs/README.md)。
 
-2026-07-23 最终生产 trait 真实结果：
+2026-07-27 当前树最终生产 trait 真实结果：
 
 ```text
 SSE announcements=3 dragon_tiger_entries=3 dragon_tiger_seats=10
@@ -111,12 +139,12 @@ HKEX northbound_daily: Shanghai=1 Shenzhen=1, each Top10=10
 live_probe_status=passed
 
 attempts=8 successes=8 failures=0
-measurement_elapsed_ms_excluding_output=7510
-operation_elapsed_total_ms=2771 pacing_wait_total_ms=4738
-attempt_throughput_per_second=1.0652
-attempt_latency_min_ms=36 attempt_latency_p50_ms=120
-attempt_latency_p95_ms=1201 attempt_latency_p99_ms=1201
-attempt_latency_max_ms=1201 minimum_attempt_start_gap_ms=1000
+measurement_elapsed_ms_excluding_output=7423
+operation_elapsed_total_ms=2697 pacing_wait_total_ms=4726
+attempt_throughput_per_second=1.0776
+attempt_latency_min_ms=37 attempt_latency_p50_ms=137
+attempt_latency_p95_ms=1203 attempt_latency_p99_ms=1203
+attempt_latency_max_ms=1203 minimum_attempt_start_gap_ms=1001
 load_probe_status=passed
 ```
 

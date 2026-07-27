@@ -62,6 +62,16 @@ pub enum ProviderId {
 pub trait SourcedRecord {
     fn provider_id(&self) -> ProviderId;
     fn evidence_batch_id(&self) -> &str;
+
+    /// Provider-supplied record time when this record family exposes one.
+    fn evidence_source_at(&self) -> Option<&str> {
+        None
+    }
+
+    /// Local observation time corresponding to this record when exposed.
+    fn evidence_observed_at(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// Normalized realtime quote contract for cross-provider consumers.
@@ -1825,6 +1835,24 @@ pub trait AsyncTrades {
     async fn trades_async(&self, request: &TradesRequest) -> Result<DataBatch<Trade>, Self::Error>;
 }
 
+impl SourcedRecord for Quote {
+    fn provider_id(&self) -> ProviderId {
+        self.provider()
+    }
+
+    fn evidence_batch_id(&self) -> &str {
+        self.batch_id()
+    }
+
+    fn evidence_source_at(&self) -> Option<&str> {
+        self.source_at()
+    }
+
+    fn evidence_observed_at(&self) -> Option<&str> {
+        Some(self.observed_at())
+    }
+}
+
 macro_rules! impl_sourced_record {
     ($($record:ty),+ $(,)?) => {
         $(
@@ -1842,7 +1870,6 @@ macro_rules! impl_sourced_record {
 }
 
 impl_sourced_record!(
-    Quote,
     Bar,
     MinutePoint,
     Trade,

@@ -41,6 +41,7 @@ impl EastmoneyTransport for DefaultDocumentTransport {
 #[test]
 fn endpoint_allowlist_rejects_non_https_redirect_targets_and_lookalikes() {
     assert!(validate_endpoint("https://push2.eastmoney.com/api").is_ok());
+    assert!(validate_endpoint("https://push2delay.eastmoney.com/api").is_ok());
     assert!(validate_endpoint("https://push2.eastmoney.com:443/api").is_ok());
     assert!(validate_endpoint("https://search-api-web.eastmoney.com/search/jsonp").is_err());
     assert!(validate_endpoint("http://push2.eastmoney.com/api").is_err());
@@ -140,6 +141,23 @@ fn redirect_transport_error_exposes_bounded_location_without_following_it() {
             if message.contains("302")
                 && message.contains("Location")
                 && message.contains("https://push2.eastmoney.com/redirect-target")
+    ));
+}
+
+#[test]
+fn status_errors_cover_missing_redirect_location_and_non_redirect_status() {
+    let redirect: ureq::Response = "HTTP/1.1 302 Found\r\n\r\n".parse().unwrap();
+    assert!(matches!(
+        map_ureq_error(ureq::Error::Status(302, redirect)),
+        super::EastmoneyError::Transport(message)
+            if message.contains("Location missing")
+    ));
+
+    let failure: ureq::Response = "HTTP/1.1 503 Service Unavailable\r\n\r\n".parse().unwrap();
+    assert!(matches!(
+        map_ureq_error(ureq::Error::Status(503, failure)),
+        super::EastmoneyError::Transport(message)
+            if message == "unexpected HTTP status 503"
     ));
 }
 

@@ -15,6 +15,7 @@ sessions, credentials, portfolios, or order data.
 | Family | Core contract | Public host | Verified mapping |
 | --- | --- | --- | --- |
 | Instrument and industry reports | `ResearchReports`, `ResearchDocuments` | `reportapi.eastmoney.com`, `pdf.dfcfw.com` | metadata plus the exact original bounded PDF body |
+| Report target-price aggregation | `TargetPriceData` | `reportapi.eastmoney.com` | complete pagination; source code and `stockName`; exact `indvAimPriceL/T`; arithmetic mean of report range midpoints; typed verified-empty result for the exact all-zero shape |
 | Instrument fund flow | `FundFlowSeries` | `push2.eastmoney.com`, `push2his.eastmoney.com` | minute and daily parsers/mapping implemented, but `fund_flow_series=false` until a successful live admission probe |
 | Board fund flow | `BoardFlows` | `push2.eastmoney.com` | industry/concept/region; 1/5/10-day ranking, return, main flow, daily tiers, leader when supplied |
 | Dragon-tiger list | `DragonTigerData` | `datacenter-web.eastmoney.com` | entries plus one atomic buy-five/sell-five seat group, amounts, reason, turnover and independent side ranks; seat limit must be at least 10 |
@@ -27,12 +28,32 @@ sessions, credentials, portfolios, or order data.
 | Dividends | `DividendPlans` | `datacenter-web.eastmoney.com` | report/ex-date, state, cash/bonus/transfer/allotment per ten shares |
 | Limit pools | `LimitPools` | `push2ex.eastmoney.com` | upper, broken, lower and previous-upper pools; source `qdate` is mandatory and must match the requested date |
 | Popularity | `PopularityData` | `emappdata.eastmoney.com`, `push2.eastmoney.com` | rank and rank change, with separately evidenced quote join |
-| Strict post-close ranking | `PostCloseFlows` | `push2.eastmoney.com` | current China date after 15:35, exact limit, one source timestamp, contiguous rank, code and name |
+| Strict post-close ranking diagnostic | `EastmoneyClient::diagnose_post_close_flows` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | current China date after 15:35, exact limit, one source timestamp, contiguous rank, code and name; production capability is false and formal `PostCloseFlows` returns `Unsupported` |
+| Full-market rankings | `MarketRankings` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | complete A-share pagination for volume ratio and main-net inflow, including code, name, source session, three-market coverage and one common source time (zero skew); a transport failure discards all pages and restarts at page one on the alternate HTTPS host; capability stays false until a stable-session live probe satisfies every gate |
 | Global latest finance news | `NewsProvider::global_news` | `roll.eastmoney.com`, `finance.eastmoney.com` | complete first-page validation, newest-first minute time, numeric article identity and canonical URL |
 
-Unsupported operations fail explicitly. Consensus, semantic search,
+Unsupported operations fail explicitly. Provider-published earnings consensus, semantic search,
 announcements, investor questions, instrument news, inferred reasons, and
 account-backed data remain disabled.
+
+Ranking admission is independent by metric:
+
+| Metric | `MarketRankingCapabilities` | Current production admission |
+| --- | --- | --- |
+| Volume ratio | `volume_ratio` | `false` |
+| Main-net inflow | `main_net_inflow` | `false` |
+
+The legacy aggregate `SignalCapabilities.market_rankings` becomes true only
+when both metrics are admitted. Each ranking page retries at most three times
+and only for typed transport failures; every retry still passes through the
+shared one-request/second gate. Endpoint failover never joins pages from two
+hosts: a failed partial operation is discarded and the alternate host starts
+again at page one. Intraday page drift remains an explicit atomic failure.
+`CapitalCapabilities.post_close_flow` is also false. The formal
+`PostCloseFlows` implementation returns typed `Unsupported`; only the explicitly
+named diagnostic method performs network I/O. A diagnostic success prints
+`admitted=false` and still requires human review before the capability can be
+enabled.
 The callable fund-flow method is retained for deterministic fixtures and
 diagnostics, but it is not an admitted capability because neither public host
 has completed a successful live probe on this environment.
@@ -61,9 +82,9 @@ promoted into `NewsItem::instruments`; `instrument_news` returns a typed
 - Datacenter pagination is sequential, capped at 10,000 records, always uses a
   remote page size of 500, and truncates only after complete pages are merged.
   This preserves server offsets for requests such as `limit=700`.
-- Documented empty statuses are recognized, but the provider facade still
-  rejects every empty batch as an explicit protocol failure; malformed shapes
-  and other error codes also fail.
+- Target-price `hits=0,size=0,TotalPage=0,data=[]` is returned as typed
+  `VerifiedEmpty` carrying exact request identity and batch evidence.
+  Partial-zero contradictions, malformed shapes, and other error codes fail.
 
 An injected `EastmoneyTransport` supports deterministic fixtures without
 network, cookies, or hidden global state.
@@ -92,6 +113,11 @@ network, cookies, or hidden global state.
   declared exchange. Source code/market identities are independently parsed
   and cross-checked; duplicate popularity ranks, instruments, or quote codes
   are protocol failures rather than last-write-wins joins.
+- Every target-price observation requires the source code and non-empty
+  `stockName`; all observations in one aggregate must agree. `indvAimPriceL`
+  is retained as the lower bound and `indvAimPriceT` as the upper bound. The
+  exposed `mean` is the arithmetic mean of report range midpoints
+  `(L + T) / 2`, not a provider-published or contributor-weighted consensus.
 
 ## Usage
 
@@ -131,6 +157,32 @@ quality, and every record for every admitted family:
 ```text
 cargo run -p magic-eastmoney-rs --example live_probe --release --locked
 ```
+
+Isolated target-price, full-market ranking, and unadmitted post-close
+diagnostics:
+
+```text
+MAGIC_EASTMONEY_LIVE_OPERATION=target-price \
+MAGIC_EASTMONEY_TARGET_CODE=600519 \
+MAGIC_EASTMONEY_TARGET_FROM=2026-01-01 \
+MAGIC_EASTMONEY_TARGET_THROUGH=2026-07-27 \
+cargo run -p magic-eastmoney-rs --example live_probe --release --locked
+
+MAGIC_EASTMONEY_LIVE_OPERATION=market-rankings \
+MAGIC_EASTMONEY_RANKING_KIND=all \
+cargo run -p magic-eastmoney-rs --example live_probe --release --locked
+
+MAGIC_EASTMONEY_LIVE_OPERATION=post-close-ranking \
+MAGIC_EASTMONEY_POST_CLOSE_DATE=2026-07-27 \
+MAGIC_EASTMONEY_POST_CLOSE_LIMIT=20 \
+cargo run -p magic-eastmoney-rs --example live_probe --release --locked
+```
+
+The post-close operation calls only the diagnostic method and always prints
+`admitted=false`. It rejects calls before `15:35:00 Asia/Shanghai`, a date other
+than the current China date, missing names, incomplete ranks, or mixed source
+timestamps. The formal trait never performs this fetch while capability is
+false.
 
 Fund-flow and keyword-only instrument news are still called as unadmitted
 diagnostics. Global latest finance news is an admitted family. Diagnostic

@@ -1,6 +1,7 @@
 use magic_market_core::{
-    verify_admitted_batch, verify_verified_empty, DataBatch, ProbeAdmissionError,
-    ProbeAdmissionPolicy, ProbeStatus, Provenance, ProviderId, SourceEvidence, VerifiedEmpty,
+    verify_admitted_batch, verify_verified_empty, DataBatch, EvidenceTimestamp,
+    ProbeAdmissionError, ProbeAdmissionPolicy, ProbeStatus, Provenance, ProviderId, SourceEvidence,
+    VerifiedEmpty,
 };
 use std::time::Duration;
 
@@ -36,6 +37,87 @@ fn policy() -> ProbeAdmissionPolicy {
         .require_source_at()
         .with_max_source_age(Duration::from_secs(3_600))
         .unwrap()
+}
+
+#[test]
+fn evidence_timestamps_preserve_nanoseconds_and_reject_excess_precision() {
+    let source = EvidenceTimestamp::parse_instant("2026-07-23T10:00:00Z").unwrap();
+    let exact = EvidenceTimestamp::parse_instant("2026-07-23T10:00:05Z").unwrap();
+    let over = EvidenceTimestamp::parse_instant("2026-07-23T10:00:05.000000001Z").unwrap();
+    let epoch_over = EvidenceTimestamp::parse_instant("1784786405.000000001").unwrap();
+    let epoch_source = EvidenceTimestamp::parse_instant("1784786400").unwrap();
+
+    assert_eq!(exact.duration_since(source), Some(Duration::from_secs(5)));
+    assert_eq!(
+        over.duration_since(source),
+        Some(Duration::from_secs(5) + Duration::from_nanos(1))
+    );
+    assert_eq!(
+        epoch_over.duration_since(epoch_source),
+        Some(Duration::from_secs(5) + Duration::from_nanos(1))
+    );
+    for invalid in ["2026-07-23T10:00:05.0000000001Z", "1784786405.0000000001"] {
+        assert!(
+            EvidenceTimestamp::parse_instant(invalid).is_err(),
+            "excess timestamp precision was silently accepted: {invalid}"
+        );
+    }
+}
+
+#[test]
+fn maximum_source_age_requires_an_unambiguous_source_instant() {
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney)
+        .with_max_source_age(Duration::from_secs(5))
+        .unwrap();
+    let batch_id = "eastmoney:strict-instant";
+
+    let evidence_without_source =
+        SourceEvidence::new(ProviderId::Eastmoney, "2026-07-23T10:00:00Z", batch_id).unwrap();
+    let provenance_without_source = Provenance::new("fixture", "2026-07-23T10:00:00Z")
+        .unwrap()
+        .with_batch_id(batch_id)
+        .unwrap();
+    let missing = DataBatch::strict(
+        vec![Record {
+            identity: "AP-1",
+            evidence: evidence_without_source,
+        }],
+        provenance_without_source,
+    );
+    assert!(matches!(
+        verify_admitted_batch(
+            &missing,
+            &policy,
+            |record| &record.evidence,
+            |record| record.identity.to_owned()
+        ),
+        Err(ProbeAdmissionError::MissingSourceTime)
+    ));
+
+    for (source, observed) in [
+        ("2026-07-23", "2026-07-23"),
+        ("2026-07-23T09:59:59", "2026-07-23T10:00:00"),
+    ] {
+        let candidate = DataBatch::strict(
+            vec![Record {
+                identity: "AP-1",
+                evidence: evidence(ProviderId::Eastmoney, observed, source, batch_id),
+            }],
+            provenance(observed, source, batch_id),
+        );
+        assert!(
+            matches!(
+                verify_admitted_batch(
+                    &candidate,
+                    &policy,
+                    |record| &record.evidence,
+                    |record| record.identity.to_owned()
+                ),
+                Err(ProbeAdmissionError::InvalidTimestamp { .. })
+            ),
+            "ambiguous max-age timestamp was admitted: source={source} observed={observed}"
+        );
+    }
 }
 
 #[test]
@@ -213,6 +295,28 @@ fn mismatched_future_and_stale_record_evidence_fail() {
     assert!(matches!(
         verify_admitted_batch(
             &future,
+            &policy(),
+            |record| &record.evidence,
+            |record| record.identity.to_owned()
+        ),
+        Err(ProbeAdmissionError::FutureSourceTime { .. })
+    ));
+
+    let future_millisecond = DataBatch::strict(
+        vec![Record {
+            identity: "600519.SH",
+            evidence: evidence(
+                ProviderId::Tonghuashun,
+                observed,
+                "2026-07-23T10:00:00.001+08:00",
+                batch_id,
+            ),
+        }],
+        provenance(observed, "2026-07-23T10:00:00.001+08:00", batch_id),
+    );
+    assert!(matches!(
+        verify_admitted_batch(
+            &future_millisecond,
             &policy(),
             |record| &record.evidence,
             |record| record.identity.to_owned()
@@ -500,7 +604,10 @@ fn supported_timestamp_forms_and_calendar_edges_are_verified() {
         ("1784786400.123", "1784786400.999"),
         ("2024-02-29", "2024-02-29"),
         ("2026-07-23 10:00:00", "2026-07-23T10:00:00Z"),
-        ("2026-07-23T10:00:00.123+08:00", "2026-07-23T10:00:00+08:00"),
+        (
+            "2026-07-23T10:00:00.123+08:00",
+            "2026-07-23T10:00:00.123+08:00",
+        ),
         ("2026-07-23T10:00:00-08:00", "2026-07-24T02:00:00Z"),
     ];
     for (source, observed) in accepted {
@@ -591,4 +698,41 @@ fn supported_timestamp_forms_and_calendar_edges_are_verified() {
             ..
         })
     ));
+}
+
+#[test]
+fn stale_diagnostics_preserve_nanosecond_precision() {
+    let observed = "2026-07-23T10:00:05.000000001+08:00";
+    let source = "2026-07-23T10:00:00+08:00";
+    let batch_id = "eastmoney:reports:nanosecond-stale";
+    let batch = DataBatch::strict(
+        vec![Record {
+            identity: "AP-1",
+            evidence: evidence(ProviderId::Eastmoney, observed, source, batch_id),
+        }],
+        provenance(observed, source, batch_id),
+    );
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney)
+        .require_source_at()
+        .with_max_source_age(Duration::from_secs(5))
+        .unwrap();
+
+    let error = verify_admitted_batch(
+        &batch,
+        &policy,
+        |record| &record.evidence,
+        |record| record.identity.to_owned(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        ProbeAdmissionError::StaleSourceTime {
+            age_nanos: 5_000_000_001,
+            max_age_nanos: 5_000_000_000
+        }
+    ));
+    assert_eq!(
+        error.to_string(),
+        "source_at is stale by 5000000001ns; maximum allowed age is 5000000000ns"
+    );
 }

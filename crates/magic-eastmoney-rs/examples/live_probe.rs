@@ -1,22 +1,72 @@
-use magic_eastmoney_rs::EastmoneyClient;
+use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    verify_admitted_batch, AssetClass, BlockTrades, BoardCategory, BoardFlows, DataBatch,
-    DividendPlans, DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest,
-    DragonTigerEntry, Exchange, FlowInterval, FlowScope, FundFlowRequest, FundFlowSeries,
-    HolderCounts, InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate,
-    LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketDragonTigerData,
-    MarketDragonTigerRequest, NewsProvider, PopularityData, PositiveU32, ProbeAdmissionPolicy,
-    ProbeStatus, ProviderId, ReportScope, ResearchReports, ResearchRequest, SourceEvidence,
+    verify_admitted_batch, verify_verified_empty, AssetClass, BlockTrades, BoardCategory,
+    BoardFlows, DataBatch, DividendPlans, DragonTigerData, DragonTigerDiscovery,
+    DragonTigerDiscoveryRequest, DragonTigerEntry, Exchange, FlowInterval, FlowScope,
+    FundFlowRequest, FundFlowSeries, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
+    InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents,
+    MarginData, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingEntry,
+    MarketRankingKind, MarketRankings, NewsProvider, PopularityData, PositiveU32,
+    PostCloseFlowRequest, ProbeAdmissionPolicy, ProbeStatus, ProviderId, ReportScope,
+    ResearchReports, ResearchRequest, SourceEvidence, TargetPriceConsensus, TargetPriceData,
+    TargetPriceRequest,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::error::Error;
 use std::fmt::Debug;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let pool_date = IsoDate::new(required_env("MAGIC_EASTMONEY_POOL_DATE")?)?;
-    let dragon_tiger_date = IsoDate::new(required_env("MAGIC_EASTMONEY_DRAGON_TIGER_DATE")?)?;
     let client = EastmoneyClient::new()?;
     let mut failures = Vec::new();
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("market-rankings") {
+        let limit = PositiveU32::new(20)?;
+        let kinds = match env("MAGIC_EASTMONEY_RANKING_KIND", "all").as_str() {
+            "all" => vec![
+                MarketRankingKind::VolumeRatio,
+                MarketRankingKind::MainNetInflow,
+            ],
+            "volume-ratio" => vec![MarketRankingKind::VolumeRatio],
+            "main-net-inflow" => vec![MarketRankingKind::MainNetInflow],
+            other => {
+                return Err(format!(
+                    "MAGIC_EASTMONEY_RANKING_KIND must be all, volume-ratio, or main-net-inflow; got {other:?}"
+                )
+                .into())
+            }
+        };
+        for kind in kinds {
+            probe_market_ranking(&kind, client.market_rankings(&kind, limit), &mut failures);
+        }
+        return print_summary(&failures);
+    }
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("target-price") {
+        let target = instrument(
+            Exchange::Shanghai,
+            env("MAGIC_EASTMONEY_TARGET_CODE", "600519"),
+        )?;
+        let request = TargetPriceRequest::new(
+            target,
+            IsoDate::new(env("MAGIC_EASTMONEY_TARGET_FROM", "2026-01-01"))?,
+            IsoDate::new(env("MAGIC_EASTMONEY_TARGET_THROUGH", "2026-07-27"))?,
+        )?;
+        probe_target_price(client.target_price_consensus(&request), &mut failures);
+        return print_summary(&failures);
+    }
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("post-close-ranking") {
+        let request = PostCloseFlowRequest::new(
+            IsoDate::new(required_env("MAGIC_EASTMONEY_POST_CLOSE_DATE")?)?,
+            PositiveU32::new(env("MAGIC_EASTMONEY_POST_CLOSE_LIMIT", "20").parse::<u32>()?)?,
+        )?;
+        probe_unadmitted_batch(
+            "capital.post_close_ranking",
+            client.diagnose_post_close_flows(&request),
+        );
+        println!("\n=== diagnostic_summary ===");
+        println!("diagnostic_probe_status=unadmitted");
+        return Ok(());
+    }
+    let pool_date = IsoDate::new(required_env("MAGIC_EASTMONEY_POOL_DATE")?)?;
+    let dragon_tiger_date = IsoDate::new(required_env("MAGIC_EASTMONEY_DRAGON_TIGER_DATE")?)?;
     let primary = instrument(Exchange::Shanghai, env("MAGIC_EASTMONEY_CODE", "600396"))?;
     let reference = instrument(
         Exchange::Shanghai,
@@ -362,6 +412,124 @@ fn probe_dragon_discovery<E: std::fmt::Display>(
         Err(error) => {
             println!("error={error}");
             failures.push(format!("dragon_tiger.discovery: {error}"));
+        }
+    }
+}
+
+fn probe_market_ranking<E: std::fmt::Display>(
+    kind: &MarketRankingKind,
+    result: Result<DataBatch<MarketRankingEntry>, E>,
+    failures: &mut Vec<String>,
+) {
+    let label = format!("market_rankings.{kind:?}");
+    println!("\n=== {label} ===");
+    println!("admitted=false pending_current_live_review");
+    match result {
+        Ok(batch) => {
+            println!("status={}", ProbeStatus::DiagnosticCompleteUnadmitted);
+            println!("records={}", batch.records().len());
+            if let Some(first) = batch.records().first() {
+                println!("universe={}", first.universe());
+                println!("universe_size={}", first.universe_size().get());
+                println!("covered_count={}", first.covered_count().get());
+                println!("coverage={}", first.coverage_ratio().get());
+                println!("max_source_skew_millis={}", first.max_source_skew_millis());
+                println!("source_date={}", first.source_date());
+                println!("source_session={:?}", first.source_session());
+            }
+            for record in batch.records() {
+                let code = record
+                    .instrument()
+                    .map(instrument_identity)
+                    .unwrap_or_else(|| "<no-code>".into());
+                println!(
+                    "rank={} stock={} name={} value={} unit={:?} source_at={:?}",
+                    record.rank().get(),
+                    code,
+                    record.label(),
+                    record.value().get(),
+                    record.unit(),
+                    record.evidence().source_at()
+                );
+            }
+        }
+        Err(error) => {
+            println!("status={}", ProbeStatus::Failed);
+            println!("error={error}");
+            failures.push(format!("{label}: {error}"));
+        }
+    }
+}
+
+fn probe_target_price(
+    result: Result<DataBatch<TargetPriceConsensus>, EastmoneyError>,
+    failures: &mut Vec<String>,
+) {
+    println!("\n=== research.target_price ===");
+    match result {
+        Ok(batch) if batch.records().len() == 1 => {
+            let value = &batch.records()[0];
+            println!("status={}", ProbeStatus::Admitted);
+            println!(
+                "stock={} name={} samples={} contributors={} observation_period={}..{} low={} mean={} high={} mean_semantics=arithmetic_mean_of_report_range_midpoints source_at={:?} observed_at={} batch_id={} input_evidence={}",
+                instrument_identity(value.instrument()),
+                value.instrument_name(),
+                value.sample_count().get(),
+                value.contributor_count().get(),
+                value.observation_start(),
+                value.observation_end(),
+                value.low().get(),
+                value.mean().get(),
+                value.high().get(),
+                value.evidence().source_at(),
+                value.evidence().observed_at(),
+                value.evidence().batch_id(),
+                value.input_evidence().len(),
+            );
+            for observation in value.observations() {
+                println!(
+                    "report={} institution={} published_on={} source_indvAimPriceT={} source_indvAimPriceL={} normalized_low={} normalized_high={}",
+                    observation.report_id(),
+                    observation.institution_name(),
+                    observation.published_on(),
+                    observation.source_indv_aim_price_t().get(),
+                    observation.source_indv_aim_price_l().get(),
+                    observation.normalized_low().get(),
+                    observation.normalized_high().get(),
+                );
+            }
+        }
+        Ok(batch) => {
+            let failure = format!(
+                "research.target_price: expected one aggregate, received {}",
+                batch.records().len()
+            );
+            println!("status={}", ProbeStatus::Failed);
+            println!("error={failure}");
+            failures.push(failure);
+        }
+        Err(EastmoneyError::VerifiedEmpty(empty)) => {
+            match verify_verified_empty(&empty, &ProbeAdmissionPolicy::new(ProviderId::Eastmoney)) {
+                Ok(status) => {
+                    println!("status={status}");
+                    println!("request_identity={}", empty.request_identity());
+                    println!("reason={}", empty.reason());
+                    println!("observed_at={}", empty.evidence().observed_at());
+                    println!("batch_id={}", empty.evidence().batch_id());
+                }
+                Err(error) => {
+                    println!("status={}", ProbeStatus::Failed);
+                    println!("error={error}");
+                    failures.push(format!(
+                        "research.target_price: verified-empty admission rejected: {error}"
+                    ));
+                }
+            }
+        }
+        Err(error) => {
+            println!("status={}", ProbeStatus::Failed);
+            println!("error={error}");
+            failures.push(format!("research.target_price: {error}"));
         }
     }
 }

@@ -12,9 +12,9 @@ pub use blocks::BlockService;
 pub use finance::FinanceService;
 pub use funds::FundService;
 use magic_market_core::{
-    AuctionSnapshot, Bar, BarsRequest, DataBatch, HistoricalBars, InstrumentId, MoneyFlow,
-    OrderBook, Quote, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, Trades,
-    TradesRequest,
+    AuctionSnapshot, Bar, BarsRequest, CorporateActionRequest, CorporateActionResponse,
+    CorporateActions, DataBatch, HistoricalBars, InstrumentId, MoneyFlow, OrderBook, Quote,
+    RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, Trades, TradesRequest,
 };
 pub use profile::ProfileService;
 use std::collections::HashMap;
@@ -380,6 +380,28 @@ impl AsyncTdxService {
     ) -> Result<Vec<XdXrInfo>, TdxError> {
         self.client.get_xdxr_info(market, code).await
     }
+    /// Fetches normalized corporate actions without substituting a provider timestamp.
+    pub async fn normalized_corporate_actions(
+        &self,
+        request: &CorporateActionRequest,
+    ) -> Result<CorporateActionResponse, TdxError> {
+        let admission_as_of = crate::adapter::current_corporate_action_admission_date()?;
+        crate::adapter::validate_corporate_action_request(request, &admission_as_of)?;
+        let records = self
+            .client
+            .get_xdxr_info(
+                crate::adapter::market(request.instrument())?,
+                request.instrument().code(),
+            )
+            .await?;
+        let batch = crate::adapter::normalize_corporate_actions(
+            "tdx-async",
+            request,
+            records,
+            &admission_as_of,
+        )?;
+        crate::adapter::corporate_action_response(request, batch, admission_as_of)
+    }
 }
 impl Default for AsyncTdxService {
     fn default() -> Self {
@@ -502,6 +524,13 @@ impl TdxService {
     /// Fetches corporate-action history.
     pub fn corporate_actions(&self, market: u8, code: &str) -> Result<Vec<XdXrInfo>, TdxError> {
         self.client.inner().get_xdxr_info(market, code)
+    }
+    /// Fetches normalized corporate actions through the provider-neutral trait.
+    pub fn normalized_corporate_actions(
+        &self,
+        request: &CorporateActionRequest,
+    ) -> Result<CorporateActionResponse, TdxError> {
+        CorporateActions::corporate_actions(&self.client, request)
     }
 }
 impl Default for TdxService {

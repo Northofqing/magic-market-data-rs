@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::ScriptedTransport;
 use crate::{EastmoneyClient, EastmoneyTransport};
 use magic_market_core::{IsoDate, PostCloseFlows};
 
@@ -176,10 +177,34 @@ fn post_close_helpers_preserve_missingness_and_time_boundaries() {
 }
 
 #[test]
-fn public_post_close_provider_rejects_a_non_current_trading_date_before_transport() {
+fn public_post_close_provider_is_explicitly_unadmitted() {
     let client = EastmoneyClient::with_transport(StaticTransport(fixture()));
     assert!(matches!(
         client.post_close_flows(&request()),
-        Err(EastmoneyError::InvalidRequest(_))
+        Err(EastmoneyError::Unsupported(message))
+            if message.contains("production admission")
     ));
+}
+
+#[test]
+fn transport_failover_retries_primary_then_uses_one_complete_delay_snapshot() {
+    let transport = ScriptedTransport::from_results([
+        Err(EastmoneyError::Transport("primary-1".into())),
+        Err(EastmoneyError::Transport("primary-2".into())),
+        Err(EastmoneyError::Transport("primary-3".into())),
+        Ok(fixture()),
+    ]);
+    let requests = transport.requests();
+    let client = EastmoneyClient::with_transport(transport);
+    let batch = client
+        .diagnose_post_close_flows_with_clock(&request(), || Ok("2026-07-24T15:35:00+08:00".into()))
+        .unwrap();
+
+    assert_eq!(batch.records().len(), 2);
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[..3]
+        .iter()
+        .all(|request| request.contains("https://push2.eastmoney.com/")));
+    assert!(requests[3].contains("https://push2delay.eastmoney.com/"));
 }

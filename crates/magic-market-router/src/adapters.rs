@@ -1,9 +1,13 @@
-use crate::{FailoverChain, FailureKind, SourceError, SourceFn};
+use crate::{
+    AcceptancePolicy, FailoverChain, FailureKind, RouteAttempt, RouteOutcome, RoutedSource,
+    RouterError, SourceError, SourceFn,
+};
 use magic_market_core::{
     Announcement, Announcements, AuctionSnapshot, Auctions, Bar, BarsRequest, BlockTrade,
     BlockTrades, BoardCategory, BoardFlow, BoardFlows, BoardMembership, BoardMembershipProvider,
-    ConceptHit, ConceptHits, ConsensusData, ConsensusSnapshot, ContractMonth, DividendPlan,
-    DividendPlans, DragonTigerData, DragonTigerDisclosure, DragonTigerEntry, DragonTigerSeat,
+    ConceptHit, ConceptHits, ConsensusData, ConsensusSnapshot, ContractMonth, CorporateAction,
+    CorporateActionRequest, CorporateActions, DataBatch, DividendPlan, DividendPlans,
+    DragonTigerData, DragonTigerDisclosure, DragonTigerEntry, DragonTigerSeat, EvidenceTimestamp,
     Exchange, FinancialStatement, FinancialStatements, FlowInterval, FundFlowPoint,
     FundFlowRequest, FundFlowSeries, HistoricalBars, HolderCount, HolderCounts,
     InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, InvestorQuestion,
@@ -17,8 +21,8 @@ use magic_market_core::{
     PostCloseFlows, ProviderId, Quote, RealtimeQuotes, ResearchReport, ResearchReports,
     ResearchRequest, SecurityMetadata, SecurityMetadataProvider, SecurityProfile, SecurityProfiles,
     SemanticSearch, SemanticSearchDocument, SemanticSearchRequest, StatementKind,
-    StrongStockReason, StrongStockReasons, TechnicalBar, TechnicalBarsProvider, Trade, Trades,
-    TradesRequest,
+    StrongStockReason, StrongStockReasons, TargetPriceConsensus, TargetPriceData,
+    TargetPriceRequest, TechnicalBar, TechnicalBarsProvider, Trade, Trades, TradesRequest,
 };
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -36,6 +40,7 @@ pub type MarketStatisticsRouter = FailoverChain<[InstrumentId], MarketStatistics
 pub type TechnicalBarsRouter = FailoverChain<BarsRequest, TechnicalBar>;
 pub type ResearchRouter = FailoverChain<ResearchRequest, ResearchReport>;
 pub type ConsensusRouter = FailoverChain<[InstrumentId], ConsensusSnapshot>;
+pub type TargetPriceRouter = FailoverChain<TargetPriceRequest, TargetPriceConsensus>;
 pub type SemanticSearchRouter = FailoverChain<SemanticSearchRequest, SemanticSearchDocument>;
 pub type BoardMembershipRouter = FailoverChain<[InstrumentId], BoardMembership>;
 pub type StrongStockReasonRouter = FailoverChain<InstrumentSignalRequest, StrongStockReason>;
@@ -68,6 +73,137 @@ pub type OptionContractsRequest = (InstrumentId, Option<ContractMonth>);
 pub type OptionContractRouter = FailoverChain<OptionContractsRequest, OptionContract>;
 pub type OptionQuoteRouter = FailoverChain<[NonEmptyText], OptionQuote>;
 pub type OptionGreeksRouter = FailoverChain<[NonEmptyText], OptionGreeks>;
+
+/// One corporate-action request carrying the router's single admission date.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CorporateActionRouteRequest {
+    request: CorporateActionRequest,
+    admission_as_of: IsoDate,
+}
+
+impl CorporateActionRouteRequest {
+    fn request(&self) -> &CorporateActionRequest {
+        &self.request
+    }
+
+    fn admission_as_of(&self) -> &IsoDate {
+        &self.admission_as_of
+    }
+}
+
+/// Sealed, response-validating source accepted by [`CorporateActionRouter`].
+///
+/// Construct this only through [`corporate_action_source`]. The private route
+/// request prevents a generic [`SourceFn`] from bypassing the router's single
+/// admission date or exact response-coverage checks.
+pub struct CorporateActionSource {
+    source: SourceFn<CorporateActionRouteRequest, CorporateAction>,
+}
+
+impl std::fmt::Debug for CorporateActionSource {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CorporateActionSource")
+            .field("provider_id", &self.source.provider_id())
+            .finish()
+    }
+}
+
+impl RoutedSource<CorporateActionRouteRequest, CorporateAction> for CorporateActionSource {
+    fn provider_id(&self) -> ProviderId {
+        self.source.provider_id()
+    }
+
+    fn fetch(
+        &self,
+        request: &CorporateActionRouteRequest,
+    ) -> Result<DataBatch<CorporateAction>, SourceError> {
+        self.source.fetch(request)
+    }
+}
+
+/// Corporate-action failover with one immutable admission date for every source.
+#[derive(Debug)]
+pub struct CorporateActionRouter {
+    admission_as_of: IsoDate,
+    chain: FailoverChain<CorporateActionRouteRequest, CorporateAction>,
+}
+
+impl CorporateActionRouter {
+    pub fn new(policy: AcceptancePolicy, admission_as_of: IsoDate) -> Self {
+        Self {
+            admission_as_of,
+            chain: FailoverChain::new(policy),
+        }
+    }
+
+    pub fn policy(&self) -> AcceptancePolicy {
+        self.chain.policy()
+    }
+
+    pub fn admission_as_of(&self) -> &IsoDate {
+        &self.admission_as_of
+    }
+
+    pub fn register(&mut self, source: CorporateActionSource) -> Result<&mut Self, RouterError> {
+        self.chain.register(source)?;
+        Ok(self)
+    }
+
+    pub fn provider_ids(&self) -> Vec<ProviderId> {
+        self.chain.provider_ids()
+    }
+
+    pub fn route(
+        &self,
+        request: &CorporateActionRequest,
+    ) -> Result<CorporateActionRouteOutcome, RouterError> {
+        let routed_request = CorporateActionRouteRequest {
+            request: request.clone(),
+            admission_as_of: self.admission_as_of.clone(),
+        };
+        self.chain
+            .route(&routed_request)
+            .map(|outcome| CorporateActionRouteOutcome {
+                admission_as_of: self.admission_as_of.clone(),
+                outcome,
+            })
+    }
+}
+
+/// Accepted corporate-action batch retaining the immutable admission boundary.
+#[derive(Debug)]
+pub struct CorporateActionRouteOutcome {
+    admission_as_of: IsoDate,
+    outcome: RouteOutcome<CorporateAction>,
+}
+
+impl CorporateActionRouteOutcome {
+    pub fn admission_as_of(&self) -> &IsoDate {
+        &self.admission_as_of
+    }
+
+    pub fn selected_provider(&self) -> ProviderId {
+        self.outcome.selected_provider()
+    }
+
+    pub fn batch(&self) -> &DataBatch<CorporateAction> {
+        self.outcome.batch()
+    }
+
+    pub fn attempts(&self) -> &[RouteAttempt] {
+        self.outcome.attempts()
+    }
+
+    pub fn into_batch(self) -> DataBatch<CorporateAction> {
+        self.outcome.into_batch()
+    }
+
+    pub fn into_parts(self) -> (IsoDate, DataBatch<CorporateAction>, Vec<RouteAttempt>) {
+        let (batch, attempts) = self.outcome.into_parts();
+        (self.admission_as_of, batch, attempts)
+    }
+}
 
 pub fn quote_source<Provider, Classify>(
     provider_id: ProviderId,
@@ -176,9 +312,263 @@ where
     Provider: SecurityMetadataProvider + Send + Sync + 'static,
     Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
 {
-    SourceFn::new(provider_id, move |request| {
-        provider.security_metadata(request).map_err(&classify)
+    SourceFn::new(provider_id, move |request: &[InstrumentId]| {
+        if request.is_empty() {
+            return Err(SourceError::stop(
+                FailureKind::InvalidRequest,
+                "security metadata requires at least one instrument",
+            ));
+        }
+        let requested = request.iter().cloned().collect::<HashSet<_>>();
+        if requested.len() != request.len() {
+            return Err(SourceError::stop(
+                FailureKind::InvalidRequest,
+                "security metadata request contains duplicate instruments",
+            ));
+        }
+        let batch = provider.security_metadata(request).map_err(&classify)?;
+        if batch.records().len() != request.len() {
+            return Err(SourceError::try_next(
+                FailureKind::Quality,
+                "security metadata response cardinality does not match request",
+            ));
+        }
+        let mut returned = HashSet::with_capacity(batch.records().len());
+        for record in batch.records() {
+            if !requested.contains(record.instrument()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "security metadata record instrument was not requested",
+                ));
+            }
+            if !returned.insert(record.instrument().clone()) {
+                return Err(SourceError::try_next(
+                    FailureKind::Quality,
+                    "security metadata response contains a duplicate instrument",
+                ));
+            }
+        }
+        Ok(batch)
     })
+}
+
+pub fn corporate_action_source<Provider, Classify>(
+    provider_id: ProviderId,
+    provider: Arc<Provider>,
+    classify: Classify,
+) -> CorporateActionSource
+where
+    Provider: CorporateActions + Send + Sync + 'static,
+    Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
+{
+    CorporateActionSource {
+        source: SourceFn::new(
+            provider_id,
+            move |routed_request: &CorporateActionRouteRequest| {
+                let request = routed_request.request();
+                let admission_as_of = routed_request.admission_as_of();
+                if request.start().is_some_and(|start| start > admission_as_of)
+                    || request.end().is_some_and(|end| end > admission_as_of)
+                {
+                    return Err(SourceError::stop(
+                        FailureKind::InvalidRequest,
+                        "corporate-action request range extends beyond router admission_as_of",
+                    ));
+                }
+                let response = provider.corporate_actions(request).map_err(&classify)?;
+                if response.evidence().provider() != provider_id {
+                    return Err(SourceError::try_next(
+                        FailureKind::Evidence,
+                        "corporate-action response provider does not match registered provider",
+                    ));
+                }
+                if response.admission_as_of() != admission_as_of {
+                    return Err(SourceError::try_next(
+                        FailureKind::Evidence,
+                        "corporate-action response admission_as_of does not match router policy",
+                    ));
+                }
+                let response_observed = EvidenceTimestamp::parse_instant(
+                    response.evidence().observed_at(),
+                )
+                .map_err(|_| {
+                    SourceError::try_next(
+                        FailureKind::Evidence,
+                        "corporate-action response observation timestamp is malformed",
+                    )
+                })?;
+                let response_source = response
+                    .evidence()
+                    .source_at()
+                    .map(EvidenceTimestamp::parse)
+                    .transpose()
+                    .map_err(|_| {
+                        SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action response source timestamp is malformed",
+                        )
+                    })?;
+                if response_source.is_some_and(|source_time| {
+                    response_observed.duration_since(source_time).is_none()
+                }) {
+                    return Err(SourceError::try_next(
+                FailureKind::Evidence,
+                "corporate-action response source timestamp is later than observation timestamp",
+            ));
+                }
+                if response.coverage() != request {
+                    return Err(SourceError::try_next(
+                        FailureKind::Evidence,
+                        "corporate-action response coverage does not match request",
+                    ));
+                }
+                let batch = response.into_batch();
+                if !batch.quality().is_complete() {
+                    return Err(SourceError::try_next(
+                        FailureKind::Quality,
+                        format!(
+                            "corporate-action batch is incomplete: {}",
+                            batch.quality().issues().join("; ")
+                        ),
+                    ));
+                }
+                let provenance = batch.provenance();
+                let batch_id = provenance.batch_id().ok_or_else(|| {
+                    SourceError::try_next(
+                        FailureKind::Evidence,
+                        "corporate-action batch provenance has no batch ID",
+                    )
+                })?;
+                let observed_time = EvidenceTimestamp::parse_instant(provenance.fetched_at())
+                    .map_err(|_| {
+                        SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action batch observation timestamp is malformed",
+                        )
+                    })?;
+                let batch_source_time = provenance
+                    .source_at()
+                    .map(EvidenceTimestamp::parse)
+                    .transpose()
+                    .map_err(|_| {
+                        SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action batch source timestamp is malformed",
+                        )
+                    })?;
+                if batch_source_time
+                    .is_some_and(|source_time| observed_time.duration_since(source_time).is_none())
+                {
+                    return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "corporate-action batch source timestamp is later than observation timestamp",
+                ));
+                }
+                let mut identities = HashSet::with_capacity(batch.records().len());
+                let mut previous = None;
+                for record in batch.records() {
+                    if record.status() != magic_market_core::CorporateActionStatus::Implemented {
+                        return Err(SourceError::try_next(
+                            FailureKind::Quality,
+                            "corporate-action batch contains a non-implemented action",
+                        ));
+                    }
+                    if record.evidence().provider() != provider_id {
+                        return Err(SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action record provider does not match registered provider",
+                        ));
+                    }
+                    if record.evidence().batch_id() != batch_id {
+                        return Err(SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action record batch ID does not match batch provenance",
+                        ));
+                    }
+                    if record.evidence().observed_at() != provenance.fetched_at() {
+                        return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "corporate-action record observation timestamp does not match batch provenance",
+                ));
+                    }
+                    if record.evidence().source_at() != provenance.source_at() {
+                        return Err(SourceError::try_next(
+                        FailureKind::Evidence,
+                        "corporate-action record source timestamp does not match batch provenance",
+                    ));
+                    }
+                    let record_observed = EvidenceTimestamp::parse_instant(
+                        record.evidence().observed_at(),
+                    )
+                    .map_err(|_| {
+                        SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action record observation timestamp is malformed",
+                        )
+                    })?;
+                    let record_source = record
+                        .evidence()
+                        .source_at()
+                        .map(EvidenceTimestamp::parse)
+                        .transpose()
+                        .map_err(|_| {
+                            SourceError::try_next(
+                                FailureKind::Evidence,
+                                "corporate-action record source timestamp is malformed",
+                            )
+                        })?;
+                    if record_source.is_some_and(|source_time| {
+                        record_observed.duration_since(source_time).is_none()
+                    }) {
+                        return Err(SourceError::try_next(
+                    FailureKind::Evidence,
+                    "corporate-action record source timestamp is later than observation timestamp",
+                ));
+                    }
+                    if record.instrument() != request.instrument() {
+                        return Err(SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action record instrument does not match request",
+                        ));
+                    }
+                    if record.effective_on() > admission_as_of {
+                        return Err(SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action effective date is later than router admission_as_of",
+                        ));
+                    }
+                    if request
+                        .start()
+                        .is_some_and(|start| record.effective_on() < start)
+                        || request.end().is_some_and(|end| record.effective_on() > end)
+                    {
+                        return Err(SourceError::try_next(
+                            FailureKind::Evidence,
+                            "corporate-action effective date is outside the requested range",
+                        ));
+                    }
+                    let identity = (record.effective_on().clone(), record.category());
+                    if !identities.insert(identity.clone()) {
+                        return Err(SourceError::try_next(
+                            FailureKind::Quality,
+                            "corporate-action batch contains a duplicate date/category identity",
+                        ));
+                    }
+                    if previous
+                        .as_ref()
+                        .is_some_and(|previous| previous > &identity)
+                    {
+                        return Err(SourceError::try_next(
+                            FailureKind::Quality,
+                            "corporate-action batch is not ordered by effective date and category",
+                        ));
+                    }
+                    previous = Some(identity);
+                }
+                Ok(batch)
+            },
+        ),
+    }
 }
 
 pub fn market_statistics_source<Provider, Classify>(
@@ -235,6 +625,173 @@ where
     SourceFn::new(provider_id, move |request| {
         provider.consensus(request).map_err(&classify)
     })
+}
+
+pub fn target_price_source<Provider, Classify>(
+    provider_id: ProviderId,
+    provider: Arc<Provider>,
+    classify: Classify,
+) -> SourceFn<TargetPriceRequest, TargetPriceConsensus>
+where
+    Provider: TargetPriceData + Send + Sync + 'static,
+    Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
+{
+    SourceFn::new(provider_id, move |request: &TargetPriceRequest| {
+        if request.from() > request.through() {
+            return Err(SourceError::stop(
+                FailureKind::InvalidRequest,
+                "target-price request start exceeds end",
+            ));
+        }
+        let batch = provider
+            .target_price_consensus(request)
+            .map_err(&classify)?;
+        validate_target_price_batch(provider_id, request, &batch)?;
+        Ok(batch)
+    })
+}
+
+fn validate_target_price_batch(
+    provider_id: ProviderId,
+    request: &TargetPriceRequest,
+    batch: &DataBatch<TargetPriceConsensus>,
+) -> Result<(), SourceError> {
+    if !batch.quality().is_complete() {
+        return Err(SourceError::try_next(
+            FailureKind::Quality,
+            format!(
+                "target-price batch is incomplete: {}",
+                batch.quality().issues().join("; ")
+            ),
+        ));
+    }
+    let [consensus] = batch.records() else {
+        return Err(SourceError::try_next(
+            FailureKind::Quality,
+            format!(
+                "target-price provider must return exactly one consensus record, got {}",
+                batch.records().len()
+            ),
+        ));
+    };
+    if consensus.instrument() != request.instrument() {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price consensus instrument does not match request",
+        ));
+    }
+    if consensus.requested_from() != request.from()
+        || consensus.requested_through() != request.through()
+    {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price consensus requested range does not match request",
+        ));
+    }
+    if consensus.observation_start() < request.from()
+        || consensus.observation_end() > request.through()
+        || consensus.observation_start() > consensus.observation_end()
+    {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price observation range is outside the requested range",
+        ));
+    }
+
+    let provenance = batch.provenance();
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price batch provenance has no batch ID",
+        )
+    })?;
+    if consensus.evidence().provider() != provider_id {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price consensus provider does not match registered provider",
+        ));
+    }
+    if consensus.evidence().batch_id() != batch_id {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price consensus batch ID does not match batch provenance",
+        ));
+    }
+    if consensus.evidence().observed_at() != provenance.fetched_at() {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price consensus observation timestamp does not match batch provenance",
+        ));
+    }
+    if consensus.evidence().source_at() != provenance.source_at() {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price consensus source timestamp does not match batch provenance",
+        ));
+    }
+
+    let observed_at = EvidenceTimestamp::parse_instant(provenance.fetched_at()).map_err(|_| {
+        SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price batch observation timestamp is malformed",
+        )
+    })?;
+    let source_at = provenance
+        .source_at()
+        .ok_or_else(|| {
+            SourceError::try_next(
+                FailureKind::Evidence,
+                "target-price batch source timestamp is absent",
+            )
+        })
+        .and_then(|value| {
+            EvidenceTimestamp::parse(value).map_err(|_| {
+                SourceError::try_next(
+                    FailureKind::Evidence,
+                    "target-price batch source timestamp is malformed",
+                )
+            })
+        })?;
+    if observed_at.duration_since(source_at).is_none() {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price batch source timestamp is later than its observation timestamp",
+        ));
+    }
+
+    if consensus.observations().iter().any(|observation| {
+        observation.evidence().provider() != provider_id
+            || observation.evidence().batch_id() != batch_id
+            || observation.evidence().observed_at() != provenance.fetched_at()
+    }) {
+        return Err(SourceError::try_next(
+            FailureKind::Evidence,
+            "target-price observation evidence does not match batch provenance",
+        ));
+    }
+
+    // The Core constructor is the single source of truth for observation
+    // identity, range, canonical date/report ordering, deduplication, counts,
+    // input evidence and derived aggregate values. Rebuild at this trust
+    // boundary so the Router does not maintain a second, drifting rule set.
+    let rebuilt = TargetPriceConsensus::new(
+        request,
+        consensus.observations().to_vec(),
+        consensus.evidence().clone(),
+    )
+    .map_err(|error| {
+        SourceError::try_next(
+            FailureKind::Quality,
+            format!("target-price consensus violates the Core contract: {error}"),
+        )
+    })?;
+    if &rebuilt != consensus {
+        return Err(SourceError::try_next(
+            FailureKind::Quality,
+            "target-price consensus derived fields contradict its observations",
+        ));
+    }
+    Ok(())
 }
 
 pub fn semantic_search_source<Provider, Classify>(

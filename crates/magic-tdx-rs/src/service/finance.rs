@@ -4,6 +4,7 @@ use crate::net::finance_client::{GpcwFileInfo, TdxFinanceClient};
 use crate::protocol::types::{FinanceInfo, XdXrInfo};
 use crate::reader::financial::FinancialRecord;
 use crate::TdxError;
+use magic_market_core::{CorporateActionRequest, CorporateActionResponse};
 use std::collections::HashMap;
 
 /// Finance service, including the 34-field realtime and 45-field report APIs.
@@ -24,6 +25,25 @@ impl FinanceService {
     }
     pub fn corporate_actions(&self, market: u8, code: &str) -> Result<Vec<XdXrInfo>, TdxError> {
         self.client.get_xdxr_info(market, code)
+    }
+    /// Fetches complete, provider-neutral corporate-action history with evidence.
+    pub fn normalized_corporate_actions(
+        &self,
+        request: &CorporateActionRequest,
+    ) -> Result<CorporateActionResponse, TdxError> {
+        let admission_as_of = crate::adapter::current_corporate_action_admission_date()?;
+        crate::adapter::validate_corporate_action_request(request, &admission_as_of)?;
+        let records = self.client.get_xdxr_info(
+            crate::adapter::market(request.instrument())?,
+            request.instrument().code(),
+        )?;
+        let batch = crate::adapter::normalize_corporate_actions(
+            "tdx-finance",
+            request,
+            records,
+            &admission_as_of,
+        )?;
+        crate::adapter::corporate_action_response(request, batch, admission_as_of)
     }
     pub fn files(&self) -> Result<Vec<GpcwFileInfo>, TdxError> {
         self.client.get_financial_list()

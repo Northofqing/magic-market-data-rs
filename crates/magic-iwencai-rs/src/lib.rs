@@ -221,6 +221,7 @@ impl IwencaiClient {
         ResearchCapabilities {
             reports: false,
             consensus: false,
+            target_price_consensus: false,
             semantic_search: false,
             pdf_download: false,
             document_body: false,

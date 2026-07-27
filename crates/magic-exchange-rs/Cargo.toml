@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 description = "Bounded read-only adapters for official SSE, SZSE and HKEX data"
 
+[features]
+default = []
+native-tls = ["ureq/native-tls"]
+
 [dependencies]
 magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
 serde = { workspace = true }

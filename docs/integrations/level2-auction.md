@@ -21,8 +21,10 @@
 
 ```rust
 use magic_market_core::{
-    verify_auction_conformance, Auctions, InstrumentId, ProviderId,
+    verify_auction_conformance, AuctionConformancePolicy, Auctions, InstrumentId, IsoDate,
+    NonEmptyText, ProviderId,
 };
+use std::time::Duration;
 
 fn verify<P>(
     provider: &P,
@@ -34,13 +36,21 @@ where
     P::Error: 'static,
 {
     let batch = provider.auction_snapshots(instruments)?;
-    verify_auction_conformance(instruments, provider_id, &batch)?;
+    let policy = AuctionConformancePolicy::new(
+        provider_id,
+        NonEmptyText::new("licensed-vendor-source")?,
+        IsoDate::new("2026-07-27")?,
+        Duration::from_secs(5),
+    )?;
+    verify_auction_conformance(instruments, policy, &batch)?;
     Ok(())
 }
 ```
 
 `verify_auction_conformance` 强制校验非空且无重复的精确请求、精确返回数量、完整质量、
-代码覆盖、Provider、批次 ID、记录/批次源时间一致和所有完整字段。它只验证合同，
+代码覆盖、记录 Provider、精确批次来源名称、批次 ID、记录/批次源时间与观测时间一致、
+源时间属于策略交易日且位于中国 `+08:00` 的 `09:15:00..=09:25:00` 开盘竞价窗口、
+时间可解析且不在未来，并按调用方显式最大年龄检查所有完整字段。它只验证合同，
 不会替厂商授予许可，也不会自动把 capability 改成 true。
 
 ## 凭据和准入
@@ -56,5 +66,5 @@ where
 ## 必测边界
 
 至少覆盖缺名称、缺未匹配任一侧、缺量比、缺源时间、未来/陈旧时间、证券错配、重复
-证券、记录/批次 Provider 或 batch ID 冲突、部分成功和登录失效。任何一项失败都不得
-生成可用集合竞价批次。
+证券、记录 Provider、批次来源名称或 batch ID 冲突、非策略交易日、午间/连续竞价/
+收盘时间、部分成功和登录失效。任何一项失败都不得生成可用集合竞价批次。

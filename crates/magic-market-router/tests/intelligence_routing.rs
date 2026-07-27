@@ -1933,6 +1933,257 @@ fn intelligence_adapters_reuse_evidence_preserving_failover() {
     ));
 }
 
+#[test]
+fn dragon_tiger_adapters_accept_fully_dated_record_and_batch_evidence() {
+    let date = "2026-07-23";
+    let entry_batch_id = "dated-entry";
+    let entry_source = dragon_tiger_entry_source(
+        ProviderId::Eastmoney,
+        Arc::new(StaticDragonTigerProvider {
+            entries: DataBatch::strict(
+                vec![static_dragon_entry("entry-1", date, date, entry_batch_id)],
+                static_provenance(entry_batch_id, Some(date)),
+            ),
+            seats: empty_seat_batch(),
+        }),
+        classify,
+    );
+    let entry_request = InstrumentSignalRequest::new(instrument(), PositiveU32::new(1).unwrap())
+        .unwrap()
+        .with_trading_date(IsoDate::new(date).unwrap());
+    assert_eq!(
+        entry_source.fetch(&entry_request).unwrap().records().len(),
+        1
+    );
+
+    let seat_batch_id = "dated-seats";
+    let seat_source = dragon_tiger_seat_source(
+        ProviderId::Eastmoney,
+        Arc::new(StaticDragonTigerProvider {
+            entries: empty_entry_batch(),
+            seats: DataBatch::strict(
+                static_dragon_seats(seat_batch_id, date),
+                static_provenance(seat_batch_id, Some(date)),
+            ),
+        }),
+        classify,
+    );
+    let seat_request = InstrumentSignalRequest::new(instrument(), PositiveU32::new(10).unwrap())
+        .unwrap()
+        .with_trading_date(IsoDate::new(date).unwrap());
+    assert_eq!(
+        seat_source.fetch(&seat_request).unwrap().records().len(),
+        10
+    );
+}
+
+fn disclosure_with_optional_net(
+    batch_id: &str,
+    entry_id: &str,
+    instrument: InstrumentId,
+    net_amount: Option<f64>,
+) -> DragonTigerDisclosure {
+    let date = IsoDate::new("2026-07-23").unwrap();
+    let evidence = SourceEvidence::new(ProviderId::Eastmoney, "observed", batch_id)
+        .unwrap()
+        .with_source_at(date.as_str())
+        .unwrap();
+    let (buy_amount, sell_amount, net_amount) = match net_amount {
+        Some(net) => (
+            Some(Money::new(net + 1.0).unwrap()),
+            Some(Money::new(1.0).unwrap()),
+            Some(Money::new(net).unwrap()),
+        ),
+        None => (None, None, None),
+    };
+    let entry = DragonTigerEntry::new(
+        NonEmptyText::new(entry_id).unwrap(),
+        instrument.clone(),
+        date.clone(),
+        None,
+        buy_amount,
+        sell_amount,
+        net_amount,
+        None,
+        evidence.clone(),
+    )
+    .unwrap();
+    let seats = (0..10)
+        .map(|index| {
+            let (side, rank) = if index < 5 {
+                (DragonTigerSide::Buy, index + 1)
+            } else {
+                (DragonTigerSide::Sell, index - 4)
+            };
+            let amount = Money::new(1.0).unwrap();
+            DragonTigerSeat::new(
+                NonEmptyText::new(entry_id).unwrap(),
+                instrument.clone(),
+                date.clone(),
+                side,
+                PositiveU32::new(rank).unwrap(),
+                NonEmptyText::new(format!("seat-{entry_id}-{index}")).unwrap(),
+                amount,
+                (side == DragonTigerSide::Buy).then_some(amount),
+                (side == DragonTigerSide::Sell).then_some(amount),
+                None,
+                evidence.clone(),
+            )
+            .unwrap()
+        })
+        .collect();
+    DragonTigerDisclosure::new(entry, seats).unwrap()
+}
+
+fn static_market_source(
+    batch_id: &str,
+    records: Vec<DragonTigerDisclosure>,
+) -> impl RoutedSource<MarketDragonTigerRequest, DragonTigerDisclosure> {
+    market_dragon_tiger_source(
+        ProviderId::Eastmoney,
+        Arc::new(StaticMarketDragonTigerProvider {
+            batch: DataBatch::strict(records, static_provenance(batch_id, Some("2026-07-23"))),
+        }),
+        classify,
+    )
+}
+
+#[test]
+fn market_dragon_tiger_order_covers_optional_net_and_tie_breakers() {
+    let date = IsoDate::new("2026-07-23").unwrap();
+    let request = |limit| {
+        MarketDragonTigerRequest::new(date.clone(), PositiveU32::new(limit).unwrap()).unwrap()
+    };
+
+    let batch_id = "optional-net-ordered";
+    let some = disclosure_with_optional_net(batch_id, "some", instrument(), Some(1.0));
+    let none = disclosure_with_optional_net(
+        batch_id,
+        "none",
+        InstrumentId::new(Exchange::Shenzhen, "002396", AssetClass::Equity).unwrap(),
+        None,
+    );
+    assert!(
+        static_market_source(batch_id, vec![some.clone(), none.clone()])
+            .fetch(&request(2))
+            .is_ok()
+    );
+    assert_eq!(
+        static_market_source(batch_id, vec![none, some])
+            .fetch(&request(2))
+            .unwrap_err()
+            .kind(),
+        FailureKind::Quality
+    );
+
+    let batch_id = "optional-net-none";
+    let sh_none = disclosure_with_optional_net(batch_id, "sh", instrument(), None);
+    let sz_none = disclosure_with_optional_net(
+        batch_id,
+        "sz",
+        InstrumentId::new(Exchange::Shenzhen, "002396", AssetClass::Equity).unwrap(),
+        None,
+    );
+    assert!(static_market_source(batch_id, vec![sh_none, sz_none])
+        .fetch(&request(2))
+        .is_ok());
+
+    let batch_id = "same-exchange-code-entry";
+    let code_low = disclosure_with_optional_net(
+        batch_id,
+        "entry-0",
+        InstrumentId::new(Exchange::Shanghai, "600001", AssetClass::Equity).unwrap(),
+        Some(1.0),
+    );
+    let entry_low = disclosure_with_optional_net(
+        batch_id,
+        "entry-a",
+        InstrumentId::new(Exchange::Shanghai, "600002", AssetClass::Equity).unwrap(),
+        Some(1.0),
+    );
+    let entry_high = disclosure_with_optional_net(
+        batch_id,
+        "entry-b",
+        InstrumentId::new(Exchange::Shanghai, "600002", AssetClass::Equity).unwrap(),
+        Some(1.0),
+    );
+    assert!(
+        static_market_source(batch_id, vec![code_low, entry_low, entry_high])
+            .fetch(&request(3))
+            .is_ok()
+    );
+}
+
+#[test]
+fn northbound_adapter_rejects_invalid_source_date_separator() {
+    let request = NorthboundDailyRequest::new(
+        IsoDate::new("2026-07-22").unwrap(),
+        NorthboundChannel::Shanghai,
+    );
+    let source = northbound_daily_source(
+        ProviderId::Hkex,
+        Arc::new(NorthboundFixtureProvider {
+            record_channel: NorthboundChannel::Shanghai,
+            batch_source_date: "2026-07-22X15:00:00",
+            omit_batch_source: false,
+            record_count: 1,
+        }),
+        classify,
+    );
+    let error = source.fetch(&request).unwrap_err();
+    assert_eq!(error.kind(), FailureKind::Evidence);
+    assert!(error.message().contains("source date"));
+}
+
+struct FailingMarketDragonTigerProvider;
+
+impl MarketDragonTigerData for FailingMarketDragonTigerProvider {
+    type Error = FixtureError;
+
+    fn market_dragon_tiger(
+        &self,
+        _request: &MarketDragonTigerRequest,
+    ) -> Result<DataBatch<DragonTigerDisclosure>, Self::Error> {
+        Err(FixtureError)
+    }
+}
+
+struct FailingNorthboundProvider;
+
+impl NorthboundDailyStatistics for FailingNorthboundProvider {
+    type Error = FixtureError;
+
+    fn northbound_daily_statistics(
+        &self,
+        _request: &NorthboundDailyRequest,
+    ) -> Result<DataBatch<NorthboundDailyStat>, Self::Error> {
+        Err(FixtureError)
+    }
+}
+
+#[test]
+fn market_dragon_tiger_and_northbound_preserve_error_classification() {
+    let date = IsoDate::new("2026-07-23").unwrap();
+    let market_request =
+        MarketDragonTigerRequest::new(date.clone(), PositiveU32::new(1).unwrap()).unwrap();
+    let market_source = market_dragon_tiger_source(
+        ProviderId::Eastmoney,
+        Arc::new(FailingMarketDragonTigerProvider),
+        classify,
+    );
+    let error = market_source.fetch(&market_request).unwrap_err();
+    assert_eq!(error.kind(), FailureKind::Transport);
+
+    let northbound_request = NorthboundDailyRequest::new(date, NorthboundChannel::Shanghai);
+    let northbound_source = northbound_daily_source(
+        ProviderId::Hkex,
+        Arc::new(FailingNorthboundProvider),
+        classify,
+    );
+    let error = northbound_source.fetch(&northbound_request).unwrap_err();
+    assert_eq!(error.kind(), FailureKind::Transport);
+}
+
 struct OptionFixtureProvider {
     record_provider: ProviderId,
     record_batch: &'static str,

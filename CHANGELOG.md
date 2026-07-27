@@ -177,6 +177,43 @@ Breaking migrations:
 - Expanded release packaging from seven to twenty-five uniquely named probe
   binaries and added secret-gated iWencai plus public-web live/load workflow
   coverage.
+- Added checked `CorporateActionRequest`/`CorporateActionResponse`,
+  category-specific lifecycle terms, explicit `admission_as_of`, and normalized
+  TDX XDXR categories 1 through 14. The specialized Router owns one immutable
+  admission date, accepts only its sealed validating source adapter, and
+  retains that boundary in the selected outcome.
+- Added production TDX board directory/constituent and concept-hit projections
+  from versioned block snapshots, with instrument code and name retained
+  together and explicit unsupported Beijing boundaries.
+- Added checked full-market volume-ratio and main-net-inflow ranking contracts,
+  independent capability flags, exact code/name identity, complete pagination,
+  whole-operation Eastmoney host fallback, all-three-exchange coverage and a
+  common zero-skew source timestamp requirement. Live admission remains false
+  until a stable full-universe snapshot passes.
+- Kept the strict 15:35 Eastmoney post-close adapter as a bounded diagnostic
+  after the current live source returned missing metrics and mixed per-security
+  timestamps. `CapitalCapabilities.post_close_flow` remains false and the
+  formal `PostCloseFlows` implementation returns typed `Unsupported`.
+- Added checked market-breadth analysis over an evidenced security universe,
+  atomic quotes and complete limit pools, including bounded coverage/source
+  skew and overflow-safe partition accounting.
+- Added Eastmoney target-price observations and aggregates with exact lower and
+  upper fields, contributor/sample evidence and typed first-page
+  `VerifiedEmpty`; THS consensus routing retains matching instrument code and
+  name.
+- Added nanosecond-precise Router freshness admission with an inclusive
+  five-second source-age boundary and the oldest-record batch-time rule. The
+  live TDX-to-Tencent route rejects unverified TDX source time and admits only a
+  complete Tencent batch.
+- Added a fail-closed authorized Level-2 opening-auction conformance policy that
+  binds Provider, provenance source, trading date, explicit China offset,
+  exact `09:15:00..=09:25:00` source window, complete fields, cardinality and
+  atomic evidence. No public Provider is advertised without a licensed feed.
+- Added CFFEX delivery-calendar diagnostics with exact canonical `/cn/jystz`
+  HTTPS paths, explicit Rustls or optional native-TLS selection, strict
+  allowlists and typed transport failures. Production capability remains false
+  because neither TLS backend completed an official HTTPS response in the
+  recorded environment.
 
 Serde input now passes through the same constructors used by Rust callers, so
 invalid numeric values, identifiers, evidence, dates, OHLC ranges, order-book

@@ -9,12 +9,12 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 不访问公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值
 冒充实盘成功。
 
-> 当前状态（2026-07-26）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
+> 当前状态（2026-07-27）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS、Jin10、The Paper、Baidu，以及 SSE/SZSE 官方公告与龙虎榜、SZSE Quote/五档和 HKEX
 > 北向日统计已通过真实网络验收；CFFEX 官方 IF/IH/IC/IM 交割通知的确定性解析已实现，
-> 但 2026-07-25 沙箱内外 live 复验均在官方目录 TLS 初始化时收到 unexpected EOF，
-> 因此 capability 保持关闭，生产 trait 显式返回 `Unsupported`。Eastmoney 已声明能力的
-> live/load 探针全部通过，
+> 但 2026-07-27 的 Rustls 与 Native TLS 实网均在取得 HTTP 前握手失败，所以正式
+> capability 仍为 `false`，不会用明文 HTTP 或日期公式绕过生产门禁。
+> Eastmoney 已声明能力的 live/load 探针全部通过，
 > 分钟/日级资金流因当前网络返回 empty reply 而保持未声明能力；关键词新闻响应没有
 > 结构化证券身份，也不伪装成个股新闻。东财财经滚动页已作为独立全局最新资讯实现，
 > 不把新闻文本提升为证券身份。
@@ -136,7 +136,7 @@ Router 适配器已经通过确定性测试。
 | 研报与一致预期 | `ResearchReport`、`ConsensusSnapshot`、`SemanticSearchDocument` | Eastmoney 研报、THS 一致预期实盘；iWencai 已实现/待授权 Key |
 | 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 与 SSE/SZSE 龙虎榜、TDX 行业/概念目录和成员、Eastmoney/THS 人气、THS 强势原因实盘 |
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
-| 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Eastmoney 严格当前日 15:35 后榜单 Provider 与二次路由校验完成 |
+| 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Core/Router 严格合同和 Eastmoney 诊断实现完成；实网存在缺失指标与混合 `f124`，production capability 为 false、正式 trait 返回 `Unsupported` |
 | 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10、WallstreetCN 全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；Yonhap 中文 RSS metadata 已实现但 live 未准入；个股新闻仍待结构化证券身份来源 |
 | 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | Sina 沪深三表实盘；SecurityProfile/TDX 映射待接 |
 | 打板 | 四类 `LimitPoolEntry` | Eastmoney 四类池与 THS 涨停池实盘；字段缺失不跨源猜测 |
@@ -172,10 +172,10 @@ Router 适配器已经通过确定性测试。
 | 五档盘口 | 实盘：沪深京 | 实盘：沪深京 | 实盘：沪深京；真实空侧标部分不可用 | 已实现/权限不足：查询返回 `10001012` |
 | 行情统计 | 不支持统一契约 | 实盘：股票/指数/ETF 的换手、PE/PB、市值、涨跌停价、量比 | 不支持 | 当前未接入 |
 | 资金流 | 不支持 | 不支持 | 不支持 | 实盘：日级大中小单净流入 |
-| 证券列表/元数据 | 沪深全市场列表与部分标准化元数据；北京列表端点不支持 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 未验证，当前 capability 关闭 |
+| 证券列表/元数据 | 沪深全市场列表、finance 身份校验及实盘上市日；板块仍为派生、规则版本缺失；北京列表端点不支持 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 部分：名称/ST、派生板块；缺上市日和规则版本 | 未验证，当前 capability 关闭 |
 | 财务数据 | 实盘：实时 34 项、报告包和 45 个命名指标 | 不支持 | 实盘：沪深资产负债表/利润表/现金流量表，各最近 8 期 | 当前未接入统一财务契约 |
 | ETF 期权 | 不支持 | 不支持 | 510050 实盘；另 3 个沪市 ETF 已实现待实测 | 不支持 |
-| 除权除息 | 实盘：XDXR 分红/送股/配股/缩股历史 | 不支持 | 不支持 | 当前未接入 |
+| 除权除息 | 实盘：XDXR 全响应严格解析及标准化 `CorporateActions`；精确覆盖源定义的 1–14 类，未证明的股本/权证数量单位显式标为 `ProviderNative` | 不支持 | 不支持 | 当前未接入 |
 | 板块/F10/基金 | 实盘：行业/概念/指数、F10、基金数据 | 不支持 | 不支持 | 当前未接入 |
 | 全球指数/汇率 | 不支持 | 不支持 | 实盘：6 个全球指数、8 个汇率对 | 当前未接入 |
 | 开盘集合竞价 | 不支持 | 不支持 | 不支持 | 不支持：完整字段集尚未证明 |
@@ -184,7 +184,7 @@ Router 适配器已经通过确定性测试。
 
 | Provider | 已真实取得或当前诊断状态 | 当前明确边界 |
 | --- | --- | --- |
-| Eastmoney Web | 个股/行业研报及原始 PDF、最新财经资讯、三类板块流、个股/全市场龙虎榜、融资融券、大宗、户数、解禁、分红、四类打板、人气、严格 15:35 资金榜 | 最新资讯无证券身份；关键词搜索不准入；15:35 榜只允许中国当前日且须在窗口后调用 |
+| Eastmoney Web | 个股/行业研报及原始 PDF、报告级目标价及区间聚合、最新财经资讯、三类板块流、个股/全市场龙虎榜、融资融券、大宗、户数、解禁、分红、四类打板、人气；严格 15:35 资金榜仅诊断 | 目标价保留源代码+名称及 L/T 原字段；最新资讯无证券身份；关键词搜索不准入；15:35 榜实网存在缺失指标与混合 `f124`，capability 为 false、正式 trait 返回 `Unsupported` |
 | CNInfo | 个股公告、完整全市场公告发现、PDF metadata、互动易问答 | 内容源，不提供行情；公告 PDF 仍只返回 URL |
 | THS | 一致预期、强势原因、涨停池/原因、股票热榜 | 只声明已验证涨停池，不声明其他三类池 |
 | CLS | 签名全球电报及来源时间、发布者、关联股票/主题 | 不伪造个股过滤，不是行情源 |
@@ -195,7 +195,7 @@ Router 适配器已经通过确定性测试。
 | Baidu | 华电辽能未复权日 K、MA5/10/20 | 不提供实时 Quote、分钟线或 Level-2 |
 | iWencai | 正式 X-Claw 鉴权和语义结果解析 | 真实数据待合法 API Key；不读取 Cookie/桌面登录态 |
 | SSE/SZSE/HKEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
-| CFFEX official diagnostic | IF/IH/IC/IM 交割通知确定性解析已通过；2026-07-25 官方目录 live 探针在 TLS 初始化时收到 EOF | 尚未生产准入：capability 为 false，生产 trait 返回 `Unsupported`；仅保留显式诊断入口 |
+| CFFEX official diagnostic | IF/IH/IC/IM 交割通知确定性解析已通过；2026-07-27 Rustls/Native TLS 均在取得 HTTP 前失败；明文官方页只用于诊断 | 尚未生产准入：capability 为 false，生产 trait 返回 `Unsupported`；不自动降级到 HTTP |
 | State Council | 国务院政策库 `gongwen`/`bumenfile` 官方文件 | 仅规范 `www.gov.cn` 文件；不是新闻或行情源 |
 
 ### 市场发现、全球与日历能力
@@ -212,7 +212,9 @@ Router 适配器已经通过确定性测试。
 | 官方政策 | State Council | 仅国务院官方搜索与 `www.gov.cn` 规范链接，页面上限 50 |
 | 研报 PDF 正文 | Eastmoney | 精确研报身份、`application/pdf`、`%PDF-`、最大 32 MiB |
 | 期货交割日历 | CFFEX 诊断实现（生产 capability 未准入） | 有界扫描官方交易通知目录及同站详情；通知必须明确 IF/IH/IC/IM、请求月份的实际交割日与交割结算价；未独立证明交割方式时保留 `NotProvided`，未证明最后交易日时保留空值；不使用公式推算；生产 trait 返回 `Unsupported` |
-| 15:35 资金榜 | Eastmoney | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称 |
+| 15:35 资金榜 | Eastmoney 诊断实现（生产 capability 未准入） | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称；2026-07-27 主站返回空响应，延迟站同一榜内混合源时间，正式 trait 返回 `Unsupported` |
+| 全市场量比/主力净流入排名 | Eastmoney 诊断实现 | 固定按源端每页 100 条完整翻页，要求沪深京、代码+名称、排序、时间与覆盖原子一致；2026-07-27 完整实网尚未通过，per-metric capability 保持 false |
+| 市场宽度 | LocalAnalysis | 显式版本证券全集 + 原子 Quote 批次 + 完整涨停/跌停池；输出总数、有效/涨/跌/平、覆盖率、时间偏斜及全部输入证据，不冒充单一 Provider 原子榜 |
 
 ### TDX
 
@@ -228,6 +230,18 @@ Smart failover 客户端。2026-07-23 的真实 probe 覆盖：
 TDX Quote/盘口报文中的时间区域格式尚未完成审计，所以标准化记录保留
 `source_at=None` 并标记质量不完整。它们不能直接通过要求可审计源时间的 5 秒新鲜度
 门。TDX 也没有满足统一 MoneyFlow 和集合竞价契约的字段，不会从成交或盘口推测。
+
+2026-07-27 当前实网已验证 finance-backed 上市日期和统一生命周期 Gateway：华电辽能
+`600396`、平安银行 `000001`、贵州茅台 `600519` 的上市日与身份匹配；贵州茅台
+完整 45 行 XDXR 先通过身份、日期、类别和字段校验，再投影出 2024 年两条完整
+`Distribution`；1900 年范围返回带请求证据的 complete empty。协议定义的 1–14
+类都有显式类别和 terms；11 类保留源端“扩缩股”的宽泛 `CapitalRescaling` 语义，
+不会窄化成拆股。2–10 的四个股本数值、11/12 的 `suogu` 数值以及 13/14 的权证数量
+因物理单位未被上游独立证明，保留
+`UnverifiedSourceUnit::ProviderNative`，不得解释成股、手、每股比例或调整倍率。
+XDXR 不提供供应商发布时间，因此企业行动仍保留 `source_at=None`，生效日不会冒充
+源时间。响应另带显式中国日期 `admission_as_of`，未来请求范围或生效日会在 Core 和
+Router 双层失败。
 
 标准化 Quote 的必填当前价如果为零、负数或非有限数，会连同证券身份和源字段上下文
 返回 typed error，不会用昨收或 `None` 伪装修复。关闭自动重试的未连接客户端会立即
@@ -358,8 +372,8 @@ python3 tools/coverage/check_thresholds.py target/coverage/coverage.json
 ```
 
 门槛是生产代码整体 `80.00%`，Core、Router、TDX 关键协议/适配/服务入口及公共
-资讯 Provider 集合 `95.00%`。2026-07-26 合并版本最终报告为
-`33669/38912 = 86.53%` 和 `15476/16217 = 95.43%`。合同、关键集合和失败语义见
+资讯 Provider 集合 `95.00%`。2026-07-27 当前版本最终报告为
+`37596/43241 = 86.95%` 和 `18717/19689 = 95.06%`。合同、关键集合和失败语义见
 [覆盖率门说明](tools/coverage/README.md)。
 
 ## 真实数据探针
@@ -495,8 +509,12 @@ CFFEX 诊断实现可以单独验收，默认示例月份为 `2026-02`；成功�
 MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
 MAGIC_CFFEX_DELIVERY_YEAR=2026 \
 MAGIC_CFFEX_DELIVERY_MONTH=2 \
+MAGIC_CFFEX_TLS_BACKEND=rustls \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
+
+诊断系统 TLS 时启用 `--features native-tls` 并将
+`MAGIC_CFFEX_TLS_BACKEND=native-tls`；两种 backend 都是显式选择，不会静默回退。
 
 每个 crate 另有同名 `load_probe`。Eastmoney 最多 20 次高层数据族 attempt
 （部分数据族内部包含多个 HTTP 请求），CNInfo/THS 最多 5 请求，
@@ -598,8 +616,11 @@ fn build_router() -> Result<QuoteRouter, Box<dyn Error>> {
 ```
 
 成功时读取 `RouteOutcome::selected_provider()`、`batch()` 和 `attempts()`；失败时从
-`RouterError::attempts()` 保留完整诊断。Router 不解析一个适用于所有数据族的固定
-“5 秒”规则：Quote、分钟线、日线和盘后指标的时间语义不同，新鲜度门属于业务层。
+`RouterError::attempts()` 保留完整诊断。Router 不把“5 秒”硬编码到所有数据族；
+调用方只对连续竞价 Quote 显式配置
+`AcceptancePolicy::with_max_source_age(Duration::from_secs(5))`。该策略使用供应商
+`source_at`、纳秒精度和批次中最老记录，正好 5 秒可通过，任何更老、未来、缺失、
+无时区或 record/batch 不一致都拒绝；分钟线、日线和盘后指标使用各自策略。
 
 完整策略见 [多数据源路由文档](docs/MULTI_PROVIDER_ROUTING.md)。
 
@@ -679,7 +700,7 @@ Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架�
 | TDX | macOS、Linux、Windows | 行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` |
 | Tencent | macOS、Linux、Windows | `qt.gtimg.cn`、`web.ifzq.gtimg.cn`、`ifzq.gtimg.cn`、`stock.gtimg.cn` 的 HTTPS |
 | Sina | macOS、Linux、Windows | `hq.sinajs.cn`、`quotes.sina.cn`、`stock.finance.sina.com.cn` 的 HTTPS |
-| Eastmoney Web | macOS、Linux、Windows | `reportapi`、`push2/push2his/push2ex`、`datacenter-web`、`emappdata` 等文档列出的 HTTPS 主机 |
+| Eastmoney Web | macOS、Linux、Windows | `reportapi`、`push2/push2delay/push2his/push2ex`、`datacenter-web`、`emappdata` 等文档列出的 HTTPS 主机 |
 | CNInfo | macOS、Linux、Windows | `www.cninfo.com.cn`、`irm.cninfo.com.cn`、`static.cninfo.com.cn` 的 HTTPS |
 | THS | macOS、Linux、Windows | `basic`、`zx`、`data`、`dq.10jqka.com.cn` 的 HTTPS |
 | CLS | macOS、Linux、Windows | `www.cls.cn` 的 HTTPS |
@@ -732,13 +753,14 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 
 ## 当前验收状态
 
-以下是截至 2026-07-26 已保存的验收边界，不等同于供应商 SLA：
+以下是截至 2026-07-27 已保存的验收边界，不等同于供应商 SLA：
 
 | 项目 | 结果 | 证据摘要 |
 | --- | --- | --- |
-| 默认工具链全工作区门禁 | 通过 | 2026-07-26 使用 rustc 1.97.0 / Cargo 1.97.0；check、全部测试、严格 Clippy、rustdoc/doctest、链接和合规均通过 |
-| 严格生产覆盖率门 | 通过 | 整体 `33669/38912 = 86.53%`；关键集合 `15476/16217 = 95.43%` |
+| 默认工具链全工作区门禁 | 通过 | 2026-07-27 使用 rustc 1.95.0 / Cargo 1.95.0；check、全部测试、严格 Clippy、rustdoc/doctest、链接和合规均通过 |
+| 严格生产覆盖率门 | 通过 | 整体 `37596/43241 = 86.95%`；关键集合 `18717/19689 = 95.06%` |
 | TDX live probe | 通过 | 沪深京基础行情、12 K 线周期、分时/逐笔、财务/XDXR、板块/基金/F10 |
+| TDX lifecycle live | 通过 | 600396/000001/600519 上市日；600519 2024 两条标准化企业行动；1900 范围 verified-empty |
 | Tencent live probe | 通过 | 沪深京基础行情；股票/指数/ETF 行情统计；沪深当日逐笔 |
 | Tencent load probe | 通过 | mixed 100/8 为 100/100；统计 12/3 为 12/12 |
 | Sina live probe | 通过 | 基础行情、三类财务报表各 8 期、510050 合约/T 型报价/Greeks/IV |
@@ -754,8 +776,12 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Yonhap Chinese RSS | 确定性实现通过；生产未准入 | 22 个库测试、4 个能力测试和 4 个 probe 配置测试通过；Rolling/Economy release live 均为 TLS unexpected EOF，故 capability 保持 false |
 | WallstreetCN RSS live/load | 通过 | live 20 条严格 metadata；同一客户端 load 2/2、各 10 条、总耗时 7.529 秒；`global_news=true`，summary/content 恒缺失 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
-| SSE/SZSE/HKEX official live/load | 待合并后重跑 | 确定性实现与 probe 命令已合入；父提交 8/8 历史结果不作为合并版本准入 |
-| CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602 四条事件；生产 capability 为 false、trait 返回 `Unsupported`；2026-07-25 沙箱内外 live 均在官方目录 TLS 初始化时收到 unexpected EOF |
+| SSE/SZSE/HKEX official live/load | 通过 | 2026-07-27 当前树 live 覆盖 SSE 公告/龙虎榜、SZSE 公告/Quote/五档/龙虎榜及 HKEX 两条北向日统计；load 8/8、零失败，最小请求起始间隔 1001 ms |
+| Router strict 5-second quote | 通过 | 2026-07-27 13:01 连续竞价：TDX 因缺可信源时间被拒绝，Tencent 600519.SH 被选中，源龄 3613 ms |
+| Eastmoney target price / THS consensus | 通过 | 600519.SH 两项均同时保留代码和“贵州茅台”名称；目标价 6 样本/4 机构并由 `TargetPriceRouter` 严格准入，THS Router 选中 1 条一致预期 |
+| Full-market rankings | 未准入 | 源端每页上限 100；主入口传输失败时丢弃全部分页并从 `push2delay` 第 1 页重启，绝不混拼快照。5,541 行全量探针分别因部分证券缺 `f10`/`f62` 被原子拒绝；末页还有 19 个 `f124`，跨度 08:00:00–16:11:58，无法证明同一源快照，两个 per-metric capability 保持 false |
+| Eastmoney strict 15:35 post-close flow | 诊断实现通过；生产未准入 | 正式 trait 返回 typed `Unsupported` 且 capability=false；当前日全量诊断因证券间源时间不一致返回 `diagnostic_probe_status=unadmitted`，不输出生产成功标记 |
+| CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602；2026-07-27 双 TLS 均未取得 HTTP。官方明文页诊断确认 2026-07-17 及 IF/IH/IC/IM 结算价，但明文不进入 Provider，capability 仍为 false |
 | iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
 | Release package | 每个提交独立构建 | 三十个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 
@@ -768,6 +794,10 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | --- | --- |
 | [部署手册](docs/DEPLOYMENT.md) | 可重复构建、平台、网络、EMQuant runtime、健康检查、回滚与升级 |
 | [TDX 能力矩阵](docs/TDX_CAPABILITIES.md) | 全数据族、北京市场、证据和显式不支持边界 |
+| [TDX 生命周期实网证据](docs/evidence/2026-07-27-tdx-lifecycle.md) | 上市日期、标准化企业行动、verified-empty 与时间戳边界 |
+| [排名、宽度、一致预期与目标价证据](docs/evidence/2026-07-27-rankings-consensus-target-price.md) | 代码+名称、完整分页边界、组合宽度、THS 与目标价实网 |
+| [Router 5 秒新鲜度证据](docs/evidence/2026-07-27-router-freshness.md) | 连续竞价切源、最老源时间与严格纳秒边界 |
+| [CFFEX 交割诊断证据](docs/evidence/2026-07-27-cffex-delivery.md) | 双 TLS、官方明文诊断与未准入边界 |
 | [Tencent 接入合同](docs/integrations/tencent-web.md) | 端点、统计字段/单位、市场/周期边界与负载结果 |
 | [Sina 接入合同](docs/integrations/sina-web.md) | 基础行情、财务三表、ETF 期权、字段与负载结果 |
 | [Choice/EMQuant 接入](docs/integrations/eastmoney-emquant.md) | SDK bridge、激活、能力映射和当前权限状态 |

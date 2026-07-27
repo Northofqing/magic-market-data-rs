@@ -30,6 +30,7 @@ fn research_and_consensus_records_are_typed_and_sourced() {
         scope: ReportScope::Instrument(instrument()),
         title: NonEmptyText::new("公司深度报告").unwrap(),
         organization: NonEmptyText::new("示例证券").unwrap(),
+        organization_id: None,
         author: None,
         rating: Some(NonEmptyText::new("增持").unwrap()),
         industry_code: None,
@@ -38,10 +39,13 @@ fn research_and_consensus_records_are_typed_and_sourced() {
         canonical_url: HttpsUrl::new("https://example.com/report/H3_ABC").unwrap(),
         pdf_url: Some(HttpsUrl::new("https://example.com/H3_ABC.pdf").unwrap()),
         estimates: vec![estimate.clone()],
+        source_indv_aim_price_t: None,
+        source_indv_aim_price_l: None,
         evidence: evidence(ProviderId::Eastmoney),
     };
     let consensus = ConsensusSnapshot {
         instrument: instrument(),
+        name: NonEmptyText::new("华电辽能").unwrap(),
         estimates: vec![estimate],
         contributor_count: Some(PositiveU32::new(5).unwrap()),
         evidence: evidence(ProviderId::Tonghuashun),
@@ -50,6 +54,7 @@ fn research_and_consensus_records_are_typed_and_sourced() {
     assert_eq!(report.provider_id(), ProviderId::Eastmoney);
     assert_eq!(report.evidence_batch_id(), "batch");
     assert_eq!(consensus.provider_id(), ProviderId::Tonghuashun);
+    assert_eq!(consensus.name.as_str(), "华电辽能");
     assert_eq!(consensus.evidence_batch_id(), "batch");
     let json = serde_json::to_string(&report).unwrap();
     assert_eq!(

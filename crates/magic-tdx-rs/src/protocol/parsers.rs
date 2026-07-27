@@ -1,7 +1,7 @@
 use encoding_rs::GBK;
 
 use crate::constants::{max_valid_year, read_u16, read_u32};
-use crate::error::Result;
+use crate::error::{Result, TdxError};
 use crate::error_codes::ErrorCode;
 use crate::helpers::{get_price, get_volume};
 
@@ -438,6 +438,32 @@ pub fn parse_history_minute_time_data(
 // 解析逐笔成交
 // ============================================================
 
+fn checked_transaction_varint(
+    body: &[u8],
+    pos: usize,
+    row_index: usize,
+    field: &str,
+) -> Result<(i64, usize)> {
+    const MAX_ENCODED_LEN: usize = 9;
+    let encoded_len = body
+        .get(pos..)
+        .and_then(|remaining| {
+            remaining
+                .iter()
+                .position(|byte| byte & 0x80 == 0)
+                .map(|offset| offset + 1)
+        })
+        .filter(|encoded_len| *encoded_len <= MAX_ENCODED_LEN)
+        .ok_or_else(|| {
+            ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+                "current transaction row {row_index} {field} has invalid variable-length framing"
+            ))
+        })?;
+    let (value, new_pos) = get_price(body, pos);
+    debug_assert_eq!(new_pos, pos + encoded_len);
+    Ok((value, new_pos))
+}
+
 pub fn parse_transaction_data(body: &[u8]) -> Result<Vec<TickData>> {
     parse_transaction_data_with_coefficient(body, 0.01)
 }
@@ -456,7 +482,13 @@ pub fn parse_transaction_data_with_coefficient(
 
     let mut last_price: i64 = 0;
 
-    for _ in 0..count {
+    for row_index in 0..count {
+        // time(2) plus five minimally one-byte variable integers.
+        if body.len().saturating_sub(pos) < 7 {
+            return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH
+                .err(format!("current transaction row {row_index} is truncated")));
+        }
+
         // time (u16 minutes)
         let minutes = read_u16(body, pos) as u32;
         pos += 2;
@@ -465,28 +497,28 @@ pub fn parse_transaction_data_with_coefficient(
         let time = format!("{:02}:{:02}", hour, minute);
 
         // price (delta encoded)
-        let (price_diff, new_pos) = get_price(body, pos);
+        let (price_diff, new_pos) = checked_transaction_varint(body, pos, row_index, "price")?;
         last_price += price_diff;
         let price = last_price as f64 * coefficient;
         pos = new_pos;
 
         // vol
-        let (vol, new_pos) = get_price(body, pos);
+        let (vol, new_pos) = checked_transaction_varint(body, pos, row_index, "volume")?;
         let vol = vol as f64;
         pos = new_pos;
 
         // num
-        let (num, new_pos) = get_price(body, pos);
+        let (num, new_pos) = checked_transaction_varint(body, pos, row_index, "trade count")?;
         let num = num as u32;
         pos = new_pos;
 
         // buyorsell
-        let (buyorsell, new_pos) = get_price(body, pos);
+        let (buyorsell, new_pos) = checked_transaction_varint(body, pos, row_index, "trade side")?;
         let buyorsell = buyorsell as u32;
         pos = new_pos;
 
         // reserved (原 extra field，具体含义待确认)
-        let (reserved, new_pos) = get_price(body, pos);
+        let (reserved, new_pos) = checked_transaction_varint(body, pos, row_index, "reserved")?;
         let reserved = reserved as u32;
         pos = new_pos;
 
@@ -498,6 +530,12 @@ pub fn parse_transaction_data_with_coefficient(
             buyorsell,
             reserved,
         });
+    }
+    if pos != body.len() {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "current transaction response has {} trailing bytes after {count} declared records",
+            body.len() - pos
+        )));
     }
 
     Ok(result)
@@ -780,10 +818,30 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 // ============================================================
 
 pub fn parse_finance_info(body: &[u8], market: u8, code: &str) -> Result<FinanceInfo> {
-    // Python skips: 2 bytes count + 1 byte market + 6 bytes code = 9 bytes
-    // Struct: fHHII + 30*f = 136 bytes
-    if body.len() < 9 + 136 {
-        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short for finance info"));
+    // Single-security response: count(2) + market(1) + code(6) + struct(136).
+    if body.len() < 2 {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short for finance count"));
+    }
+    let count = read_u16(body, 0);
+    if count != 1 {
+        return Err(TdxError::InvalidData(format!(
+            "single-security finance response declared {count} records instead of exactly one"
+        )));
+    }
+    const EXPECTED_LEN: usize = 2 + 1 + 6 + 136;
+    if body.len() != EXPECTED_LEN {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "single-security finance response requires exactly {EXPECTED_LEN} bytes, received {}",
+            body.len()
+        )));
+    }
+    let response_market = body[2];
+    let response_code = std::str::from_utf8(&body[3..9])
+        .map_err(|_| TdxError::InvalidData("finance response code is not valid ASCII".into()))?;
+    if response_market != market || response_code != code {
+        return Err(TdxError::InvalidData(format!(
+            "finance response identity ({response_market}, {response_code:?}) does not match request ({market}, {code:?})"
+        )));
     }
 
     let mut pos = 9; // skip count(2) + market(1) + code(6)
@@ -808,14 +866,27 @@ pub fn parse_finance_info(body: &[u8], market: u8, code: &str) -> Result<Finance
     // u32 ipo_date
     let ipo_date = read_u32(body, pos);
     pos += 4;
+    if ipo_date != 0 {
+        validate_compact_source_date(ipo_date, "finance IPO date")?;
+    }
 
     // 30 个 f32 字段 — 全部返回 TDX 原始值，不做单位转换
     let mut fields = Vec::with_capacity(30);
     for _ in 0..30 {
         let val =
             f32::from_le_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]]) as f64;
+        if !val.is_finite() {
+            return Err(TdxError::InvalidData(
+                "finance response contains a non-finite numeric field".into(),
+            ));
+        }
         fields.push(val);
         pos += 4;
+    }
+    if !liutongguben.is_finite() {
+        return Err(TdxError::InvalidData(
+            "finance response contains a non-finite circulating-share value".into(),
+        ));
     }
 
     Ok(FinanceInfo {
@@ -871,23 +942,48 @@ pub fn parse_xdxr_info(body: &[u8]) -> Result<Vec<XdXrInfo>> {
     let mut pos = 9;
     let count = read_u16(body, pos) as usize;
     pos += 2;
+    let expected_len = 11usize
+        .checked_add(count.checked_mul(29).ok_or_else(|| {
+            TdxError::InvalidData("XDXR declared record count overflows response length".into())
+        })?)
+        .ok_or_else(|| {
+            TdxError::InvalidData("XDXR declared response length overflows usize".into())
+        })?;
+    if body.len() != expected_len {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "XDXR declared {count} records require {expected_len} bytes, received {}",
+            body.len()
+        )));
+    }
 
     let mut result = Vec::with_capacity(count);
+    let response_market = body[2];
+    let response_code = &body[3..9];
 
     for _ in 0..count {
-        // 7(skip) + 1(skip) + 4(datetime) + 1(category) + 16(data) = 29 bytes per record
-        if pos + 29 > body.len() {
-            break;
+        // market(1) + code(6) + reserved(1) + date(4) + category(1) + data(16).
+        let row_market = body[pos];
+        let row_code = &body[pos + 1..pos + 7];
+        if row_market != response_market || row_code != response_code {
+            return Err(TdxError::InvalidData(format!(
+                "XDXR row identity ({row_market}, {:?}) does not match response identity ({response_market}, {:?})",
+                String::from_utf8_lossy(row_code),
+                String::from_utf8_lossy(response_code)
+            )));
         }
-
-        // Python: pos += 7 (skip unknown bytes)
         pos += 7;
-        // Python: pos += 1 (skip 1 byte)
+        // One reserved source byte.
         pos += 1;
 
         // datetime (category 9 → YYYYMMDD u32)
         let (year, month, day, _hour, _minute, new_pos) = get_datetime(9, body, pos);
         pos = new_pos;
+        let compact_date = year
+            .checked_mul(10_000)
+            .and_then(|value| value.checked_add(month * 100))
+            .and_then(|value| value.checked_add(day))
+            .ok_or_else(|| TdxError::InvalidData("XDXR date overflows u32".into()))?;
+        validate_compact_source_date(compact_date, "XDXR effective date")?;
 
         // category (u8)
         let category = body[pos] as u32;
@@ -946,6 +1042,28 @@ pub fn parse_xdxr_info(body: &[u8]) -> Result<Vec<XdXrInfo>> {
             }
         }
         pos += 16;
+        for value in [
+            fenhong,
+            peigujia,
+            songzhuangu,
+            peigu,
+            suogu,
+            panqianliutong,
+            panhouliutong,
+            qianzongguben,
+            houzongguben,
+            fenshu,
+            xingquanjia,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !value.is_finite() {
+                return Err(TdxError::InvalidData(
+                    "XDXR response contains a non-finite numeric field".into(),
+                ));
+            }
+        }
 
         let name = match category {
             1 => "除权除息",
@@ -987,6 +1105,40 @@ pub fn parse_xdxr_info(body: &[u8]) -> Result<Vec<XdXrInfo>> {
     }
 
     Ok(result)
+}
+
+/// Parses an XDXR packet after proving that its response identity matches the request.
+pub fn parse_xdxr_info_for(body: &[u8], market: u8, code: &str) -> Result<Vec<XdXrInfo>> {
+    if body.len() < 9 {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short for XDXR identity"));
+    }
+    let response_market = body[2];
+    let response_code = std::str::from_utf8(&body[3..9])
+        .map_err(|_| TdxError::InvalidData("XDXR response code is not valid ASCII".into()))?;
+    if response_market != market || response_code != code {
+        return Err(TdxError::InvalidData(format!(
+            "XDXR response identity ({response_market}, {response_code:?}) does not match request ({market}, {code:?})"
+        )));
+    }
+    parse_xdxr_info(body)
+}
+
+fn validate_compact_source_date(value: u32, field: &str) -> Result<()> {
+    let text = format!("{value:08}");
+    if text.len() != 8 {
+        return Err(TdxError::InvalidData(format!(
+            "{field} must contain exactly eight digits"
+        )));
+    }
+    let iso = format!("{}-{}-{}", &text[0..4], &text[4..6], &text[6..8]);
+    magic_market_core::IsoDate::new(iso)
+        .map_err(|error| TdxError::InvalidData(format!("invalid {field}: {error}")))?;
+    if value > crate::net::utils::today_yyyymmdd() {
+        return Err(TdxError::InvalidData(format!(
+            "{field} {value} is in the future"
+        )));
+    }
+    Ok(())
 }
 
 // ============================================================

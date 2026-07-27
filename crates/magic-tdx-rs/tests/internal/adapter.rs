@@ -41,6 +41,19 @@ fn instrument(code: &str) -> InstrumentId {
     InstrumentId::new(Exchange::Shanghai, code, AssetClass::Equity).unwrap()
 }
 
+fn normalize_corporate_actions(
+    source: &str,
+    request: &CorporateActionRequest,
+    records: Vec<XdXrInfo>,
+) -> Result<DataBatch<CorporateAction>, TdxError> {
+    super::normalize_corporate_actions(
+        source,
+        request,
+        records,
+        &IsoDate::new("2026-07-27").unwrap(),
+    )
+}
+
 fn source_bar() -> SecurityBar {
     SecurityBar {
         open: 10.0,
@@ -55,6 +68,69 @@ fn source_bar() -> SecurityBar {
         hour: 0,
         minute: 0,
         datetime: "2026-07-23".into(),
+    }
+}
+
+fn source_finance(market: u8, code: &str, ipo_date: u32) -> FinanceInfo {
+    FinanceInfo {
+        market,
+        code: code.into(),
+        liutongguben: 0.0,
+        province: 0,
+        industry: 0,
+        updated_date: 20260727,
+        ipo_date,
+        zongguben: 0.0,
+        guojiagu: 0.0,
+        faqirenfarengu: 0.0,
+        farengu: 0.0,
+        bgu: 0.0,
+        hgu: 0.0,
+        zhigonggu: 0.0,
+        zongzichan: 0.0,
+        liudongzichan: 0.0,
+        gudingzichan: 0.0,
+        wuxingzichan: 0.0,
+        gudongrenshu: 0.0,
+        liudongfuzhai: 0.0,
+        changqifuzhai: 0.0,
+        zibengongjijin: 0.0,
+        jingzichan: 0.0,
+        zhuyingshouru: 0.0,
+        zhuyinglirun: 0.0,
+        yingshouzhangkuan: 0.0,
+        yingyelirun: 0.0,
+        touzishouyu: 0.0,
+        jingyingxianjinliu: 0.0,
+        zongxianjinliu: 0.0,
+        cunhuo: 0.0,
+        lirunzonghe: 0.0,
+        shuihoulirun: 0.0,
+        jinglirun: 0.0,
+        weifenpeilirun: 0.0,
+        meigujingzichan: 0.0,
+    }
+}
+
+fn source_action(date: (u32, u32, u32), category: u32, value: f64) -> XdXrInfo {
+    let capital_structure = (2..=10).contains(&category);
+    XdXrInfo {
+        year: date.0,
+        month: date.1,
+        day: date.2,
+        category,
+        name: "fixture".into(),
+        fenhong: (category == 1).then_some(value),
+        peigujia: (category == 1).then_some(12.0),
+        songzhuangu: (category == 1).then_some(1.0),
+        peigu: (category == 1).then_some(0.5),
+        suogu: matches!(category, 11 | 12).then_some(value),
+        panqianliutong: capital_structure.then_some(100.0),
+        panhouliutong: capital_structure.then_some(100.0 + value),
+        qianzongguben: capital_structure.then_some(200.0),
+        houzongguben: capital_structure.then_some(200.0 + value),
+        fenshu: matches!(category, 13 | 14).then_some(value),
+        xingquanjia: matches!(category, 13 | 14).then_some(30.3),
     }
 }
 
@@ -76,6 +152,10 @@ struct ScriptedBarsQuery {
     security_count_responses: RefCell<VecDeque<Result<u16, TdxError>>>,
     security_list_calls: RefCell<Vec<(u8, u16)>>,
     security_list_responses: RefCell<VecDeque<Result<Vec<SecurityInfo>, TdxError>>>,
+    finance_calls: RefCell<Vec<(u8, String)>>,
+    finance_responses: RefCell<VecDeque<Result<FinanceInfo, TdxError>>>,
+    xdxr_calls: RefCell<Vec<(u8, String)>>,
+    xdxr_responses: RefCell<VecDeque<Result<Vec<XdXrInfo>, TdxError>>>,
 }
 
 impl BlockingTdxQuery for ScriptedBarsQuery {
@@ -207,6 +287,32 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
             .unwrap_or_else(|| {
                 Err(TdxError::InvalidData(
                     "scripted security list response is not configured".into(),
+                ))
+            })
+    }
+
+    fn finance_info(&self, market: u8, code: &str) -> Result<FinanceInfo, TdxError> {
+        self.finance_calls
+            .borrow_mut()
+            .push((market, code.to_owned()));
+        self.finance_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted finance response is not configured".into(),
+                ))
+            })
+    }
+
+    fn xdxr_info(&self, market: u8, code: &str) -> Result<Vec<XdXrInfo>, TdxError> {
+        self.xdxr_calls.borrow_mut().push((market, code.to_owned()));
+        self.xdxr_responses
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TdxError::InvalidData(
+                    "scripted XDXR response is not configured".into(),
                 ))
             })
     }
@@ -366,6 +472,10 @@ fn blocking_metadata_seam_uses_declared_count_and_source_backed_page() {
                 pre_close: 20.0,
             },
         ])])),
+        finance_responses: RefCell::new(VecDeque::from([
+            Ok(source_finance(1, "600002", 20000102)),
+            Ok(source_finance(1, "600001", 20000101)),
+        ])),
         ..Default::default()
     };
     let instruments = [instrument("600002"), instrument("600001")];
@@ -376,6 +486,7 @@ fn blocking_metadata_seam_uses_declared_count_and_source_backed_page() {
     assert_eq!(*query.security_list_calls.borrow(), vec![(1, 0)]);
     assert_eq!(batch.records()[0].instrument().code(), "600002");
     assert_eq!(batch.records()[0].name(), Some("乙公司"));
+    assert_eq!(batch.records()[0].listed_on(), Some("2000-01-02"));
     assert_eq!(batch.records()[1].name(), Some("甲公司"));
     assert_eq!(batch.provenance().source(), "tdx");
 }
@@ -601,6 +712,68 @@ async fn async_trade_seam_uses_historical_query_and_short_terminal_page() {
 }
 
 #[tokio::test]
+async fn async_historical_trades_paginate_at_protocol_limit() {
+    let query = ScriptedAsyncBarsQuery {
+        history_transaction_responses: RefCell::new(VecDeque::from([
+            Ok(vec![
+                source_trade(0, 0);
+                usize::from(HISTORICAL_TRADE_PAGE_SIZE)
+            ]),
+            Ok(vec![source_trade(1, 1)]),
+        ])),
+        ..Default::default()
+    };
+    let request = TradesRequest::new(instrument("600519"), HISTORICAL_TRADE_PAGE_SIZE + 1)
+        .unwrap()
+        .with_date("2026-07-21")
+        .unwrap();
+
+    let batch = trades_async_with(&query, &request).await.unwrap();
+
+    assert!(query.transaction_calls.borrow().is_empty());
+    assert_eq!(
+        *query.history_transaction_calls.borrow(),
+        vec![
+            (1, "600519".into(), 0, HISTORICAL_TRADE_PAGE_SIZE, 20260721),
+            (1, "600519".into(), HISTORICAL_TRADE_PAGE_SIZE, 1, 20260721),
+        ]
+    );
+    assert_eq!(
+        batch.records().len(),
+        usize::from(HISTORICAL_TRADE_PAGE_SIZE) + 1
+    );
+    assert_eq!(batch.provenance().source(), "tdx-async-history");
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-21 10:00:01"));
+}
+
+#[tokio::test]
+async fn async_historical_trades_reject_oversized_page() {
+    let query = ScriptedAsyncBarsQuery {
+        history_transaction_responses: RefCell::new(VecDeque::from([Ok(vec![
+            source_trade(0, 0),
+            source_trade(1, 1),
+        ])])),
+        ..Default::default()
+    };
+    let request = TradesRequest::new(instrument("600519"), 1)
+        .unwrap()
+        .with_date("2026-07-21")
+        .unwrap();
+
+    let error = trades_async_with(&query, &request).await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        TdxError::InvalidData(message)
+            if message == "TDX async trade page exceeds requested cardinality"
+    ));
+    assert_eq!(
+        *query.history_transaction_calls.borrow(),
+        vec![(1, "600519".into(), 0, 1, 20260721)]
+    );
+}
+
+#[tokio::test]
 async fn async_current_trades_reject_before_transport_outside_session() {
     let query = ScriptedAsyncBarsQuery::default();
     let request = TradesRequest::new(instrument("600519"), 3).unwrap();
@@ -789,6 +962,328 @@ fn normalizes_only_source_backed_security_metadata() {
             && record.price_limit().version().is_none()
             && record.status() == DataStatus::Unavailable));
     assert!(!batch.quality().is_complete());
+}
+
+#[test]
+fn enriches_listing_date_only_from_matching_verified_finance_records() {
+    let requested = [instrument("600001")];
+    let records = vec![(1, security_info("600001", "甲公司"))];
+    let batch = normalize_security_metadata_with_finance(
+        "test",
+        &requested,
+        records.clone(),
+        vec![source_finance(1, "600001", 19991231)],
+    )
+    .unwrap();
+    assert_eq!(batch.records()[0].listed_on(), Some("1999-12-31"));
+    assert!(!batch
+        .quality()
+        .issues()
+        .iter()
+        .any(|issue| issue.contains("listing date unavailable")));
+
+    assert!(normalize_security_metadata_with_finance(
+        "test",
+        &requested,
+        records.clone(),
+        vec![source_finance(0, "600001", 19991231)],
+    )
+    .is_err());
+    assert!(normalize_security_metadata_with_finance(
+        "test",
+        &requested,
+        records,
+        vec![source_finance(1, "600001", 99991231)],
+    )
+    .is_err());
+}
+
+#[test]
+fn normalizes_corporate_actions_in_range_order_with_shared_evidence() {
+    let request = CorporateActionRequest::new(instrument("600001"))
+        .with_range(
+            IsoDate::new("2024-01-01").unwrap(),
+            IsoDate::new("2026-07-27").unwrap(),
+        )
+        .unwrap();
+    let batch = normalize_corporate_actions(
+        "test",
+        &request,
+        vec![
+            source_action((2023, 6, 1), 11, 2.0),
+            source_action((2024, 6, 1), 11, 2.0),
+            source_action((2025, 6, 1), 1, 2.0),
+            source_action((2026, 6, 1), 12, 0.5),
+        ],
+    )
+    .unwrap();
+    assert_eq!(batch.records().len(), 3);
+    assert_eq!(batch.records()[0].effective_on().as_str(), "2024-06-01");
+    assert_eq!(
+        batch.records()[1].category(),
+        CorporateActionCategory::Distribution
+    );
+    assert_eq!(
+        batch.records()[2].category(),
+        CorporateActionCategory::NonTradableReverseSplit
+    );
+    let batch_id = batch.provenance().batch_id().unwrap();
+    assert!(batch
+        .records()
+        .iter()
+        .all(|record| record.evidence().batch_id() == batch_id
+            && record.evidence().source_at().is_none()));
+}
+
+#[test]
+fn corporate_action_normalization_accepts_monotonic_source_directions_but_rejects_reversals() {
+    let request = CorporateActionRequest::new(instrument("600001"));
+    let descending = normalize_corporate_actions(
+        "test",
+        &request,
+        vec![
+            source_action((2026, 6, 1), 12, 0.5),
+            source_action((2025, 6, 1), 1, 2.0),
+            source_action((2024, 6, 1), 11, 2.0),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        descending.records()[0].effective_on().as_str(),
+        "2024-06-01"
+    );
+
+    assert!(normalize_corporate_actions(
+        "test",
+        &request,
+        vec![
+            source_action((2026, 6, 1), 12, 0.5),
+            source_action((2024, 6, 1), 11, 2.0),
+            source_action((2025, 6, 1), 1, 2.0),
+        ],
+    )
+    .is_err());
+}
+
+#[test]
+fn corporate_action_normalization_preserves_verified_empty_and_rejects_bad_rows() {
+    let request = CorporateActionRequest::new(instrument("600001"));
+    let empty = normalize_corporate_actions("test", &request, Vec::new()).unwrap();
+    assert!(empty.records().is_empty());
+    assert!(empty.quality().is_complete());
+
+    let duplicate = source_action((2025, 6, 1), 1, 2.0);
+    assert!(
+        normalize_corporate_actions("test", &request, vec![duplicate.clone(), duplicate],).is_err()
+    );
+    assert!(normalize_corporate_actions(
+        "test",
+        &request,
+        vec![source_action((2025, 6, 1), 99, 2.0)],
+    )
+    .is_err());
+    assert!(normalize_corporate_actions(
+        "test",
+        &request,
+        vec![source_action((2025, 2, 31), 11, 2.0)],
+    )
+    .is_err());
+}
+
+#[test]
+fn corporate_action_normalization_validates_all_categories_before_range_projection() {
+    let request = CorporateActionRequest::new(instrument("600001"))
+        .with_range(
+            IsoDate::new("2024-01-01").unwrap(),
+            IsoDate::new("2024-12-31").unwrap(),
+        )
+        .unwrap();
+
+    let inside_supported =
+        normalize_corporate_actions("test", &request, vec![source_action((2024, 6, 1), 2, 1.0)])
+            .unwrap();
+    assert_eq!(
+        inside_supported.records()[0].category(),
+        CorporateActionCategory::BonusRightsListing
+    );
+
+    let outside_supported =
+        normalize_corporate_actions("test", &request, vec![source_action((2023, 6, 1), 2, 1.0)])
+            .unwrap();
+    assert!(outside_supported.records().is_empty());
+
+    let outside_unknown =
+        normalize_corporate_actions("test", &request, vec![source_action((2023, 6, 1), 99, 0.0)])
+            .unwrap_err();
+    assert!(matches!(outside_unknown, TdxError::InvalidData(_)));
+    assert!(outside_unknown.to_string().contains("category 99"));
+
+    let mut outside_bad_schema = source_action((2023, 6, 1), 11, 2.0);
+    outside_bad_schema.suogu = None;
+    let error =
+        normalize_corporate_actions("test", &request, vec![outside_bad_schema]).unwrap_err();
+    assert!(matches!(error, TdxError::InvalidData(_)));
+    assert!(error.to_string().contains("source ratio"));
+
+    let mut outside_bad_capital = source_action((2023, 6, 1), 2, 1.0);
+    outside_bad_capital.houzongguben = None;
+    let error =
+        normalize_corporate_actions("test", &request, vec![outside_bad_capital]).unwrap_err();
+    assert!(matches!(error, TdxError::InvalidData(_)));
+    assert!(error.to_string().contains("total-after"));
+}
+
+#[test]
+fn corporate_action_normalization_maps_every_tdx_protocol_category() {
+    let request = CorporateActionRequest::new(instrument("600001"));
+    let records = (1..=14)
+        .map(|category| {
+            let value = if category == 12 { 0.5 } else { 2.0 };
+            source_action((2020, 1, category), category, value)
+        })
+        .collect();
+    let batch = normalize_corporate_actions("test", &request, records).unwrap();
+    assert_eq!(batch.records().len(), 14);
+    assert_eq!(
+        batch
+            .records()
+            .iter()
+            .map(|record| record.category())
+            .collect::<Vec<_>>(),
+        vec![
+            CorporateActionCategory::Distribution,
+            CorporateActionCategory::BonusRightsListing,
+            CorporateActionCategory::NonTradableShareListing,
+            CorporateActionCategory::UnknownCapitalChange,
+            CorporateActionCategory::CapitalChange,
+            CorporateActionCategory::AdditionalIssuance,
+            CorporateActionCategory::ShareRepurchase,
+            CorporateActionCategory::AdditionalIssuanceListing,
+            CorporateActionCategory::TransferredAllotmentListing,
+            CorporateActionCategory::ConvertibleBondListing,
+            CorporateActionCategory::CapitalRescaling,
+            CorporateActionCategory::NonTradableReverseSplit,
+            CorporateActionCategory::SubscriptionWarrantGrant,
+            CorporateActionCategory::PutWarrantGrant,
+        ]
+    );
+}
+
+#[test]
+fn corporate_action_normalization_rejects_incomplete_or_malformed_extended_terms() {
+    let request = CorporateActionRequest::new(instrument("600001"));
+
+    for category in 2..=10 {
+        for field in 0..4 {
+            let mut record = source_action((2020, 1, category), category, 2.0);
+            match field {
+                0 => record.panqianliutong = None,
+                1 => record.panhouliutong = None,
+                2 => record.qianzongguben = None,
+                3 => record.houzongguben = None,
+                _ => unreachable!(),
+            }
+            assert!(
+                normalize_corporate_actions("test", &request, vec![record]).is_err(),
+                "category {category} accepted missing field {field}"
+            );
+        }
+    }
+
+    let mut negative_capital = source_action((2020, 1, 2), 2, 2.0);
+    negative_capital.panqianliutong = Some(-1.0);
+    assert!(normalize_corporate_actions("test", &request, vec![negative_capital]).is_err());
+
+    let mut non_finite_capital = source_action((2020, 1, 2), 2, 2.0);
+    non_finite_capital.houzongguben = Some(f64::NAN);
+    assert!(normalize_corporate_actions("test", &request, vec![non_finite_capital]).is_err());
+
+    for category in [13, 14] {
+        let mut missing_price = source_action((2020, 1, category), category, 2.0);
+        missing_price.xingquanjia = None;
+        assert!(normalize_corporate_actions("test", &request, vec![missing_price]).is_err());
+
+        let mut missing_quantity = source_action((2020, 1, category), category, 2.0);
+        missing_quantity.fenshu = None;
+        assert!(normalize_corporate_actions("test", &request, vec![missing_quantity]).is_err());
+
+        let zero_quantity = source_action((2020, 1, category), category, 0.0);
+        assert!(normalize_corporate_actions("test", &request, vec![zero_quantity]).is_err());
+
+        let mut non_finite_price = source_action((2020, 1, category), category, 2.0);
+        non_finite_price.xingquanjia = Some(f64::INFINITY);
+        assert!(normalize_corporate_actions("test", &request, vec![non_finite_price]).is_err());
+    }
+}
+
+#[test]
+fn corporate_action_provider_response_echoes_exact_empty_request_coverage() {
+    let request = CorporateActionRequest::new(instrument("600001"))
+        .with_range(
+            IsoDate::new("1900-01-01").unwrap(),
+            IsoDate::new("1900-12-31").unwrap(),
+        )
+        .unwrap();
+    let query = ScriptedBarsQuery::default();
+    query.xdxr_responses.borrow_mut().push_back(Ok(Vec::new()));
+
+    let response = corporate_actions_with(&query, "test", &request).unwrap();
+    assert_eq!(response.coverage(), &request);
+    assert_eq!(response.evidence().source_at(), None);
+    assert_eq!(
+        response.evidence().batch_id(),
+        response.batch().provenance().batch_id().unwrap()
+    );
+    assert!(response.batch().records().is_empty());
+    assert!(response.batch().quality().is_complete());
+    assert_eq!(
+        query.xdxr_calls.borrow().as_slice(),
+        &[(1, "600001".to_owned())]
+    );
+}
+
+#[test]
+fn corporate_action_response_rejects_missing_provenance_batch_id() {
+    let request = CorporateActionRequest::new(instrument("600001"));
+    let provenance: magic_market_core::Provenance = serde_json::from_value(serde_json::json!({
+        "source": "test",
+        "source_at": null,
+        "fetched_at": "2026-07-27T10:00:00+08:00",
+        "batch_id": null
+    }))
+    .unwrap();
+    let batch = DataBatch::<CorporateAction>::strict(Vec::new(), provenance);
+
+    let error = corporate_action_response(&request, batch, IsoDate::new("2026-07-27").unwrap())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        TdxError::InvalidData(message)
+            if message == "TDX corporate-action batch omitted its batch ID"
+    ));
+}
+
+#[test]
+fn corporate_action_response_propagates_provenance_source_time() {
+    let request = CorporateActionRequest::new(instrument("600001"));
+    let provenance = magic_market_core::Provenance::new("test", "2026-07-27T10:00:00+08:00")
+        .unwrap()
+        .with_source_at("2026-07-26")
+        .unwrap();
+    let batch_id = provenance.batch_id().unwrap().to_owned();
+    let batch = DataBatch::<CorporateAction>::strict(Vec::new(), provenance);
+
+    let response =
+        corporate_action_response(&request, batch, IsoDate::new("2026-07-27").unwrap()).unwrap();
+
+    assert_eq!(response.evidence().provider(), ProviderId::Tdx);
+    assert_eq!(response.evidence().source_at(), Some("2026-07-26"));
+    assert_eq!(
+        response.evidence().observed_at(),
+        "2026-07-27T10:00:00+08:00"
+    );
+    assert_eq!(response.evidence().batch_id(), batch_id);
 }
 
 #[test]

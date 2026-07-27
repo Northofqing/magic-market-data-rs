@@ -24,7 +24,7 @@ fn advertises_only_proved_market_discovery() {
     );
     let research = EastmoneyClient::research_capabilities();
     assert!(research.pdf_download && research.document_body);
-    assert!(EastmoneyClient::capital_capabilities().post_close_flow);
+    assert!(!EastmoneyClient::capital_capabilities().post_close_flow);
     let content = EastmoneyClient::content_capabilities();
     assert!(content.global_news);
     assert!(!content.instrument_news);

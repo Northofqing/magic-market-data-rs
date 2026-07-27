@@ -9,7 +9,7 @@ mod szse;
 mod szse_quote;
 mod transport;
 
-pub use cffex::{CffexClient, CffexConfig};
+pub use cffex::{CffexClient, CffexConfig, CffexTlsBackend};
 pub use dragon_tiger::{
     parse_sse_response, parse_szse_detail_response, parse_szse_list_response,
     DragonTigerParseError, OfficialDragonTigerRequest, ParsedDragonTiger, SzseDragonTigerDetailKey,
@@ -18,7 +18,9 @@ pub use dragon_tiger::{
 pub use hkex::{HkexClient, HkexConfig};
 pub use sse::{SseClient, SseConfig};
 pub use szse::{SzseClient, SzseConfig};
-pub use transport::{ExchangeTransport, HttpMethod, HttpRequest, HttpResponse, MAX_RESPONSE_BYTES};
+pub use transport::{
+    ExchangeTransport, HttpMethod, HttpRequest, HttpResponse, TlsBackend, MAX_RESPONSE_BYTES,
+};
 
 use magic_market_core::{
     Capabilities, CapitalCapabilities, ContentCapabilities, ProviderId, SignalCapabilities,
@@ -37,6 +39,11 @@ pub enum ExchangeError {
     RateLimited,
     #[error("HTTPS transport error: {0}")]
     Transport(String),
+    #[error("HTTPS TLS error using {backend:?}: {message}")]
+    Tls {
+        backend: TlsBackend,
+        message: String,
+    },
     #[error("unexpected HTTP status {0}")]
     HttpStatus(u16),
     #[error("official exchange response decoding failed: {0}")]

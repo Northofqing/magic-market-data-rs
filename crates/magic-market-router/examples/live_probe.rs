@@ -1,4 +1,6 @@
-use magic_market_core::{AssetClass, CoreError, Exchange, InstrumentId, ProviderId};
+use magic_market_core::{
+    AssetClass, CoreError, EvidenceTimestamp, Exchange, InstrumentId, ProviderId,
+};
 use magic_market_router::{
     quote_source, AcceptancePolicy, FailureKind, QuoteRouter, RouteAttempt, SourceError, SourceFn,
 };
@@ -6,6 +8,7 @@ use magic_tdx_rs::{TdxError, TdxSmartClient};
 use magic_tencent_rs::{TencentClient, TencentError};
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Duration;
 
 fn classify_tdx(error: TdxError) -> SourceError {
     let message = error.to_string();
@@ -66,6 +69,18 @@ fn print_attempt(attempt: &RouteAttempt) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let session =
+        std::env::var("MAGIC_ROUTER_SESSION").unwrap_or_else(|_| "unspecified".to_owned());
+    if session != "continuous" {
+        println!("freshness_policy=not_run session={session}");
+        println!(
+            "router_live_probe_status=skipped_non_continuous_session \
+             hint=set MAGIC_ROUTER_SESSION=continuous only during continuous trading"
+        );
+        return Ok(());
+    }
+    println!("freshness_policy=continuous_trading max_source_age_ms=5000");
+
     let requested = std::env::var("MAGIC_ROUTER_CODE").unwrap_or_else(|_| "600396.SH".to_owned());
     let instrument = parse_instrument(&requested)?;
     let tdx = Arc::new(TdxSmartClient::new());
@@ -91,16 +106,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let policy = AcceptancePolicy::new()
         .with_require_complete(true)
-        .with_require_source_at(true);
+        .with_max_source_age(Duration::from_secs(5))?;
     let mut router = QuoteRouter::new(policy);
     router.register(tdx_source)?;
     router.register(quote_source(ProviderId::Tencent, tencent, classify_tencent))?;
 
     println!(
-        "router providers={:?} require_complete={} require_source_at={}",
+        "router providers={:?} require_complete={} require_source_at={} max_source_age={:?}",
         router.provider_ids(),
         router.policy().require_complete(),
-        router.policy().require_source_at()
+        router.policy().require_source_at(),
+        router.policy().max_source_age(),
     );
     let outcome = match router.route(std::slice::from_ref(&instrument)) {
         Ok(outcome) => outcome,
@@ -122,12 +138,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         outcome.batch().quality()
     );
     for quote in outcome.batch().records() {
+        let source_at = quote
+            .source_at()
+            .ok_or("strict quote route selected a record without source_at")?;
+        let source_age = EvidenceTimestamp::parse_instant(quote.observed_at())?
+            .duration_since(EvidenceTimestamp::parse_instant(source_at)?)
+            .ok_or("strict quote route selected a future source_at")?;
         println!(
-            "quote code={} price={} source_at={:?} observed_at={} provider={:?} batch_id={}",
+            "quote code={} price={} source_at={} observed_at={} source_age_ms={} provider={:?} batch_id={}",
             quote.instrument().code(),
             quote.price().get(),
-            quote.source_at(),
+            source_at,
             quote.observed_at(),
+            source_age.as_millis(),
             quote.provider(),
             quote.batch_id()
         );

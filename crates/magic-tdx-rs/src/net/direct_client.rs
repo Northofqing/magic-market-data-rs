@@ -447,7 +447,7 @@ impl TdxDirectClient {
         ]);
         pkt.push(market);
         pkt.extend_from_slice(&code_buf);
-        parse_xdxr_info(&self.send_and_recv(&pkt)?)
+        parse_xdxr_info_for(&self.send_and_recv(&pkt)?, market, code)
     }
 
     // ================================================================

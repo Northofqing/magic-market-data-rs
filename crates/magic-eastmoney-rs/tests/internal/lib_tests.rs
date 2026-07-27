@@ -114,7 +114,7 @@ fn constructors_debug_capabilities_transport_wrappers_and_probe_are_truthful() {
     let capital = EastmoneyClient::capital_capabilities();
     assert!(capital.board_flow && capital.margin && capital.block_trades);
     assert!(capital.holder_count && capital.lockups && capital.dividends);
-    assert!(!capital.fund_flow_series && capital.post_close_flow);
+    assert!(!capital.fund_flow_series && !capital.post_close_flow);
     let signals = EastmoneyClient::signal_capabilities();
     assert!(signals.dragon_tiger && signals.popularity);
     assert!(!signals.board_memberships && !signals.market_rankings);

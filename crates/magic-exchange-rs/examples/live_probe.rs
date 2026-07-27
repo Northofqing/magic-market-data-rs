@@ -1,4 +1,6 @@
-use magic_exchange_rs::{CffexClient, HkexClient, SseClient, SzseClient};
+use magic_exchange_rs::{
+    CffexClient, CffexConfig, CffexTlsBackend, HkexClient, SseClient, SzseClient,
+};
 use magic_market_core::{
     Announcements, AssetClass, DataBatch, DragonTigerData, Exchange, FuturesDeliveryRequest,
     InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate, NorthboundChannel,
@@ -15,12 +17,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let delivery_year = env_u32("MAGIC_CFFEX_DELIVERY_YEAR", 2026)?;
     let delivery_month = env_u32("MAGIC_CFFEX_DELIVERY_MONTH", 2)?;
     if std::env::var("MAGIC_EXCHANGE_LIVE_OPERATION").as_deref() == Ok("cffex-delivery") {
-        let cffex = CffexClient::new()?;
+        let tls_backend = std::env::var("MAGIC_CFFEX_TLS_BACKEND")
+            .unwrap_or_else(|_| CffexTlsBackend::Rustls.as_str().into())
+            .parse::<CffexTlsBackend>()?;
+        let cffex = CffexClient::with_config(CffexConfig {
+            tls_backend,
+            ..CffexConfig::default()
+        })?;
         let request = FuturesDeliveryRequest::new(
             PositiveU32::new(delivery_year)?,
             PositiveU32::new(delivery_month)?,
         )?;
         println!("provider=cffex-official");
+        println!("tls_backend={}", cffex.tls_backend().as_str());
         println!(
             "calendar_capabilities={:#?}",
             CffexClient::calendar_capabilities()

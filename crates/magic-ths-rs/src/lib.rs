@@ -188,6 +188,7 @@ impl ThsClient {
             research: ResearchCapabilities {
                 reports: false,
                 consensus: true,
+                target_price_consensus: false,
                 semantic_search: false,
                 pdf_download: false,
                 document_body: false,
@@ -343,6 +344,7 @@ impl ConsensusData for ThsClient {
         let mut source_dates = Vec::new();
         for instrument in instruments {
             let html = self.consensus_html(instrument)?;
+            let name = extract_consensus_identity(&html, instrument)?;
             let source_date = extract_as_of_date(&html);
             if let Some(source_date) = &source_date {
                 source_dates.push(source_date.clone());
@@ -363,6 +365,7 @@ impl ConsensusData for ThsClient {
             let contributor_count = common_contributor_count(&estimates);
             parsed.push((
                 instrument.clone(),
+                name,
                 estimates,
                 contributor_count,
                 source_date,
@@ -403,7 +406,7 @@ impl ConsensusData for ThsClient {
             return Err(ThsError::VerifiedEmpty(Box::new(empty)));
         }
         let mut records = Vec::with_capacity(parsed.len());
-        for (instrument, estimates, contributor_count, source_date) in parsed {
+        for (instrument, name, estimates, contributor_count, source_date) in parsed {
             let mut evidence =
                 SourceEvidence::new(ProviderId::Tonghuashun, &observed_at, &batch_id)?;
             if let Some(source_date) = source_date {
@@ -411,6 +414,7 @@ impl ConsensusData for ThsClient {
             }
             records.push(ConsensusSnapshot {
                 instrument,
+                name,
                 estimates,
                 contributor_count,
                 evidence,
@@ -776,6 +780,43 @@ fn parse_consensus_table(html: &str) -> Result<Option<Vec<EarningsEstimate>>, Th
         estimates.push(estimate);
     }
     Ok(Some(estimates))
+}
+
+fn extract_consensus_identity(
+    html: &str,
+    expected: &InstrumentId,
+) -> Result<NonEmptyText, ThsError> {
+    let title_start = html
+        .find("<title")
+        .ok_or_else(|| ThsError::Schema("consensus page title is missing".into()))?;
+    let after_start = &html[title_start..];
+    let open_end = after_start
+        .find('>')
+        .ok_or_else(|| ThsError::Schema("consensus page title opening tag is malformed".into()))?;
+    let content = &after_start[open_end + 1..];
+    let close = content
+        .find("</title>")
+        .ok_or_else(|| ThsError::Schema("consensus page title closing tag is missing".into()))?;
+    let title = strip_html(&content[..close]);
+    let identity = ["价值分析", " 盈利预测_F10_同花顺金融服务网"]
+        .into_iter()
+        .find_map(|suffix| title.strip_suffix(suffix))
+        .ok_or_else(|| ThsError::Schema(format!("unexpected consensus title {title:?}")))?;
+    let identity = identity.strip_suffix(')').ok_or_else(|| {
+        ThsError::Schema(format!("consensus title has no closing code {title:?}"))
+    })?;
+    let (name, code) = identity.rsplit_once('(').ok_or_else(|| {
+        ThsError::Schema(format!(
+            "consensus title has no structured name/code {title:?}"
+        ))
+    })?;
+    if code != expected.code() {
+        return Err(ThsError::Schema(format!(
+            "consensus title code {code} does not match requested {}",
+            expected.code()
+        )));
+    }
+    NonEmptyText::new(name).map_err(Into::into)
 }
 
 fn extract_rows(table: &str) -> Result<Vec<Vec<String>>, ThsError> {

@@ -12,6 +12,9 @@ batch conflicts, duplicates, unordered/partial packets and transport failure
 fail explicitly. Source-proven empty is distinct from unavailable. Local
 observation time, effective date, security-code prefixes and downstream
 mutable caches must not be presented as provider source evidence.
+Every normalized response exposes an explicit `admission_as_of` calendar date;
+coverage and effective dates later than that boundary fail, and Router binds
+the same date as policy rather than trusting a Provider-selected future date.
 
 ## BR-033 Strict source-time freshness
 Realtime freshness is measured only from a provider-supplied, parseable
@@ -37,6 +40,10 @@ separate typed snapshot: valid count equals up plus down plus flat, limit-up/dow
 sets are subsets of valid instruments, and every derived value retains its input
 evidence. Missing names, units, source times or coverage fail instead of becoming
 successful partial rankings.
+For the composed breadth snapshot, `maximum_source_skew_millis` is the skew of
+the dynamic quote records. Universe and limit-pool sources publish date-level
+coverage only; their exact evidence is retained but must not be promoted from a
+date or local fetch time into a fabricated intraday source instant.
 
 ## BR-035 Licensed and authenticated data boundaries
 The complete opening-auction contract requires provider-backed matched price,
@@ -50,6 +57,10 @@ conformance suite. Broker cash, positions, orders and executions belong to a
 separate authenticated account gateway. Browser cookies and logged-in page
 scraping are not a production account API, and this workspace must not add a
 downstream account path dependency.
+The shared auction conformance policy binds an explicit provider source name,
+China trading date and `09:15:00..=09:25:00 +08:00` opening-auction window;
+fresh continuous-session, closing-auction or wrong-date data fails even when
+all numeric fields are present.
 
 ## BR-001 Quote request cardinality
 Strict quote requests accept 1 through 60 instruments. `quotes_chunked` is the only API that may split a larger request.
@@ -337,6 +348,10 @@ percentage, use unique source market identities, be strictly non-increasing by
 main-net amount and have contiguous ranks. The Provider and router both require
 exact caller cardinality; stale, pre-window, mixed-snapshot or partial batches
 fail instead of being relabeled as the requested ranking.
+Until a same-day bounded live run passes BR-009 and every condition above, the
+Provider capability remains false, the formal trait returns `Unsupported`, and
+only an explicitly named diagnostic may perform the fetch. Diagnostic success
+must remain unadmitted and may not emit a production-success marker.
 
 ## BR-020 Eastmoney rolling finance news
 Eastmoney global latest news is admitted only from the exact first page at

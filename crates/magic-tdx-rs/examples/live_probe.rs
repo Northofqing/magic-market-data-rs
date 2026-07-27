@@ -1,7 +1,8 @@
 use magic_market_core::{
-    AssetClass, BarInterval, BarsRequest, Exchange, HistoricalBars, InstrumentId, MinuteData,
-    MinuteDataRequest, OrderBooks, ProviderId, RealtimeQuotes, SecurityMetadataProvider, Trades,
-    TradesRequest,
+    AssetClass, BarInterval, BarsRequest, ConceptHits, CorporateActionCategory,
+    CorporateActionRequest, CorporateActionStatus, CorporateActionTerms, CorporateActions,
+    Exchange, HistoricalBars, InstrumentId, IsoDate, MinuteData, MinuteDataRequest, OrderBooks,
+    ProviderId, RealtimeQuotes, SecurityMetadataProvider, Trades, TradesRequest,
 };
 use magic_tdx_rs::{
     net::utils::today_yyyymmdd,
@@ -27,6 +28,10 @@ fn require_nonempty(errors: &mut Vec<String>, label: &str, actual: usize) {
     if actual == 0 {
         errors.push(format!("{label}: expected at least one record, received 0"));
     }
+}
+
+fn within_tolerance(actual: f64, expected: f64, tolerance: f64) -> bool {
+    (actual - expected).abs() <= tolerance
 }
 
 struct MinuteProbe {
@@ -595,6 +600,44 @@ fn main() {
             );
             let inner = client.inner();
             println!("full_probe_server={:?}", inner.connected_server());
+            if std::env::var_os("TDX_LIFECYCLE_RAW_ONLY").is_some() {
+                match inner.get_xdxr_info(1, "600519") {
+                    Ok(items) => {
+                        let mut histogram = std::collections::BTreeMap::new();
+                        for item in &items {
+                            *histogram.entry(item.category).or_insert(0usize) += 1;
+                            println!(
+                                "xdxr_600519_raw date={:04}-{:02}-{:02} category={} name={} fenhong={:?} peigujia={:?} songzhuangu={:?} peigu={:?} suogu={:?} panqianliutong={:?} panhouliutong={:?} qianzongguben={:?} houzongguben={:?} fenshu={:?} xingquanjia={:?}",
+                                item.year,
+                                item.month,
+                                item.day,
+                                item.category,
+                                item.name,
+                                item.fenhong,
+                                item.peigujia,
+                                item.songzhuangu,
+                                item.peigu,
+                                item.suogu,
+                                item.panqianliutong,
+                                item.panhouliutong,
+                                item.qianzongguben,
+                                item.houzongguben,
+                                item.fenshu,
+                                item.xingquanjia,
+                            );
+                        }
+                        println!(
+                            "xdxr_600519_raw_count={} category_histogram={histogram:?}",
+                            items.len()
+                        );
+                        return;
+                    }
+                    Err(error) => {
+                        eprintln!("xdxr_600519_raw=error error={error}");
+                        std::process::exit(1);
+                    }
+                }
+            }
             for category in 0_u8..=11 {
                 match inner.get_security_bars(category, 1, "600396", 0, 1, 0) {
                     Ok(items) => {
@@ -652,6 +695,8 @@ fn main() {
                     .expect("valid Shanghai metadata instrument"),
                 InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity)
                     .expect("valid Shenzhen metadata instrument"),
+                InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity)
+                    .expect("valid known-listing metadata instrument"),
             ];
             match client.security_metadata(&metadata_instruments) {
                 Ok(batch) => {
@@ -679,9 +724,157 @@ fn main() {
                             record.batch_id()
                         );
                     }
-                    require_count(&mut errors, "security_metadata", batch.records().len(), 2);
+                    require_count(&mut errors, "security_metadata", batch.records().len(), 3);
+                    if batch
+                        .records()
+                        .iter()
+                        .find(|record| record.instrument().code() == "600519")
+                        .and_then(|record| record.listed_on())
+                        != Some("2001-08-27")
+                    {
+                        errors.push(
+                            "security_metadata: 600519 listing date did not equal 2001-08-27"
+                                .into(),
+                        );
+                    }
                 }
                 Err(error) => record_error(&mut errors, "security_metadata", error),
+            }
+            let action_instrument =
+                InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity)
+                    .expect("valid corporate-action instrument");
+            let action_request = CorporateActionRequest::new(action_instrument.clone())
+                .with_range(
+                    IsoDate::new("2024-01-01").expect("valid action range start"),
+                    IsoDate::new("2024-12-31").expect("valid action range end"),
+                )
+                .expect("ordered action range");
+            match CorporateActions::corporate_actions(&client, &action_request) {
+                Ok(response) => {
+                    if response.coverage() != &action_request {
+                        errors.push(
+                            "corporate_actions: response coverage did not echo the exact request"
+                                .into(),
+                        );
+                    }
+                    let batch = response.batch();
+                    println!(
+                        "corporate_actions={} provenance={:?} quality={:?}",
+                        batch.records().len(),
+                        batch.provenance(),
+                        batch.quality()
+                    );
+                    require_count(&mut errors, "corporate_actions", batch.records().len(), 2);
+                    if batch.records().iter().any(|record| {
+                        record.instrument() != &action_instrument
+                            || record.status() != CorporateActionStatus::Implemented
+                            || record.category() != CorporateActionCategory::Distribution
+                            || record.evidence().provider() != ProviderId::Tdx
+                            || record.evidence().batch_id()
+                                != batch.provenance().batch_id().unwrap_or_default()
+                            || record.evidence().observed_at() != batch.provenance().fetched_at()
+                            || record.evidence().source_at().is_some()
+                    }) {
+                        errors.push(
+                            "corporate_actions: record identity/status/evidence mismatch".into(),
+                        );
+                    }
+                    const TERM_TOLERANCE: f64 = 1e-9;
+                    let expected = [
+                        ("2024-06-19", 30.8760009765625),
+                        ("2024-12-20", 23.882000732421876),
+                    ];
+                    for (record, (expected_date, expected_cash)) in
+                        batch.records().iter().zip(expected)
+                    {
+                        if record.effective_on().as_str() != expected_date {
+                            errors.push(format!(
+                                "corporate_actions: expected date {expected_date}, received {}",
+                                record.effective_on()
+                            ));
+                        }
+                        match record.terms() {
+                            CorporateActionTerms::Distribution {
+                                cash_per_share,
+                                bonus_per_share,
+                                rights_per_share,
+                                rights_price,
+                            } => {
+                                let cash = cash_per_share.as_ref().map(|value| value.get());
+                                let bonus = bonus_per_share.as_ref().map(|value| value.get());
+                                let rights = rights_per_share.as_ref().map(|value| value.get());
+                                if !cash.is_some_and(|value| {
+                                    within_tolerance(value, expected_cash, TERM_TOLERANCE)
+                                }) || !bonus.is_some_and(|value| {
+                                    within_tolerance(value, 0.0, TERM_TOLERANCE)
+                                }) || !rights.is_some_and(|value| {
+                                    within_tolerance(value, 0.0, TERM_TOLERANCE)
+                                }) || rights_price.is_some()
+                                {
+                                    errors.push(format!(
+                                        "corporate_actions: unexpected terms on {expected_date}: {:?}; tolerance={TERM_TOLERANCE}",
+                                        record.terms()
+                                    ));
+                                }
+                            }
+                            terms => errors.push(format!(
+                                "corporate_actions: expected distribution terms on {expected_date}, received {terms:?}"
+                            )),
+                        }
+                    }
+                    for record in batch.records() {
+                        println!(
+                            "corporate_action code={} effective_on={} category={:?} status={:?} terms={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
+                            record.instrument().code(),
+                            record.effective_on(),
+                            record.category(),
+                            record.status(),
+                            record.terms(),
+                            record.evidence().source_at(),
+                            record.evidence().observed_at(),
+                            record.evidence().provider(),
+                            record.evidence().batch_id()
+                        );
+                    }
+                }
+                Err(error) => record_error(&mut errors, "corporate_actions", error),
+            }
+            let empty_request = CorporateActionRequest::new(action_instrument)
+                .with_range(
+                    IsoDate::new("1900-01-01").expect("valid empty range start"),
+                    IsoDate::new("1900-12-31").expect("valid empty range end"),
+                )
+                .expect("ordered empty range");
+            match CorporateActions::corporate_actions(&client, &empty_request) {
+                Ok(response)
+                    if response.coverage() == &empty_request
+                        && response.batch().records().is_empty()
+                        && response.batch().quality().is_complete() =>
+                {
+                    println!(
+                        "corporate_actions_verified_empty=true code={} start={} end={} batch_id={}",
+                        response.coverage().instrument().code(),
+                        response
+                            .coverage()
+                            .start()
+                            .map_or("all", IsoDate::as_str),
+                        response.coverage().end().map_or("all", IsoDate::as_str),
+                        response
+                            .batch()
+                            .provenance()
+                            .batch_id()
+                            .unwrap_or_default()
+                    );
+                }
+                Ok(response) => errors.push(format!(
+                    "corporate_actions_verified_empty: expected exact coverage and complete empty, coverage={:?} received={} quality={:?}",
+                    response.coverage(),
+                    response.batch().records().len(),
+                    response.batch().quality()
+                )),
+                Err(error) => {
+                    record_error(&mut errors, "corporate_actions_verified_empty", error);
+                }
             }
             match client.security_metadata(std::slice::from_ref(&beijing_instrument)) {
                 Err(TdxError::Unsupported(reason)) => {
@@ -1096,6 +1289,36 @@ fn main() {
                     require_nonempty(&mut errors, "blocks_concept", items.len());
                 }
                 Err(error) => record_error(&mut errors, "blocks_concept", error),
+            }
+            let concept_service =
+                magic_tdx_rs::service::blocks::BlockService::with_default("180.153.18.170");
+            let concept_request = [
+                InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
+                    .expect("valid concept probe instrument"),
+                InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity)
+                    .expect("valid concept probe instrument"),
+            ];
+            match concept_service.concept_hits(&concept_request) {
+                Ok(batch) => {
+                    println!(
+                        "concept_hits={} batch_id={:?} quality_complete={}",
+                        batch.records().len(),
+                        batch.provenance().batch_id(),
+                        batch.quality().is_complete()
+                    );
+                    require_nonempty(&mut errors, "concept_hits", batch.records().len());
+                    for record in batch.records() {
+                        println!(
+                            "concept_hit code={} concept={} version={:?} provider={:?} batch_id={}",
+                            record.instrument.code(),
+                            record.concept,
+                            record.detail,
+                            record.evidence.provider(),
+                            record.evidence.batch_id()
+                        );
+                    }
+                }
+                Err(error) => record_error(&mut errors, "concept_hits", error),
             }
             match blocks.get_index_blocks() {
                 Ok(items) => {

@@ -1342,7 +1342,7 @@ impl TdxHqClient {
         packet.extend_from_slice(&code_buf);
 
         let body = self.send_and_recv(&packet)?;
-        parse_xdxr_info(&body)
+        parse_xdxr_info_for(&body, market, code)
     }
 
     /// 获取板块元数据

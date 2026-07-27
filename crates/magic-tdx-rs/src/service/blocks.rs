@@ -5,8 +5,8 @@ use crate::error::TdxError;
 use crate::protocol::types::{IndexBar, SecurityQuote};
 use crate::reader::block::BlockRecord;
 use magic_market_core::{
-    AssetClass, BoardCategory, BoardMembership, BoardMembershipProvider, DataBatch, Exchange,
-    InstrumentId, NonEmptyText, Provenance, ProviderId, SourceEvidence,
+    AssetClass, BoardCategory, BoardMembership, BoardMembershipProvider, ConceptHit, ConceptHits,
+    DataBatch, Exchange, InstrumentId, NonEmptyText, Provenance, ProviderId, SourceEvidence,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -33,7 +33,7 @@ impl BlockSnapshotSource for BlockService {
 fn observed_at() -> Result<String, TdxError> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos().to_string())
+        .map(|duration| format!("{}.{:09}", duration.as_secs(), duration.subsec_nanos()))
         .map_err(|error| {
             TdxError::InvalidData(format!("system clock is before UNIX epoch: {error}"))
         })
@@ -46,7 +46,7 @@ fn valid_six_digit_code(code: &str) -> bool {
 fn canonical_instruments(instruments: &[InstrumentId]) -> Result<Vec<InstrumentId>, TdxError> {
     if instruments.is_empty() {
         return Err(TdxError::InvalidData(
-            "TDX board-membership request must not be empty".into(),
+            "TDX block-data request must not be empty".into(),
         ));
     }
     let mut identities_by_code = HashMap::<String, InstrumentId>::new();
@@ -67,14 +67,14 @@ fn canonical_instruments(instruments: &[InstrumentId]) -> Result<Vec<InstrumentI
         }
         if !valid_six_digit_code(instrument.code()) {
             return Err(TdxError::InvalidData(format!(
-                "TDX board-membership request has invalid A-share code {:?}",
+                "TDX block-data request has invalid A-share code {:?}",
                 instrument.code()
             )));
         }
         if let Some(existing) = identities_by_code.get(instrument.code()) {
             if existing != instrument {
                 return Err(TdxError::InvalidData(format!(
-                    "TDX board-membership request has conflicting identities for code {}",
+                    "TDX block-data request has conflicting identities for code {}",
                     instrument.code()
                 )));
             }
@@ -225,6 +225,63 @@ fn board_memberships_with(
     Ok(DataBatch::strict(records, provenance))
 }
 
+fn concept_hits_with(
+    source: &impl BlockSnapshotSource,
+    instruments: &[InstrumentId],
+    observed_at: &str,
+) -> Result<DataBatch<ConceptHit>, TdxError> {
+    let instruments = canonical_instruments(instruments)?;
+    let requested_codes = instruments
+        .iter()
+        .map(|instrument| instrument.code().to_owned())
+        .collect::<HashSet<_>>();
+    let filename = crate::protocol::constants::BLOCK_GN;
+    let snapshot = source.snapshot(filename)?;
+    validate_snapshot(filename, &snapshot)?;
+    let batch_id = format!(
+        "tdx-concept-hits:v1|{}={}",
+        snapshot.filename, snapshot.hash
+    );
+    let provenance =
+        Provenance::new(BLOCK_MEMBERSHIP_SOURCE, observed_at)?.with_batch_id(batch_id.clone())?;
+    let evidence = SourceEvidence::new(ProviderId::Tdx, observed_at, batch_id)?;
+    let detail = NonEmptyText::new(format!(
+        "source_file={};sha256={}",
+        snapshot.filename, snapshot.hash
+    ))?;
+
+    let mut by_code = HashMap::<String, Vec<String>>::new();
+    let mut identities = HashSet::new();
+    for record in &snapshot.records {
+        if !requested_codes.contains(&record.code) {
+            continue;
+        }
+        if identities.insert((record.code.clone(), record.blockname.clone())) {
+            by_code
+                .entry(record.code.clone())
+                .or_default()
+                .push(record.blockname.clone());
+        }
+    }
+
+    let mut records = Vec::new();
+    for instrument in instruments {
+        let Some(concepts) = by_code.get_mut(instrument.code()) else {
+            continue;
+        };
+        concepts.sort();
+        for concept in concepts.iter() {
+            records.push(ConceptHit {
+                instrument: instrument.clone(),
+                concept: NonEmptyText::new(concept.clone())?,
+                detail: Some(detail.clone()),
+                evidence: evidence.clone(),
+            });
+        }
+    }
+    Ok(DataBatch::strict(records, provenance))
+}
+
 impl BoardMembershipProvider for BlockService {
     type Error = TdxError;
 
@@ -234,6 +291,18 @@ impl BoardMembershipProvider for BlockService {
     ) -> Result<DataBatch<BoardMembership>, Self::Error> {
         let observed_at = observed_at()?;
         board_memberships_with(self, instruments, &observed_at)
+    }
+}
+
+impl ConceptHits for BlockService {
+    type Error = TdxError;
+
+    fn concept_hits(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<ConceptHit>, Self::Error> {
+        let observed_at = observed_at()?;
+        concept_hits_with(self, instruments, &observed_at)
     }
 }
 
@@ -444,6 +513,121 @@ mod tests {
         assert_eq!(batch.provenance().fetched_at(), "observed-empty");
         assert!(batch.provenance().source_at().is_none());
         assert!(batch.provenance().batch_id().is_some());
+    }
+
+    #[test]
+    fn concept_projection_is_concept_only_unique_and_file_hash_versioned() {
+        let source = FixtureSnapshots {
+            snapshots: vec![snapshot(
+                "block_gn.dat",
+                'b',
+                &[
+                    ("绿色电力", "600396"),
+                    ("绿色电力", "600396"),
+                    ("国企改革", "600396"),
+                    ("金融科技", "000001"),
+                ],
+            )],
+        };
+        let request = [
+            instrument(Exchange::Shenzhen, "000001"),
+            instrument(Exchange::Shanghai, "600396"),
+            instrument(Exchange::Shanghai, "600396"),
+        ];
+
+        let batch = concept_hits_with(&source, &request, "observed-concepts").unwrap();
+        let actual = batch
+            .records()
+            .iter()
+            .map(|record| {
+                (
+                    record.instrument.code().to_owned(),
+                    record.concept.as_str().to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual,
+            vec![
+                ("000001".into(), "金融科技".into()),
+                ("600396".into(), "国企改革".into()),
+                ("600396".into(), "绿色电力".into()),
+            ]
+        );
+        assert_eq!(batch.provenance().source(), "tdx-block-files");
+        let batch_id = batch.provenance().batch_id().unwrap();
+        assert!(batch_id.contains("block_gn.dat="));
+        assert!(batch_id.contains(&"b".repeat(64)));
+        for record in batch.records() {
+            assert_eq!(record.evidence.provider(), ProviderId::Tdx);
+            assert_eq!(record.evidence.batch_id(), batch_id);
+            let detail = record.detail.as_ref().unwrap().as_str();
+            assert!(detail.contains("source_file=block_gn.dat"));
+            assert!(detail.contains("sha256="));
+        }
+    }
+
+    #[test]
+    fn production_observation_timestamp_is_an_unambiguous_instant_for_both_projections() {
+        let source = FixtureSnapshots {
+            snapshots: vec![
+                snapshot("block_fg.dat", 'a', &[("电力", "600396")]),
+                snapshot("block_gn.dat", 'b', &[("绿色电力", "600396")]),
+                snapshot("block_zs.dat", 'c', &[("沪深300", "600396")]),
+            ],
+        };
+        let observed = observed_at().unwrap();
+        magic_market_core::EvidenceTimestamp::parse_instant(&observed).unwrap();
+        let request = [instrument(Exchange::Shanghai, "600396")];
+        let board = board_memberships_with(&source, &request, &observed).unwrap();
+        let concepts = concept_hits_with(&source, &request, &observed).unwrap();
+        magic_market_core::EvidenceTimestamp::parse_instant(board.provenance().fetched_at())
+            .unwrap();
+        magic_market_core::EvidenceTimestamp::parse_instant(concepts.provenance().fetched_at())
+            .unwrap();
+    }
+
+    #[test]
+    fn concept_projection_proves_empty_and_rejects_beijing_before_io() {
+        let source = FixtureSnapshots {
+            snapshots: vec![snapshot("block_gn.dat", 'b', &[("金融科技", "000001")])],
+        };
+        let empty = concept_hits_with(
+            &source,
+            &[instrument(Exchange::Shanghai, "600396")],
+            "observed-empty",
+        )
+        .unwrap();
+        assert!(empty.records().is_empty());
+        assert!(empty.quality().is_complete());
+        assert!(empty.provenance().batch_id().is_some());
+
+        let beijing = instrument(Exchange::Beijing, "920118");
+        assert!(matches!(
+            concept_hits_with(&NoIoExpected, &[beijing], "observed"),
+            Err(TdxError::Unsupported(_))
+        ));
+    }
+
+    #[test]
+    fn concept_projection_rejects_wrong_snapshot_identity_or_hash() {
+        let request = [instrument(Exchange::Shanghai, "600396")];
+        let wrong_file = FixtureSnapshots {
+            snapshots: vec![snapshot("block_gn.dat", 'b', &[("绿色电力", "600396")])],
+        };
+        let mut wrong_identity = wrong_file.snapshots[0].clone();
+        wrong_identity.filename = "block_fg.dat".into();
+        let source = FixtureSnapshots {
+            snapshots: vec![wrong_identity],
+        };
+        assert!(concept_hits_with(&source, &request, "observed").is_err());
+
+        let mut bad_hash = snapshot("block_gn.dat", 'b', &[("绿色电力", "600396")]);
+        bad_hash.hash = "short".into();
+        let source = FixtureSnapshots {
+            snapshots: vec![bad_hash],
+        };
+        assert!(concept_hits_with(&source, &request, "observed").is_err());
     }
 
     struct NoIoExpected;

@@ -100,8 +100,13 @@ pub enum CorporateActionTerms {
         rights_per_share: Option<FiniteNumber>,
         rights_price: Option<Price>,
     },
-    Split { ratio: Ratio },
-    ReverseSplit { ratio: Ratio },
+    CapitalStructure { /* exact source fields, provider-native unit */ },
+    ProviderNativeRatio {
+        category: CorporateActionCategory,
+        source_ratio: FiniteNumber,
+        source_ratio_unit: UnverifiedSourceUnit,
+    },
+    WarrantGrant { /* exact source fields, provider-native quantity unit */ },
 }
 
 pub struct CorporateAction {
@@ -112,34 +117,53 @@ pub struct CorporateAction {
     evidence: SourceEvidence,
 }
 
-pub trait CorporateActionsProvider {
+pub struct CorporateActionResponse {
+    coverage: CorporateActionRequest,
+    admission_as_of: IsoDate,
+    evidence: SourceEvidence,
+    batch: DataBatch<CorporateAction>,
+}
+
+pub trait CorporateActions {
     type Error: Error + Send + Sync + 'static;
 
     fn corporate_actions(
         &self,
-        request: &InstrumentDateRangeRequest,
-    ) -> Result<DataBatch<CorporateAction>, Self::Error>;
+        request: &CorporateActionRequest,
+    ) -> Result<CorporateActionResponse, Self::Error>;
 }
 ```
 
-All amounts are finite and non-negative. Split ratios are finite, positive and
-not one. Only `Implemented` records with a source-backed effective date may
-explain a historical price discontinuity.
+All amounts are finite and checked. Unverified source ratios remain
+provider-native values rather than being relabelled as decimal adjustment
+ratios. Only `Implemented` records with a source-backed effective date may
+explain a historical price discontinuity. `admission_as_of` is one explicit
+calendar boundary for request coverage and every returned effective date; the
+specialized Router owns one immutable value and carries it into the selected
+route outcome rather than allowing each failover source to choose its own.
 
 ## 5. TDX mapping
 
-The TDX adapter maps only categories whose source semantics are documented:
+The implemented TDX adapter maps all protocol categories 1 through 14 while
+preserving unresolved source units:
 
 - category 1 becomes one `Distribution` action and may preserve cash,
   bonus/transfer, rights quantity and rights price together;
-- category 11 becomes `Split`;
-- category 12 becomes `ReverseSplit`;
+- categories 2 through 10 preserve their four before/after capital fields with
+  `UnverifiedSourceUnit::ProviderNative`;
+- category 11 becomes the broader `CapitalRescaling`, not a narrower split;
+- category 12 remains `NonTradableReverseSplit`;
+- categories 11 and 12 preserve `suogu` as a provider-native value, not a
+  verified decimal ratio;
+- categories 13 and 14 preserve exercise price and provider-native quantity;
 - unknown categories remain explicit quality issues or an unsupported mapping
   and cannot authorize a continuity exception.
 
 The parser must reject truncated records, invalid dates, non-finite values and
 identity disagreement. It must not stop at a bad row and return a partial
-success. Records sort by effective date ascending and stable action kind.
+success. Source packets must be monotonic by effective date in one direction;
+a direction reversal fails explicitly. Admitted records normalize to effective
+date ascending and stable action kind.
 Duplicate `(instrument, effective_on, terms kind)` identities fail the atomic
 batch. A protocol-proven zero-row response returns a complete empty batch with
 provenance; transport or parse failure does not.

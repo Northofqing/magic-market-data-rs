@@ -295,6 +295,7 @@ fn error_category(error: &ExchangeError) -> &'static str {
         ExchangeError::Authentication(_) => "authentication",
         ExchangeError::RateLimited => "rate_limited",
         ExchangeError::Transport(_) => "transport",
+        ExchangeError::Tls { .. } => "tls",
         ExchangeError::HttpStatus(_) => "http_status",
         ExchangeError::Decode(_) => "decode",
         ExchangeError::Schema(_) => "schema",

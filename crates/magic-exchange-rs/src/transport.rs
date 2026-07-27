@@ -1,5 +1,8 @@
 use crate::ExchangeError;
 use std::io::Read;
+use std::str::FromStr;
+#[cfg(feature = "native-tls")]
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -7,6 +10,36 @@ use url::Url;
 
 pub const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
+
+/// Explicit TLS backend for official exchange HTTPS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TlsBackend {
+    Rustls,
+    NativeTls,
+}
+
+impl TlsBackend {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Rustls => "rustls",
+            Self::NativeTls => "native-tls",
+        }
+    }
+}
+
+impl FromStr for TlsBackend {
+    type Err = ExchangeError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "rustls" => Ok(Self::Rustls),
+            "native-tls" | "native_tls" => Ok(Self::NativeTls),
+            other => Err(ExchangeError::InvalidRequest(format!(
+                "unsupported TLS backend {other:?}; expected rustls or native-tls"
+            ))),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
@@ -37,19 +70,47 @@ pub trait ExchangeTransport: Send + Sync {
 #[derive(Clone)]
 pub(crate) struct HttpsTransport {
     agent: ureq::Agent,
+    tls_backend: TlsBackend,
 }
 
 impl HttpsTransport {
     pub(crate) fn new(timeout: Duration) -> Result<Self, ExchangeError> {
+        Self::with_tls_backend(timeout, TlsBackend::Rustls)
+    }
+
+    pub(crate) fn with_tls_backend(
+        timeout: Duration,
+        tls_backend: TlsBackend,
+    ) -> Result<Self, ExchangeError> {
         validate_timeout(timeout)?;
-        Ok(Self {
-            agent: ureq::AgentBuilder::new()
-                .timeout_connect(timeout)
-                .timeout_read(timeout)
-                .timeout_write(timeout)
-                .redirects(0)
-                .build(),
-        })
+        let builder = ureq::AgentBuilder::new()
+            .timeout_connect(timeout)
+            .timeout_read(timeout)
+            .timeout_write(timeout)
+            .redirects(0);
+        let agent = match tls_backend {
+            TlsBackend::Rustls => builder.build(),
+            TlsBackend::NativeTls => {
+                #[cfg(feature = "native-tls")]
+                {
+                    let connector = ureq::native_tls::TlsConnector::new().map_err(|error| {
+                        ExchangeError::Tls {
+                            backend: tls_backend,
+                            message: error.to_string(),
+                        }
+                    })?;
+                    builder.tls_connector(Arc::new(connector)).build()
+                }
+                #[cfg(not(feature = "native-tls"))]
+                {
+                    return Err(ExchangeError::Unsupported(
+                        "native-tls backend is not compiled; enable magic-exchange-rs feature native-tls"
+                            .into(),
+                    ));
+                }
+            }
+        };
+        Ok(Self { agent, tls_backend })
     }
 
     fn collect(response: ureq::Response) -> Result<HttpResponse, ExchangeError> {
@@ -92,8 +153,23 @@ impl ExchangeTransport for HttpsTransport {
         match result {
             Ok(response) => Self::collect(response),
             Err(ureq::Error::Status(_, response)) => Self::collect(response),
-            Err(ureq::Error::Transport(error)) => Err(ExchangeError::Transport(error.to_string())),
+            Err(ureq::Error::Transport(error)) => {
+                Err(classify_transport_error(self.tls_backend, error))
+            }
         }
+    }
+}
+
+fn classify_transport_error(backend: TlsBackend, error: ureq::Transport) -> ExchangeError {
+    let message = error.to_string();
+    let lowercase = message.to_ascii_lowercase();
+    if ["tls", "ssl", "handshake", "certificate"]
+        .iter()
+        .any(|marker| lowercase.contains(marker))
+    {
+        ExchangeError::Tls { backend, message }
+    } else {
+        ExchangeError::Transport(message)
     }
 }
 
@@ -318,6 +394,18 @@ mod tests {
         assert!(validate_timeout(Duration::ZERO).is_err());
         assert!(validate_timeout(Duration::from_secs(15)).is_ok());
         assert!(validate_timeout(Duration::from_secs(61)).is_err());
+    }
+
+    #[test]
+    fn backend_names_are_stable_for_operator_evidence() {
+        assert_eq!(TlsBackend::Rustls.as_str(), "rustls");
+        assert_eq!(TlsBackend::NativeTls.as_str(), "native-tls");
+        assert_eq!("rustls".parse::<TlsBackend>().unwrap(), TlsBackend::Rustls);
+        assert_eq!(
+            "native-tls".parse::<TlsBackend>().unwrap(),
+            TlsBackend::NativeTls
+        );
+        assert!("automatic".parse::<TlsBackend>().is_err());
     }
 
     #[test]

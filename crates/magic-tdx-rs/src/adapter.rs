@@ -3,15 +3,17 @@ use crate::protocol::constants::{
     KLINE_15MIN, KLINE_1HOUR, KLINE_1MIN, KLINE_30MIN, KLINE_5MIN, KLINE_DAILY, KLINE_MONTHLY,
     KLINE_WEEKLY, KLINE_YEARLY,
 };
-use crate::protocol::types::{MinuteTimePrice, SecurityInfo, TickData};
+use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
 use magic_market_core::{
     Adjustment, AsyncHistoricalBars, AsyncRealtimeQuotes, AsyncTrades, AuctionSnapshot, Auctions,
-    Bar, BarInterval, BarsRequest, Board, BookLevel, DataBatch, DataStatus, HistoricalBars,
-    InstrumentId, IsoDate, MinuteData, MinuteDataRequest, MinutePoint, Money, MoneyFlow,
-    MoneyFlows, OrderBook, OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio,
-    RatioUnit, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, Trade, TradeSide,
-    Trades, TradesRequest,
+    Bar, BarInterval, BarsRequest, Board, BookLevel, CorporateAction, CorporateActionCategory,
+    CorporateActionRequest, CorporateActionResponse, CorporateActionStatus, CorporateActionTerms,
+    CorporateActions, DataBatch, DataStatus, FiniteNumber, HistoricalBars, InstrumentId, IsoDate,
+    MinuteData, MinuteDataRequest, MinutePoint, Money, MoneyFlow, MoneyFlows, OrderBook,
+    OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit,
+    RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, SourceEvidence, Trade, TradeSide,
+    Trades, TradesRequest, UnverifiedSourceUnit,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -38,7 +40,7 @@ impl TdxHqClient {
     }
 }
 
-fn market(id: &InstrumentId) -> Result<u8, TdxError> {
+pub(crate) fn market(id: &InstrumentId) -> Result<u8, TdxError> {
     match id.exchange() {
         magic_market_core::Exchange::Shanghai => Ok(1),
         magic_market_core::Exchange::Shenzhen => Ok(0),
@@ -328,6 +330,18 @@ pub(crate) trait BlockingTdxQuery {
     fn security_count(&self, market: u8) -> Result<u16, TdxError>;
 
     fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError>;
+
+    fn finance_info(&self, _market: u8, _code: &str) -> Result<FinanceInfo, TdxError> {
+        Err(TdxError::Unsupported(
+            "blocking query does not expose finance metadata".into(),
+        ))
+    }
+
+    fn xdxr_info(&self, _market: u8, _code: &str) -> Result<Vec<XdXrInfo>, TdxError> {
+        Err(TdxError::Unsupported(
+            "blocking query does not expose XDXR metadata".into(),
+        ))
+    }
 }
 
 impl BlockingTdxQuery for TdxHqClient {
@@ -388,6 +402,14 @@ impl BlockingTdxQuery for TdxHqClient {
     fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
         TdxHqClient::get_security_list(self, market, start)
     }
+
+    fn finance_info(&self, market: u8, code: &str) -> Result<FinanceInfo, TdxError> {
+        TdxHqClient::get_finance_info(self, market, code)
+    }
+
+    fn xdxr_info(&self, market: u8, code: &str) -> Result<Vec<XdXrInfo>, TdxError> {
+        TdxHqClient::get_xdxr_info(self, market, code)
+    }
 }
 
 impl BlockingTdxQuery for crate::TdxSmartClient {
@@ -447,6 +469,14 @@ impl BlockingTdxQuery for crate::TdxSmartClient {
 
     fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
         TdxHqClient::get_security_list(self.inner(), market, start)
+    }
+
+    fn finance_info(&self, market: u8, code: &str) -> Result<FinanceInfo, TdxError> {
+        TdxHqClient::get_finance_info(self.inner(), market, code)
+    }
+
+    fn xdxr_info(&self, market: u8, code: &str) -> Result<Vec<XdXrInfo>, TdxError> {
+        TdxHqClient::get_xdxr_info(self.inner(), market, code)
     }
 }
 
@@ -509,6 +539,14 @@ impl BlockingTdxQuery for crate::TdxDirectClient {
 
     fn security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>, TdxError> {
         crate::TdxDirectClient::get_security_list(self, market, start)
+    }
+
+    fn finance_info(&self, market: u8, code: &str) -> Result<FinanceInfo, TdxError> {
+        crate::TdxDirectClient::get_finance_info(self, market, code)
+    }
+
+    fn xdxr_info(&self, market: u8, code: &str) -> Result<Vec<XdXrInfo>, TdxError> {
+        crate::TdxDirectClient::get_xdxr_info(self, market, code)
     }
 }
 
@@ -885,7 +923,11 @@ fn security_metadata_with(
         |market| query.security_count(market),
         |market, start| query.security_list(market, start),
     )?;
-    normalize_security_metadata(source, instruments, records)
+    let finance = instruments
+        .iter()
+        .map(|instrument| query.finance_info(market(instrument)?, instrument.code()))
+        .collect::<Result<Vec<_>, _>>()?;
+    normalize_security_metadata_with_finance(source, instruments, records, finance)
 }
 
 fn compact_date(value: &str) -> Result<u32, TdxError> {
@@ -1360,10 +1402,43 @@ fn validate_security_metadata_request(instruments: &[InstrumentId]) -> Result<()
     Ok(())
 }
 
+#[cfg(test)]
 fn normalize_security_metadata(
     source: &str,
     instruments: &[InstrumentId],
     records: Vec<(u8, SecurityInfo)>,
+) -> Result<DataBatch<SecurityMetadata>, TdxError> {
+    normalize_security_metadata_inner(source, instruments, records, None)
+}
+
+fn normalize_security_metadata_with_finance(
+    source: &str,
+    instruments: &[InstrumentId],
+    records: Vec<(u8, SecurityInfo)>,
+    finance: Vec<FinanceInfo>,
+) -> Result<DataBatch<SecurityMetadata>, TdxError> {
+    if finance.len() != instruments.len() {
+        return Err(TdxError::InvalidData(
+            "TDX finance response cardinality does not match metadata request".into(),
+        ));
+    }
+    let mut by_key = HashMap::with_capacity(finance.len());
+    for record in finance {
+        let key = (record.market, record.code.clone());
+        if by_key.insert(key, record).is_some() {
+            return Err(TdxError::InvalidData(
+                "TDX returned duplicate finance metadata".into(),
+            ));
+        }
+    }
+    normalize_security_metadata_inner(source, instruments, records, Some(by_key))
+}
+
+fn normalize_security_metadata_inner(
+    source: &str,
+    instruments: &[InstrumentId],
+    records: Vec<(u8, SecurityInfo)>,
+    mut finance: Option<HashMap<(u8, String), FinanceInfo>>,
 ) -> Result<DataBatch<SecurityMetadata>, TdxError> {
     let mut by_key = HashMap::with_capacity(records.len());
     for (record_market, record) in records {
@@ -1387,6 +1462,18 @@ fn normalize_security_metadata(
                 instrument.code()
             ))
         })?;
+        let listed_on = match finance.as_mut() {
+            Some(records) => {
+                let record = records.remove(&key).ok_or_else(|| {
+                    TdxError::InvalidData(format!(
+                        "TDX omitted requested finance metadata for {}",
+                        instrument.code()
+                    ))
+                })?;
+                normalize_ipo_date(record.ipo_date)?
+            }
+            None => None,
+        };
         let name = (!record.name.trim().is_empty()).then(|| record.name.trim().to_owned());
         let is_st = if instrument.asset_class() == magic_market_core::AssetClass::Equity {
             name.as_deref().and_then(st_flag)
@@ -1400,7 +1487,9 @@ fn normalize_security_metadata(
             "{}: board is derived from exchange/code because the TDX list packet has no board field",
             instrument.code()
         ));
-        issues.push(format!("{}: listing date unavailable", instrument.code()));
+        if listed_on.is_none() {
+            issues.push(format!("{}: listing date unavailable", instrument.code()));
+        }
         issues.push(format!(
             "{}: source-backed price-limit rule and version unavailable",
             instrument.code()
@@ -1414,7 +1503,7 @@ fn normalize_security_metadata(
             name,
             Some(board(instrument)),
             is_st,
-            None,
+            listed_on,
             PriceLimitRule::new(None, None)?,
             DataStatus::Unavailable,
             None,
@@ -1428,9 +1517,316 @@ fn normalize_security_metadata(
             "TDX returned unexpected security metadata".into(),
         ));
     }
+    if finance.as_ref().is_some_and(|records| !records.is_empty()) {
+        return Err(TdxError::InvalidData(
+            "TDX returned unexpected finance metadata".into(),
+        ));
+    }
     let provenance =
         magic_market_core::Provenance::new(source, observed_at)?.with_batch_id(batch_id)?;
     Ok(DataBatch::best_effort(normalized, provenance, issues)?)
+}
+
+fn normalize_ipo_date(value: u32) -> Result<Option<String>, TdxError> {
+    if value == 0 {
+        return Ok(None);
+    }
+    let compact = format!("{value:08}");
+    if compact.len() != 8 {
+        return Err(TdxError::InvalidData(
+            "TDX IPO date must contain exactly eight digits".into(),
+        ));
+    }
+    let value = format!("{}-{}-{}", &compact[0..4], &compact[4..6], &compact[6..8]);
+    let date = IsoDate::new(value.clone())
+        .map_err(|error| TdxError::InvalidData(format!("invalid TDX IPO date: {error}")))?;
+    if compact
+        .parse::<u32>()
+        .map_err(|_| TdxError::InvalidData("invalid TDX IPO date digits".into()))?
+        > crate::net::utils::today_yyyymmdd()
+    {
+        return Err(TdxError::InvalidData(format!(
+            "TDX IPO date {} is in the future",
+            date.as_str()
+        )));
+    }
+    Ok(Some(value))
+}
+
+pub(crate) fn validate_corporate_action_request(
+    request: &CorporateActionRequest,
+    admission_as_of: &IsoDate,
+) -> Result<(), TdxError> {
+    if request.instrument().exchange() == magic_market_core::Exchange::Beijing {
+        return Err(TdxError::Unsupported(
+            "TDX corporate-action response identity is not live-admitted for Beijing".into(),
+        ));
+    }
+    if !matches!(
+        request.instrument().asset_class(),
+        magic_market_core::AssetClass::Equity | magic_market_core::AssetClass::Fund
+    ) {
+        return Err(TdxError::Unsupported(
+            "TDX normalized corporate actions support equities and exchange-traded funds only"
+                .into(),
+        ));
+    }
+    if request.start().is_some_and(|start| start > admission_as_of)
+        || request.end().is_some_and(|end| end > admission_as_of)
+    {
+        return Err(magic_market_core::CoreError::InvalidRequest(
+            "TDX corporate-action request range extends into the future".into(),
+        )
+        .into());
+    }
+    Ok(())
+}
+
+pub(crate) fn current_corporate_action_admission_date() -> Result<IsoDate, TdxError> {
+    let compact = format!("{:08}", crate::net::utils::today_yyyymmdd());
+    IsoDate::new(format!(
+        "{}-{}-{}",
+        &compact[0..4],
+        &compact[4..6],
+        &compact[6..8]
+    ))
+    .map_err(|error| {
+        TdxError::InvalidData(format!(
+            "current China corporate-action admission date is invalid: {error}"
+        ))
+    })
+}
+
+pub(crate) fn normalize_corporate_actions(
+    source: &str,
+    request: &CorporateActionRequest,
+    records: Vec<XdXrInfo>,
+    admission_as_of: &IsoDate,
+) -> Result<DataBatch<CorporateAction>, TdxError> {
+    validate_corporate_action_request(request, admission_as_of)?;
+    let observed_at = fetched_at()?;
+    let batch_id = format!(
+        "{source}:{observed_at}:corporate-actions:{:?}:{}:{:?}:{}:{}",
+        request.instrument().exchange(),
+        request.instrument().code(),
+        request.instrument().asset_class(),
+        request.start().map_or("all", IsoDate::as_str),
+        request.end().map_or("all", IsoDate::as_str),
+    );
+    let evidence = SourceEvidence::new(ProviderId::Tdx, observed_at.clone(), batch_id.clone())?;
+    let mut normalized = Vec::new();
+    let mut identities = HashSet::new();
+    let mut previous_effective_on = None::<IsoDate>;
+    let mut source_order = None::<std::cmp::Ordering>;
+
+    for record in records {
+        let effective_on = IsoDate::new(format!(
+            "{:04}-{:02}-{:02}",
+            record.year, record.month, record.day
+        ))
+        .map_err(|error| {
+            TdxError::InvalidData(format!("invalid TDX corporate-action date: {error}"))
+        })?;
+        if &effective_on > admission_as_of {
+            return Err(TdxError::InvalidData(format!(
+                "TDX corporate-action date {} is in the future",
+                effective_on.as_str()
+            )));
+        }
+        if let Some(previous) = &previous_effective_on {
+            let ordering = previous.cmp(&effective_on);
+            if ordering != std::cmp::Ordering::Equal {
+                match source_order {
+                    Some(expected) if expected != ordering => {
+                        return Err(TdxError::InvalidData(
+                            "TDX corporate-action packet reverses its source date order".into(),
+                        ));
+                    }
+                    None => source_order = Some(ordering),
+                    _ => {}
+                }
+            }
+        }
+        previous_effective_on = Some(effective_on.clone());
+        let category = match record.category {
+            1 => CorporateActionCategory::Distribution,
+            2 => CorporateActionCategory::BonusRightsListing,
+            3 => CorporateActionCategory::NonTradableShareListing,
+            4 => CorporateActionCategory::UnknownCapitalChange,
+            5 => CorporateActionCategory::CapitalChange,
+            6 => CorporateActionCategory::AdditionalIssuance,
+            7 => CorporateActionCategory::ShareRepurchase,
+            8 => CorporateActionCategory::AdditionalIssuanceListing,
+            9 => CorporateActionCategory::TransferredAllotmentListing,
+            10 => CorporateActionCategory::ConvertibleBondListing,
+            11 => CorporateActionCategory::CapitalRescaling,
+            12 => CorporateActionCategory::NonTradableReverseSplit,
+            13 => CorporateActionCategory::SubscriptionWarrantGrant,
+            14 => CorporateActionCategory::PutWarrantGrant,
+            value => {
+                return Err(TdxError::InvalidData(format!(
+                    "TDX returned unknown XDXR category {value}"
+                )));
+            }
+        };
+        if !identities.insert((effective_on.clone(), category)) {
+            return Err(TdxError::InvalidData(format!(
+                "TDX returned duplicate {:?} action on {}",
+                category,
+                effective_on.as_str()
+            )));
+        }
+
+        let terms = match category {
+            CorporateActionCategory::Distribution => {
+                let cash_per_share = record
+                    .fenhong
+                    .map(|value| FiniteNumber::new(value / 10.0))
+                    .transpose()?;
+                let bonus_per_share = record
+                    .songzhuangu
+                    .map(|value| FiniteNumber::new(value / 10.0))
+                    .transpose()?;
+                let rights_per_share = record
+                    .peigu
+                    .map(|value| FiniteNumber::new(value / 10.0))
+                    .transpose()?;
+                let rights_price = match record.peigujia {
+                    Some(value) if value < 0.0 => {
+                        return Err(TdxError::InvalidData(
+                            "TDX distribution rights price must be non-negative".into(),
+                        ));
+                    }
+                    Some(value) if value > 0.0 => Some(Price::new(value)?),
+                    _ => None,
+                };
+                CorporateActionTerms::distribution(
+                    cash_per_share,
+                    bonus_per_share,
+                    rights_per_share,
+                    rights_price,
+                )?
+            }
+            CorporateActionCategory::BonusRightsListing
+            | CorporateActionCategory::NonTradableShareListing
+            | CorporateActionCategory::UnknownCapitalChange
+            | CorporateActionCategory::CapitalChange
+            | CorporateActionCategory::AdditionalIssuance
+            | CorporateActionCategory::ShareRepurchase
+            | CorporateActionCategory::AdditionalIssuanceListing
+            | CorporateActionCategory::TransferredAllotmentListing
+            | CorporateActionCategory::ConvertibleBondListing => {
+                let tradable_before = record.panqianliutong.ok_or_else(|| {
+                    TdxError::InvalidData(
+                        "TDX capital-structure action omitted tradable-before".into(),
+                    )
+                })?;
+                let tradable_after = record.panhouliutong.ok_or_else(|| {
+                    TdxError::InvalidData(
+                        "TDX capital-structure action omitted tradable-after".into(),
+                    )
+                })?;
+                let total_before = record.qianzongguben.ok_or_else(|| {
+                    TdxError::InvalidData(
+                        "TDX capital-structure action omitted total-before".into(),
+                    )
+                })?;
+                let total_after = record.houzongguben.ok_or_else(|| {
+                    TdxError::InvalidData("TDX capital-structure action omitted total-after".into())
+                })?;
+                CorporateActionTerms::capital_structure(
+                    category,
+                    FiniteNumber::new(tradable_before)?,
+                    FiniteNumber::new(tradable_after)?,
+                    FiniteNumber::new(total_before)?,
+                    FiniteNumber::new(total_after)?,
+                    UnverifiedSourceUnit::ProviderNative,
+                )?
+            }
+            CorporateActionCategory::CapitalRescaling
+            | CorporateActionCategory::NonTradableReverseSplit => {
+                let source_ratio = record.suogu.ok_or_else(|| {
+                    TdxError::InvalidData("TDX split action omitted its source ratio".into())
+                })?;
+                CorporateActionTerms::provider_native_ratio(
+                    category,
+                    FiniteNumber::new(source_ratio)?,
+                    UnverifiedSourceUnit::ProviderNative,
+                )?
+            }
+            CorporateActionCategory::SubscriptionWarrantGrant
+            | CorporateActionCategory::PutWarrantGrant => {
+                let exercise_price = record.xingquanjia.ok_or_else(|| {
+                    TdxError::InvalidData("TDX warrant grant omitted exercise price".into())
+                })?;
+                let source_quantity = record.fenshu.ok_or_else(|| {
+                    TdxError::InvalidData("TDX warrant grant omitted source quantity".into())
+                })?;
+                CorporateActionTerms::warrant_grant(
+                    category,
+                    Price::new(exercise_price)?,
+                    FiniteNumber::new(source_quantity)?,
+                    UnverifiedSourceUnit::ProviderNative,
+                )?
+            }
+        };
+        normalized.push(CorporateAction::new(
+            request.instrument().clone(),
+            category,
+            effective_on,
+            CorporateActionStatus::Implemented,
+            terms,
+            evidence.clone(),
+        )?);
+    }
+    normalized.sort_by(|left, right| {
+        left.effective_on()
+            .cmp(right.effective_on())
+            .then_with(|| left.category().cmp(&right.category()))
+    });
+    normalized.retain(|record| {
+        request
+            .start()
+            .is_none_or(|start| record.effective_on() >= start)
+            && request.end().is_none_or(|end| record.effective_on() <= end)
+    });
+
+    let provenance =
+        magic_market_core::Provenance::new(source, observed_at)?.with_batch_id(batch_id)?;
+    Ok(DataBatch::strict(normalized, provenance))
+}
+
+pub(crate) fn corporate_action_response(
+    request: &CorporateActionRequest,
+    batch: DataBatch<CorporateAction>,
+    admission_as_of: IsoDate,
+) -> Result<CorporateActionResponse, TdxError> {
+    let provenance = batch.provenance();
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        TdxError::InvalidData("TDX corporate-action batch omitted its batch ID".into())
+    })?;
+    let mut evidence = SourceEvidence::new(ProviderId::Tdx, provenance.fetched_at(), batch_id)?;
+    if let Some(source_at) = provenance.source_at() {
+        evidence = evidence.with_source_at(source_at)?;
+    }
+    Ok(CorporateActionResponse::new(
+        request.clone(),
+        admission_as_of,
+        evidence,
+        batch,
+    )?)
+}
+
+fn corporate_actions_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &CorporateActionRequest,
+) -> Result<CorporateActionResponse, TdxError> {
+    let admission_as_of = current_corporate_action_admission_date()?;
+    validate_corporate_action_request(request, &admission_as_of)?;
+    let raw = query.xdxr_info(market(request.instrument())?, request.instrument().code())?;
+    let batch = normalize_corporate_actions(source, request, raw, &admission_as_of)?;
+    corporate_action_response(request, batch, admission_as_of)
 }
 
 impl SecurityMetadataProvider for TdxHqClient {
@@ -1454,6 +1850,25 @@ impl SecurityMetadataProvider for crate::TdxSmartClient {
         security_metadata_with(self, "tdx", instruments)
     }
 }
+
+macro_rules! impl_corporate_actions {
+    ($($client:ty),+ $(,)?) => {
+        $(
+            impl CorporateActions for $client {
+                type Error = TdxError;
+
+                fn corporate_actions(
+                    &self,
+                    request: &CorporateActionRequest,
+                ) -> Result<CorporateActionResponse, Self::Error> {
+                    corporate_actions_with(self, "tdx", request)
+                }
+            }
+        )+
+    };
+}
+
+impl_corporate_actions!(TdxHqClient, crate::TdxSmartClient, crate::TdxDirectClient);
 
 impl HistoricalBars for TdxHqClient {
     type Bar = Bar;

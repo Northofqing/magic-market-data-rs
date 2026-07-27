@@ -4,6 +4,89 @@ use std::fmt;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+const NANOS_PER_SECOND: i128 = 1_000_000_000;
+const NANOS_PER_MILLISECOND: i128 = 1_000_000;
+
+/// A parsed provider or observation timestamp, normalized to Unix nanoseconds.
+///
+/// This type intentionally carries no "source" or "observed" role. Callers must
+/// keep those roles explicit and must never substitute one for the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EvidenceTimestamp {
+    unix_nanos: i128,
+}
+
+impl EvidenceTimestamp {
+    /// Parses the timestamp formats accepted by provider admission.
+    pub fn parse(value: &str) -> Result<Self, CoreError> {
+        parse_evidence_time(value)
+            .map(|unix_nanos| Self { unix_nanos })
+            .ok_or_else(|| {
+                CoreError::InvalidRequest(format!("invalid evidence timestamp {value:?}"))
+            })
+    }
+
+    /// Parses a timestamp suitable for sub-minute realtime admission.
+    ///
+    /// Unlike [`Self::parse`], this rejects date-only values and ISO wall-clock
+    /// strings without an explicit UTC/offset suffix. Epoch seconds and
+    /// `unix-ms:` values are already unambiguous instants.
+    pub fn parse_instant(value: &str) -> Result<Self, CoreError> {
+        let parsed = Self::parse(value)?;
+        if is_unambiguous_instant(value) {
+            Ok(parsed)
+        } else {
+            Err(CoreError::InvalidRequest(format!(
+                "evidence timestamp is not an unambiguous instant {value:?}"
+            )))
+        }
+    }
+
+    /// Returns `self - earlier`, or `None` when `self` is earlier.
+    pub fn duration_since(self, earlier: Self) -> Option<Duration> {
+        let nanos = self.unix_nanos.checked_sub(earlier.unix_nanos)?;
+        let nanos = u128::try_from(nanos).ok()?;
+        let seconds = u64::try_from(nanos / NANOS_PER_SECOND as u128).ok()?;
+        let subsec_nanos = u32::try_from(nanos % NANOS_PER_SECOND as u128).ok()?;
+        Some(Duration::new(seconds, subsec_nanos))
+    }
+}
+
+fn is_unambiguous_instant(value: &str) -> bool {
+    if let Some(millis) = value.strip_prefix("unix-ms:") {
+        return !millis.is_empty() && millis.bytes().all(|byte| byte.is_ascii_digit());
+    }
+    if value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return !value.is_empty();
+    }
+    if let Some((seconds, fraction)) = value.split_once('.') {
+        if !seconds.is_empty()
+            && seconds.bytes().all(|byte| byte.is_ascii_digit())
+            && !fraction.is_empty()
+            && fraction.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return true;
+        }
+    }
+
+    let Some(mut suffix) = value.get(19..) else {
+        return false;
+    };
+    if let Some(fractional) = suffix.strip_prefix('.') {
+        let boundary = fractional
+            .find(|character: char| !character.is_ascii_digit())
+            .unwrap_or(fractional.len());
+        if boundary == 0 {
+            return false;
+        }
+        suffix = &fractional[boundary..];
+    }
+    suffix == "Z"
+        || suffix.len() == 6
+            && matches!(suffix.as_bytes().first(), Some(b'+' | b'-'))
+            && suffix.as_bytes().get(3) == Some(&b':')
+}
+
 /// Stable machine state emitted by public-provider probes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProbeStatus {
@@ -64,6 +147,7 @@ impl ProbeAdmissionPolicy {
                 "probe maximum source age must be positive".into(),
             ));
         }
+        self.require_source_at = true;
         self.max_source_age = Some(value);
         Ok(self)
     }
@@ -287,10 +371,10 @@ pub enum ProbeAdmissionError {
         source_at: String,
         observed_at: String,
     },
-    #[error("source_at is stale by {age_seconds}s; maximum allowed age is {max_age_seconds}s")]
+    #[error("source_at is stale by {age_nanos}ns; maximum allowed age is {max_age_nanos}ns")]
     StaleSourceTime {
-        age_seconds: u64,
-        max_age_seconds: u64,
+        age_nanos: u128,
+        max_age_nanos: u128,
     },
     #[error("record business identity must not be empty")]
     EmptyIdentity,
@@ -381,48 +465,56 @@ fn verify_evidence(
         }
         return Ok(());
     };
-    let source_epoch =
-        parse_evidence_time(source_at).ok_or_else(|| ProbeAdmissionError::InvalidTimestamp {
+    let parse_timestamp = |value: &str| {
+        if policy.max_source_age.is_some() {
+            EvidenceTimestamp::parse_instant(value)
+        } else {
+            EvidenceTimestamp::parse(value)
+        }
+    };
+    let source_time =
+        parse_timestamp(source_at).map_err(|_| ProbeAdmissionError::InvalidTimestamp {
             field: "source_at",
             value: source_at.to_owned(),
         })?;
     let observed_at = provenance.fetched_at();
-    let observed_epoch =
-        parse_evidence_time(observed_at).ok_or_else(|| ProbeAdmissionError::InvalidTimestamp {
+    let observed_time =
+        parse_timestamp(observed_at).map_err(|_| ProbeAdmissionError::InvalidTimestamp {
             field: "observed_at",
             value: observed_at.to_owned(),
         })?;
-    if source_epoch > observed_epoch {
+    let Some(age) = observed_time.duration_since(source_time) else {
         return Err(ProbeAdmissionError::FutureSourceTime {
             source_at: source_at.to_owned(),
             observed_at: observed_at.to_owned(),
         });
-    }
+    };
     if let Some(maximum) = policy.max_source_age {
-        let age = u64::try_from(observed_epoch - source_epoch).unwrap_or(u64::MAX);
-        if age > maximum.as_secs() {
+        if age > maximum {
             return Err(ProbeAdmissionError::StaleSourceTime {
-                age_seconds: age,
-                max_age_seconds: maximum.as_secs(),
+                age_nanos: age.as_nanos(),
+                max_age_nanos: maximum.as_nanos(),
             });
         }
     }
     Ok(())
 }
 
-fn parse_evidence_time(value: &str) -> Option<i64> {
+fn parse_evidence_time(value: &str) -> Option<i128> {
     if let Some(millis) = value.strip_prefix("unix-ms:") {
         if millis.is_empty() || !millis.bytes().all(|byte| byte.is_ascii_digit()) {
             return None;
         }
-        return millis.parse::<i64>().ok()?.checked_div(1_000);
+        return i128::from(millis.parse::<i64>().ok()?).checked_mul(NANOS_PER_MILLISECOND);
     }
     let is_digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
     match value.split_once('.') {
         Some((seconds, fraction)) if is_digits(seconds) && is_digits(fraction) => {
-            return seconds.parse().ok();
+            return epoch_with_fraction(seconds, fraction);
         }
-        None if is_digits(value) => return value.parse().ok(),
+        None if is_digits(value) => {
+            return i128::from(value.parse::<i64>().ok()?).checked_mul(NANOS_PER_SECOND);
+        }
         _ => {}
     }
 
@@ -438,7 +530,9 @@ fn parse_evidence_time(value: &str) -> Option<i64> {
     }
     let days = days_from_civil(year, month, day)?;
     if bytes.len() == 10 {
-        return days.checked_mul(86_400);
+        return i128::from(days)
+            .checked_mul(86_400)?
+            .checked_mul(NANOS_PER_SECOND);
     }
     if !matches!(bytes.get(10), Some(b'T' | b' ')) || bytes.len() < 19 {
         return None;
@@ -455,14 +549,19 @@ fn parse_evidence_time(value: &str) -> Option<i64> {
         return None;
     }
     let suffix = &value[19..];
-    let suffix = suffix
-        .strip_prefix('.')
-        .map(|fractional| {
-            fractional
+    let (fraction_nanos, suffix) = match suffix.strip_prefix('.') {
+        Some(fractional) => {
+            let boundary = fractional
                 .find(|character: char| !character.is_ascii_digit())
-                .map_or("", |index| &fractional[index..])
-        })
-        .unwrap_or(suffix);
+                .unwrap_or(fractional.len());
+            let digits = &fractional[..boundary];
+            if digits.is_empty() {
+                return None;
+            }
+            (fraction_to_nanos(digits)?, &fractional[boundary..])
+        }
+        None => (0, suffix),
+    };
     let offset_seconds = match suffix {
         "" | "Z" => 0,
         _ if suffix.len() == 6
@@ -483,11 +582,32 @@ fn parse_evidence_time(value: &str) -> Option<i64> {
         }
         _ => return None,
     };
-    days.checked_mul(86_400)?
+    let seconds = days
+        .checked_mul(86_400)?
         .checked_add(hour.checked_mul(3_600)?)?
         .checked_add(minute.checked_mul(60)?)?
         .checked_add(second)?
-        .checked_sub(offset_seconds)
+        .checked_sub(offset_seconds)?;
+    i128::from(seconds)
+        .checked_mul(NANOS_PER_SECOND)
+        .and_then(|nanos| nanos.checked_add(fraction_nanos))
+}
+
+fn epoch_with_fraction(seconds: &str, fraction: &str) -> Option<i128> {
+    i128::from(seconds.parse::<i64>().ok()?)
+        .checked_mul(NANOS_PER_SECOND)?
+        .checked_add(fraction_to_nanos(fraction)?)
+}
+
+fn fraction_to_nanos(fraction: &str) -> Option<i128> {
+    if fraction.is_empty()
+        || fraction.len() > 9
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let parsed = fraction.parse::<i128>().ok()?;
+    parsed.checked_mul(10_i128.pow(u32::try_from(9 - fraction.len()).ok()?))
 }
 
 fn parse_component(bytes: &[u8], start: usize, end: usize) -> Option<i64> {

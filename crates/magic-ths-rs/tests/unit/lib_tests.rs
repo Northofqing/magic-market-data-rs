@@ -107,6 +107,7 @@ fn named_consensus_table_maps_each_years_count_and_eps_range() {
     let batch = client.consensus(&[sh("600519")]).unwrap();
     assert_eq!(batch.records().len(), 1);
     let record = &batch.records()[0];
+    assert_eq!(record.name.as_str(), "贵州茅台");
     assert_eq!(record.estimates.len(), 3);
     assert_eq!(
         record.estimates[0]
@@ -858,6 +859,29 @@ fn consensus_parser_rejects_malformed_and_contradictory_tables() {
     assert!(extract_rows("<tr>").is_err());
     assert!(extract_cells("<td").is_err());
     assert!(extract_cells("<td>x").is_err());
+    assert_eq!(
+        extract_consensus_identity("<title>贵州茅台(600519)价值分析</title>", &sh("600519"))
+            .unwrap()
+            .as_str(),
+        "贵州茅台"
+    );
+    assert_eq!(
+        extract_consensus_identity(
+            "<title>贵州茅台(600519) 盈利预测_F10_同花顺金融服务网</title>",
+            &sh("600519")
+        )
+        .unwrap()
+        .as_str(),
+        "贵州茅台"
+    );
+    for html in [
+        "<html/>",
+        "<title>贵州茅台(000001)价值分析</title>",
+        "<title>(600519)价值分析</title>",
+        "<title>贵州茅台 600519</title>",
+    ] {
+        assert!(extract_consensus_identity(html, &sh("600519")).is_err());
+    }
 }
 
 #[test]

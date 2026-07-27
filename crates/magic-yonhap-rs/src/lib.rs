@@ -532,15 +532,13 @@ impl RssState {
                 }
                 self.saw_channel = true;
             }
-            [root, channel] if root == "rss" && channel == "channel" => {
-                if name == "item" {
-                    if self.current.is_some() {
-                        return Err(YonhapError::Protocol(
-                            "nested RSS items are not permitted".into(),
-                        ));
-                    }
-                    self.current = Some(RawItem::default());
+            [root, channel] if root == "rss" && channel == "channel" && name == "item" => {
+                if self.current.is_some() {
+                    return Err(YonhapError::Protocol(
+                        "nested RSS items are not permitted".into(),
+                    ));
                 }
+                self.current = Some(RawItem::default());
             }
             [root, channel, item] if root == "rss" && channel == "channel" && item == "item" => {
                 if let Some(field) = ItemField::from_name(&name) {

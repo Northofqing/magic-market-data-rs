@@ -547,7 +547,7 @@ impl TdxFinanceClient {
         ]);
         packet.push(market);
         packet.extend_from_slice(&code_buf);
-        parse_xdxr_info(&self.send_and_recv(&packet)?)
+        parse_xdxr_info_for(&self.send_and_recv(&packet)?, market, code)
     }
 
     // ============================================================

@@ -880,7 +880,7 @@ impl AsyncTdxHqClient {
         packet.extend_from_slice(&code_buf);
 
         let body = self.send_and_recv(&packet).await?;
-        parse_xdxr_info(&body)
+        parse_xdxr_info_for(&body, market, code)
     }
 }
 

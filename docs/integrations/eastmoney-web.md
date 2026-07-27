@@ -17,7 +17,7 @@
 | 资本数据 | `MarginData`、`BlockTrades`、`HolderCounts`、`LockupEvents`、`DividendPlans` | 融资融券、大宗交易、股东户数、限售解禁、分红送转 |
 | 打板 | `LimitPools` | 涨停、炸板、跌停、昨日涨停 |
 | 热度 | `PopularityData` | 当前人气排名，并保留榜单与行情的两份证据 |
-| 严格盘后资金榜 | `PostCloseFlows` | 中国当前交易日 15:35 后，精确 limit、同一源时间、连续排名、代码+名称 |
+| 严格盘后资金榜诊断 | `EastmoneyClient::diagnose_post_close_flows` | 中国当前交易日 15:35 后，精确 limit、同一源时间、连续排名、代码+名称；production capability 为 false，正式 `PostCloseFlows` 返回 `Unsupported` |
 | 最新财经资讯 | `NewsProvider::global_news` | 东财财经滚动页首屏，最多 20 条；完整列表校验后截断 |
 | 关键词新闻诊断 | `NewsProvider::instrument_news` | 响应无结构化证券身份，capability 为 false 且正式调用返回 `Unsupported` |
 
@@ -30,6 +30,7 @@
 ```text
 reportapi.eastmoney.com
 push2.eastmoney.com
+push2delay.eastmoney.com
 push2his.eastmoney.com
 push2ex.eastmoney.com
 datacenter-web.eastmoney.com
@@ -69,8 +70,11 @@ typed error。
   等价重复稳定保留首条，身份相同但内容冲突会拒绝整批。席位请求同时过滤证券、
   日期和 `TRADE_ID`，每项必须恰有买五和卖五，禁止跨原因混组。
 - 全市场龙虎榜在 limit/交易所过滤前验证完整日数据，股票记录必须同时有代码和名称；
-- 15:35 资金榜只接受中国当前日期、捕获时间不早于 15:35、所有行 `f124` 完全一致，
-  按 `f62` 非递增且 rank 连续；每条保留 `f14` 名称和 `f184` 主力净占比。
+- 15:35 资金榜诊断只接受中国当前日期、捕获时间不早于 15:35、所有行 `f124`
+  完全一致，按 `f62` 非递增且 rank 连续；每条保留 `f14` 名称和 `f184`
+  主力净占比。2026-07-27 实网返回缺失指标和混合 `f124`，因此
+  `CapitalCapabilities.post_close_flow=false`，正式 trait 明确
+  `Unsupported`，只有命名诊断方法会访问网络。
 
 ## 探针
 

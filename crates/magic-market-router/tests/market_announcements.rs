@@ -240,6 +240,27 @@ fn market_adapter_rejects_batch_shape_and_completeness_violations() {
             .kind(),
         FailureKind::Evidence
     );
+
+    let missing_batch_provenance: Provenance = serde_json::from_value(serde_json::json!({
+        "source": "cninfo-market",
+        "source_at": "2026-07-24T08:00:00+08:00",
+        "fetched_at": "observed",
+        "batch_id": null
+    }))
+    .unwrap();
+    let missing_batch = market_announcement_source(
+        ProviderId::Cninfo,
+        Arc::new(FixtureProvider {
+            batch: DataBatch::strict(
+                vec![announcement("ann-1", "record-batch")],
+                missing_batch_provenance,
+            ),
+        }),
+        classify,
+    );
+    let error = missing_batch.fetch(&request(1)).unwrap_err();
+    assert_eq!(error.kind(), FailureKind::Evidence);
+    assert!(error.message().contains("no batch ID"));
 }
 
 #[test]
@@ -273,6 +294,18 @@ fn market_adapter_rejects_provenance_and_identity_drift() {
         non_share.fetch(&request(1)).unwrap_err().kind(),
         FailureKind::Evidence
     );
+
+    let mut invalid_code = announcement("ann-invalid-code", "batch-1");
+    invalid_code.instrument =
+        InstrumentId::new(Exchange::Shanghai, "SH-A", AssetClass::Equity).unwrap();
+    let invalid_code = market_announcement_source(
+        ProviderId::Cninfo,
+        provider(vec![invalid_code], "batch-1"),
+        classify,
+    );
+    let error = invalid_code.fetch(&request(1)).unwrap_err();
+    assert_eq!(error.kind(), FailureKind::Evidence);
+    assert!(error.message().contains("six ASCII digits"));
 
     let mut wrong_provider = announcement("ann-1", "batch-1");
     wrong_provider.evidence = SourceEvidence::new(ProviderId::Tdx, "observed", "batch-1")

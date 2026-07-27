@@ -1,5 +1,6 @@
 use crate::{FailureAction, FailureKind, RoutedSource, SourceError};
-use magic_market_core::{DataBatch, ProviderId, SourcedRecord};
+use magic_market_core::{DataBatch, EvidenceTimestamp, ProviderId, SourcedRecord};
+use std::time::Duration;
 use thiserror::Error;
 
 /// Minimum batch evidence required before one source can be selected.
@@ -8,6 +9,7 @@ pub struct AcceptancePolicy {
     require_complete: bool,
     require_source_at: bool,
     accept_complete_empty: bool,
+    max_source_age: Option<Duration>,
 }
 
 impl AcceptancePolicy {
@@ -16,6 +18,7 @@ impl AcceptancePolicy {
             require_complete: false,
             require_source_at: false,
             accept_complete_empty: false,
+            max_source_age: None,
         }
     }
 
@@ -25,7 +28,7 @@ impl AcceptancePolicy {
     }
 
     pub const fn with_require_source_at(mut self, required: bool) -> Self {
-        self.require_source_at = required;
+        self.require_source_at = required || self.max_source_age.is_some();
         self
     }
 
@@ -35,6 +38,25 @@ impl AcceptancePolicy {
 
     pub const fn require_source_at(self) -> bool {
         self.require_source_at
+    }
+
+    /// Requires record and batch provider times no older than `maximum`.
+    ///
+    /// A freshness bound inherently requires `source_at`; it never falls back to
+    /// local observation time when source time is absent.
+    pub fn with_max_source_age(mut self, maximum: Duration) -> Result<Self, RouterError> {
+        if maximum.is_zero() {
+            return Err(RouterError::InvalidConfiguration(
+                "maximum source age must be positive".into(),
+            ));
+        }
+        self.require_source_at = true;
+        self.max_source_age = Some(maximum);
+        Ok(self)
+    }
+
+    pub const fn max_source_age(self) -> Option<Duration> {
+        self.max_source_age
     }
 
     /// Allows a source contract to select a complete, evidence-bearing empty batch.
@@ -309,5 +331,109 @@ fn rejected_batch<Record: SourcedRecord>(
             ),
         ));
     }
+    if let Some(maximum) = policy.max_source_age() {
+        if let Some(rejection) = freshness_rejection(batch, maximum) {
+            return Some(rejection);
+        }
+    }
     None
+}
+
+fn freshness_rejection<Record: SourcedRecord>(
+    batch: &DataBatch<Record>,
+    maximum: Duration,
+) -> Option<(FailureKind, String)> {
+    let observed_at = batch.provenance().fetched_at();
+    let observed_time = match EvidenceTimestamp::parse_instant(observed_at) {
+        Ok(value) => value,
+        Err(_) => {
+            return Some((
+                FailureKind::Evidence,
+                "batch observation timestamp is malformed".into(),
+            ));
+        }
+    };
+
+    let mut oldest_record: Option<EvidenceTimestamp> = None;
+    for record in batch.records() {
+        if record.evidence_observed_at() != Some(observed_at) {
+            return Some((
+                FailureKind::Evidence,
+                "record observed timestamp does not match batch observation timestamp".into(),
+            ));
+        }
+        let Some(source_at) = record.evidence_source_at() else {
+            return Some((
+                FailureKind::Evidence,
+                "record source timestamp is unavailable".into(),
+            ));
+        };
+        let source_time = match EvidenceTimestamp::parse_instant(source_at) {
+            Ok(value) => value,
+            Err(_) => {
+                return Some((
+                    FailureKind::Evidence,
+                    "record source timestamp is malformed".into(),
+                ));
+            }
+        };
+        if observed_time.duration_since(source_time).is_none() {
+            return Some((
+                FailureKind::Evidence,
+                "record source timestamp is later than its observed timestamp".into(),
+            ));
+        }
+        oldest_record = Some(oldest_record.map_or(source_time, |oldest| oldest.min(source_time)));
+    }
+
+    let Some(batch_source_at) = batch.provenance().source_at() else {
+        return Some((
+            FailureKind::Evidence,
+            "batch source timestamp is unavailable".into(),
+        ));
+    };
+    let batch_source_time = match EvidenceTimestamp::parse_instant(batch_source_at) {
+        Ok(value) => value,
+        Err(_) => {
+            return Some((
+                FailureKind::Evidence,
+                "batch source timestamp is malformed".into(),
+            ));
+        }
+    };
+    if let Some(oldest) = oldest_record {
+        if batch_source_time != oldest {
+            return Some((
+                FailureKind::Evidence,
+                "batch source timestamp does not equal the oldest record source timestamp".into(),
+            ));
+        }
+    }
+    let Some(age) = observed_time.duration_since(batch_source_time) else {
+        return Some((
+            FailureKind::Evidence,
+            "batch source timestamp is later than its observation timestamp".into(),
+        ));
+    };
+    if age > maximum {
+        return Some((
+            FailureKind::Quality,
+            format!(
+                "batch source timestamp is stale by {}; maximum allowed age is {}",
+                display_duration(age),
+                display_duration(maximum)
+            ),
+        ));
+    }
+    None
+}
+
+fn display_duration(duration: Duration) -> String {
+    let nanos = duration.subsec_nanos();
+    if nanos == 0 {
+        format!("{}s", duration.as_secs())
+    } else {
+        let fraction = format!("{nanos:09}");
+        format!("{}.{}s", duration.as_secs(), fraction.trim_end_matches('0'))
+    }
 }

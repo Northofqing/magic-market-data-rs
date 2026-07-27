@@ -4,6 +4,7 @@ mod batch;
 mod calendar;
 mod capital;
 mod company;
+mod conformance;
 mod content;
 mod discovery;
 mod enrichment;
@@ -11,6 +12,7 @@ mod error;
 mod evidence;
 mod global;
 mod instrument;
+mod lifecycle;
 mod limit_pool;
 mod market_announcements;
 mod options;
@@ -40,6 +42,7 @@ pub use company::{
     CompanyCapabilities, FinancialLine, FinancialStatement, FinancialStatements, ProfileFact,
     SecurityProfile, SecurityProfiles, StatementKind,
 };
+pub use conformance::{verify_auction_conformance, AuctionConformancePolicy};
 pub use content::{
     Announcement, Announcements, ContentCapabilities, InvestorQuestion, InvestorQuestions,
     NewsItem, NewsProvider,
@@ -59,6 +62,11 @@ pub use global::{
     GlobalIndexQuote, GlobalIndexRequest, GlobalMarketCapabilities,
 };
 pub use instrument::{AssetClass, Exchange, InstrumentId};
+pub use lifecycle::{
+    CorporateAction, CorporateActionCategory, CorporateActionRequest, CorporateActionResponse,
+    CorporateActionStatus, CorporateActionTerms, CorporateActions,
+    CorporateActions as CorporateActionsProvider, UnverifiedSourceUnit,
+};
 pub use limit_pool::{
     LimitPoolCapabilities, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools,
 };
@@ -69,9 +77,9 @@ pub use options::{
 };
 pub use policy::{PolicyCapabilities, PolicyDocument, PolicyDocuments, PolicyRequest};
 pub use probe::{
-    verify_admitted_batch, verify_serial_load, verify_verified_empty, LoadProbeError,
-    LoadProbeSnapshot, ProbeAdmissionError, ProbeAdmissionPolicy, ProbeRequestTracker, ProbeStatus,
-    VerifiedEmpty,
+    verify_admitted_batch, verify_serial_load, verify_verified_empty, EvidenceTimestamp,
+    LoadProbeError, LoadProbeSnapshot, ProbeAdmissionError, ProbeAdmissionPolicy,
+    ProbeRequestTracker, ProbeStatus, VerifiedEmpty,
 };
 pub use provenance::Provenance;
 pub use provider::{
@@ -85,13 +93,16 @@ pub use research::{
     ConsensusData, ConsensusSnapshot, EarningsEstimate, ReportScope, ResearchCapabilities,
     ResearchDocument, ResearchDocumentRequest, ResearchDocuments, ResearchReport, ResearchReports,
     ResearchRequest, SemanticChannel, SemanticSearch, SemanticSearchDocument,
-    SemanticSearchRequest,
+    SemanticSearchRequest, TargetPriceConsensus, TargetPriceData, TargetPriceObservation,
+    TargetPriceRequest,
 };
 pub use signals::{
-    BoardCategory, BoardMembership, BoardMembershipProvider, ConceptHit, ConceptHits,
-    DragonTigerData, DragonTigerDisclosure, DragonTigerEntry, DragonTigerSeat, DragonTigerSide,
-    InstrumentSignalRequest, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingEntry,
-    MarketRankingKind, MarketRankings, PopularityData, PopularityRank, SignalCapabilities,
+    validate_market_ranking_batch, BoardCategory, BoardMembership, BoardMembershipProvider,
+    ConceptHit, ConceptHits, DragonTigerData, DragonTigerDisclosure, DragonTigerEntry,
+    DragonTigerSeat, DragonTigerSide, InstrumentSignalRequest, MarketBreadth, MarketBreadthRequest,
+    MarketBreadthSnapshot, MarketDragonTigerData, MarketDragonTigerRequest,
+    MarketRankingCapabilities, MarketRankingEntry, MarketRankingKind, MarketRankingUnit,
+    MarketRankings, MarketSession, PopularityData, PopularityRank, SignalCapabilities,
     StrongStockReason, StrongStockReasons,
 };
 pub use validated::{FiniteNumber, HttpsUrl, IsoDate, NonEmptyText, PositiveU32};

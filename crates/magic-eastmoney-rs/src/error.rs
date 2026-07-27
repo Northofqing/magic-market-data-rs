@@ -15,6 +15,8 @@ pub enum EastmoneyError {
     Protocol(String),
     #[error("unsupported capability: {0}")]
     Unsupported(String),
+    #[error("verified empty result: {0}")]
+    VerifiedEmpty(Box<magic_market_core::VerifiedEmpty>),
     #[error("core contract error: {0}")]
     Core(#[from] magic_market_core::CoreError),
 }
@@ -29,6 +31,7 @@ impl EastmoneyError {
             Self::Decode(_) => "decode",
             Self::Protocol(_) => "protocol",
             Self::Unsupported(_) => "unsupported",
+            Self::VerifiedEmpty(_) => "verified_empty",
             Self::Core(_) => "core",
         }
     }

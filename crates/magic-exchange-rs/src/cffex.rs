@@ -1,6 +1,6 @@
 use crate::transport::{
     validate_minimum_interval, validate_response, validate_timeout, ExchangeTransport, HttpMethod,
-    HttpRequest, HttpsTransport, RequestGate,
+    HttpRequest, HttpsTransport, RequestGate, TlsBackend,
 };
 use crate::ExchangeError;
 use magic_market_core::{
@@ -14,10 +14,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use url::Url;
 
 const HOST: &str = "www.cffex.com.cn";
-const LIST_ENDPOINT: &str = "https://www.cffex.com.cn/jystz/";
+const LIST_ENDPOINT: &str = "https://www.cffex.com.cn/cn/jystz.html";
 const DELIVERY_TITLE: &str = "股指期货和股指期权合约交割的通知";
 const USER_AGENT: &str =
     "Mozilla/5.0 (compatible; magic-exchange-rs/0.2; read-only CFFEX notice parser)";
+
+pub type CffexTlsBackend = TlsBackend;
 
 #[derive(Debug, Clone)]
 pub struct CffexConfig {
@@ -25,6 +27,7 @@ pub struct CffexConfig {
     pub timeout: Duration,
     pub minimum_interval: Duration,
     pub max_pages: u32,
+    pub tls_backend: CffexTlsBackend,
 }
 
 impl Default for CffexConfig {
@@ -34,6 +37,7 @@ impl Default for CffexConfig {
             timeout: Duration::from_secs(20),
             minimum_interval: Duration::from_secs(1),
             max_pages: 120,
+            tls_backend: CffexTlsBackend::Rustls,
         }
     }
 }
@@ -68,6 +72,7 @@ impl std::fmt::Debug for CffexClient {
         formatter
             .debug_struct("CffexClient")
             .field("config", &self.config)
+            .field("tls_backend", &self.config.tls_backend.as_str())
             .finish_non_exhaustive()
     }
 }
@@ -79,7 +84,7 @@ impl CffexClient {
 
     pub fn with_config(config: CffexConfig) -> Result<Self, ExchangeError> {
         config.validate()?;
-        let transport = HttpsTransport::new(config.timeout)?;
+        let transport = HttpsTransport::with_tls_backend(config.timeout, config.tls_backend)?;
         Self::from_parts(config, Arc::new(transport))
     }
 
@@ -106,6 +111,10 @@ impl CffexClient {
         ProviderId::Cffex
     }
 
+    pub const fn tls_backend(&self) -> CffexTlsBackend {
+        self.config.tls_backend
+    }
+
     pub const fn calendar_capabilities() -> CalendarCapabilities {
         CalendarCapabilities {
             economic_releases: false,
@@ -116,6 +125,13 @@ impl CffexClient {
     /// Exercises the bounded official-notice implementation without advertising
     /// the capability before a current live acceptance succeeds.
     pub fn probe_futures_delivery_calendar(
+        &self,
+        request: &FuturesDeliveryRequest,
+    ) -> Result<DataBatch<FuturesDeliveryEvent>, ExchangeError> {
+        self.fetch_futures_delivery_calendar(request)
+    }
+
+    fn fetch_futures_delivery_calendar(
         &self,
         request: &FuturesDeliveryRequest,
     ) -> Result<DataBatch<FuturesDeliveryEvent>, ExchangeError> {
@@ -150,7 +166,7 @@ impl CffexClient {
             let page_url = if page == 1 {
                 self.config.list_endpoint.clone()
             } else {
-                format!("https://{HOST}/jystz/index_{page}.html")
+                format!("https://{HOST}/cn/jystz_{page}.html")
             };
             let body = self.get_html(&page_url)?;
             let html = std::str::from_utf8(&body)
@@ -195,12 +211,15 @@ impl FuturesDeliveryCalendar for CffexClient {
 
     fn futures_delivery_calendar(
         &self,
-        _request: &FuturesDeliveryRequest,
+        request: &FuturesDeliveryRequest,
     ) -> Result<DataBatch<FuturesDeliveryEvent>, Self::Error> {
-        Err(ExchangeError::Unsupported(
-            "CFFEX futures delivery calendar is not admitted until a bounded live probe passes"
-                .into(),
-        ))
+        if !Self::calendar_capabilities().futures_delivery {
+            return Err(ExchangeError::Unsupported(
+                "CFFEX futures delivery calendar is not admitted until a bounded live probe passes"
+                    .into(),
+            ));
+        }
+        self.fetch_futures_delivery_calendar(request)
     }
 }
 
@@ -234,7 +253,7 @@ fn parse_notice_links(html: &str) -> Result<Vec<NoticeLink>, ExchangeError> {
             href,
             find_iso_date(&after_anchor[..after_anchor.len().min(240)]),
         ) {
-            if href.contains("/jystz/") && href.ends_with(".html") {
+            if href.contains("/cn/jystz/") && href.ends_with(".html") {
                 links.push(NoticeLink { href, title, date });
             }
         }
@@ -279,7 +298,7 @@ fn official_notice_url(value: &str) -> Result<String, ExchangeError> {
         let path = if value.starts_with('/') {
             value.to_owned()
         } else {
-            format!("/jystz/{value}")
+            format!("/cn/jystz/{value}")
         };
         format!("https://{HOST}{path}")
     };
@@ -300,9 +319,9 @@ fn validate_cffex_url(value: &str) -> Result<(), ExchangeError> {
     let url =
         Url::parse(value).map_err(|error| ExchangeError::InvalidRequest(error.to_string()))?;
     let path = url.path();
-    let list_path = path == "/jystz/"
+    let list_path = path == "/cn/jystz.html"
         || path
-            .strip_prefix("/jystz/index_")
+            .strip_prefix("/cn/jystz_")
             .and_then(|value| value.strip_suffix(".html"))
             .is_some_and(|page| {
                 page.parse::<u32>()
@@ -325,7 +344,7 @@ fn validate_cffex_url(value: &str) -> Result<(), ExchangeError> {
 }
 
 fn is_detail_path(path: &str) -> bool {
-    let Some(rest) = path.strip_prefix("/jystz/") else {
+    let Some(rest) = path.strip_prefix("/cn/jystz/") else {
         return false;
     };
     let Some((date, file)) = rest.split_once('/') else {
@@ -552,7 +571,7 @@ mod tests {
     #[test]
     fn parses_holiday_adjusted_notice_without_inventing_delivery_method() {
         let list = r#"
-          <ul><li><a href="/jystz/20260224/46999.html">
+          <ul><li><a href="/cn/jystz/20260224/46999.html">
           关于股指期货和股指期权合约交割的通知</a><span>2026-02-23</span></li></ul>
         "#;
         let detail = r#"
@@ -599,7 +618,7 @@ mod tests {
         assert!(parse_delivery_notice(
             detail.as_bytes(),
             &request(),
-            "https://www.cffex.com.cn/jystz/20260220/1.html",
+            "https://www.cffex.com.cn/cn/jystz/20260220/1.html",
             &IsoDate::new("2026-02-20").unwrap(),
             "observed"
         )
@@ -609,10 +628,24 @@ mod tests {
     #[test]
     fn list_parser_requires_unique_official_dated_links() {
         let list = r#"
-          <a href="/jystz/20260224/1.html">关于股指期货和股指期权合约交割的通知</a>2026-02-24
-          <a href="/jystz/20260224/1.html">重复</a>2026-02-24
+          <a href="/cn/jystz/20260224/1.html">关于股指期货和股指期权合约交割的通知</a>2026-02-24
+          <a href="/cn/jystz/20260224/1.html">重复</a>2026-02-24
         "#;
         assert!(parse_notice_links(list).is_err());
         assert!(official_notice_url("https://example.com/x").is_err());
+        for url in [
+            "https://www.cffex.com.cn/cn/jystz.html",
+            "https://www.cffex.com.cn/cn/jystz_2.html",
+            "https://www.cffex.com.cn/cn/jystz/20260224/1.html",
+        ] {
+            assert!(validate_cffex_url(url).is_ok(), "{url}");
+        }
+        for old_or_unbounded in [
+            "https://www.cffex.com.cn/jystz/",
+            "https://www.cffex.com.cn/jystz/index_2.html",
+            "https://www.cffex.com.cn/cn/jystz_121.html",
+        ] {
+            assert!(validate_cffex_url(old_or_unbounded).is_err());
+        }
     }
 }

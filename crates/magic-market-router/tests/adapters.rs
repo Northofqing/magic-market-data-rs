@@ -444,9 +444,11 @@ fn every_adapter_preserves_a_successful_provider_batch() {
             .fetch(&post_close_request)
             .is_err()
     );
-    let metadata = security_metadata_source(ProviderId::Custom, Arc::clone(&provider), classify)
-        .fetch(&instruments)
-        .unwrap();
+    assert!(
+        security_metadata_source(ProviderId::Custom, Arc::clone(&provider), classify)
+            .fetch(&instruments)
+            .is_err()
+    );
 
     for provenance in [
         quote.provenance(),
@@ -456,7 +458,6 @@ fn every_adapter_preserves_a_successful_provider_batch() {
         flow.provenance(),
         book.provenance(),
         auction.provenance(),
-        metadata.provenance(),
     ] {
         assert_eq!(provenance.source(), "fixture");
         assert_eq!(provenance.fetched_at(), "observed");

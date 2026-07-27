@@ -459,6 +459,8 @@ fn money_values_match(left: Money, right: Money) -> bool {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MarketRankingKind {
+    VolumeRatio,
+    MainNetInflow,
     Industry,
     Concept,
     Region,
@@ -466,15 +468,604 @@ pub enum MarketRankingKind {
     Custom(NonEmptyText),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Unit carried by a ranking metric.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MarketRankingUnit {
+    /// Turnover volume divided by the comparable recent average.
+    Multiple,
+    /// Chinese yuan.
+    Yuan,
+    /// Percentage points.
+    Percent,
+    /// Source-specific dimensionless score.
+    Score,
+    /// Explicit unit for a custom metric.
+    Custom(NonEmptyText),
+}
+
+/// Independently admitted production ranking metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct MarketRankingCapabilities {
+    pub volume_ratio: bool,
+    pub main_net_inflow: bool,
+}
+
+impl MarketRankingCapabilities {
+    pub const fn all_admitted(self) -> bool {
+        self.volume_ratio && self.main_net_inflow
+    }
+
+    pub fn supports(self, kind: &MarketRankingKind) -> bool {
+        match kind {
+            MarketRankingKind::VolumeRatio => self.volume_ratio,
+            MarketRankingKind::MainNetInflow => self.main_net_inflow,
+            _ => false,
+        }
+    }
+}
+
+/// Market session proved by the source observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MarketSession {
+    PreOpen,
+    OpeningAuction,
+    Continuous,
+    LunchBreak,
+    Close,
+    PostClose,
+}
+
+/// One checked source ranking entry.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MarketRankingEntry {
-    pub kind: MarketRankingKind,
-    pub rank: PositiveU32,
-    pub instrument: Option<InstrumentId>,
-    pub label: NonEmptyText,
-    pub return_ratio: Option<Ratio>,
-    pub value: Option<FiniteNumber>,
-    pub evidence: SourceEvidence,
+    kind: MarketRankingKind,
+    rank: PositiveU32,
+    instrument: Option<InstrumentId>,
+    label: NonEmptyText,
+    value: FiniteNumber,
+    unit: MarketRankingUnit,
+    source_date: IsoDate,
+    source_session: MarketSession,
+    universe: NonEmptyText,
+    universe_size: PositiveU32,
+    covered_count: PositiveU32,
+    max_source_skew_millis: u64,
+    evidence: SourceEvidence,
+}
+
+impl MarketRankingEntry {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        kind: MarketRankingKind,
+        rank: PositiveU32,
+        instrument: Option<InstrumentId>,
+        label: NonEmptyText,
+        value: FiniteNumber,
+        unit: MarketRankingUnit,
+        source_date: IsoDate,
+        source_session: MarketSession,
+        universe: NonEmptyText,
+        universe_size: PositiveU32,
+        covered_count: PositiveU32,
+        max_source_skew_millis: u64,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
+        validate_ranking_unit(&kind, &unit)?;
+        if matches!(
+            kind,
+            MarketRankingKind::VolumeRatio
+                | MarketRankingKind::MainNetInflow
+                | MarketRankingKind::Popularity
+        ) && instrument.is_none()
+        {
+            return Err(crate::CoreError::InvalidRequest(
+                "instrument ranking requires both a security code and name".into(),
+            ));
+        }
+        if matches!(kind, MarketRankingKind::VolumeRatio) && value.get().is_sign_negative() {
+            return Err(crate::CoreError::InvalidRequest(
+                "volume ratio must be non-negative".into(),
+            ));
+        }
+        if covered_count.get() != universe_size.get() {
+            return Err(crate::CoreError::InvalidRequest(
+                "full-market ranking covered count must equal universe size".into(),
+            ));
+        }
+        if rank.get() > covered_count.get() {
+            return Err(crate::CoreError::InvalidRequest(
+                "ranking rank must not exceed covered count".into(),
+            ));
+        }
+        validate_evidence_date(&source_date, &evidence, "market ranking")?;
+        Ok(Self {
+            kind,
+            rank,
+            instrument,
+            label,
+            value,
+            unit,
+            source_date,
+            source_session,
+            universe,
+            universe_size,
+            covered_count,
+            max_source_skew_millis,
+            evidence,
+        })
+    }
+
+    pub fn kind(&self) -> &MarketRankingKind {
+        &self.kind
+    }
+
+    pub fn rank(&self) -> PositiveU32 {
+        self.rank
+    }
+
+    pub fn instrument(&self) -> Option<&InstrumentId> {
+        self.instrument.as_ref()
+    }
+
+    pub fn label(&self) -> &NonEmptyText {
+        &self.label
+    }
+
+    pub fn value(&self) -> FiniteNumber {
+        self.value
+    }
+
+    pub fn unit(&self) -> &MarketRankingUnit {
+        &self.unit
+    }
+
+    pub fn source_date(&self) -> &IsoDate {
+        &self.source_date
+    }
+
+    pub fn source_session(&self) -> MarketSession {
+        self.source_session
+    }
+
+    pub fn universe(&self) -> &NonEmptyText {
+        &self.universe
+    }
+
+    pub fn universe_size(&self) -> PositiveU32 {
+        self.universe_size
+    }
+
+    pub fn covered_count(&self) -> PositiveU32 {
+        self.covered_count
+    }
+
+    pub fn coverage_ratio(&self) -> Ratio {
+        Ratio::decimal(self.covered_count.get() as f64 / self.universe_size.get() as f64)
+            .expect("positive integer coverage is finite")
+    }
+
+    pub fn max_source_skew_millis(&self) -> u64 {
+        self.max_source_skew_millis
+    }
+
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+}
+
+#[derive(Deserialize)]
+struct MarketRankingEntryWire {
+    kind: MarketRankingKind,
+    rank: PositiveU32,
+    instrument: Option<InstrumentId>,
+    label: NonEmptyText,
+    value: FiniteNumber,
+    unit: MarketRankingUnit,
+    source_date: IsoDate,
+    source_session: MarketSession,
+    universe: NonEmptyText,
+    universe_size: PositiveU32,
+    covered_count: PositiveU32,
+    max_source_skew_millis: u64,
+    evidence: SourceEvidence,
+}
+
+impl<'de> Deserialize<'de> for MarketRankingEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = MarketRankingEntryWire::deserialize(deserializer)?;
+        Self::new(
+            wire.kind,
+            wire.rank,
+            wire.instrument,
+            wire.label,
+            wire.value,
+            wire.unit,
+            wire.source_date,
+            wire.source_session,
+            wire.universe,
+            wire.universe_size,
+            wire.covered_count,
+            wire.max_source_skew_millis,
+            wire.evidence,
+        )
+        .map_err(de::Error::custom)
+    }
+}
+
+fn validate_ranking_unit(
+    kind: &MarketRankingKind,
+    unit: &MarketRankingUnit,
+) -> Result<(), crate::CoreError> {
+    let valid = matches!(
+        (kind, unit),
+        (MarketRankingKind::VolumeRatio, MarketRankingUnit::Multiple)
+            | (MarketRankingKind::MainNetInflow, MarketRankingUnit::Yuan)
+            | (
+                MarketRankingKind::Industry
+                    | MarketRankingKind::Concept
+                    | MarketRankingKind::Region,
+                MarketRankingUnit::Percent
+            )
+            | (MarketRankingKind::Popularity, MarketRankingUnit::Score)
+            | (MarketRankingKind::Custom(_), MarketRankingUnit::Custom(_))
+    );
+    if !valid {
+        return Err(crate::CoreError::InvalidRequest(
+            "market ranking metric and unit are inconsistent".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_evidence_date(
+    source_date: &IsoDate,
+    evidence: &SourceEvidence,
+    context: &str,
+) -> Result<(), crate::CoreError> {
+    let source_at = evidence.source_at().ok_or_else(|| {
+        crate::CoreError::InvalidRequest(format!("{context} evidence must include source_at"))
+    })?;
+    if source_at.get(..10) != Some(source_date.as_str())
+        || !matches!(source_at.as_bytes().get(10), None | Some(b'T') | Some(b' '))
+    {
+        return Err(crate::CoreError::InvalidRequest(format!(
+            "{context} source date does not match evidence source_at"
+        )));
+    }
+    Ok(())
+}
+
+/// Checks batch-level full-market ranking invariants that cannot be established
+/// by validating one record in isolation.
+pub fn validate_market_ranking_batch(
+    records: &[MarketRankingEntry],
+    kind: &MarketRankingKind,
+    limit: PositiveU32,
+) -> Result<(), crate::CoreError> {
+    let first = records.first().ok_or_else(|| {
+        crate::CoreError::InvalidRequest("market ranking must contain ranked records".into())
+    })?;
+    if first.kind() != kind {
+        return Err(crate::CoreError::InvalidRequest(
+            "market ranking kind does not match the request".into(),
+        ));
+    }
+    if first.covered_count() != first.universe_size() {
+        return Err(crate::CoreError::InvalidRequest(
+            "market ranking does not cover the complete declared universe".into(),
+        ));
+    }
+    let expected_len = usize::try_from(limit.get().min(first.universe_size().get()))
+        .map_err(|_| crate::CoreError::InvalidRequest("market ranking limit overflow".into()))?;
+    if records.len() != expected_len {
+        return Err(crate::CoreError::InvalidRequest(format!(
+            "market ranking returned {} records but exactly {expected_len} are required",
+            records.len()
+        )));
+    }
+    let mut instruments = HashSet::with_capacity(records.len());
+    let mut previous = None;
+    for (index, record) in records.iter().enumerate() {
+        let expected_rank = u32::try_from(index + 1)
+            .map_err(|_| crate::CoreError::InvalidRequest("market rank overflow".into()))?;
+        if record.kind() != kind
+            || record.rank().get() != expected_rank
+            || record.source_date() != first.source_date()
+            || record.source_session() != first.source_session()
+            || record.universe() != first.universe()
+            || record.universe_size() != first.universe_size()
+            || record.covered_count() != first.covered_count()
+            || record.max_source_skew_millis() != first.max_source_skew_millis()
+            || record.evidence.provider() != first.evidence.provider()
+            || record.evidence.batch_id() != first.evidence.batch_id()
+        {
+            return Err(crate::CoreError::InvalidRequest(
+                "market ranking records do not share one continuous atomic ranking context".into(),
+            ));
+        }
+        if let Some(instrument) = record.instrument() {
+            if !instruments.insert(instrument.clone()) {
+                return Err(crate::CoreError::InvalidRequest(
+                    "market ranking contains duplicate instruments".into(),
+                ));
+            }
+        }
+        if previous.is_some_and(|value| value < record.value().get()) {
+            return Err(crate::CoreError::InvalidRequest(
+                "market ranking values must be in descending source order".into(),
+            ));
+        }
+        previous = Some(record.value().get());
+    }
+    Ok(())
+}
+
+/// Explicit market-breadth request over a named universe and source window.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MarketBreadthRequest {
+    universe: NonEmptyText,
+    source_date: IsoDate,
+    source_session: MarketSession,
+    minimum_coverage: Ratio,
+    maximum_source_skew_millis: u64,
+}
+
+impl MarketBreadthRequest {
+    pub fn new(
+        universe: NonEmptyText,
+        source_date: IsoDate,
+        source_session: MarketSession,
+        minimum_coverage: Ratio,
+        maximum_source_skew_millis: u64,
+    ) -> Result<Self, crate::CoreError> {
+        if minimum_coverage.unit() != RatioUnit::Decimal
+            || !(0.0..=1.0).contains(&minimum_coverage.get())
+        {
+            return Err(crate::CoreError::InvalidRequest(
+                "breadth minimum coverage must be a decimal ratio in 0..=1".into(),
+            ));
+        }
+        Ok(Self {
+            universe,
+            source_date,
+            source_session,
+            minimum_coverage,
+            maximum_source_skew_millis,
+        })
+    }
+
+    pub fn universe(&self) -> &NonEmptyText {
+        &self.universe
+    }
+
+    pub fn source_date(&self) -> &IsoDate {
+        &self.source_date
+    }
+
+    pub fn source_session(&self) -> MarketSession {
+        self.source_session
+    }
+
+    pub fn minimum_coverage(&self) -> Ratio {
+        self.minimum_coverage
+    }
+
+    pub fn maximum_source_skew_millis(&self) -> u64 {
+        self.maximum_source_skew_millis
+    }
+}
+
+#[derive(Deserialize)]
+struct MarketBreadthRequestWire {
+    universe: NonEmptyText,
+    source_date: IsoDate,
+    source_session: MarketSession,
+    minimum_coverage: Ratio,
+    maximum_source_skew_millis: u64,
+}
+
+impl<'de> Deserialize<'de> for MarketBreadthRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = MarketBreadthRequestWire::deserialize(deserializer)?;
+        Self::new(
+            wire.universe,
+            wire.source_date,
+            wire.source_session,
+            wire.minimum_coverage,
+            wire.maximum_source_skew_millis,
+        )
+        .map_err(de::Error::custom)
+    }
+}
+
+/// Breadth is a checked aggregate, not a synthetic ranked security.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MarketBreadthSnapshot {
+    universe: NonEmptyText,
+    source_date: IsoDate,
+    source_session: MarketSession,
+    total: u32,
+    valid: u32,
+    up: u32,
+    down: u32,
+    flat: u32,
+    limit_up: u32,
+    limit_down: u32,
+    coverage: Ratio,
+    max_source_skew_millis: u64,
+    input_evidence: Vec<SourceEvidence>,
+    evidence: SourceEvidence,
+}
+
+impl MarketBreadthSnapshot {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        universe: NonEmptyText,
+        source_date: IsoDate,
+        source_session: MarketSession,
+        total: u32,
+        valid: u32,
+        up: u32,
+        down: u32,
+        flat: u32,
+        limit_up: u32,
+        limit_down: u32,
+        max_source_skew_millis: u64,
+        input_evidence: Vec<SourceEvidence>,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
+        if total == 0 || valid > total {
+            return Err(crate::CoreError::InvalidRequest(
+                "breadth total must be positive and valid must not exceed total".into(),
+            ));
+        }
+        let partition_total = up
+            .checked_add(down)
+            .and_then(|value| value.checked_add(flat))
+            .ok_or_else(|| {
+                crate::CoreError::InvalidRequest("breadth directional count overflow".into())
+            })?;
+        if valid != partition_total {
+            return Err(crate::CoreError::InvalidRequest(
+                "breadth valid count must equal up + down + flat".into(),
+            ));
+        }
+        if limit_up > up || limit_down > down {
+            return Err(crate::CoreError::InvalidRequest(
+                "breadth limit counts must be subsets of directional counts".into(),
+            ));
+        }
+        if input_evidence.is_empty() {
+            return Err(crate::CoreError::InvalidRequest(
+                "breadth must retain at least one input evidence record".into(),
+            ));
+        }
+        let mut evidence_ids = HashSet::with_capacity(input_evidence.len());
+        for input in &input_evidence {
+            if !evidence_ids.insert((input.provider(), input.batch_id().to_owned())) {
+                return Err(crate::CoreError::InvalidRequest(
+                    "breadth input evidence contains a duplicate provider/batch pair".into(),
+                ));
+            }
+            validate_evidence_date(&source_date, input, "breadth input")?;
+        }
+        validate_evidence_date(&source_date, &evidence, "breadth")?;
+        let coverage = Ratio::decimal(valid as f64 / total as f64)?;
+        Ok(Self {
+            universe,
+            source_date,
+            source_session,
+            total,
+            valid,
+            up,
+            down,
+            flat,
+            limit_up,
+            limit_down,
+            coverage,
+            max_source_skew_millis,
+            input_evidence,
+            evidence,
+        })
+    }
+
+    pub fn universe(&self) -> &NonEmptyText {
+        &self.universe
+    }
+    pub fn source_date(&self) -> &IsoDate {
+        &self.source_date
+    }
+    pub fn source_session(&self) -> MarketSession {
+        self.source_session
+    }
+    pub fn total(&self) -> u32 {
+        self.total
+    }
+    pub fn valid(&self) -> u32 {
+        self.valid
+    }
+    pub fn up(&self) -> u32 {
+        self.up
+    }
+    pub fn down(&self) -> u32 {
+        self.down
+    }
+    pub fn flat(&self) -> u32 {
+        self.flat
+    }
+    pub fn limit_up(&self) -> u32 {
+        self.limit_up
+    }
+    pub fn limit_down(&self) -> u32 {
+        self.limit_down
+    }
+    pub fn coverage(&self) -> Ratio {
+        self.coverage
+    }
+    pub fn max_source_skew_millis(&self) -> u64 {
+        self.max_source_skew_millis
+    }
+    pub fn input_evidence(&self) -> &[SourceEvidence] {
+        &self.input_evidence
+    }
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+}
+
+#[derive(Deserialize)]
+struct MarketBreadthSnapshotWire {
+    universe: NonEmptyText,
+    source_date: IsoDate,
+    source_session: MarketSession,
+    total: u32,
+    valid: u32,
+    up: u32,
+    down: u32,
+    flat: u32,
+    limit_up: u32,
+    limit_down: u32,
+    coverage: Ratio,
+    max_source_skew_millis: u64,
+    input_evidence: Vec<SourceEvidence>,
+    evidence: SourceEvidence,
+}
+
+impl<'de> Deserialize<'de> for MarketBreadthSnapshot {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = MarketBreadthSnapshotWire::deserialize(deserializer)?;
+        let snapshot = Self::new(
+            wire.universe,
+            wire.source_date,
+            wire.source_session,
+            wire.total,
+            wire.valid,
+            wire.up,
+            wire.down,
+            wire.flat,
+            wire.limit_up,
+            wire.limit_down,
+            wire.max_source_skew_millis,
+            wire.input_evidence,
+            wire.evidence,
+        )
+        .map_err(de::Error::custom)?;
+        if snapshot.coverage != wire.coverage {
+            return Err(de::Error::custom(
+                "breadth serialized coverage contradicts valid / total",
+            ));
+        }
+        Ok(snapshot)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -525,6 +1116,7 @@ impl_sourced!(
     DragonTigerEntry,
     DragonTigerSeat,
     MarketRankingEntry,
+    MarketBreadthSnapshot,
     PopularityRank,
     ConceptHit,
 );
@@ -698,6 +1290,15 @@ pub trait MarketRankings {
         kind: &MarketRankingKind,
         limit: PositiveU32,
     ) -> Result<DataBatch<MarketRankingEntry>, Self::Error>;
+}
+
+pub trait MarketBreadth {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn market_breadth(
+        &self,
+        request: &MarketBreadthRequest,
+    ) -> Result<DataBatch<MarketBreadthSnapshot>, Self::Error>;
 }
 
 pub trait PopularityData {
