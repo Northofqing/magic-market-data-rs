@@ -190,14 +190,15 @@ pub(crate) fn normalize_bars(
     request: &BarsRequest,
     records: Vec<SecurityBar>,
 ) -> Result<DataBatch<Bar>, TdxError> {
-    ensure_nonempty(&records)?;
     if records.len() != usize::from(request.limit()) {
-        return Err(TdxError::InvalidData(format!(
-            "TDX returned {} bars for strict request limit {}",
-            records.len(),
-            request.limit()
-        )));
+        return Err(TdxError::HistoricalBarCardinality {
+            offset: 0,
+            actual: records.len(),
+            expected_page: request.limit(),
+            requested_total: request.limit(),
+        });
     }
+    ensure_nonempty(&records)?;
     if !matches!(source, "tdx" | "tdx-smart" | "tdx-direct" | "tdx-async") {
         return Err(TdxError::InvalidData(format!(
             "unexpected TDX bar source {source:?}"
@@ -683,11 +684,12 @@ impl HistoricalBarPagination {
             TdxError::InvalidData("TDX historical bar pagination received an extra page".into())
         })?;
         if page.len() != usize::from(page_limit) {
-            return Err(TdxError::InvalidData(format!(
-                "TDX historical bar page at offset {offset} returned {} rows for exact page limit \
-                 {page_limit}",
-                page.len()
-            )));
+            return Err(TdxError::HistoricalBarCardinality {
+                offset,
+                actual: page.len(),
+                expected_page: page_limit,
+                requested_total: self.expected,
+            });
         }
         self.pages.push(page);
         self.remaining -= page_limit;

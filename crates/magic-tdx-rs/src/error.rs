@@ -13,6 +13,17 @@ pub enum TdxError {
     #[error("Invalid data: {0}")]
     InvalidData(String),
 
+    #[error(
+        "TDX historical bar cardinality mismatch at offset {offset}: returned {actual} rows for \
+         exact page limit {expected_page} within total request {requested_total}"
+    )]
+    HistoricalBarCardinality {
+        offset: u32,
+        actual: usize,
+        expected_page: u16,
+        requested_total: u16,
+    },
+
     #[error("File not found: {0}")]
     FileNotFound(String),
 

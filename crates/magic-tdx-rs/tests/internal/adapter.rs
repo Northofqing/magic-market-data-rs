@@ -461,10 +461,12 @@ fn blocking_historical_bars_reject_second_page_failure_and_short_page_atomically
 
     assert!(matches!(
         failure,
-        Err(TdxError::InvalidData(message))
-            if message.contains("offset 800")
-                && message.contains("returned 0 rows")
-                && message.contains("page limit 1")
+        Err(TdxError::HistoricalBarCardinality {
+            offset: 800,
+            actual: 0,
+            expected_page: 1,
+            requested_total: 801,
+        })
     ));
     assert_eq!(short.calls.borrow().len(), 2);
 }
@@ -887,6 +889,27 @@ async fn async_historical_bars_page_at_801_and_reject_second_page_failure() {
 
     assert!(matches!(failure, Err(TdxError::Disconnected)));
     assert_eq!(failing.calls.borrow().len(), 2);
+
+    let short = ScriptedAsyncBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(1, 800)),
+            Ok(Vec::new()),
+        ])),
+        ..Default::default()
+    };
+
+    let failure = historical_bars_async_with(&short, "tdx-async", &request).await;
+
+    assert!(matches!(
+        failure,
+        Err(TdxError::HistoricalBarCardinality {
+            offset: 800,
+            actual: 0,
+            expected_page: 1,
+            requested_total: 801,
+        })
+    ));
+    assert_eq!(short.calls.borrow().len(), 2);
 }
 
 #[tokio::test]
@@ -1674,9 +1697,25 @@ fn normalized_bar_batches_reject_incomplete_or_ambiguous_sequences() {
     let one = BarsRequest::new(instrument("600396"), BarInterval::Day, 1).unwrap();
     let two = BarsRequest::new(instrument("600396"), BarInterval::Day, 2).unwrap();
 
-    assert!(normalize_bars("tdx", &one, Vec::new()).is_err());
+    assert!(matches!(
+        normalize_bars("tdx", &one, Vec::new()),
+        Err(TdxError::HistoricalBarCardinality {
+            offset: 0,
+            actual: 0,
+            expected_page: 1,
+            requested_total: 1,
+        })
+    ));
     assert!(normalize_bars("legacy-tdx", &one, vec![source_bar()]).is_err());
-    assert!(normalize_bars("tdx", &two, vec![source_bar()]).is_err());
+    assert!(matches!(
+        normalize_bars("tdx", &two, vec![source_bar()]),
+        Err(TdxError::HistoricalBarCardinality {
+            offset: 0,
+            actual: 1,
+            expected_page: 2,
+            requested_total: 2,
+        })
+    ));
     assert!(normalize_bars(
         "tdx",
         &one,
