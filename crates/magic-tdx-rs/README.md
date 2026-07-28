@@ -9,8 +9,8 @@ clients. All network calls are read-only and return the upstream error type.
 
 | Facade | Coverage |
 | --- | --- |
-| `TdxService` | Smart failover K-lines, quotes, chunked quotes, normalized Shanghai/Shenzhen security metadata, securities, minute/trade history, finance and XDXR |
-| `AsyncTdxService` | Async-pool equivalents, including atomic security-list pagination |
+| `TdxService` | Smart failover K-lines with atomic exact pagination beyond the 800-row wire limit, quotes, chunked quotes, normalized Shanghai/Shenzhen security metadata, securities, minute/trade history, finance and XDXR |
+| `AsyncTdxService` | Async-pool equivalents, including atomic historical-bar and security-list pagination |
 | `BlockService` | Industry, concept, index blocks, block K-lines and quotes |
 | `FundService` | Fund/ETF list, bars, quotes, finance and XDXR |
 | `FinanceService` | Realtime finance, report files/records, 45 named indicators |

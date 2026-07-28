@@ -1,4 +1,19 @@
 # Business rules
+## BR-036 Magic TDX normalized historical-bar exact pagination
+The normalized Magic TDX `HistoricalBars` operation honors the full positive
+`BarsRequest.limit` `u16` domain while every wire request remains at or below
+`MAX_KLINE_COUNT=800`. Pages use exact offsets from the newest page toward
+older history. Every page must succeed with its exact requested cardinality;
+an empty, short, oversized, malformed or failed page rejects the entire
+request and never yields a partial `DataBatch`. Older pages precede newer
+pages in the complete sequence while source order inside each page is
+preserved. The complete sequence then passes BR-022 validation for duplicate
+or non-increasing times and all structural fields. Provenance, observation
+time and the shared record/batch identity are created only after all pages are
+complete and valid. Blocking, Smart, Direct and async normalized Providers
+share these semantics; downstream callers must not implement Provider-specific
+TDX pagination.
+
 ## BR-032 Security lifecycle atomic evidence
 Listing dates and corporate actions may authorize historical price-continuity
 exceptions only through provider-neutral records with exact instrument
@@ -117,12 +132,18 @@ The provider-facing Magic TDX historical-bar operation returns only
 provider-neutral `magic_market_core::Bar` records. Raw `SecurityBar` remains a
 wire/protocol DTO and is not a second `HistoricalBars` contract. One request is
 atomic: declared rows must decode completely; empty, oversized, duplicate,
-non-increasing, invalid, inconsistent or unconfirmed greater-than-20-percent
-jump sequences fail explicitly. The adapter never sorts, deduplicates, fills
-or mixes fields. TDX source bar volume is converted from shares to Core lots
-by dividing by 100, amount is preserved in CNY yuan, and every record must
-carry `ProviderId::Tdx`, the exact source timestamp and the same non-empty
-batch identity as batch provenance.
+non-increasing, structurally invalid or internally inconsistent sequences fail
+explicitly. The adapter never sorts, deduplicates, fills or mixes fields. A
+fixed adjacent-close percentage is not a provider-integrity rule: legitimate
+IPO, relisting, resumption, corporate-action and market-price moves may exceed
+20 percent, so the Magic TDX adapter must preserve such source rows after the
+same structural and provenance checks instead of rejecting or rewriting them.
+Consumers that require economic jump confirmation must enforce that policy at
+their own evidence boundary; provider admission is not confirmation. TDX
+source bar volume is converted from shares to Core lots by dividing by 100,
+amount is preserved in CNY yuan, and every record must carry
+`ProviderId::Tdx`, the exact source timestamp and the same non-empty batch
+identity as batch provenance.
 
 ## BR-023 TDX normalized current-session admission
 Raw TDX current-minute and current-transaction packets are diagnostic evidence
@@ -385,3 +406,13 @@ caching, search indexing, and inferred instruments are prohibited.
 `global_news` may be advertised only after two consecutive bounded
 production-client live probes pass; otherwise the trait remains typed
 `Unsupported` and only the explicit diagnostic path may access the feed.
+
+## BR-037 EMQuant fake-bridge test isolation
+Every executable fake bridge used by the Unix EMQuant integration suite is a
+checked-in mode-100755 fixture below the crate's `tests/fixtures` directory.
+The test process must not create, write, chmod, rename or delete a pathname
+that it later executes. Default, timeout and malformed-response behavior use
+separate immutable fixtures. Concurrent public clients may execute one fixture
+only after the test verifies it is a regular executable file. Production
+EMQuant discovery, command execution, timeout and normalization semantics
+remain unchanged.

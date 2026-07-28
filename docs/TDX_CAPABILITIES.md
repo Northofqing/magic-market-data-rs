@@ -7,7 +7,7 @@ services and local TDX file readers.
 | Area | Implementation and verified boundary |
 | --- | --- |
 | Quotes | `RealtimeQuotes` on blocking/smart/direct/async; Shanghai, Shenzhen and Beijing |
-| K lines | All 12 source categories from 1 minute through yearly; stock and index |
+| K lines | All 12 source categories from 1 minute through yearly; stock and index; normalized latest-N requests page atomically across the 800-row wire limit for the full positive `u16` request domain |
 | Five-level books | `OrderBooks` with visible bid/ask depth and record evidence; Shanghai, Shenzhen and Beijing |
 | Minute data | Current and dated history plus normalized `MinuteData`; cumulative quantity, no source amount |
 | Executed trades | Current and dated history with automatic paging and unknown source sides preserved |

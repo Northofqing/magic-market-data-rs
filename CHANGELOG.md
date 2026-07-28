@@ -23,6 +23,9 @@ Breaking migrations:
   propagate `CoreError` as a typed source.
 - TDX historical-bar adapters reject date ranges explicitly because the TDX
   request used here cannot honor normalized `start`/`end` semantics.
+- TDX normalized historical bars now honor the complete positive `u16`
+  request-limit domain through atomic exact pages at the 800-row wire boundary;
+  any failed, empty, short or malformed page rejects the whole batch.
 - TDX normalized quotes and order books no longer promote the unverified raw
   quote-time field into `source_at`; the raw protocol field remains available
   for future audited decoding.

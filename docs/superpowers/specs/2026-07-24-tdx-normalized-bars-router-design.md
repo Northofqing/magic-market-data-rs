@@ -67,7 +67,7 @@ raw DTO fields after its Gateway migration.
 TDX TCP packet
   -> strict protocol decode (all declared rows or error)
   -> Vec<SecurityBar> raw protocol records
-  -> validate request cardinality, timestamps, order, numerics and jumps
+  -> validate request cardinality, timestamps, order and structural numerics
   -> normalize every row to magic_market_core::Bar
   -> DataBatch::strict with one batch_id and latest source_at
   -> magic_market_router::bars_source
@@ -117,10 +117,17 @@ The whole batch fails explicitly for any of the following:
 - non-finite fields, non-positive prices, negative quantity/amount, or
   inconsistent OHLC;
 - positive quantity with zero amount;
-- adjacent close change beyond ±20% without same-batch corporate-action
-  evidence; the error says manual confirmation is required;
 - a source time newer than local observation time;
 - an adjustment other than the actually requested `adjust=0`.
+
+An adjacent close move beyond a fixed percentage is not, by itself, provider
+corruption. The adapter admits a structurally valid source sequence even when
+the move exceeds ±20%, preserving exact values and provenance. IPO, relisting,
+resumption, corporate-action and genuine market moves are not distinguishable
+at this provider boundary without additional evidence. A downstream consumer
+whose safety contract requires alert plus manual confirmation must apply that
+policy after provider admission; this adapter neither confirms nor suppresses
+the move.
 
 For a “latest N bars” request, sequence continuity means the source-returned
 bar sequence is complete, strictly ordered and has the requested cardinality.
@@ -148,6 +155,7 @@ one complete batch, never field-level fallback.
 | TDX transport/server unavailable | typed TDX error; router may try the next complete provider |
 | packet truncated/invalid | atomic TDX failure; no partial batch |
 | record validation fails | atomic TDX failure with offending code/time/field |
+| structurally valid adjacent move exceeds ±20% | admit unchanged with exact provenance; downstream policy decides confirmation |
 | unit evidence fails | TDX bars capability is not admitted |
 | router rejects evidence | attempt is recorded as rejected; no mixed batch |
 
@@ -162,6 +170,7 @@ protocol or wire-format migration.
 | raw `get_security_bars` | adopt internally | real TDX transport and parser |
 | `HistoricalBars<Bar = SecurityBar>` | delete/replace | leaks protocol DTO and cannot enter router |
 | `TdxService::bars -> SecurityBar` | delete/replace | duplicates normalized provider contract |
+| adapter-level fixed ±20% rejection | delete | threshold cannot distinguish valid market/lifecycle moves; downstream evidence boundary owns confirmation |
 | downstream provider-specific fallback | delete after Gateway migration | router owns whole-batch failover |
 | RustDX source and aliases | reject/delete | user-selected Magic TDX only |
 
