@@ -1,7 +1,7 @@
 use crate::error::TdxError;
 use crate::protocol::constants::{
     KLINE_15MIN, KLINE_1HOUR, KLINE_1MIN, KLINE_30MIN, KLINE_5MIN, KLINE_DAILY, KLINE_MONTHLY,
-    KLINE_WEEKLY, KLINE_YEARLY,
+    KLINE_WEEKLY, KLINE_YEARLY, MAX_KLINE_COUNT,
 };
 use crate::protocol::types::{FinanceInfo, MinuteTimePrice, SecurityInfo, TickData, XdXrInfo};
 use crate::{SecurityBar, SecurityQuote, TdxHqClient};
@@ -657,20 +657,87 @@ impl AsyncTdxQuery for crate::AsyncTdxHqClient {
     }
 }
 
+struct HistoricalBarPagination {
+    expected: u16,
+    remaining: u16,
+    offset: u32,
+    pages: Vec<Vec<SecurityBar>>,
+}
+
+impl HistoricalBarPagination {
+    fn new(expected: u16) -> Self {
+        Self {
+            expected,
+            remaining: expected,
+            offset: 0,
+            pages: Vec::new(),
+        }
+    }
+
+    fn next_page(&self) -> Option<(u32, u16)> {
+        (self.remaining > 0).then_some((self.offset, self.remaining.min(MAX_KLINE_COUNT)))
+    }
+
+    fn accept_page(&mut self, page: Vec<SecurityBar>) -> Result<(), TdxError> {
+        let (offset, page_limit) = self.next_page().ok_or_else(|| {
+            TdxError::InvalidData("TDX historical bar pagination received an extra page".into())
+        })?;
+        if page.len() != usize::from(page_limit) {
+            return Err(TdxError::InvalidData(format!(
+                "TDX historical bar page at offset {offset} returned {} rows for exact page limit \
+                 {page_limit}",
+                page.len()
+            )));
+        }
+        self.pages.push(page);
+        self.remaining -= page_limit;
+        self.offset = self
+            .offset
+            .checked_add(u32::from(page_limit))
+            .ok_or_else(|| TdxError::InvalidData("TDX historical bar offset overflow".into()))?;
+        Ok(())
+    }
+
+    fn finish(self) -> Result<Vec<SecurityBar>, TdxError> {
+        if self.remaining != 0 {
+            return Err(TdxError::InvalidData(format!(
+                "TDX historical bar pagination stopped with {} rows missing",
+                self.remaining
+            )));
+        }
+        let records: Vec<_> = self.pages.into_iter().rev().flatten().collect();
+        if records.len() != usize::from(self.expected) {
+            return Err(TdxError::InvalidData(format!(
+                "TDX historical bar pagination assembled {} rows for exact request limit {}",
+                records.len(),
+                self.expected
+            )));
+        }
+        Ok(records)
+    }
+}
+
 fn historical_bars_with(
     query: &impl BlockingTdxQuery,
     source: &str,
     request: &BarsRequest,
 ) -> Result<DataBatch<Bar>, TdxError> {
     reject_unsupported_bar_range(request)?;
-    let records = query.security_bars(
-        category(request.interval())?,
-        market(request.instrument())?,
-        request.instrument().code(),
-        0,
-        request.limit(),
-        0,
-    )?;
+    let category = category(request.interval())?;
+    let market = market(request.instrument())?;
+    let mut pagination = HistoricalBarPagination::new(request.limit());
+    while let Some((offset, page_limit)) = pagination.next_page() {
+        let page = query.security_bars(
+            category,
+            market,
+            request.instrument().code(),
+            offset,
+            page_limit,
+            0,
+        )?;
+        pagination.accept_page(page)?;
+    }
+    let records = pagination.finish()?;
     normalize_bars(source, request, records)
 }
 
@@ -680,16 +747,23 @@ async fn historical_bars_async_with(
     request: &BarsRequest,
 ) -> Result<DataBatch<Bar>, TdxError> {
     reject_unsupported_bar_range(request)?;
-    let records = query
-        .security_bars(
-            category(request.interval())?,
-            market(request.instrument())?,
-            request.instrument().code(),
-            0,
-            request.limit(),
-            0,
-        )
-        .await?;
+    let category = category(request.interval())?;
+    let market = market(request.instrument())?;
+    let mut pagination = HistoricalBarPagination::new(request.limit());
+    while let Some((offset, page_limit)) = pagination.next_page() {
+        let page = query
+            .security_bars(
+                category,
+                market,
+                request.instrument().code(),
+                offset,
+                page_limit,
+                0,
+            )
+            .await?;
+        pagination.accept_page(page)?;
+    }
+    let records = pagination.finish()?;
     normalize_bars(source, request, records)
 }
 

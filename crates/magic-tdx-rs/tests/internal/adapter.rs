@@ -71,6 +71,24 @@ fn source_bar() -> SecurityBar {
     }
 }
 
+fn indexed_daily_bar(index: usize) -> SecurityBar {
+    let year = 2020 + index / (12 * 28);
+    let month = 1 + (index / 28) % 12;
+    let day = 1 + index % 28;
+    let datetime = format!("{year:04}-{month:02}-{day:02}");
+    SecurityBar {
+        year: u32::try_from(year).unwrap(),
+        month: u32::try_from(month).unwrap(),
+        day: u32::try_from(day).unwrap(),
+        datetime,
+        ..source_bar()
+    }
+}
+
+fn indexed_daily_bars(start: usize, count: usize) -> Vec<SecurityBar> {
+    (start..start + count).map(indexed_daily_bar).collect()
+}
+
 fn source_finance(market: u8, code: &str, ipo_date: u32) -> FinanceInfo {
     FinanceInfo {
         market,
@@ -137,7 +155,7 @@ fn source_action(date: (u32, u32, u32), category: u32, value: f64) -> XdXrInfo {
 #[derive(Default)]
 struct ScriptedBarsQuery {
     calls: RefCell<Vec<SecurityBarsCall>>,
-    response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
+    responses: RefCell<VecDeque<Result<Vec<SecurityBar>, TdxError>>>,
     quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
     quote_response: RefCell<Option<Result<Vec<SecurityQuote>, TdxError>>>,
     minute_calls: RefCell<Vec<(u8, String)>>,
@@ -171,7 +189,7 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
         self.calls
             .borrow_mut()
             .push((category, market, code.to_owned(), start, count, adjust));
-        self.response.borrow_mut().take().unwrap_or_else(|| {
+        self.responses.borrow_mut().pop_front().unwrap_or_else(|| {
             Err(TdxError::InvalidData(
                 "scripted bars response is not configured".into(),
             ))
@@ -321,9 +339,9 @@ impl BlockingTdxQuery for ScriptedBarsQuery {
 #[test]
 fn blocking_bar_seam_uses_decoded_records_and_exact_request_parameters() {
     let query = ScriptedBarsQuery {
-        response: RefCell::new(Some(Ok((19..=23)
+        responses: RefCell::new(VecDeque::from([Ok((19..=23)
             .map(|day| source_bar_at(day, 10.0))
-            .collect()))),
+            .collect())])),
         ..Default::default()
     };
     let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 5).unwrap();
@@ -337,6 +355,175 @@ fn blocking_bar_seam_uses_decoded_records_and_exact_request_parameters() {
     assert_eq!(batch.records().len(), 5);
     assert_eq!(batch.provenance().source(), "tdx");
     assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+}
+
+#[test]
+fn blocking_historical_bars_page_at_801_and_restore_ascending_provider_order() {
+    let query = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(1, 800)),
+            Ok(indexed_daily_bars(0, 1)),
+        ])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 801).unwrap();
+
+    let batch = historical_bars_with(&query, "tdx", &request).unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![
+            (KLINE_DAILY, 1, "600396".into(), 0, 800, 0),
+            (KLINE_DAILY, 1, "600396".into(), 800, 1, 0),
+        ]
+    );
+    assert_eq!(batch.records().len(), 801);
+    assert_eq!(batch.records()[0].bar_start(), "2020-01-01");
+    assert_eq!(batch.records()[800].bar_start(), "2022-05-17");
+    assert_eq!(batch.provenance().source_at(), Some("2022-05-17"));
+}
+
+#[test]
+fn blocking_historical_bars_use_one_exact_page_at_800() {
+    let query = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([Ok(indexed_daily_bars(0, 800))])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 800).unwrap();
+
+    let batch = historical_bars_with(&query, "tdx", &request).unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![(KLINE_DAILY, 1, "600396".into(), 0, 800, 0)]
+    );
+    assert_eq!(batch.records().len(), 800);
+    assert_eq!(batch.records()[0].bar_start(), "2020-01-01");
+    assert_eq!(batch.records()[799].bar_start(), "2022-05-16");
+}
+
+#[test]
+fn blocking_historical_bars_fetch_more_than_two_exact_pages() {
+    let query = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(801, 800)),
+            Ok(indexed_daily_bars(1, 800)),
+            Ok(indexed_daily_bars(0, 1)),
+        ])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 1_601).unwrap();
+
+    let batch = historical_bars_with(&query, "tdx-smart", &request).unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![
+            (KLINE_DAILY, 1, "600396".into(), 0, 800, 0),
+            (KLINE_DAILY, 1, "600396".into(), 800, 800, 0),
+            (KLINE_DAILY, 1, "600396".into(), 1_600, 1, 0),
+        ]
+    );
+    assert_eq!(batch.records().len(), 1_601);
+    assert_eq!(batch.records()[0].bar_start(), "2020-01-01");
+    assert_eq!(batch.records()[1_600].bar_start(), "2024-10-05");
+    assert_eq!(batch.provenance().source(), "tdx-smart");
+}
+
+#[test]
+fn blocking_historical_bars_reject_second_page_failure_and_short_page_atomically() {
+    let failing = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(1, 800)),
+            Err(TdxError::Connection("second page failed".into())),
+        ])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 801).unwrap();
+
+    let failure = historical_bars_with(&failing, "tdx-direct", &request);
+
+    assert!(matches!(
+        failure,
+        Err(TdxError::Connection(message)) if message == "second page failed"
+    ));
+    assert_eq!(failing.calls.borrow().len(), 2);
+
+    let short = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(1, 800)),
+            Ok(Vec::new()),
+        ])),
+        ..Default::default()
+    };
+
+    let failure = historical_bars_with(&short, "tdx", &request);
+
+    assert!(matches!(
+        failure,
+        Err(TdxError::InvalidData(message))
+            if message.contains("offset 800")
+                && message.contains("returned 0 rows")
+                && message.contains("page limit 1")
+    ));
+    assert_eq!(short.calls.borrow().len(), 2);
+}
+
+#[test]
+fn blocking_paginated_historical_bars_keep_atomic_sequence_and_structure_validation() {
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 801).unwrap();
+
+    let duplicate = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(800, 800)),
+            Ok(indexed_daily_bars(800, 1)),
+        ])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        historical_bars_with(&duplicate, "tdx", &request),
+        Err(TdxError::InvalidData(message)) if message.contains("duplicate or non-increasing")
+    ));
+
+    let reversed = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(0, 800)),
+            Ok(indexed_daily_bars(900, 1)),
+        ])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        historical_bars_with(&reversed, "tdx", &request),
+        Err(TdxError::InvalidData(message)) if message.contains("duplicate or non-increasing")
+    ));
+
+    let mut invalid_timestamp = indexed_daily_bar(0);
+    invalid_timestamp.datetime = "2020-01-02".into();
+    let invalid_timestamp = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(1, 800)),
+            Ok(vec![invalid_timestamp]),
+        ])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        historical_bars_with(&invalid_timestamp, "tdx", &request),
+        Err(TdxError::InvalidData(message)) if message.contains("contradicts decoded components")
+    ));
+
+    let mut invalid_amount = indexed_daily_bar(0);
+    invalid_amount.amount = -1.0;
+    let invalid_amount = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(1, 800)),
+            Ok(vec![invalid_amount]),
+        ])),
+        ..Default::default()
+    };
+    assert!(matches!(
+        historical_bars_with(&invalid_amount, "tdx", &request),
+        Err(TdxError::InvalidData(message)) if message.contains("amount is invalid")
+    ));
 }
 
 #[test]
@@ -515,7 +702,7 @@ fn blocking_order_book_seam_normalizes_five_levels_once() {
 #[derive(Default)]
 struct ScriptedAsyncBarsQuery {
     calls: RefCell<Vec<SecurityBarsCall>>,
-    response: RefCell<Option<Result<Vec<SecurityBar>, TdxError>>>,
+    responses: RefCell<VecDeque<Result<Vec<SecurityBar>, TdxError>>>,
     quote_calls: RefCell<Vec<Vec<(u8, String)>>>,
     quote_response: RefCell<Option<Result<Vec<SecurityQuote>, TdxError>>>,
     transaction_calls: RefCell<Vec<(u8, String, u16, u16)>>,
@@ -537,7 +724,7 @@ impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
         self.calls
             .borrow_mut()
             .push((category, market, code.to_owned(), start, count, adjust));
-        self.response.borrow_mut().take().unwrap_or_else(|| {
+        self.responses.borrow_mut().pop_front().unwrap_or_else(|| {
             Err(TdxError::InvalidData(
                 "scripted async bars response is not configured".into(),
             ))
@@ -643,9 +830,9 @@ impl AsyncTdxQuery for ScriptedAsyncBarsQuery {
 #[tokio::test]
 async fn async_bar_seam_uses_decoded_records_and_exact_source_label() {
     let query = ScriptedAsyncBarsQuery {
-        response: RefCell::new(Some(Ok((19..=23)
+        responses: RefCell::new(VecDeque::from([Ok((19..=23)
             .map(|day| source_bar_at(day, 10.0))
-            .collect()))),
+            .collect())])),
         ..Default::default()
     };
     let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 5).unwrap();
@@ -660,6 +847,46 @@ async fn async_bar_seam_uses_decoded_records_and_exact_source_label() {
     );
     assert_eq!(batch.provenance().source(), "tdx-async");
     assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+}
+
+#[tokio::test]
+async fn async_historical_bars_page_at_801_and_reject_second_page_failure() {
+    let query = ScriptedAsyncBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(1, 800)),
+            Ok(indexed_daily_bars(0, 1)),
+        ])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 801).unwrap();
+
+    let batch = historical_bars_async_with(&query, "tdx-async", &request)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![
+            (KLINE_DAILY, 1, "600396".into(), 0, 800, 0),
+            (KLINE_DAILY, 1, "600396".into(), 800, 1, 0),
+        ]
+    );
+    assert_eq!(batch.records().len(), 801);
+    assert_eq!(batch.records()[0].bar_start(), "2020-01-01");
+    assert_eq!(batch.records()[800].bar_start(), "2022-05-17");
+
+    let failing = ScriptedAsyncBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(indexed_daily_bars(1, 800)),
+            Err(TdxError::Disconnected),
+        ])),
+        ..Default::default()
+    };
+
+    let failure = historical_bars_async_with(&failing, "tdx-async", &request).await;
+
+    assert!(matches!(failure, Err(TdxError::Disconnected)));
+    assert_eq!(failing.calls.borrow().len(), 2);
 }
 
 #[tokio::test]
