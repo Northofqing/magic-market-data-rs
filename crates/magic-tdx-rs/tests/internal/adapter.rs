@@ -1497,7 +1497,7 @@ fn normalized_bar_batches_reject_incomplete_or_ambiguous_sequences() {
 }
 
 #[test]
-fn normalized_bar_batches_reject_bad_values_and_unconfirmed_jumps() {
+fn normalized_bar_batches_reject_bad_values_and_admit_structurally_valid_large_moves() {
     let one = BarsRequest::new(instrument("600396"), BarInterval::Day, 1).unwrap();
     let two = BarsRequest::new(instrument("600396"), BarInterval::Day, 2).unwrap();
 
@@ -1514,18 +1514,31 @@ fn normalized_bar_batches_reject_bad_values_and_unconfirmed_jumps() {
         assert!(normalize_bars("tdx", &one, vec![bar]).is_err());
     }
 
-    assert!(normalize_bars(
+    let positive_jump = normalize_bars(
         "tdx",
         &two,
-        vec![source_bar_at(22, 10.0), source_bar_at(23, 12.0)],
+        vec![source_bar_at(22, 10.0), source_bar_at(23, 13.0)],
     )
-    .is_ok());
-    assert!(normalize_bars(
+    .unwrap();
+    let negative_jump = normalize_bars(
         "tdx",
         &two,
-        vec![source_bar_at(22, 10.0), source_bar_at(23, 12.01)],
+        vec![source_bar_at(22, 10.0), source_bar_at(23, 7.5)],
     )
-    .is_err());
+    .unwrap();
+
+    for (batch, expected_close) in [(positive_jump, 13.0), (negative_jump, 7.5)] {
+        let batch_id = batch.provenance().batch_id().unwrap();
+        assert_eq!(batch.provenance().source(), "tdx");
+        assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+        assert_eq!(
+            batch.records()[1].close(),
+            Price::new(expected_close).unwrap()
+        );
+        assert_eq!(batch.records()[1].provider(), ProviderId::Tdx);
+        assert_eq!(batch.records()[1].source_at(), Some("2026-07-23"));
+        assert_eq!(batch.records()[1].batch_id(), batch_id);
+    }
 }
 
 #[test]

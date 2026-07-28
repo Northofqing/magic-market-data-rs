@@ -117,12 +117,18 @@ The provider-facing Magic TDX historical-bar operation returns only
 provider-neutral `magic_market_core::Bar` records. Raw `SecurityBar` remains a
 wire/protocol DTO and is not a second `HistoricalBars` contract. One request is
 atomic: declared rows must decode completely; empty, oversized, duplicate,
-non-increasing, invalid, inconsistent or unconfirmed greater-than-20-percent
-jump sequences fail explicitly. The adapter never sorts, deduplicates, fills
-or mixes fields. TDX source bar volume is converted from shares to Core lots
-by dividing by 100, amount is preserved in CNY yuan, and every record must
-carry `ProviderId::Tdx`, the exact source timestamp and the same non-empty
-batch identity as batch provenance.
+non-increasing, structurally invalid or internally inconsistent sequences fail
+explicitly. The adapter never sorts, deduplicates, fills or mixes fields. A
+fixed adjacent-close percentage is not a provider-integrity rule: legitimate
+IPO, relisting, resumption, corporate-action and market-price moves may exceed
+20 percent, so the Magic TDX adapter must preserve such source rows after the
+same structural and provenance checks instead of rejecting or rewriting them.
+Consumers that require economic jump confirmation must enforce that policy at
+their own evidence boundary; provider admission is not confirmation. TDX
+source bar volume is converted from shares to Core lots by dividing by 100,
+amount is preserved in CNY yuan, and every record must carry
+`ProviderId::Tdx`, the exact source timestamp and the same non-empty batch
+identity as batch provenance.
 
 ## BR-023 TDX normalized current-session admission
 Raw TDX current-minute and current-transaction packets are diagnostic evidence
