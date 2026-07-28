@@ -5,29 +5,16 @@ use magic_market_core::{
     Adjustment, AssetClass, Auctions, BarInterval, BarsRequest, DataStatus, Exchange,
     HistoricalBars, InstrumentId, Money, MoneyFlows, OrderBooks, Price, Quantity, RealtimeQuotes,
 };
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static NEXT_BRIDGE_ID: AtomicU64 = AtomicU64::new(0);
 
-fn fake_bridge() -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock")
-        .as_nanos();
-    let id = NEXT_BRIDGE_ID.fetch_add(1, Ordering::Relaxed);
-    let directory = std::env::temp_dir().join(format!(
-        "magic-emquant-fake-{}-{nonce}-{id}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&directory).expect("create fake bridge directory");
-    let bridge = directory.join("snapshot");
-    fs::write(
-        &bridge,
-        r##"#!/bin/sh
+const DEFAULT_BRIDGE_SCRIPT: &str = r##"#!/bin/sh
 set -eu
 if test "$1" = "--section"; then
   test "$2" = "css"
@@ -62,15 +49,77 @@ if test "$2" = "TIME,NAME,NOW,PRECLOSE,OPEN,HIGH,LOW,PCTCHANGE,VOLUME,AMOUNT"; t
 else
   printf '%s\n' '{"records":[{"date":"2026-07-22","code":"000001.SZ","values":{"TIME":"10:00:01","BUYPRICE1":12.49,"BUYVOLUME1":20,"SELLPRICE1":12.51,"SELLVOLUME1":30}},{"date":"2026-07-22","code":"600519.SH","values":{"TIME":"10:00:00","BUYPRICE1":1299,"BUYVOLUME1":10,"SELLPRICE1":1301,"SELLVOLUME1":11,"BUYPRICE2":1298,"BUYVOLUME2":12,"SELLPRICE2":1302,"SELLVOLUME2":13}}]}'
 fi
-"##,
-    )
-    .expect("write fake bridge");
-    let mut permissions = fs::metadata(&bridge)
-        .expect("bridge metadata")
-        .permissions();
-    permissions.set_mode(0o700);
-    fs::set_permissions(&bridge, permissions).expect("make bridge executable");
-    bridge
+"##;
+
+const HUNG_BRIDGE_SCRIPT: &str = "#!/bin/sh\nexec sleep 5\n";
+
+const REVERSED_BARS_BRIDGE_SCRIPT: &str = r##"#!/bin/sh
+set -eu
+printf '%s\n' '{"records":[{"date":"2026-07-22","code":"600519.SH","values":{"OPEN":1310,"HIGH":1330,"LOW":1308,"CLOSE":1320,"VOLUME":120,"AMOUNT":158400}},{"date":"2026-07-21","code":"600519.SH","values":{"OPEN":1300,"HIGH":1320,"LOW":1298,"CLOSE":1310,"VOLUME":110,"AMOUNT":144100}}]}'
+"##;
+
+struct FakeBridge {
+    directory: PathBuf,
+    executable: PathBuf,
+}
+
+impl FakeBridge {
+    fn new(script: &str) -> Self {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let id = NEXT_BRIDGE_ID.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "magic-emquant-fake-{}-{nonce}-{id}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).expect("create unique fake bridge directory");
+
+        let staging = directory.join("snapshot.staging");
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staging)
+            .expect("create fake bridge staging file");
+        file.write_all(script.as_bytes())
+            .expect("write complete fake bridge");
+        file.sync_all().expect("sync complete fake bridge");
+        drop(file);
+
+        let mut permissions = fs::metadata(&staging)
+            .expect("bridge metadata")
+            .permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&staging, permissions).expect("make staged bridge executable");
+
+        let executable = directory.join("snapshot");
+        fs::rename(&staging, &executable).expect("publish immutable fake bridge");
+        Self {
+            directory,
+            executable,
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.executable
+    }
+}
+
+impl Drop for FakeBridge {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_dir_all(&self.directory) {
+            assert!(
+                std::thread::panicking(),
+                "remove fake bridge directory {}: {error}",
+                self.directory.display()
+            );
+        }
+    }
+}
+
+fn fake_bridge() -> FakeBridge {
+    FakeBridge::new(DEFAULT_BRIDGE_SCRIPT)
 }
 
 fn instruments() -> [InstrumentId; 2] {
@@ -82,9 +131,8 @@ fn instruments() -> [InstrumentId; 2] {
 
 #[test]
 fn terminates_a_hung_bridge_at_the_configured_timeout() {
-    let bridge = fake_bridge();
-    fs::write(&bridge, "#!/bin/sh\nexec sleep 5\n").unwrap();
-    let client = EmQuantClient::new(bridge)
+    let bridge = FakeBridge::new(HUNG_BRIDGE_SCRIPT);
+    let client = EmQuantClient::new(bridge.path())
         .unwrap()
         .with_timeout(Duration::from_millis(25))
         .unwrap();
@@ -95,7 +143,8 @@ fn terminates_a_hung_bridge_at_the_configured_timeout() {
 
 #[test]
 fn executes_bridge_and_normalizes_quotes_in_request_order() {
-    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let bridge = fake_bridge();
+    let client = EmQuantClient::new(bridge.path()).unwrap();
     let batch = client.realtime_quotes(&instruments()).unwrap();
 
     assert!(client.capabilities().quotes);
@@ -130,7 +179,8 @@ fn executes_bridge_and_normalizes_quotes_in_request_order() {
 
 #[test]
 fn executes_bridge_and_preserves_missing_order_book_levels() {
-    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let bridge = fake_bridge();
+    let client = EmQuantClient::new(bridge.path()).unwrap();
     let batch = client.order_books(&instruments()).unwrap();
 
     assert_eq!(batch.records().len(), 2);
@@ -152,7 +202,8 @@ fn executes_bridge_and_preserves_missing_order_book_levels() {
 
 #[test]
 fn executes_csd_and_returns_bounded_normalized_bars() {
-    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let bridge = fake_bridge();
+    let client = EmQuantClient::new(bridge.path()).unwrap();
     let request = BarsRequest::new(instruments()[0].clone(), BarInterval::Day, 2)
         .unwrap()
         .with_range("2026-07-20", "2026-07-22")
@@ -172,7 +223,8 @@ fn executes_csd_and_returns_bounded_normalized_bars() {
 
 #[test]
 fn executes_chmc_and_aggregates_five_minute_bars() {
-    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let bridge = fake_bridge();
+    let client = EmQuantClient::new(bridge.path()).unwrap();
     let request = BarsRequest::new(instruments()[0].clone(), BarInterval::Minute5, 1)
         .unwrap()
         .with_range("2026-07-22", "2026-07-22")
@@ -195,7 +247,8 @@ fn executes_chmc_and_aggregates_five_minute_bars() {
 
 #[test]
 fn executes_css_and_normalizes_daily_money_flow() {
-    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let bridge = fake_bridge();
+    let client = EmQuantClient::new(bridge.path()).unwrap();
     let batch = client.money_flows(&instruments()).unwrap();
 
     assert!(client.capabilities().money_flow);
@@ -214,7 +267,8 @@ fn executes_css_and_normalizes_daily_money_flow() {
 
 #[test]
 fn opening_auction_is_explicitly_unsupported() {
-    let client = EmQuantClient::new(fake_bridge()).unwrap();
+    let bridge = fake_bridge();
+    let client = EmQuantClient::new(bridge.path()).unwrap();
     let error = client.auction_snapshots(&instruments()).unwrap_err();
     assert!(error.to_string().contains("opening-auction"));
     assert!(!client.capabilities().auction);
@@ -222,16 +276,8 @@ fn opening_auction_is_explicitly_unsupported() {
 
 #[test]
 fn rejects_reversed_csd_dates_instead_of_sorting_them() {
-    let bridge = fake_bridge();
-    fs::write(
-        &bridge,
-        r##"#!/bin/sh
-set -eu
-printf '%s\n' '{"records":[{"date":"2026-07-22","code":"600519.SH","values":{"OPEN":1310,"HIGH":1330,"LOW":1308,"CLOSE":1320,"VOLUME":120,"AMOUNT":158400}},{"date":"2026-07-21","code":"600519.SH","values":{"OPEN":1300,"HIGH":1320,"LOW":1298,"CLOSE":1310,"VOLUME":110,"AMOUNT":144100}}]}'
-"##,
-    )
-    .unwrap();
-    let client = EmQuantClient::new(bridge).unwrap();
+    let bridge = FakeBridge::new(REVERSED_BARS_BRIDGE_SCRIPT);
+    let client = EmQuantClient::new(bridge.path()).unwrap();
     let request = BarsRequest::new(instruments()[0].clone(), BarInterval::Day, 2)
         .unwrap()
         .with_range("2026-07-20", "2026-07-22")
@@ -239,4 +285,40 @@ printf '%s\n' '{"records":[{"date":"2026-07-22","code":"600519.SH","values":{"OP
 
     let error = client.historical_bars(&request).unwrap_err();
     assert!(error.to_string().contains("duplicated or out of order"));
+}
+
+#[test]
+fn publishes_independent_immutable_fake_bridges_in_parallel() {
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+    let paths = std::thread::scope(|scope| {
+        let handles = (0..8)
+            .map(|_| {
+                let barrier = std::sync::Arc::clone(&barrier);
+                scope.spawn(move || {
+                    let bridge = fake_bridge();
+                    let path = bridge.path().to_owned();
+                    barrier.wait();
+                    assert_eq!(
+                        fs::read_to_string(bridge.path()).expect("read published fake bridge"),
+                        DEFAULT_BRIDGE_SCRIPT
+                    );
+                    assert_ne!(
+                        fs::metadata(bridge.path())
+                            .expect("published fake bridge metadata")
+                            .permissions()
+                            .mode()
+                            & 0o111,
+                        0
+                    );
+                    path
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("parallel fake bridge thread"))
+            .collect::<Vec<_>>()
+    });
+    let unique_paths = paths.iter().collect::<std::collections::HashSet<_>>();
+    assert_eq!(unique_paths.len(), paths.len());
 }
