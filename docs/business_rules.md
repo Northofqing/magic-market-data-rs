@@ -1,4 +1,16 @@
 # Business rules
+## BR-038 Magic TDX historical-bar cardinality error contract
+Every normalized Magic TDX historical-bar path must report an exact-page
+cardinality mismatch as the structured `HistoricalBarCardinality` error. The
+error binds the total normalized request, current wire offset, exact current
+page limit and actual decoded row count. Callers may derive the available
+cardinality only with checked `offset + actual` arithmetic and only when the
+error's total request equals the rejected request. Callers must not parse
+display text to recover those fields. A short, empty or oversized page rejects
+the complete normalized request before provenance or `DataBatch` creation;
+completed earlier pages remain transport audit evidence, not successful
+provider output.
+
 ## BR-036 Magic TDX normalized historical-bar exact pagination
 The normalized Magic TDX `HistoricalBars` operation honors the full positive
 `BarsRequest.limit` `u16` domain while every wire request remains at or below

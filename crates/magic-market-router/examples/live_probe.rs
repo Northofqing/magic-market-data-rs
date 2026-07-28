@@ -22,6 +22,7 @@ fn classify_tdx(error: TdxError) -> SourceError {
         TdxError::Unsupported(_) => SourceError::try_next(FailureKind::Unsupported, message),
         TdxError::Parse(_)
         | TdxError::InvalidData(_)
+        | TdxError::HistoricalBarCardinality { .. }
         | TdxError::ResponseParse(_)
         | TdxError::Core(_) => SourceError::try_next(FailureKind::Protocol, message),
         TdxError::FileNotFound(_) | TdxError::Coded(_) => {
