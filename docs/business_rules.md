@@ -407,13 +407,12 @@ caching, search indexing, and inferred instruments are prohibited.
 production-client live probes pass; otherwise the trait remains typed
 `Unsupported` and only the explicit diagnostic path may access the feed.
 
-## BR-036 EMQuant fake-bridge test isolation
-Every executable fake bridge used by the Unix EMQuant integration suite owns a
-unique temporary directory for the entire client call. The complete script is
-written to a create-new staging file, synchronized and closed before an atomic
-rename publishes an executable path that did not previously exist. Published
-executables are immutable: timeout, malformed and alternate-response fixtures
-must provide their final script during construction and may not overwrite a
-shared or already executable path. The fixture guard removes only its own
-directory after the client call has completed. Production EMQuant discovery,
-execution, timeout, normalization and financial-data semantics are unchanged.
+## BR-037 EMQuant fake-bridge test isolation
+Every executable fake bridge used by the Unix EMQuant integration suite is a
+checked-in mode-100755 fixture below the crate's `tests/fixtures` directory.
+The test process must not create, write, chmod, rename or delete a pathname
+that it later executes. Default, timeout and malformed-response behavior use
+separate immutable fixtures. Concurrent public clients may execute one fixture
+only after the test verifies it is a regular executable file. Production
+EMQuant discovery, command execution, timeout and normalization semantics
+remain unchanged.
