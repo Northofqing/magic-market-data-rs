@@ -428,3 +428,26 @@ separate immutable fixtures. Concurrent public clients may execute one fixture
 only after the test verifies it is a regular executable file. Production
 EMQuant discovery, command execution, timeout and normalization semantics
 remain unchanged.
+
+## BR-039 Official economic observation integrity
+Provider-native namespace, code, region, frequency, period, unit, scale and
+revision facts remain source-scoped. Missing is never zero, local fetch time is
+never a release time, and any failed page or series invalidates the atomic
+request.
+
+## BR-040 Official rate and fixing identity
+Benchmark tenor, percent unit, base/quote orientation, quotation base and
+fixing date are mandatory source facts. DR007, R007, Shibor and LPR are not
+interchangeable, and an official fixing is not a realtime quote.
+
+## BR-041 SEC filing metadata-only access
+SEC requests use official submissions hosts, a descriptive redacted
+User-Agent, bounded pacing and atomic older-file composition. Normalized
+records expose metadata and canonical links only and never download bodies,
+attachments or XBRL facts.
+
+## BR-042 Public financial-news metadata boundary
+Xinhua Finance, Yicai and Securities Times records retain only first-party
+title, ID, link, publisher, publication-time and topic metadata. Bodies,
+descriptions, images, login state, cookies and inferred instruments are
+prohibited.

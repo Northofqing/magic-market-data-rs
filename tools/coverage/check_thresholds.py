@@ -26,6 +26,17 @@ CRITICAL_GLOBS = (
     "crates/magic-cls-rs/src/*.rs",
     "crates/magic-baidu-rs/src/*.rs",
     "crates/magic-iwencai-rs/src/*.rs",
+    "crates/magic-market-transport/src/*.rs",
+    "crates/magic-nbs-rs/src/*.rs",
+    "crates/magic-pbc-rs/src/*.rs",
+    "crates/magic-cfets-rs/src/*.rs",
+    "crates/magic-fred-rs/src/*.rs",
+    "crates/magic-imf-rs/src/*.rs",
+    "crates/magic-worldbank-rs/src/*.rs",
+    "crates/magic-sec-rs/src/*.rs",
+    "crates/magic-xinhua-rs/src/*.rs",
+    "crates/magic-yicai-rs/src/*.rs",
+    "crates/magic-stcn-rs/src/*.rs",
 )
 
 _EXCLUDED_COMPONENTS = {"tests", "examples", "benches", "fuzz", "target"}

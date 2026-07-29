@@ -12,7 +12,7 @@
   and batch evidence.
 - No Core filing contract currently represents SEC CIK, accession number,
   form, filing date, report period, and canonical document URL together.
-- The current workspace has no NBS, PBC, CFETS, FRED, IMF, World Bank, SEC,
+- The baseline workspace had no NBS, PBC, CFETS, FRED, IMF, World Bank, SEC,
   Xinhua Finance, Yicai, or Securities Times Provider identity.
 
 ## Source Scope
@@ -362,7 +362,7 @@
   packages tracked documentation. The release plan must add all implemented
   probe binaries, while diagnostic-only sources may package a live diagnostic
   but must retain their false capability labels.
-- Registered business rules are contiguous through `BR-038` even though their
+- At baseline, registered business rules were contiguous through `BR-038` even though their
   document order is historical rather than numeric. The four new family rules
   should be `BR-039` through `BR-042`, and compliance should advance its
   contiguous check to 42.
@@ -404,3 +404,49 @@
   public field from contradicting Router freshness/evidence checks.
 - The lockfile contains `url 2.5.4`, so the transport foundation can pin that
   already-resolved version and preserve locked/offline checkpoints.
+
+## Foundation Review Findings
+
+- The first shared-transport review found that `ureq 2.12.1` logs the complete
+  request URL at debug level. That makes it unsuitable for the planned FRED
+  query-key flow because a process logger could record `api_key`.
+- The official `reqwest 0.13.4` source and its current Hyper request path were
+  audited as the replacement candidate: default logging records connection
+  hosts/state rather than complete request URIs, and raw connection logging is
+  disabled unless `connection_verbose` is explicitly enabled.
+- The transport must additionally reject caller-supplied authority, framing,
+  and hop-by-hop headers, use an overall request timeout, and compare validated
+  normalized URLs so an explicit default HTTPS port cannot cause a false
+  redirect result.
+- The first Core review found that a public enum representation allowed direct
+  construction of out-of-range economic periods despite checked constructors.
+  `EconomicPeriod` therefore requires a private representation with the same
+  checked wire format and read-only decomposition methods.
+- SEC primary-document names require a closed ASCII filename character set;
+  rejecting only literal slashes does not prevent pre-encoded separators such
+  as `%2f`.
+
+## Final Live Admission Findings
+
+- The NBS bounded Rust landing probe succeeded with 140,978 bytes on
+  2026-07-29. A landing document is not a machine-readable economic-series
+  contract, so national and regional production capabilities remain false.
+- The current PBC catalog resource is GBK/Excel HTML with an exact 19×16 grid,
+  bilingual title/unit/series rows, an independent presentation tail, merged
+  value cells, and an exact note/history suffix. January through October 2024
+  values are present; November and December cells are explicitly blank and
+  remain `Missing`. Two live probes and a three-call serial load passed.
+- CFETS real responses proved exact eight-tenor Shibor, 1Y/5Y LPR, the closed
+  25-heading central-parity catalog, and request-order output including
+  USD/CNY and 100JPY/CNY. Two live probes and separate Shibor/LPR/FX serial
+  loads passed; DR007 remains unsupported.
+- FRED was not probed without `FRED_API_KEY`, and SEC was not probed without a
+  descriptive `SEC_USER_AGENT`; neither runtime value is present in evidence.
+- IMF's exact bounded DataMapper route returned HTTP 403 with the fixed
+  non-browser library User-Agent. World Bank's real indicator envelope parsed,
+  but its structured `unit` was empty. Both capabilities remain false.
+- Xinhua Finance returned 13 verified first-page rows in each of two live
+  probes and 39 rows across the three-call load. Yicai returned 50/50 live and
+  150 load rows after accepting only outer display whitespace. Securities
+  Times returned 30/30 live and 90 load rows with exact cursor/time/URL
+  validation. All three metadata-only global-news capabilities are admitted.

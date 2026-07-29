@@ -9,7 +9,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 不访问公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值
 冒充实盘成功。
 
-> 当前状态（2026-07-27）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
+> 当前状态（2026-07-29）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS、Jin10、The Paper、Baidu，以及 SSE/SZSE 官方公告与龙虎榜、SZSE Quote/五档和 HKEX
 > 北向日统计已通过真实网络验收；CFFEX 官方 IF/IH/IC/IM 交割通知的确定性解析已实现，
 > 但 2026-07-27 的 Rustls 与 Native TLS 实网均在取得 HTTP 前握手失败，所以正式
@@ -28,6 +28,13 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 > 真实记录，Quote、盘口和分钟线仍因 `10001012/EQERR_ACCESS_INSUFFICIENCE` 待补
 > 权限。iWencai 已实现正式 API Key 鉴权，当前没有授权 Key，因此真实 401 会按设计
 > 非零退出，不会伪报成功。
+> NBS、PBC、CFETS、FRED、IMF、World Bank、SEC EDGAR，以及新华财经、第一财经、
+> 证券时报人民财讯的 Provider、严格离线解析、共享有界 HTTPS transport 和探针已实现。
+> 2026-07-29，PBC 精确编目的 2024 货币供应量、CFETS Shibor/LPR/官方中间价，以及
+> 新华财经/第一财经/证券时报首屏新闻通过两次 live 与串行 load，已单独开启正式能力。
+> NBS、FRED、IMF、World Bank、SEC 和 CFETS DR007 仍保持 `false`；正式 trait 在
+> 发起 I/O 前返回 `Unsupported`。当前 NBS landing probe 可访问但没有受支持的机器
+> 序列合同，World Bank 仍受结构化 unit 缺失阻断，DR007 不用其他利率替代。
 
 ## 项目定位
 
@@ -53,6 +60,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | --- | --- | --- |
 | `magic-market-core` | Provider 无关的证券标识、请求、值对象、标准化记录、批次证据和 Provider traits | 不联网，不选择数据源 |
 | `magic-market-router` | 第一个合格批次的顺序切源、错误分类、质量门、来源时间门和完整 attempt trace | 不缓存、不跨源合并、不维护熔断状态 |
+| `magic-market-transport` | 严格 HTTPS allowlist、无重定向/代理、整体超时、有界 body 与不持锁节流 | 不含数据源语义，不记录完整凭据 URL |
 | `magic-tdx-rs` | 纯 Rust TDX 协议、同步/异步/直连/Smart 客户端、服务门面和本地文件读取器 | MoneyFlow 与集合竞价显式不支持 |
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
 | `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖基础行情、沪深财务三表和沪市 ETF 期权 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
@@ -68,6 +76,16 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | `magic-baidu-rs` | 百度未复权日线和源端 MA5/10/20 | 不提供 Quote/分钟/Level-2 |
 | `magic-iwencai-rs` | 获授权 API Key 的语义搜索 | 无 Key 明确鉴权失败，不复用 Cookie |
 | `magic-exchange-rs` | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 北向日统计、CFFEX 官方交割通知 | 官方公共只读端点，无 SLA；不提供 Level-2、集合竞价或 SSE Quote |
+| `magic-nbs-rs` | 国家统计局经济序列的严格诊断解析 | landing 可访问但机器序列未准入；不绕过浏览器保护 |
+| `magic-pbc-rs` | 人民银行已编目货币供应量 HTML | 2024 精确目录已准入；社融/地区序列不支持 |
+| `magic-cfets-rs` | Shibor、LPR 与官方汇率中间价 | 三族已独立准入；DR007 不支持 |
+| `magic-fred-rs` | FRED 官方经济序列 | 需要运行时 `FRED_API_KEY`；Key 永不进入证据或日志 |
+| `magic-imf-rs` | IMF DataMapper 官方经济/地区序列 | 当前未准入；无时区修改时间不伪造成 UTC 来源时间 |
+| `magic-worldbank-rs` | World Bank Indicators 官方分页诊断 | 结构化 unit 为空时正式能力保持关闭 |
+| `magic-sec-rs` | SEC EDGAR submissions 申报元数据 | 需要描述性 `SEC_USER_AGENT`；不抓正文、附件或 XBRL |
+| `magic-xinhua-rs` | 新华财经首屏新闻 metadata | 已准入；最多 13 条，不抓正文 |
+| `magic-yicai-rs` | 第一财经 `firstlist` 新闻 metadata | 已准入；最多返回 50 条，不保留 notes/media |
+| `magic-stcn-rs` | 证券时报人民财讯首屏快讯 metadata | 已准入；最多 30 条，不保留 content/share |
 | `magic-market-analysis` | 基于标准化记录的均线、估值、涨停情绪和跨源诊断 | 纯函数、不联网；主观估值锚点必须由调用方配置 |
 
 依赖方向保持简单：
@@ -88,6 +106,12 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
    ├── magic-thepaper-rs ────→ magic-market-core
    ├── magic-yonhap-rs ──────→ magic-market-core
    ├── magic-wallstreetcn-rs ─→ magic-market-core
+   ├── magic-{nbs,pbc,cfets,fred,imf,worldbank,sec}-rs
+   │       ├──────────────────→ magic-market-core
+   │       └──────────────────→ magic-market-transport
+   ├── magic-{xinhua,yicai,stcn}-rs
+   │       ├──────────────────→ magic-market-core
+   │       └──────────────────→ magic-market-transport
    └── magic-market-analysis → magic-market-core
 ```
 
@@ -137,7 +161,9 @@ Router 适配器已经通过确定性测试。
 | 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 与 SSE/SZSE 龙虎榜、TDX 行业/概念目录和成员、Eastmoney/THS 人气、THS 强势原因实盘 |
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
 | 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Core/Router 严格合同和 Eastmoney 诊断实现完成；实网存在缺失指标与混合 `f124`，production capability 为 false、正式 trait 返回 `Unsupported` |
-| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10、WallstreetCN 全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；Yonhap 中文 RSS metadata 已实现但 live 未准入；个股新闻仍待结构化证券身份来源 |
+| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10、WallstreetCN、新华财经、第一财经、证券时报全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；Yonhap 中文 RSS metadata 已实现但 live 未准入；个股新闻仍待结构化证券身份来源 |
+| 官方宏观与利率 | `EconomicObservation`、`ReferenceRateObservation`、`OfficialFxFixing` | NBS/PBC/CFETS/FRED/IMF/World Bank 严格实现与路由完成；PBC 2024 货币供应量及 CFETS Shibor/LPR/官方中间价已准入，其余按来源显式关闭 |
+| 海外申报元数据 | `CompanyFiling` | SEC submissions recent/older 原子分页实现；只返回元数据与规范链接，待描述性 User-Agent 实网准入 |
 | 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | Sina 沪深三表实盘；SecurityProfile/TDX 映射待接 |
 | 打板 | 四类 `LimitPoolEntry` | Eastmoney 四类池与 THS 涨停池实盘；字段缺失不跨源猜测 |
 | ETF 期权 | `OptionContract`、`OptionQuote`、`OptionGreeks` | Sina 510050 实盘；510300/588000/510500 已实现待实测 |
@@ -192,11 +218,26 @@ Router 适配器已经通过确定性测试。
 | The Paper | 财经频道原生文章、栏目、标签及来源时间 | 排除外链转载；不把文本证券名提升为结构化身份 |
 | Yonhap Chinese RSS diagnostic | 7 个官方简体中文 RSS 的严格 metadata 解析已通过；2026-07-26 Rolling/Economy release 探针均在 TLS 初始化时收到 unexpected EOF | 尚未生产准入：`global_news=false`、trait 返回 `Unsupported`；只映射标题/ID/链接/时间/频道/证据，不抓正文 |
 | WallstreetCN RSS | 单一公开 RSS 的严格 metadata 解析；2026-07-26 live 和两次串行 load 均通过 | `global_news=true`；只映射标题/数字 ID/链接/时间/证据，summary/content 恒缺失，不抓文章页或推断证券 |
+| Xinhua Finance | 官方新闻首屏严格 metadata 解析；两次 live 和三次 load 已通过 | `global_news=true`；完整校验最多 13 行后截断，只保留标题/ID/链接/时间/栏目 |
+| Yicai | 官方 `firstlist` 首屏严格 metadata 解析；两次 live 和三次 load 已通过 | `global_news=true`；不保留 NewsNotes、图片、视频或分享字段，转载保留原发布方 |
+| Securities Times | 官方人民财讯 XHR 首屏严格 metadata 解析；两次 live 和三次 load 已通过 | `global_news=true`；校验双时间/双 URL/游标，不保留 content/share |
 | Baidu | 华电辽能未复权日 K、MA5/10/20 | 不提供实时 Quote、分钟线或 Level-2 |
 | iWencai | 正式 X-Claw 鉴权和语义结果解析 | 真实数据待合法 API Key；不读取 Cookie/桌面登录态 |
 | SSE/SZSE/HKEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
 | CFFEX official diagnostic | IF/IH/IC/IM 交割通知确定性解析已通过；2026-07-27 Rustls/Native TLS 均在取得 HTTP 前失败；明文官方页只用于诊断 | 尚未生产准入：capability 为 false，生产 trait 返回 `Unsupported`；不自动降级到 HTTP |
 | State Council | 国务院政策库 `gongwen`/`bumenfile` 官方文件 | 仅规范 `www.gov.cn` 文件；不是新闻或行情源 |
+
+### 官方宏观、利率与申报元数据
+
+| Provider | 已实现合同 | 当前生产状态 |
+| --- | --- | --- |
+| NBS | 有界 landing 诊断和国家/月度节点完整 coverage 解析 | `economic_series=false`；landing 当前可访问，但受支持的机器序列合同未证明 |
+| PBC | 精确编目 2024 货币供应量、19×16 双语表结构、M0/M1/M2 与缺失/零值 | `economic_series=true` 仅覆盖该 2024 目录；社融和地区序列显式不支持 |
+| CFETS | Shibor 八期限、LPR 1Y/5Y、闭合 25 对中间价目录与原子分页 | Shibor/LPR/FX 已分别通过 live/load；DR007 false |
+| FRED | 官方 series metadata + 完整单页 observations 原子组合 | 需要 `FRED_API_KEY`，当前 false |
+| IMF DataMapper | DATASET/AREA、catalog、完整 envelope/cell 校验 | 当前 false；无时区修改文字只作 revision |
+| World Bank | indicator/country 全分页与稳定 source/ISO/name 身份 | 结构化 unit 阻断，当前 false |
+| SEC EDGAR | recent/older submissions、冲突检测、全局分页预算与规范 Archives URL metadata | 需要描述性 `SEC_USER_AGENT`，当前 false；不抓任何文件内容 |
 
 ### 市场发现、全球与日历能力
 
@@ -497,7 +538,33 @@ cargo run -p magic-yonhap-rs --example live_probe --release --locked --offline
 cargo run -p magic-wallstreetcn-rs --example live_probe --release --locked --offline
 cargo run -p magic-baidu-rs --example live_probe --release --locked --offline
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+cargo run -p magic-nbs-rs --example live_probe --release --locked --offline
+cargo run -p magic-pbc-rs --example live_probe --release --locked --offline
+cargo run -p magic-cfets-rs --example live_probe --release --locked --offline \
+  -- 2026-07-20 2026-07-29
+cargo run -p magic-imf-rs --example live_probe --release --locked --offline
+cargo run -p magic-worldbank-rs --example live_probe --release --locked --offline \
+  -- --diagnostic
+cargo run -p magic-xinhua-rs --example live_probe --release --locked --offline
+cargo run -p magic-yicai-rs --example live_probe --release --locked --offline
+cargo run -p magic-stcn-rs --example live_probe --release --locked --offline
 ```
+
+FRED 与 SEC 探针只在调用方合法配置运行时身份后运行，变量值禁止写进命令日志、
+证据文件或错误文本：
+
+```bash
+FRED_API_KEY=... \
+cargo run -p magic-fred-rs --example live_probe --release --locked --offline
+
+SEC_USER_AGENT='application/version operator-contact' \
+cargo run -p magic-sec-rs --example live_probe --release --locked --offline
+```
+
+每个新 Provider 都按数据族独立准入。`live_probe` 本身不是生产能力绕过；只有对应
+来源满足集成文档中的两次 live、串行 load、完整证据和独立审查后才会打开能力。
+当前已打开 PBC 2024 货币供应量、CFETS Shibor/LPR/官方中间价，以及
+Xinhua/Yicai/STCN 全局新闻；NBS、FRED、IMF、World Bank、SEC 和 DR007 仍关闭。
 
 CFFEX 诊断实现可以单独验收，默认示例月份为 `2026-02`；成功必须精确返回 IF/IH/IC/IM
 四条由同一官方通知证明的交割事件。通知未独立说明交割方式，因此标准化
@@ -753,7 +820,8 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 
 ## 当前验收状态
 
-以下是截至 2026-07-27 已保存的验收边界，不等同于供应商 SLA：
+以下是截至 2026-07-29 已保存的验收边界（其中既含 2026-07-27 历史结果，也含
+本轮新增结果），不等同于供应商 SLA：
 
 | 项目 | 结果 | 证据摘要 |
 | --- | --- | --- |
@@ -775,6 +843,13 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | The Paper live | 通过 | 财经频道原生文章 5 条；栏目/标签、来源时间和原生 canonical URL 完整 |
 | Yonhap Chinese RSS | 确定性实现通过；生产未准入 | 22 个库测试、4 个能力测试和 4 个 probe 配置测试通过；Rolling/Economy release live 均为 TLS unexpected EOF，故 capability 保持 false |
 | WallstreetCN RSS live/load | 通过 | live 20 条严格 metadata；同一客户端 load 2/2、各 10 条、总耗时 7.529 秒；`global_news=true`，summary/content 恒缺失 |
+| PBC 2024 money supply live/load | 通过 | 两次 live 各返回 12 个 M2 月份；Jan–Oct present、Nov–Dec missing；三次串行 load 通过；仅该精确目录 `economic_series=true` |
+| CFETS Shibor/LPR/official FX live/load | 通过 | 两次 live 覆盖 Shibor ON/1W、LPR 1Y/5Y、USD/CNY 与 100JPY/CNY；三族分别完成三次串行 load；DR007 保持 false |
+| Xinhua Finance live/load | 通过 | live 13/13，load 三次共 39 条，最小实际请求开始间隔 1001 ms；`global_news=true` |
+| Yicai live/load | 通过 | live 50/50，load 三次共 150 条，最小实际请求开始间隔 1000 ms；`global_news=true` |
+| Securities Times live/load | 通过 | live 30/30，load 三次共 90 条，最小实际请求开始间隔 1001 ms；`global_news=true` |
+| NBS/IMF/World Bank diagnostics | 未准入 | NBS landing 返回 140,978 bytes 但无机器序列合同；IMF exact route 为 HTTP 403；World Bank structured unit 为空 |
+| FRED/SEC identified live | 未运行 | 当前环境未配置 `FRED_API_KEY`/描述性 `SEC_USER_AGENT`；正式能力保持 false，未保存任何值 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 2026-07-27 当前树 live 覆盖 SSE 公告/龙虎榜、SZSE 公告/Quote/五档/龙虎榜及 HKEX 两条北向日统计；load 8/8、零失败，最小请求起始间隔 1001 ms |
 | Router strict 5-second quote | 通过 | 2026-07-27 13:01 连续竞价：TDX 因缺可信源时间被拒绝，Tencent 600519.SH 被选中，源龄 3613 ms |
@@ -783,7 +858,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Eastmoney strict 15:35 post-close flow | 诊断实现通过；生产未准入 | 正式 trait 返回 typed `Unsupported` 且 capability=false；当前日全量诊断因证券间源时间不一致返回 `diagnostic_probe_status=unadmitted`，不输出生产成功标记 |
 | CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602；2026-07-27 双 TLS 均未取得 HTTP。官方明文页诊断确认 2026-07-17 及 IF/IH/IC/IM 结算价，但明文不进入 Provider，capability 仍为 false |
 | iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
-| Release package | 每个提交独立构建 | 三十个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
+| Release package | 每个提交独立构建 | 四十八个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 
 任何 Provider 字段、授权、服务器或网页协议发生变化后，都必须重新运行对应的
 确定性测试和真实 probe。旧验收记录不能自动证明新版本仍然可用。
@@ -809,6 +884,17 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | [The Paper 接入](docs/integrations/thepaper-web.md) | 财经频道原生文章、转载排除和字段边界 |
 | [Yonhap RSS 接入](docs/integrations/yonhap-rss.md) | 7 个官方中文 feed、metadata-only 合同、探针与当前 TLS 未准入状态 |
 | [WallstreetCN RSS 接入](docs/integrations/wallstreetcn-rss.md) | 单一公开 feed、metadata-only 合同、生产准入与条款边界 |
+| [NBS 官方源](docs/integrations/nbs-official.md) | 国家统计局诊断合同、历史 403/当前 landing 证据与未准入边界 |
+| [PBC 官方源](docs/integrations/pbc-official.md) | 精确货币供应量目录、表结构与社融缺口 |
+| [CFETS 官方源](docs/integrations/cfets-official.md) | Shibor、LPR、中间价和 DR007 边界 |
+| [FRED API](docs/integrations/fred-api.md) | 运行时 Key、序列分页与缺失语义 |
+| [IMF DataMapper](docs/integrations/imf-datamapper.md) | dataset/area、完整 envelope 与来源时间边界 |
+| [World Bank Indicators](docs/integrations/worldbank-indicators.md) | 全分页身份与结构化 unit 阻断 |
+| [SEC EDGAR](docs/integrations/sec-edgar.md) | User-Agent、公平访问、申报元数据与不抓正文 |
+| [新华财经](docs/integrations/xinhua-finance.md) | 首屏 metadata-only 新闻合同 |
+| [第一财经](docs/integrations/yicai-news.md) | `firstlist` metadata-only 新闻合同 |
+| [证券时报](docs/integrations/securities-times.md) | 人民财讯 XHR metadata-only 合同 |
+| [本轮准入证据](docs/evidence/2026-07-29-official-macro-global-news.md) | 确定性结果、准入状态与显式残余阻断 |
 | [Baidu 接入](docs/integrations/baidu-web.md) | 未复权日 K 与源端 MA5/10/20 |
 | [iWencai 接入](docs/integrations/iwencai-api.md) | API Key 鉴权、语义搜索和脱敏错误 |
 | [交易所官方源](docs/integrations/exchange-official.md) | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 北向日统计 |

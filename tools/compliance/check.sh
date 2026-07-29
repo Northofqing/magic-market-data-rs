@@ -28,6 +28,27 @@ required=(
   docs/integrations/level2-auction.md
   docs/integrations/broker-account-boundary.md
   docs/integrations/gov-policy.md
+  docs/integrations/nbs-official.md
+  docs/integrations/pbc-official.md
+  docs/integrations/cfets-official.md
+  docs/integrations/fred-api.md
+  docs/integrations/imf-datamapper.md
+  docs/integrations/worldbank-indicators.md
+  docs/integrations/sec-edgar.md
+  docs/integrations/xinhua-finance.md
+  docs/integrations/yicai-news.md
+  docs/integrations/securities-times.md
+  crates/magic-market-transport/Cargo.toml
+  crates/magic-nbs-rs/Cargo.toml
+  crates/magic-pbc-rs/Cargo.toml
+  crates/magic-cfets-rs/Cargo.toml
+  crates/magic-fred-rs/Cargo.toml
+  crates/magic-imf-rs/Cargo.toml
+  crates/magic-worldbank-rs/Cargo.toml
+  crates/magic-sec-rs/Cargo.toml
+  crates/magic-xinhua-rs/Cargo.toml
+  crates/magic-yicai-rs/Cargo.toml
+  crates/magic-stcn-rs/Cargo.toml
   crates/magic-market-router/Cargo.toml
   crates/magic-market-analysis/Cargo.toml
   crates/magic-tencent-rs/Cargo.toml
@@ -94,6 +115,17 @@ workspace_members=(
   crates/magic-gov-rs
   crates/magic-yonhap-rs
   crates/magic-wallstreetcn-rs
+  crates/magic-market-transport
+  crates/magic-nbs-rs
+  crates/magic-pbc-rs
+  crates/magic-cfets-rs
+  crates/magic-fred-rs
+  crates/magic-imf-rs
+  crates/magic-worldbank-rs
+  crates/magic-sec-rs
+  crates/magic-xinhua-rs
+  crates/magic-yicai-rs
+  crates/magic-stcn-rs
 )
 workspace_manifest_members=$(sed -n '/^members = \[/,/^\]/p' Cargo.toml)
 for member in "${workspace_members[@]}"; do
@@ -124,13 +156,13 @@ done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml -print | LC_ALL=C 
 
 if rg -n 'stock_analysis' crates/*/Cargo.toml; then exit 1; fi
 router_dependencies=$(sed -n '/^\[dependencies\]/,/^\[/p' crates/magic-market-router/Cargo.toml)
-if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepaper|yonhap|wallstreetcn|baidu|iwencai|exchange)-rs' <<<"$router_dependencies"; then
+if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepaper|yonhap|wallstreetcn|baidu|iwencai|exchange|nbs|pbc|cfets|fred|imf|worldbank|sec|xinhua|yicai|stcn)-rs' <<<"$router_dependencies"; then
   echo "router production dependencies must remain provider-neutral" >&2
   exit 1
 fi
 # Imported upstream modules retain documented/test-only unwrap examples; runtime
 # hardening is tracked separately from this structural compliance gate.
-for number in $(seq 1 35); do
+for number in $(seq 1 42); do
   printf -v rule_id 'BR-%03d' "$number"
   rg -q "^## $rule_id " docs/business_rules.md || {
     echo "missing registered business rule: $rule_id" >&2

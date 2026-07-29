@@ -25,6 +25,16 @@
 - `magic-exchange-{live,load}-probe`：SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、
   HKEX 北向日统计；CFFEX 股指期货交割通知当前仅提供未准入诊断入口；
 - `magic-gov-live-probe`：国务院政策库官方文件；
+- `magic-nbs-live-probe`：国家统计局有界诊断；
+- `magic-pbc-{live,load}-probe`：人民银行已准入 2024 货币供应量验证；
+- `magic-cfets-{live,load}-probe`：已准入 Shibor、LPR 和官方汇率验证；
+- `magic-fred-{live,load}-probe`：需要运行时 `FRED_API_KEY` 的 FRED 官方序列；
+- `magic-imf-{live,load}-probe`：IMF DataMapper 官方序列；
+- `magic-worldbank-live-probe`：World Bank 指标与结构化 unit 阻断诊断；
+- `magic-sec-{live,load}-probe`：需要描述性 `SEC_USER_AGENT` 的 EDGAR 元数据；
+- `magic-xinhua-{live,load}-probe`：新华财经首屏 metadata；
+- `magic-yicai-{live,load}-probe`：第一财经首屏 metadata；
+- `magic-stcn-{live,load}-probe`：证券时报人民财讯首屏 metadata；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建
@@ -43,7 +53,7 @@ bash tools/release/package.sh
 预检先打印当前工具链版本，再在每次新建的隔离 target 目录中，以离线模式运行格式、
 全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
 空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
-构建三十个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
+构建四十八个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
 可重复流程，不自动证明任意未来工作树已经通过 release gate；当前合并版本的实际
 门禁和覆盖率证据记录在根目录 README 的“当前验收状态”：
 
@@ -66,6 +76,24 @@ target/dist/GIT_SHA/
 │   ├── magic-iwencai-load-probe[.exe]
 │   ├── magic-jin10-live-probe[.exe]
 │   ├── magic-jin10-load-probe[.exe]
+│   ├── magic-nbs-live-probe[.exe]
+│   ├── magic-pbc-live-probe[.exe]
+│   ├── magic-pbc-load-probe[.exe]
+│   ├── magic-cfets-live-probe[.exe]
+│   ├── magic-cfets-load-probe[.exe]
+│   ├── magic-fred-live-probe[.exe]
+│   ├── magic-fred-load-probe[.exe]
+│   ├── magic-imf-live-probe[.exe]
+│   ├── magic-imf-load-probe[.exe]
+│   ├── magic-worldbank-live-probe[.exe]
+│   ├── magic-sec-live-probe[.exe]
+│   ├── magic-sec-load-probe[.exe]
+│   ├── magic-xinhua-live-probe[.exe]
+│   ├── magic-xinhua-load-probe[.exe]
+│   ├── magic-yicai-live-probe[.exe]
+│   ├── magic-yicai-load-probe[.exe]
+│   ├── magic-stcn-live-probe[.exe]
+│   ├── magic-stcn-load-probe[.exe]
 │   ├── magic-router-live-probe[.exe]
 │   ├── magic-sina-live-probe[.exe]
 │   ├── magic-sina-load-probe[.exe]
@@ -113,6 +141,7 @@ shasum -a 256 -c SHA256SUMS
 | --- | --- | --- | --- | --- |
 | `magic-market-core` | 支持 | 支持 | 支持 | 纯 Rust 合同 |
 | `magic-market-router` | 支持 | 支持 | 支持 | 纯 Rust 同步路由与证据检查 |
+| `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |
 | TDX | 支持 | 支持 | 支持 | 需要出站 TCP/HTTP 与可写缓存目录 |
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
@@ -148,6 +177,16 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | SSE/SZSE/HKEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443` | 无持久缓存 |
 | CFFEX diagnostic | `www.cffex.com.cn:443` | 无持久缓存；仅有界显式 probe |
 | State Council | `sousuo.www.gov.cn:443`；返回链接仅允许 `www.gov.cn:443` | 无持久缓存 |
+| NBS | `www.stats.gov.cn:443` | 无持久缓存；landing 可访问，但机器序列合同未证明，只有显式诊断 |
+| PBC | `www.pbc.gov.cn:443`，仅精确编目 HTML | 无持久缓存 |
+| CFETS | `www.chinamoney.com.cn:443`，仅 `/ags/ms/` 下已审计 JSON | 无持久缓存 |
+| FRED | `api.stlouisfed.org:443` | `FRED_API_KEY` 只由环境/secret 注入，不落盘或进入日志 |
+| IMF | `www.imf.org:443`，仅 DataMapper API v2 | 无持久缓存 |
+| World Bank | `api.worldbank.org:443`，仅 v2 indicator/country | 无持久缓存 |
+| SEC EDGAR | `data.sec.gov:443`，仅 submissions JSON | `SEC_USER_AGENT` 只由环境/secret 注入；不抓 Archives 内容 |
+| Xinhua Finance | `www.cnfin.com:443`，仅 `/news/index.html` | 无持久缓存；不抓文章页 |
+| Yicai | `www.yicai.com:443`，仅 `/news/info/` | 无持久缓存；不抓文章页 |
+| Securities Times | `www.stcn.com:443`，仅 `type=kx` 首屏 XHR | 无持久缓存；不抓文章页 |
 | iWencai | `openapi.iwencai.com:443` | API Key 仅由环境/秘密挂载提供，不落盘 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
 
@@ -229,6 +268,20 @@ market_release_dir=target/dist/$(git rev-parse HEAD)
 "$market_release_dir/bin/magic-baidu-live-probe"
 "$market_release_dir/bin/magic-exchange-live-probe"
 "$market_release_dir/bin/magic-gov-live-probe"
+"$market_release_dir/bin/magic-nbs-live-probe"
+"$market_release_dir/bin/magic-pbc-live-probe"
+"$market_release_dir/bin/magic-cfets-live-probe" \
+  2026-07-20 2026-07-29
+"$market_release_dir/bin/magic-imf-live-probe"
+"$market_release_dir/bin/magic-worldbank-live-probe" --diagnostic
+"$market_release_dir/bin/magic-xinhua-live-probe"
+"$market_release_dir/bin/magic-yicai-live-probe"
+"$market_release_dir/bin/magic-stcn-live-probe"
+
+# 仅在运行机获合法配置时执行；不要把值写入日志：
+FRED_API_KEY=... "$market_release_dir/bin/magic-fred-live-probe"
+SEC_USER_AGENT='application/version operator-contact' \
+  "$market_release_dir/bin/magic-sec-live-probe"
 MAGIC_TENCENT_LOAD_OPERATION=mixed MAGIC_TENCENT_LOAD_REQUESTS=20 \
   MAGIC_TENCENT_LOAD_CONCURRENCY=4 \
   "$market_release_dir/bin/magic-tencent-load-probe"
@@ -268,7 +321,17 @@ MAGIC_WALLSTREETCN_LOAD_REQUESTS=2 \
 MAGIC_BAIDU_LOAD_REQUESTS=2 MAGIC_BAIDU_LOAD_CONCURRENCY=1 \
   "$market_release_dir/bin/magic-baidu-load-probe"
 MAGIC_EXCHANGE_LOAD_REQUESTS=8 MAGIC_EXCHANGE_LOAD_CONCURRENCY=1 \
-  "$market_release_dir/bin/magic-exchange-load-probe"
+"$market_release_dir/bin/magic-exchange-load-probe"
+"$market_release_dir/bin/magic-pbc-load-probe"
+"$market_release_dir/bin/magic-cfets-load-probe" \
+  2026-07-20 2026-07-29
+FRED_API_KEY=... "$market_release_dir/bin/magic-fred-load-probe"
+"$market_release_dir/bin/magic-imf-load-probe"
+SEC_USER_AGENT='application/version operator-contact' \
+  "$market_release_dir/bin/magic-sec-load-probe"
+"$market_release_dir/bin/magic-xinhua-load-probe"
+"$market_release_dir/bin/magic-yicai-load-probe"
+"$market_release_dir/bin/magic-stcn-load-probe"
 
 # 只有已配置授权 Key 的环境才运行：
 MAGIC_IWENCAI_API_KEY=... \

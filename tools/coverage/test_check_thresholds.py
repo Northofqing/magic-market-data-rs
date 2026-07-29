@@ -39,6 +39,17 @@ class CoverageTests(unittest.TestCase):
             "crates/magic-cls-rs/src/lib.rs",
             "crates/magic-baidu-rs/src/lib.rs",
             "crates/magic-iwencai-rs/src/lib.rs",
+            "crates/magic-market-transport/src/lib.rs",
+            "crates/magic-nbs-rs/src/lib.rs",
+            "crates/magic-pbc-rs/src/lib.rs",
+            "crates/magic-cfets-rs/src/lib.rs",
+            "crates/magic-fred-rs/src/lib.rs",
+            "crates/magic-imf-rs/src/lib.rs",
+            "crates/magic-worldbank-rs/src/lib.rs",
+            "crates/magic-sec-rs/src/lib.rs",
+            "crates/magic-xinhua-rs/src/lib.rs",
+            "crates/magic-yicai-rs/src/lib.rs",
+            "crates/magic-stcn-rs/src/lib.rs",
         ]
         self.noncritical_path = "crates/magic-market-analysis/src/lib.rs"
         for relative in [*self.critical_paths, self.noncritical_path]:
@@ -80,17 +91,28 @@ class CoverageTests(unittest.TestCase):
                 "crates/magic-cls-rs/src/*.rs",
                 "crates/magic-baidu-rs/src/*.rs",
                 "crates/magic-iwencai-rs/src/*.rs",
+                "crates/magic-market-transport/src/*.rs",
+                "crates/magic-nbs-rs/src/*.rs",
+                "crates/magic-pbc-rs/src/*.rs",
+                "crates/magic-cfets-rs/src/*.rs",
+                "crates/magic-fred-rs/src/*.rs",
+                "crates/magic-imf-rs/src/*.rs",
+                "crates/magic-worldbank-rs/src/*.rs",
+                "crates/magic-sec-rs/src/*.rs",
+                "crates/magic-xinhua-rs/src/*.rs",
+                "crates/magic-yicai-rs/src/*.rs",
+                "crates/magic-stcn-rs/src/*.rs",
             ),
         )
 
     def test_exact_overall_and_critical_boundaries_pass(self) -> None:
         files = self.passing_critical()
-        files.append(coverage_file(self.noncritical_path, 6_765, 8_700))
+        files.append(coverage_file(self.noncritical_path, 5_720, 7_600))
         self.assert_report_status(files, 0)
 
     def test_overall_79_99_percent_fails(self) -> None:
         files = self.passing_critical()
-        files.append(coverage_file(self.noncritical_path, 6_764, 8_700))
+        files.append(coverage_file(self.noncritical_path, 5_719, 7_600))
         self.assert_report_status(files, 1)
 
     def test_critical_94_99_percent_fails(self) -> None:

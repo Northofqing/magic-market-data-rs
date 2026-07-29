@@ -42,3 +42,49 @@
 - Recorded truthful blockers for NBS, PBC social financing, CFETS DR007, and
   World Bank structured units without weakening the approved contracts.
 - Committed the reviewed plan set as `1e861ed`.
+
+## Implementation
+
+- **Status:** in progress
+- User selected the subagent-driven execution path.
+- Started the foundation checkpoint with two non-overlapping workstreams:
+  Core provider-neutral contracts and the shared bounded HTTPS transport.
+- Both first-pass implementations passed their focused all-target tests,
+  strict Clippy, Rustdoc, and diff checks.
+- Independent review found two Important Core invariant gaps and four
+  Important transport/security gaps. Foundation acceptance is paused while
+  test-first repairs replace the logging-unsafe HTTP execution path and close
+  direct-construction/header/timeout/URL-normalization bypasses.
+- Core review repairs passed a second independent review with no remaining
+  Critical or Important findings and were committed as `6f7079b`.
+- Transport review repairs passed a third independent review with no remaining
+  Critical or Important findings. The safe Reqwest/Rustls implementation and
+  plan correction were committed as `9a18f69`.
+- The complete Foundation checkpoint passed formatting, Core and transport
+  all-target tests, strict Clippy, Rustdoc, and `git diff --check`.
+- Registered all ten source crates in the workspace and committed the common
+  provider scaffold as `7ad6b04`.
+- Completed deterministic NBS, PBC, CFETS, FRED, IMF, World Bank, and SEC
+  implementations. Production capability remains false and fails before I/O
+  wherever current live evidence or required source facts are absent.
+- Completed metadata-only Xinhua Finance, Yicai, and Securities Times clients,
+  strict full-page parsers, injected transport tests, live/load probes, and
+  rights-boundary READMEs.
+- Provider-neutral economic, reference-rate, official-fixing, filing, and
+  new-news-identity Router integration passed focused tests, strict Clippy,
+  and final review with zero Critical/Important findings; committed as
+  `8dfc38e`.
+- Real admission on 2026-07-29 passed for the exact PBC 2024 money-supply
+  catalog, CFETS Shibor/LPR/official FX, and Xinhua/Yicai/STCN first-page
+  metadata. Each completed two consecutive live probes and a three-call
+  serial load probe before its capability flag was enabled.
+- NBS remains diagnostic-only despite a successful 140,978-byte landing-page
+  probe because no supported machine-series contract was proved. FRED and SEC
+  were not run without their required runtime identity values. IMF returned
+  HTTP 403, World Bank exposed an empty structured unit, and CFETS DR007 has no
+  equivalent audited public history contract; those flags remain false.
+- Independent final reviews of Core/Router, transport/China sources, global
+  macro/SEC, and public news each reported zero remaining Critical/Important
+  findings. STCN terminal-empty handling was tightened to return a protocol
+  error rather than an unproved ordinary empty batch before the news review
+  closed.

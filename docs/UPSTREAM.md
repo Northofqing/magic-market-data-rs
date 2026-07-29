@@ -31,3 +31,17 @@ agreement at <https://wallstreetcn.com/articles/3522782>, reviewed on
 2026-07-26. No WallstreetCN source code, private API, login state, cookie,
 description, or article body is included. The adapter reads bounded RSS
 metadata only and does not fetch article pages.
+
+The NBS, PBC, CFETS, FRED, IMF DataMapper, World Bank Indicators and SEC EDGAR
+adapters are independent local implementations against the exact official
+hosts and bounded contracts documented under `docs/integrations/`. They do not
+copy third-party client implementations, infer missing units/timestamps, or
+use authenticated browser state. FRED and SEC runtime identification values
+are operator-supplied secrets/private configuration and are never committed.
+
+The Xinhua Finance, Yicai and Securities Times adapters are independent,
+metadata-only implementations against their first-party public listing pages.
+They retain only checked title/ID/link/publisher/publication metadata, do not
+fetch article pages or store descriptions/bodies/media, and do not infer
+instrument identities from text. Public technical access does not grant
+content redistribution rights.

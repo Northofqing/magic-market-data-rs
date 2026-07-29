@@ -95,6 +95,24 @@ build_probe magic-yonhap-rs live_probe magic-yonhap-live-probe
 build_probe magic-yonhap-rs load_probe magic-yonhap-load-probe
 build_probe magic-wallstreetcn-rs live_probe magic-wallstreetcn-live-probe
 build_probe magic-wallstreetcn-rs load_probe magic-wallstreetcn-load-probe
+build_probe magic-nbs-rs live_probe magic-nbs-live-probe
+build_probe magic-pbc-rs live_probe magic-pbc-live-probe
+build_probe magic-pbc-rs load_probe magic-pbc-load-probe
+build_probe magic-cfets-rs live_probe magic-cfets-live-probe
+build_probe magic-cfets-rs load_probe magic-cfets-load-probe
+build_probe magic-fred-rs live_probe magic-fred-live-probe
+build_probe magic-fred-rs load_probe magic-fred-load-probe
+build_probe magic-imf-rs live_probe magic-imf-live-probe
+build_probe magic-imf-rs load_probe magic-imf-load-probe
+build_probe magic-worldbank-rs live_probe magic-worldbank-live-probe
+build_probe magic-sec-rs live_probe magic-sec-live-probe
+build_probe magic-sec-rs load_probe magic-sec-load-probe
+build_probe magic-xinhua-rs live_probe magic-xinhua-live-probe
+build_probe magic-xinhua-rs load_probe magic-xinhua-load-probe
+build_probe magic-yicai-rs live_probe magic-yicai-live-probe
+build_probe magic-yicai-rs load_probe magic-yicai-load-probe
+build_probe magic-stcn-rs live_probe magic-stcn-live-probe
+build_probe magic-stcn-rs load_probe magic-stcn-load-probe
 
 while IFS= read -r -d '' tracked_doc; do
   target_parent="$dist_dir/$(dirname "$tracked_doc")"
