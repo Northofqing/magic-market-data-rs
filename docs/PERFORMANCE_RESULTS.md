@@ -2,19 +2,20 @@
 
 ## Evidence-driven release profile
 
-On 2026-07-29, revision
-`8c8e9b5587ac48f4070e2524ea28fd4510836c77` was measured with:
+On 2026-07-29, two clean revisions were measured in separate runner sessions
+with:
 
 ```bash
 bash tools/bench/release_profile.sh
 ```
 
-The runner first required a clean Git worktree and index, captured the full
-revision, built separate default and candidate target directories, warmed each
-binary once, and then alternated five measured runs per profile. It verified
-that HEAD and tracked files had not changed before collecting evidence and
-again before exit. Inputs were fixed and offline. The candidate used
-`lto="thin"` and `codegen-units=1`; the default used Cargo's release defaults.
+The current runner requires a clean Git worktree and index, rejects inherited
+Rust/Cargo build configuration, captures the full revision, builds separate
+default and candidate target directories, warms each binary once, and then
+alternates five measured runs per profile. It verifies the full porcelain
+state before evidence collection and before exit. Inputs are fixed and
+offline. The candidate uses `lto="thin"` and `codegen-units=1`; the default
+uses Cargo's release defaults.
 
 Environment:
 
@@ -28,6 +29,9 @@ The comparison gate required identical checksums, at least 5% combined median
 improvement, no workload regression above 5%, and binary growth no greater
 than 20%.
 
+The first clean session at revision
+`8c8e9b5587ac48f4070e2524ea28fd4510836c77` produced:
+
 | Workload | Iterations | Default median (ns) | Candidate median (ns) | Elapsed change | Checksum |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | TDX bar/variable decode | 20,000 | 1,599,510,410 | 1,567,802,842 | -1.98% | 4,287,391,093,950,792,928 |
@@ -36,11 +40,27 @@ than 20%.
 | zlib compression/decompression roundtrip | 2,000 | 4,846,537,920 | 4,674,214,327 | -3.56% | 197,516,000 |
 
 The geometric combined elapsed ratio was `0.987140`, a 1.29% improvement. The
-example binary decreased from 663,992 to 631,792 bytes (-4.85%), and no
-workload crossed the 5% regression budget. However, the combined improvement
-did not meet the predeclared 5% minimum. The candidate therefore failed closed,
-and the workspace retains Cargo's default release profile. Exact environment,
-raw elapsed values and decision evidence are recorded in
+example binary decreased from 663,992 to 631,792 bytes (-4.85%). This session
+failed the predeclared 5% combined-improvement gate.
+
+After the runner and raw-domain checks were hardened, a second clean session at
+revision `d9555c6b06bcb27360a98a13765b8d0051ff575a` produced:
+
+| Workload | Iterations | Default median (ns) | Candidate median (ns) | Elapsed change | Checksum |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| TDX bar/variable decode | 20,000 | 1,645,003,943 | 1,550,589,876 | -5.74% | 4,287,391,093,950,792,928 |
+| JSON decode/normalization | 10,000 | 1,258,431,039 | 1,157,620,254 | -8.01% | 7,267,965,373,649,679,376 |
+| zlib decompression | 5,000 | 861,454,796 | 772,319,352 | -10.35% | 440,610,000 |
+| zlib compression/decompression roundtrip | 2,000 | 4,969,610,920 | 4,731,810,894 | -4.79% | 197,516,000 |
+
+The second session's geometric combined elapsed ratio was `0.927543`, a 7.25%
+improvement, and its binary decreased from 664,120 to 631,792 bytes (-4.87%).
+It passed the per-session policy. However, the two clean sessions fall on
+opposite sides of the 5% qualification threshold. The improvement is therefore
+not repeatable evidence for a workspace-wide optimization claim. The
+repository fails closed and retains Cargo's default release profile.
+
+Exact identities, all raw elapsed values, and both decisions are recorded in
 [the release-profile evidence](evidence/2026-07-29-release-profile.md). These
 are local deterministic microbenchmark results, not market-data latency or
 network-throughput claims.

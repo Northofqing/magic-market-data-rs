@@ -1,6 +1,6 @@
 # Release-profile comparison evidence
 
-## Identity and protocol
+## Session A identity and protocol
 
 - Source revision: `8c8e9b5587ac48f4070e2524ea28fd4510836c77`
 - Rust: `rustc 1.95.0 (59807616e 2026-04-14)`
@@ -18,7 +18,7 @@ evidence collection and before exit. Every record included a finite positive
 throughput derived from the fixed iteration count and elapsed nanoseconds.
 Checksums were identical across all profiles and runs.
 
-## Raw elapsed nanoseconds
+## Session A raw elapsed nanoseconds
 
 | Profile | Workload | Iterations | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Checksum |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -31,7 +31,7 @@ Checksums were identical across all profiles and runs.
 | Default | `zlib_roundtrip` | 2,000 | 4,846,537,920 | 4,851,002,900 | 4,838,556,299 | 4,862,854,712 | 4,819,821,369 | 197,516,000 |
 | Candidate | `zlib_roundtrip` | 2,000 | 4,671,619,130 | 4,534,909,658 | 4,730,543,092 | 4,748,347,997 | 4,674,214,327 | 197,516,000 |
 
-## Qualification decision
+## Session A qualification decision
 
 | Metric | Observed | Required | Result |
 | --- | ---: | ---: | --- |
@@ -40,5 +40,54 @@ Checksums were identical across all profiles and runs.
 | Binary growth | -4.849456% | at most 20% | pass |
 
 The candidate is not qualified because the combined improvement is below the
-fixed minimum. The repository therefore retains Cargo's default release
-profile; no optimization claim is inferred from binary size alone.
+fixed minimum. No optimization claim is inferred from binary size alone.
+
+## Session B identity and protocol
+
+- Source revision: `d9555c6b06bcb27360a98a13765b8d0051ff575a`
+- Rust: `rustc 1.95.0 (59807616e 2026-04-14)`
+- Cargo: `cargo 1.95.0 (f2d3ce0bd 2026-03-21)`
+- Platform: Darwin 25.5.0 x86_64
+- Runner: one warm-up per profile; five alternating measured rounds
+- Default: Cargo release defaults (`lto=false`, `codegen-units=16`)
+- Candidate: `lto="thin"`, `codegen-units=1`
+- Default binary: 664,120 bytes
+- Candidate binary: 631,792 bytes
+
+This session used the hardened runner. It required a clean full Git porcelain
+state before the build and at every verification point, rejected inherited
+Rust/Cargo build configuration, required the exact four-workload schema and
+tool-version formats, and restricted in-repository artifacts to the ignored
+`target/` tree. Checksums were identical across all profiles and runs.
+
+## Session B raw elapsed nanoseconds
+
+| Profile | Workload | Iterations | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Checksum |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Default | `tdx_bar_parse` | 20,000 | 1,701,724,876 | 1,649,739,624 | 1,606,342,731 | 1,645,003,943 | 1,589,817,428 | 4,287,391,093,950,792,928 |
+| Candidate | `tdx_bar_parse` | 20,000 | 1,527,242,302 | 1,629,553,436 | 1,526,180,512 | 1,550,589,876 | 1,620,571,583 | 4,287,391,093,950,792,928 |
+| Default | `json_normalize` | 10,000 | 1,326,694,303 | 1,258,431,039 | 1,231,540,054 | 1,207,483,807 | 1,305,240,786 | 7,267,965,373,649,679,376 |
+| Candidate | `json_normalize` | 10,000 | 1,251,922,198 | 1,191,662,446 | 1,157,620,254 | 1,075,437,255 | 1,127,930,460 | 7,267,965,373,649,679,376 |
+| Default | `zlib_decompress` | 5,000 | 906,011,166 | 861,454,796 | 866,127,773 | 788,377,283 | 774,919,572 | 440,610,000 |
+| Candidate | `zlib_decompress` | 5,000 | 780,660,603 | 747,521,880 | 772,319,352 | 756,792,140 | 799,879,096 | 440,610,000 |
+| Default | `zlib_roundtrip` | 2,000 | 4,934,009,963 | 4,982,991,366 | 4,969,610,920 | 4,890,685,738 | 5,038,138,221 | 197,516,000 |
+| Candidate | `zlib_roundtrip` | 2,000 | 4,766,588,283 | 4,731,810,894 | 4,704,187,059 | 4,637,549,267 | 4,840,916,252 | 197,516,000 |
+
+## Session B qualification decision
+
+| Metric | Observed | Required | Result |
+| --- | ---: | ---: | --- |
+| Combined median improvement | 7.245705% | at least 5% | pass |
+| Largest workload regression | -4.785083% | at most 5% | pass |
+| Binary growth | -4.867795% | at most 20% | pass |
+
+Session B qualifies under the fixed per-session comparison policy.
+
+## Cross-session repository decision
+
+Session A and Session B were both clean, offline measurements on the same
+machine and toolchain, but their combined improvements were respectively 1.29%
+and 7.25%. They therefore fall on opposite sides of the predeclared 5%
+threshold. A workspace-wide release-profile claim is not repeatable across the
+available evidence. The repository retains Cargo's default release profile
+until repeated independent sessions consistently satisfy the policy.

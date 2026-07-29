@@ -74,6 +74,11 @@
 - No workload crossed the 5% regression budget and the binary shrank 4.85%,
   but combined improvement missed the required 5%. The candidate failed
   closed and `[profile.release]` was removed.
+- A second clean hardened-runner session on `d9555c6` measured 7.25% combined
+  improvement with no workload regression and a 4.87% smaller binary. Because
+  the first and second clean sessions fall on opposite sides of the 5% gate,
+  the result is not repeatable evidence. Both raw sessions are retained and
+  the repository continues to use Cargo's default release profile.
 
 ## Issues Encountered
 | Issue | Resolution |
