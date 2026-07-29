@@ -63,15 +63,17 @@
 
 ## Release-profile evidence
 
-- The deterministic benchmark measures 64-row TDX bar/variable parsing, JSON
-  decode plus checked normalization, and bounded zlib decompression. Every
-  profile/run produced identical per-workload checksums.
-- On clean revision `e0bc91a`, thin LTO with one codegen unit improved the
-  geometric combined median by 6.86%. TDX parsing improved 12.16%, JSON
-  normalization improved 7.49%, and zlib improved 0.58%.
-- No workload crossed the 5% regression budget. The example binary shrank
-  4.79%, so the candidate passed the predeclared 5% combined/5% individual/20%
-  size policy and was applied to `[profile.release]`.
+- The final deterministic benchmark measures 64-row TDX bar/variable parsing,
+  JSON decode plus checked normalization, bounded zlib decompression, and a
+  zlib compression/decompression roundtrip. Every profile/run produced
+  identical per-workload checksums.
+- On clean revision `8c8e9b5`, thin LTO with one codegen unit improved the
+  geometric combined median by only 1.29%. TDX parsing improved 1.98%, JSON
+  normalization improved 2.51%, zlib decompression regressed 3.03%, and the
+  roundtrip improved 3.56%.
+- No workload crossed the 5% regression budget and the binary shrank 4.85%,
+  but combined improvement missed the required 5%. The candidate failed
+  closed and `[profile.release]` was removed.
 
 ## Issues Encountered
 | Issue | Resolution |

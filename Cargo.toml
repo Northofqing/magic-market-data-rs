@@ -43,7 +43,3 @@ thiserror = "2"
 unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
-
-[profile.release]
-lto = "thin"
-codegen-units = 1

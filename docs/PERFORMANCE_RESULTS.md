@@ -1,34 +1,20 @@
 # Performance and connectivity results
 
-## Deterministic parser probe
-
-Command:
-
-```bash
-cargo run -p magic-tdx-rs --example parse_bench --offline
-```
-
-Observed on the development machine (debug profile, one million iterations):
-
-```text
-iterations=1000000 elapsed_ms=31.475 ns_per_op=31.48
-```
-
-This is a parser microbenchmark, not a network throughput claim.
-
 ## Evidence-driven release profile
 
 On 2026-07-29, revision
-`e0bc91a750bfd93a50a1185aba0788452d5f95c8` was measured with:
+`8c8e9b5587ac48f4070e2524ea28fd4510836c77` was measured with:
 
 ```bash
 bash tools/bench/release_profile.sh
 ```
 
-The runner built separate default and candidate target directories, warmed
-each binary once, and then alternated five measured runs per profile. Inputs
-were fixed and offline. The candidate used `lto="thin"` and
-`codegen-units=1`; the default used Cargo's release defaults.
+The runner first required a clean Git worktree and index, captured the full
+revision, built separate default and candidate target directories, warmed each
+binary once, and then alternated five measured runs per profile. It verified
+that HEAD and tracked files had not changed before collecting evidence and
+again before exit. Inputs were fixed and offline. The candidate used
+`lto="thin"` and `codegen-units=1`; the default used Cargo's release defaults.
 
 Environment:
 
@@ -44,16 +30,20 @@ than 20%.
 
 | Workload | Iterations | Default median (ns) | Candidate median (ns) | Elapsed change | Checksum |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| TDX bar/variable decode | 20,000 | 1,137,977,772 | 999,600,373 | -12.16% | 4,287,391,093,950,792,928 |
-| JSON decode/normalization | 10,000 | 1,577,880,413 | 1,459,711,907 | -7.49% | 7,267,965,373,649,679,376 |
-| zlib decompression | 5,000 | 977,841,422 | 972,183,690 | -0.58% | 440,610,000 |
+| TDX bar/variable decode | 20,000 | 1,599,510,410 | 1,567,802,842 | -1.98% | 4,287,391,093,950,792,928 |
+| JSON decode/normalization | 10,000 | 1,192,383,400 | 1,162,488,584 | -2.51% | 7,267,965,373,649,679,376 |
+| zlib decompression | 5,000 | 709,281,762 | 730,768,802 | +3.03% | 440,610,000 |
+| zlib compression/decompression roundtrip | 2,000 | 4,846,537,920 | 4,674,214,327 | -3.56% | 197,516,000 |
 
-The geometric combined elapsed ratio was `0.931369`, a 6.86% improvement. The
-example binary decreased from 658,920 to 627,344 bytes (-4.79%), and no
-workload regressed. The candidate therefore passed every predeclared threshold,
-so the workspace release profile now enables thin LTO with one codegen unit.
-These are local deterministic microbenchmark results, not market-data latency
-or network-throughput claims.
+The geometric combined elapsed ratio was `0.987140`, a 1.29% improvement. The
+example binary decreased from 663,992 to 631,792 bytes (-4.85%), and no
+workload crossed the 5% regression budget. However, the combined improvement
+did not meet the predeclared 5% minimum. The candidate therefore failed closed,
+and the workspace retains Cargo's default release profile. Exact environment,
+raw elapsed values and decision evidence are recorded in
+[the release-profile evidence](evidence/2026-07-29-release-profile.md). These
+are local deterministic microbenchmark results, not market-data latency or
+network-throughput claims.
 
 ## Local concurrency coverage
 
