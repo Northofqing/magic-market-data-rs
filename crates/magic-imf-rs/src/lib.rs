@@ -70,6 +70,16 @@ impl ImfClient {
             regional_series: ECONOMIC_SERIES_ADMITTED,
         }
     }
+
+    /// Executes the bounded technical probe without advertising production
+    /// admission through the formal Provider contract.
+    pub fn probe_economic_series(
+        &self,
+        request: &EconomicSeriesRequest,
+    ) -> Result<DataBatch<EconomicObservation>, ImfError> {
+        validate_request(request)?;
+        transport::fetch_series(self.transport.as_ref(), self.gate.as_ref(), request)
+    }
 }
 
 impl EconomicSeriesProvider for ImfClient {
@@ -79,21 +89,31 @@ impl EconomicSeriesProvider for ImfClient {
         &self,
         request: &EconomicSeriesRequest,
     ) -> Result<DataBatch<EconomicObservation>, Self::Error> {
-        if request.provider() != ProviderId::Imf {
-            return Err(ImfError::InvalidRequest(
-                "request provider must be IMF".into(),
-            ));
-        }
-        if request.series().len() > 20 {
-            return Err(ImfError::InvalidRequest(
-                "IMF accepts at most 20 series per call".into(),
-            ));
-        }
-        if request.start().frequency() != EconomicFrequency::Annual {
+        validate_request(request)?;
+        if !ECONOMIC_SERIES_ADMITTED {
             return Err(ImfError::Unsupported(
-                "IMF DataMapper production path supports annual periods".into(),
+                "IMF production access has not passed live admission".into(),
             ));
         }
-        transport::fetch_series(self.transport.as_ref(), self.gate.as_ref(), request)
+        self.probe_economic_series(request)
     }
+}
+
+fn validate_request(request: &EconomicSeriesRequest) -> Result<(), ImfError> {
+    if request.provider() != ProviderId::Imf {
+        return Err(ImfError::InvalidRequest(
+            "request provider must be IMF".into(),
+        ));
+    }
+    if request.series().len() > 20 {
+        return Err(ImfError::InvalidRequest(
+            "IMF accepts at most 20 series per call".into(),
+        ));
+    }
+    if request.start().frequency() != EconomicFrequency::Annual {
+        return Err(ImfError::Unsupported(
+            "IMF DataMapper production path supports annual periods".into(),
+        ));
+    }
+    Ok(())
 }

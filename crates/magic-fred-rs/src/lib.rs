@@ -105,6 +105,21 @@ impl FredClient {
             regional_series: false,
         }
     }
+
+    /// Executes the bounded technical probe without advertising production
+    /// admission through the formal Provider contract.
+    pub fn probe_economic_series(
+        &self,
+        request: &EconomicSeriesRequest,
+    ) -> Result<DataBatch<EconomicObservation>, FredError> {
+        validate_request(request)?;
+        transport::fetch_series(
+            self.transport.as_ref(),
+            self.gate.as_ref(),
+            &self.api_key.0,
+            request,
+        )
+    }
 }
 
 impl EconomicSeriesProvider for FredClient {
@@ -114,23 +129,28 @@ impl EconomicSeriesProvider for FredClient {
         &self,
         request: &EconomicSeriesRequest,
     ) -> Result<DataBatch<EconomicObservation>, Self::Error> {
-        if request.provider() != ProviderId::Fred {
-            return Err(FredError::InvalidRequest(
-                "request provider must be FRED".into(),
+        validate_request(request)?;
+        if !ECONOMIC_SERIES_ADMITTED {
+            return Err(FredError::Unsupported(
+                "FRED production access has not passed live admission".into(),
             ));
         }
-        if request.series().len() > 20 {
-            return Err(FredError::InvalidRequest(
-                "FRED accepts at most 20 series per call".into(),
-            ));
-        }
-        transport::fetch_series(
-            self.transport.as_ref(),
-            self.gate.as_ref(),
-            &self.api_key.0,
-            request,
-        )
+        self.probe_economic_series(request)
     }
+}
+
+fn validate_request(request: &EconomicSeriesRequest) -> Result<(), FredError> {
+    if request.provider() != ProviderId::Fred {
+        return Err(FredError::InvalidRequest(
+            "request provider must be FRED".into(),
+        ));
+    }
+    if request.series().len() > 20 {
+        return Err(FredError::InvalidRequest(
+            "FRED accepts at most 20 series per call".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn checked_api_key(value: String) -> Result<ApiKey, FredError> {

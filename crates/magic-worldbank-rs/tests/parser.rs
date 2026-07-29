@@ -41,6 +41,35 @@ fn empty_structured_unit_is_protocol_not_inference() {
 }
 
 #[test]
+fn indicator_metadata_uses_row_source_identity_not_data_page_fields() {
+    let key = EconomicSeriesKey::new(
+        ProviderId::WorldBank,
+        "source:2/country:USA",
+        "NY.GDP.MKTP.CD",
+    )
+    .unwrap();
+    let indicator = include_str!("fixtures/indicator.json")
+        .replace("\"unit\":\"\"", "\"unit\":\"current US$\"");
+    let wrong_source = indicator.replace("\"source\":{\"id\":\"2\"", "\"source\":{\"id\":\"3\"");
+    assert!(matches!(
+        parse_world_bank_responses(wrong_source.as_bytes(), &[], &context(&key)),
+        Err(WorldBankError::Protocol(_))
+    ));
+
+    let wrong_identity = indicator.replace("\"id\":\"NY.GDP.MKTP.CD\"", "\"id\":\"SP.POP.TOTL\"");
+    assert!(matches!(
+        parse_world_bank_responses(wrong_identity.as_bytes(), &[], &context(&key)),
+        Err(WorldBankError::Protocol(_))
+    ));
+
+    let invalid_page = indicator.replace("\"pages\":1", "\"pages\":2");
+    assert!(matches!(
+        parse_world_bank_responses(invalid_page.as_bytes(), &[], &context(&key)),
+        Err(WorldBankError::Protocol(_))
+    ));
+}
+
+#[test]
 fn validates_all_pages_missing_zero_and_source_identity() {
     let key = EconomicSeriesKey::new(
         ProviderId::WorldBank,
@@ -102,14 +131,15 @@ fn page_metadata_drift_and_duplicate_period_fail_atomically() {
         &context(&key),
     )
     .is_err());
-    let revised_page_1 =
-        include_str!("fixtures/data-page-1.json").replace("2026-07-01", "2026-07-02");
     let revised_page_2 =
         include_str!("fixtures/data-page-2.json").replace("2026-07-01", "2026-07-02");
     assert!(matches!(
         parse_world_bank_responses(
             indicator.as_bytes(),
-            &[revised_page_1.as_bytes(), revised_page_2.as_bytes()],
+            &[
+                include_bytes!("fixtures/data-page-1.json"),
+                revised_page_2.as_bytes()
+            ],
             &context(&key),
         ),
         Err(WorldBankError::Protocol(_))

@@ -1,0 +1,12 @@
+{
+  "returncode": 200,
+  "returndata": {
+    "wdnodes": [
+      {"wdcode": "zb", "nodes": [{"code": "A010101", "name": "指标甲", "unit": "点"}]},
+      {"wdcode": "sj", "nodes": [{"code": "202506", "name": "2025年6月"}]}
+    ],
+    "datanodes": [
+      {"code": "zb.A010101_sj.202506", "data": {"data": 0.0, "hasdata": true}}
+    ]
+  }
+}

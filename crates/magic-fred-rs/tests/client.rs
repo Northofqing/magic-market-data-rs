@@ -35,7 +35,7 @@ fn injected_transport_runs_the_exact_bounded_path() {
         PositiveU32::new(4).unwrap(),
     )
     .unwrap();
-    let batch = client.economic_series(&request).unwrap();
+    let batch = client.probe_economic_series(&request).unwrap();
     assert_eq!(batch.records().len(), 4);
 }
 
@@ -62,6 +62,23 @@ fn every_key_is_preflighted_before_first_io() {
         EconomicPeriod::quarter(2025, 1).unwrap(),
         EconomicPeriod::quarter(2025, 4).unwrap(),
         PositiveU32::new(8).unwrap(),
+    )
+    .unwrap();
+    assert!(client.probe_economic_series(&request).is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn unadmitted_formal_provider_fails_before_io() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client =
+        FredClient::with_transport("fixture-key", Arc::new(CountingTransport(calls.clone())))
+            .unwrap();
+    let request = EconomicSeriesRequest::new(
+        vec![EconomicSeriesKey::new(ProviderId::Fred, "fred", "GDP").unwrap()],
+        EconomicPeriod::quarter(2025, 1).unwrap(),
+        EconomicPeriod::quarter(2025, 4).unwrap(),
+        PositiveU32::new(4).unwrap(),
     )
     .unwrap();
     assert!(client.economic_series(&request).is_err());

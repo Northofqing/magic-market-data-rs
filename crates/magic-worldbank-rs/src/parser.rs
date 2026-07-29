@@ -35,7 +35,13 @@ struct IndicatorMetadata {
     name: String,
     unit: String,
     source_id: String,
-    last_updated: String,
+}
+
+struct PaginationMetadata {
+    page: usize,
+    pages: usize,
+    per_page: usize,
+    total: usize,
 }
 
 struct PageMetadata {
@@ -123,7 +129,6 @@ pub fn parse_world_bank_responses(
             || metadata.per_page > 1_000
             || metadata.total > 10_000
             || metadata.source_id != namespace.source_id
-            || metadata.last_updated != indicator.last_updated
             || EconomicPeriod::day(&metadata.last_updated).is_err()
         {
             return Err(WorldBankError::Protocol(
@@ -278,14 +283,12 @@ fn parse_indicator(
     let value: Value =
         serde_json::from_slice(body).map_err(|error| WorldBankError::Decode(error.to_string()))?;
     let (page, rows) = two_element_page(&value)?;
-    let page = parse_page_metadata(page)?;
+    let page = parse_pagination_metadata(page)?;
     if page.page != 1
         || page.pages != 1
         || page.per_page == 0
         || page.per_page > 1_000
         || page.total != 1
-        || page.source_id != expected_source_id
-        || EconomicPeriod::day(&page.last_updated).is_err()
     {
         return Err(WorldBankError::Protocol(
             "indicator metadata page is inconsistent".into(),
@@ -307,25 +310,43 @@ fn parse_indicator(
             "indicator metadata identity mismatch".into(),
         ));
     }
+    let source_id = nested_string(row, "source", "id")?;
+    if source_id != expected_source_id {
+        return Err(WorldBankError::Protocol(
+            "indicator source ID does not match namespace".into(),
+        ));
+    }
     Ok(IndicatorMetadata {
         name: string_field(row, "name")?.to_owned(),
         unit: string_field_allow_empty(row, "unit")?.to_owned(),
-        source_id: nested_string(row, "source", "id")?.to_owned(),
-        last_updated: page.last_updated,
+        source_id: source_id.to_owned(),
     })
 }
 
 fn parse_page_metadata(value: &Value) -> Result<PageMetadata, WorldBankError> {
+    let pagination = parse_pagination_metadata(value)?;
     let object = value.as_object().ok_or_else(|| {
         WorldBankError::Protocol("World Bank page metadata must be an object".into())
     })?;
     Ok(PageMetadata {
+        page: pagination.page,
+        pages: pagination.pages,
+        per_page: pagination.per_page,
+        total: pagination.total,
+        source_id: string_or_number_field(object, "sourceid")?,
+        last_updated: string_field(object, "lastupdated")?.to_owned(),
+    })
+}
+
+fn parse_pagination_metadata(value: &Value) -> Result<PaginationMetadata, WorldBankError> {
+    let object = value.as_object().ok_or_else(|| {
+        WorldBankError::Protocol("World Bank page metadata must be an object".into())
+    })?;
+    Ok(PaginationMetadata {
         page: usize_field(object, "page")?,
         pages: usize_field(object, "pages")?,
         per_page: usize_field(object, "per_page")?,
         total: usize_field(object, "total")?,
-        source_id: string_or_number_field(object, "sourceid")?,
-        last_updated: string_field(object, "lastupdated")?.to_owned(),
     })
 }
 

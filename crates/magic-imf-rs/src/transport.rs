@@ -13,6 +13,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 const BASE_URL: &str = "https://www.imf.org/external/datamapper/api/v2";
+const USER_AGENT: &str = "magic-imf-rs/0.2";
 
 pub(crate) fn policy() -> Result<EndpointPolicy, magic_market_transport::TransportError> {
     EndpointPolicy::new(
@@ -131,7 +132,10 @@ fn execute(
     let request = HttpRequest::new(
         HttpMethod::Get,
         url,
-        vec![("Accept".into(), "application/json".into())],
+        vec![
+            ("Accept".into(), "application/json".into()),
+            ("User-Agent".into(), USER_AGENT.into()),
+        ],
         vec![],
     )?;
     let policy = policy()?;

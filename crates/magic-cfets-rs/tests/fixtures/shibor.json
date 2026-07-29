@@ -1,0 +1,20 @@
+{
+  "data": {
+    "baseCurveCfgList": [
+      {"cfgItem":"O/N","cfgItemNm":"ON","sqncCd":1},
+      {"cfgItem":"1W","cfgItemNm":"1W","sqncCd":2},
+      {"cfgItem":"2W","cfgItemNm":"2W","sqncCd":3},
+      {"cfgItem":"1M","cfgItemNm":"1M","sqncCd":4},
+      {"cfgItem":"3M","cfgItemNm":"3M","sqncCd":5},
+      {"cfgItem":"6M","cfgItemNm":"6M","sqncCd":6},
+      {"cfgItem":"9M","cfgItemNm":"9M","sqncCd":7},
+      {"cfgItem":"1Y","cfgItemNm":"1Y","sqncCd":8}
+    ],
+    "startDateCN":"2026-07-28",
+    "endDateCN":"2026-07-29",
+    "message":""
+  },
+  "records":[
+    {"showDateCN":"2026-07-29","ON":"1.4150","1W":"1.4600","2W":"1.4500","1M":"1.4200","3M":"1.4300","6M":"1.4505","9M":"1.4700","1Y":"1.4800"}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "data": {
+    "baseCurveCfgList":["1Y","5Y"],
+    "startDateCN":"2026-07-01",
+    "endDateCN":"2026-07-29",
+    "message":""
+  },
+  "records":[{"showDateCN":"2026-07-20","1Y":"3.00","5Y":"3.50"}]
+}

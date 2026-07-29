@@ -1,0 +1,30 @@
+{
+  "state": 1,
+  "data": [
+    {
+      "id": "4754321",
+      "url": "/article/detail/4754321.html",
+      "web_url": "/article/detail/4754321.html",
+      "title": "合成的人民财讯快讯标题 1",
+      "source": "人民财讯",
+      "time": 1785291905000,
+      "show_time": "1785291905",
+      "pageTime": "4754321",
+      "content": "这段合成正文必须被忽略。",
+      "share": {"description": "这段分享摘要也必须被忽略。"}
+    },
+    {
+      "id": "4754320",
+      "url": "/article/detail/4754320.html",
+      "web_url": "/article/detail/4754320.html",
+      "title": "合成的人民财讯快讯标题 2",
+      "source": "人民财讯",
+      "time": 1785291845000,
+      "show_time": "1785291845",
+      "pageTime": "4754320",
+      "content": "另一段不会保留的正文"
+    }
+  ],
+  "page_time": 2,
+  "last_time": 1785291845
+}

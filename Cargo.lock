@@ -820,6 +820,7 @@ dependencies = [
 name = "magic-pbc-rs"
 version = "0.2.0"
 dependencies = [
+ "encoding_rs",
  "magic-market-core",
  "magic-market-transport",
  "serde",

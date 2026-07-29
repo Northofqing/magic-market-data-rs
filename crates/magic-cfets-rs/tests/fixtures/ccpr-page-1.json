@@ -1,0 +1,17 @@
+{
+  "data": {
+    "head": [
+      "USD/CNY", "EUR/CNY", "100JPY/CNY", "HKD/CNY", "GBP/CNY",
+      "AUD/CNY", "NZD/CNY", "SGD/CNY", "CHF/CNY", "CAD/CNY",
+      "CNY/MOP", "CNY/MYR", "CNY/RUB", "CNY/ZAR", "CNY/KRW", "CNY/AED",
+      "CNY/SAR", "CNY/HUF", "CNY/PLN", "CNY/DKK", "CNY/SEK",
+      "CNY/NOK", "CNY/TRY", "CNY/MXN", "CNY/THB"
+    ],
+    "total": 2, "pageTotal": 2, "pageSize": 1, "pageNum": 1,
+    "currency": "USD/CNY,100JPY/CNY,CNY/KRW",
+    "searchlist": ["USD/CNY", "100JPY/CNY", "CNY/KRW"],
+    "startDate": "2026-07-28", "endDate": "2026-07-29",
+    "flagMessage": ""
+  },
+  "records": [{"date":"2026-07-29","values":["6.7928","4.5660","193.72"]}]
+}
