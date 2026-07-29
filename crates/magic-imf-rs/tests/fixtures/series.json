@@ -1,0 +1,1 @@
+{"api":{"version":"2","output-method":"json"},"indicators":{"NGDP_RPCH":{"label":"Real GDP growth"}},"values":{"NGDP_RPCH":{"USA":{"2024":2.8,"2025":0.0,"2026":-1.0},"CHN":{"2024":5.0,"2025":4.5},"WEOWORLD":{"2024":3.4},"":null}}}
