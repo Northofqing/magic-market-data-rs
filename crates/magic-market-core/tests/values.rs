@@ -1,6 +1,6 @@
 use magic_market_core::{
     AssetClass, CoreError, Exchange, FiniteNumber, HttpsUrl, InstrumentId, IsoDate, Money,
-    NonEmptyText, PositiveU32, Price, Quantity, Ratio,
+    NonEmptyText, NumericTolerance, PositiveU32, Price, Quantity, Ratio,
 };
 
 struct MinimalSourcedRecord;
@@ -24,6 +24,43 @@ fn rejects_invalid_financial_values() {
     assert!(Quantity::new(-1.0).is_err());
     assert!(Money::new(f64::INFINITY).is_err());
     assert!(Ratio::decimal(f64::NAN).is_err());
+}
+
+#[test]
+fn numeric_tolerance_is_checked_symmetric_and_serde_safe() {
+    let cents = NumericTolerance::new(0.01, 0.0).unwrap();
+    assert!(cents.matches(10.0, 10.01));
+    assert!(cents.matches(10.01, 10.0));
+    assert!(!cents.matches(10.0, 10.010_000_1));
+    assert!(NumericTolerance::new(0.0, 0.02)
+        .unwrap()
+        .matches(1_000_000.0, 1_020_000.0));
+    assert!(NumericTolerance::new(100.0, 0.02)
+        .unwrap()
+        .matches(10_000.0, 10_300.0));
+    assert!(NumericTolerance::new(0.0, 0.0).unwrap().matches(0.0, 0.0));
+    assert!(!cents.matches(f64::NAN, 1.0));
+    assert!(!cents.matches(1.0, f64::INFINITY));
+
+    for (absolute, relative) in [
+        (-0.01, 0.0),
+        (0.0, -0.01),
+        (f64::NAN, 0.0),
+        (0.0, f64::INFINITY),
+    ] {
+        assert!(NumericTolerance::new(absolute, relative).is_err());
+    }
+
+    assert_eq!(cents.absolute(), 0.01);
+    assert_eq!(cents.relative(), 0.0);
+    let json = serde_json::to_string(&cents).unwrap();
+    assert_eq!(
+        serde_json::from_str::<NumericTolerance>(&json).unwrap(),
+        cents
+    );
+    assert!(
+        serde_json::from_str::<NumericTolerance>(r#"{"absolute":-1.0,"relative":0.0}"#).is_err()
+    );
 }
 #[test]
 fn instrument_code_is_trimmed_but_never_empty() {

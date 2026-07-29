@@ -46,10 +46,26 @@
 | Add a declarative admission registry checked by compliance tooling | Avoid provider dependencies in the Router while detecting flag/document drift. |
 | Add parameterized checked tolerance primitives plus named call-site policies | Reuse mechanics without erasing units or source precision. |
 
+## Fixed Time and Numeric Policies
+
+- Core now owns the only Unix-seconds-to-fixed-offset Gregorian conversion in
+  the workspace. China timestamps are a named `+08:00` specialization with
+  checked arithmetic and RFC3339 year bounds.
+- `ClockTime` accepts exactly `HH:MM:SS`; BR-019 compares the typed clock
+  instead of re-parsing bytes or relying on lexical assumptions.
+- The Eastmoney, THS, CNInfo, CLS, and ThePaper copies were removed. Their
+  source-specific failure paths remain typed rather than returning an empty
+  batch.
+- `NumericTolerance` rejects invalid components and non-finite operands. Money
+  cents, order-book sums, Tencent percentage points/trade amounts, Sina
+  top-of-book prices, and SZSE source precision retain their previous units
+  and acceptance boundaries.
+
 ## Issues Encountered
 | Issue | Resolution |
 |-------|------------|
 | Some audit claims combined real code smells with false consequences | Separate factual presence, production reachability, and remediation priority. |
+| The generic symmetric relative formula is slightly wider than Tencent's reference-relative trade contract | Evaluate Tencent's existing two-percent-plus-CNY-100 threshold against the expected amount, then use an absolute checked tolerance so the source boundary does not move. |
 
 ## Resources
 - `docs/business_rules.md`

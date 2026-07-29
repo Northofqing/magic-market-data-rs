@@ -7,9 +7,10 @@ mod transport;
 pub use transport::{CninfoTransport, HttpMethod, HttpRequest, HttpResponse};
 
 use magic_market_core::{
-    Announcement, Announcements, AssetClass, ContentCapabilities, DataBatch, Exchange, HttpsUrl,
-    InstrumentDateRangeRequest, InstrumentId, InvestorQuestion, InvestorQuestions,
-    LoadProbeSnapshot, NonEmptyText, ProbeRequestTracker, Provenance, ProviderId, SourceEvidence,
+    unix_seconds_to_china_rfc3339, Announcement, Announcements, AssetClass, ContentCapabilities,
+    DataBatch, Exchange, HttpsUrl, InstrumentDateRangeRequest, InstrumentId, InvestorQuestion,
+    InvestorQuestions, LoadProbeSnapshot, NonEmptyText, ProbeRequestTracker, Provenance,
+    ProviderId, SourceEvidence,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -1015,9 +1016,9 @@ fn parse_optional_millis(
         _ => None,
     }
     .ok_or_else(|| CninfoError::Schema(format!("{field} is not an integer millisecond value")))?;
-    unix_seconds_to_china_iso(millis.div_euclid(1000))
+    unix_seconds_to_china_rfc3339(millis.div_euclid(1000))
         .map(Some)
-        .ok_or_else(|| CninfoError::Schema(format!("{field} is outside supported time bounds")))
+        .map_err(|_| CninfoError::Schema(format!("{field} is outside supported time bounds")))
 }
 
 fn parse_optional_u64(value: Option<&Value>, field: &str) -> Result<Option<u64>, CninfoError> {
@@ -1072,33 +1073,6 @@ fn now() -> Result<String, CninfoError> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| format!("{}.{:09}", duration.as_secs(), duration.subsec_nanos()))
         .map_err(|error| CninfoError::Transport(format!("system clock error: {error}")))
-}
-
-fn unix_seconds_to_china_iso(seconds: i64) -> Option<String> {
-    let local = seconds.checked_add(8 * 60 * 60)?;
-    let days = local.div_euclid(86_400);
-    let day_seconds = local.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days)?;
-    let hour = day_seconds / 3_600;
-    let minute = day_seconds % 3_600 / 60;
-    let second = day_seconds % 60;
-    Some(format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}+08:00"
-    ))
-}
-
-fn civil_from_days(days_since_epoch: i64) -> Option<(i64, i64, i64)> {
-    let z = days_since_epoch.checked_add(719_468)?;
-    let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096).div_euclid(365);
-    let mut year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2).div_euclid(153);
-    let day = doy - (153 * mp + 2).div_euclid(5) + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    year += i64::from(month <= 2);
-    (1..=9999).contains(&year).then_some((year, month, day))
 }
 
 #[cfg(test)]

@@ -590,8 +590,8 @@ fn strict_hosts_content_type_and_body_caps_are_enforced() {
 #[test]
 fn timestamp_conversion_is_timezone_explicit() {
     assert_eq!(
-        unix_seconds_to_china_iso(1_784_822_400).as_deref(),
-        Some("2026-07-24T00:00:00+08:00")
+        unix_seconds_to_china_rfc3339(1_784_822_400).unwrap(),
+        "2026-07-24T00:00:00+08:00"
     );
 }
 

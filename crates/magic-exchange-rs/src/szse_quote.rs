@@ -1,7 +1,7 @@
 use crate::ExchangeError;
 use magic_market_core::{
-    AssetClass, BookLevel, DataStatus, Exchange, InstrumentId, IsoDate, Money, OrderBook, Price,
-    ProviderId, Quantity, Quote, Ratio, RatioUnit,
+    AssetClass, BookLevel, DataStatus, Exchange, InstrumentId, IsoDate, Money, NumericTolerance,
+    OrderBook, Price, ProviderId, Quantity, Quote, Ratio, RatioUnit,
 };
 use serde::Deserialize;
 
@@ -278,13 +278,13 @@ fn validate_quote_shape(
         return Err(schema("SZSE quote OHLC values contradict each other"));
     }
     let expected_delta = current - previous_close;
-    if (delta - expected_delta).abs() > decimal_tolerance(delta_text)? {
+    if !decimal_tolerance(delta_text)?.matches(delta, expected_delta) {
         return Err(schema(
             "SZSE quote delta contradicts current and previous close",
         ));
     }
     let expected_percent = expected_delta / previous_close * 100.0;
-    if (delta_percent - expected_percent).abs() > decimal_tolerance(delta_percent_text)? {
+    if !decimal_tolerance(delta_percent_text)?.matches(delta_percent, expected_percent) {
         return Err(schema(
             "SZSE quote deltaPercent contradicts current and previous close",
         ));
@@ -327,7 +327,7 @@ fn is_plain_decimal(value: &str) -> bool {
         && parts.next().is_none()
 }
 
-fn decimal_tolerance(value: &str) -> Result<f64, ExchangeError> {
+fn decimal_tolerance(value: &str) -> Result<NumericTolerance, ExchangeError> {
     if !is_plain_decimal(value) {
         return Err(schema("SZSE quote decimal precision is invalid"));
     }
@@ -335,7 +335,10 @@ fn decimal_tolerance(value: &str) -> Result<f64, ExchangeError> {
         .split_once('.')
         .map_or(0_i32, |(_, fraction)| fraction.len() as i32)
         .max(2);
-    Ok(0.5 * 10_f64.powi(-decimals) + f64::EPSILON * 16.0)
+    Ok(NumericTolerance::new(
+        0.5 * 10_f64.powi(-decimals) + f64::EPSILON * 16.0,
+        0.0,
+    )?)
 }
 
 fn validate_nonnegative(value: f64, field: &str) -> Result<(), ExchangeError> {

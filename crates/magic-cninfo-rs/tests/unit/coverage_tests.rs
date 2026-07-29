@@ -408,8 +408,7 @@ fn primitive_helpers_preserve_missingness_and_reject_unsafe_values() {
     )
     .is_ok());
     assert!(now().is_ok());
-    assert!(unix_seconds_to_china_iso(i64::MAX).is_none());
-    assert!(civil_from_days(i64::MAX).is_none());
+    assert!(unix_seconds_to_china_rfc3339(i64::MAX).is_err());
 }
 
 #[test]

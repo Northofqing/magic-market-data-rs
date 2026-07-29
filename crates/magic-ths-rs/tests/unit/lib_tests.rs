@@ -940,12 +940,10 @@ fn identity_and_time_helpers_cover_verified_venues_and_boundaries() {
     assert!(equity_from_code("bad").is_err());
     assert!(equity_from_code("100001").is_err());
     assert_eq!(
-        unix_seconds_to_china_iso(1_784_822_400).unwrap(),
+        unix_seconds_to_china_rfc3339(1_784_822_400).unwrap(),
         "2026-07-24T00:00:00+08:00"
     );
-    assert!(unix_seconds_to_china_iso(i64::MAX).is_err());
-    assert_eq!(civil_from_days(-719_468), None);
-    assert_eq!(civil_from_days(i64::MAX), None);
+    assert!(unix_seconds_to_china_rfc3339(i64::MAX).is_err());
     let provenance = provenance("tonghuashun", "1784822400", "batch", Some("2026-07-24")).unwrap();
     assert_eq!(provenance.source_at(), Some("2026-07-24"));
 }

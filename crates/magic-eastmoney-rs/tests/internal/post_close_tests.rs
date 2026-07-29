@@ -172,8 +172,7 @@ fn post_close_helpers_preserve_missingness_and_time_boundaries() {
     );
     assert!(optional_nonempty(Some(&serde_json::json!(1))).is_err());
     assert!(china_now().is_ok());
-    assert!(unix_seconds_to_china_iso(i64::MAX).is_none());
-    assert!(civil_from_days(i64::MAX).is_none());
+    assert!(unix_seconds_to_china_rfc3339(i64::MAX).is_err());
 }
 
 #[test]

@@ -181,7 +181,11 @@ impl DragonTigerSeat {
             DragonTigerSide::Buy => buy_amount,
             DragonTigerSide::Sell => sell_amount,
         };
-        if !side_amount.is_some_and(|value| money_values_match(value, amount)) {
+        let side_amount_matches = match side_amount {
+            Some(value) => money_values_match(value, amount)?,
+            None => false,
+        };
+        if !side_amount_matches {
             return Err(crate::CoreError::InvalidRequest(
                 "dragon-tiger seat amount must match its side amount".into(),
             ));
@@ -444,7 +448,7 @@ fn validate_net_amount(
 ) -> Result<(), crate::CoreError> {
     if let (Some(buy), Some(sell), Some(net)) = (buy_amount, sell_amount, net_amount) {
         let expected = Money::new(buy.get() - sell.get())?;
-        if !money_values_match(net, expected) {
+        if !money_values_match(net, expected)? {
             return Err(crate::CoreError::InvalidRequest(
                 "dragon-tiger net amount must equal buy amount minus sell amount".into(),
             ));
@@ -453,8 +457,8 @@ fn validate_net_amount(
     Ok(())
 }
 
-fn money_values_match(left: Money, right: Money) -> bool {
-    (left.get() - right.get()).abs() <= 0.01
+fn money_values_match(left: Money, right: Money) -> Result<bool, crate::CoreError> {
+    Ok(crate::NumericTolerance::new(0.01, 0.0)?.matches(left.get(), right.get()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

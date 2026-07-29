@@ -1,6 +1,7 @@
 use crate::{now, validate_instruments, TencentClient, TencentError};
 use magic_market_core::{
-    DataBatch, DataStatus, Price, ProviderId, Quantity, Trade, TradeSide, Trades, TradesRequest,
+    DataBatch, DataStatus, NumericTolerance, Price, ProviderId, Quantity, Trade, TradeSide, Trades,
+    TradesRequest,
 };
 use serde_json::Value;
 
@@ -106,8 +107,10 @@ pub(crate) fn parse_trade_page(
             ));
         }
         let expected_amount = price * quantity_lots * 100.0;
-        let tolerance = expected_amount.abs().mul_add(0.02, 100.0);
-        if (amount_yuan - expected_amount).abs() > tolerance {
+        // Preserve Tencent's source contract: two percent of the reference
+        // amount plus CNY 100, rather than scaling against the larger operand.
+        let tolerance = NumericTolerance::new(expected_amount.abs().mul_add(0.02, 100.0), 0.0)?;
+        if !tolerance.matches(amount_yuan, expected_amount) {
             return Err(TencentError::Protocol(format!(
                 "trade amount contradicts price and source-lot quantity at sequence {sequence}"
             )));
@@ -250,6 +253,11 @@ mod tests {
         assert!(parse_trade_page(bad_side, "sh600396", 0).is_err());
         let bad_amount = br#"v_detail_data_sh600396=[0,"0/09:25:01/15.30/0.23/10/1/B"]"#;
         assert!(parse_trade_page(bad_amount, "sh600396", 0).is_err());
+        let exact_tolerance = br#"v_detail_data_sh600396=[0,"0/09:25:01/1.00/0.00/100/10300/B"]"#;
+        assert!(parse_trade_page(exact_tolerance, "sh600396", 0).is_ok());
+        let above_reference_tolerance =
+            br#"v_detail_data_sh600396=[0,"0/09:25:01/1.00/0.00/100/10305/B"]"#;
+        assert!(parse_trade_page(above_reference_tolerance, "sh600396", 0).is_err());
         let wrong_symbol = br#"v_detail_data_sz000001=[0,"0/09:25:01/15.30/0.23/10/15300/B"]"#;
         assert!(parse_trade_page(wrong_symbol, "sh600396", 0).is_err());
     }

@@ -32,6 +32,12 @@
   and deterministic checker tests. Re-ran WallstreetCN's bounded production
   protocol to meet the uniform threshold without fabricating or grandfathering
   evidence.
+- Added Core fixed-offset RFC3339 and strict wall-clock values; removed the
+  duplicate Eastmoney, THS, CNInfo, CLS, and ThePaper Gregorian converters and
+  migrated BR-019 to typed clock comparison.
+- Added a checked absolute/relative numeric-tolerance value and migrated the
+  money, order-book, Tencent, Sina, and SZSE policies without changing their
+  business units or source acceptance boundaries.
 
 ### Test Results
 | Test | Expected | Actual | Status |
@@ -47,9 +53,13 @@
 | WallstreetCN bounded live/load admission | Preserve existing production capability under the uniform threshold | 2 live probes × 20 rows and 3 serial loads × 10 rows passed | pass |
 | `python3 -m unittest tools/compliance/test_check_admissions.py` | Checker rejects every modeled drift | 4 tests passed | pass |
 | `bash tools/compliance/check.sh` | All source/docs/business-rule contracts pass | Passed; 17 admission constants registered | pass |
+| Fixed-time provider test group | Shared converter preserves every provider contract | Core plus Eastmoney/THS/CNInfo/CLS/ThePaper passed | pass |
+| Numeric-policy all-target tests | Existing source boundaries remain accepted/rejected | Core/Tencent/Sina/Exchange passed; Exchange live HTTPS tests remained ignored | pass |
+| Numeric-policy strict Clippy | No new lint debt | Passed with `-D warnings` | pass |
 
 ### Errors
 | Error | Resolution |
 |-------|------------|
 | Incorrect Core test target name during audit | Inspected the actual `values` and `serde_contracts` tests. |
 | Existing workspace test occupied root target lock | Kept it untouched and isolated subsequent work. |
+| Rust build cache filled the remaining disk during focused tests | Removed only the isolated worktree's 6.0 GiB `target` cache and reran successfully. |

@@ -1,10 +1,9 @@
 use crate::mapping::{optional_f64, optional_u32, required_string};
-use crate::post_close::unix_seconds_to_china_iso;
 use crate::{instrument_from_market, query_url, BatchContext, EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    validate_market_ranking_batch, Exchange, FiniteNumber, IsoDate, MarketRankingEntry,
-    MarketRankingKind, MarketRankingUnit, MarketRankings, MarketSession, NonEmptyText, PositiveU32,
-    ProviderId,
+    unix_seconds_to_china_rfc3339, validate_market_ranking_batch, Exchange, FiniteNumber, IsoDate,
+    MarketRankingEntry, MarketRankingKind, MarketRankingUnit, MarketRankings, MarketSession,
+    NonEmptyText, PositiveU32, ProviderId,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -310,9 +309,8 @@ fn parse_market_ranking_pages(
         let epoch = optional_u32(row.get("f124"))?
             .filter(|epoch| *epoch > 0)
             .ok_or_else(|| EastmoneyError::Protocol("market ranking f124 is absent".into()))?;
-        let source_at = unix_seconds_to_china_iso(i64::from(epoch)).ok_or_else(|| {
-            EastmoneyError::Protocol("market ranking f124 is out of range".into())
-        })?;
+        let source_at = unix_seconds_to_china_rfc3339(i64::from(epoch))
+            .map_err(|_| EastmoneyError::Protocol("market ranking f124 is out of range".into()))?;
         let date = IsoDate::new(
             source_at
                 .get(..10)

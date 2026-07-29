@@ -28,7 +28,7 @@ Implementation
 - [x] Make TDX binary parsing fallible and atomic.
 - [x] Migrate Exchange pacing/policy to shared transport primitives.
 - [x] Add BR-009 admission-registry compliance checks.
-- [ ] Centralize fixed-offset timestamps and typed numeric tolerances.
+- [x] Centralize fixed-offset timestamps and typed numeric tolerances.
 - [ ] Benchmark candidate release profiles and apply only proven settings.
 - **Status:** in_progress
 
@@ -59,3 +59,4 @@ Implementation
 |-------|------------|
 | Initial audit used a nonexistent `value_serde` test target | Read the actual `values` and `serde_contracts` targets and relied on their checked constructors/tests. |
 | A concurrent workspace test held Cargo's artifact lock | Did not interrupt the unrelated run; created an isolated worktree with its own target directory. |
+| Focused tests exhausted the disk while writing Rust incremental artifacts | Confirmed the isolated `target` held 6.0 GiB of reproducible output, ran `cargo clean` only in the worktree, and reran the same tests. |

@@ -472,11 +472,10 @@ fn associated_identity_and_topic_helpers_cover_optional_and_rejected_shapes() {
 #[test]
 fn time_conversion_is_bounded_and_now_is_auditable() {
     assert_eq!(
-        unix_to_china_time(0).expect("epoch"),
+        unix_seconds_to_china_rfc3339(0).expect("epoch"),
         "1970-01-01T08:00:00+08:00"
     );
-    assert!(unix_to_china_time(i64::MAX).is_err());
-    assert!(civil_from_days(i64::MAX).is_err());
-    assert!(civil_from_days(i64::MIN).is_err());
+    assert!(unix_seconds_to_china_rfc3339(i64::MAX).is_err());
+    assert!(unix_seconds_to_china_rfc3339(i64::MIN).is_err());
     assert!(now().expect("clock after epoch").contains('.'));
 }

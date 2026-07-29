@@ -15,8 +15,8 @@ mod options;
 use encoding_rs::GB18030;
 use magic_market_core::{
     AssetClass, Board, BookLevel, Capabilities, DataBatch, DataStatus, Exchange, InstrumentId,
-    Money, OrderBook, OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio,
-    RatioUnit, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider,
+    Money, NumericTolerance, OrderBook, OrderBooks, Price, PriceLimitRule, ProviderId, Quantity,
+    Quote, Ratio, RatioUnit, RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider,
 };
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -493,7 +493,11 @@ fn validate_top_of_book(
     summary: f64,
     level_price: Option<f64>,
 ) -> Result<(), SinaError> {
-    if level_price.is_some_and(|price| (summary - price).abs() > 0.000_001) {
+    let matches = match level_price {
+        Some(price) => NumericTolerance::new(0.000_001, 0.0)?.matches(summary, price),
+        None => true,
+    };
+    if !matches {
         return Err(SinaError::Protocol(format!(
             "{side} summary price contradicts level one"
         )));

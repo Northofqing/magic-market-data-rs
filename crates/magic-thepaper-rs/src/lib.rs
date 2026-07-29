@@ -2,8 +2,9 @@
 //! Bounded read-only adapter for native financial news on The Paper.
 
 use magic_market_core::{
-    ContentCapabilities, DataBatch, HttpsUrl, InstrumentDateRangeRequest, NewsItem, NewsProvider,
-    NonEmptyText, PositiveU32, Provenance, ProviderId, SourceEvidence,
+    unix_seconds_to_china_rfc3339, ContentCapabilities, DataBatch, HttpsUrl,
+    InstrumentDateRangeRequest, NewsItem, NewsProvider, NonEmptyText, PositiveU32, Provenance,
+    ProviderId, SourceEvidence,
 };
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -442,7 +443,7 @@ fn parse_item(
         .and_then(Value::as_i64)
         .filter(|value| *value > 0)
         .ok_or_else(|| ThePaperError::Protocol("pubTimeLong must be positive".into()))?;
-    let published_at = milliseconds_to_china_time(milliseconds)?;
+    let published_at = unix_seconds_to_china_rfc3339(milliseconds.div_euclid(1_000))?;
     let evidence = SourceEvidence::new(ProviderId::ThePaper, observed_at, batch_id)?
         .with_source_at(published_at.clone())?;
     Ok(NewsItem {
@@ -497,44 +498,6 @@ fn required_text(value: Option<&Value>, field: &'static str) -> Result<String, T
 
 fn normalized_text(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn milliseconds_to_china_time(milliseconds: i64) -> Result<String, ThePaperError> {
-    let seconds = milliseconds.div_euclid(1_000);
-    let shifted = seconds
-        .checked_add(8 * 60 * 60)
-        .ok_or_else(|| ThePaperError::Protocol("pubTimeLong overflow".into()))?;
-    let days = shifted.div_euclid(86_400);
-    let day_seconds = shifted.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days)?;
-    let hour = day_seconds / 3_600;
-    let minute = day_seconds % 3_600 / 60;
-    let second = day_seconds % 60;
-    Ok(format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}+08:00"
-    ))
-}
-
-fn civil_from_days(days_since_epoch: i64) -> Result<(i64, i64, i64), ThePaperError> {
-    let z = days_since_epoch
-        .checked_add(719_468)
-        .ok_or_else(|| ThePaperError::Protocol("pubTimeLong is out of range".into()))?;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let day_of_era = z - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let mut year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_prime = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
-    year += i64::from(month <= 2);
-    if !(1970..=9999).contains(&year) {
-        return Err(ThePaperError::Protocol(
-            "pubTimeLong is outside the supported range".into(),
-        ));
-    }
-    Ok((year, month, day))
 }
 
 fn now() -> Result<String, ThePaperError> {

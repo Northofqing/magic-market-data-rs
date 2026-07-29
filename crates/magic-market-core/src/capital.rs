@@ -602,27 +602,8 @@ fn validate_post_close_observation(
                 "post-close flow observed_at must use the trading date and +08:00".into(),
             )
         })?;
-    if time.len() != 8
-        || time.as_bytes().get(2) != Some(&b':')
-        || time.as_bytes().get(5) != Some(&b':')
-        || !time
-            .bytes()
-            .enumerate()
-            .all(|(index, byte)| matches!(index, 2 | 5) || byte.is_ascii_digit())
-    {
-        return Err(crate::CoreError::InvalidRequest(
-            "post-close flow observed_at must use HH:MM:SS precision".into(),
-        ));
-    }
-    let hour = time[0..2].parse::<u32>().unwrap_or(u32::MAX);
-    let minute = time[3..5].parse::<u32>().unwrap_or(u32::MAX);
-    let second = time[6..8].parse::<u32>().unwrap_or(u32::MAX);
-    if hour > 23 || minute > 59 || second > 59 {
-        return Err(crate::CoreError::InvalidRequest(
-            "post-close flow observed_at contains an invalid clock time".into(),
-        ));
-    }
-    if (hour, minute, second) < (15, 35, 0) {
+    let time = crate::ClockTime::parse(time)?;
+    if time < crate::ClockTime::parse("15:35:00")? {
         return Err(crate::CoreError::InvalidRequest(
             "post-close flow cannot be captured before 15:35:00 Asia/Shanghai".into(),
         ));

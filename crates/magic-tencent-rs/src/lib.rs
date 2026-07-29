@@ -12,9 +12,9 @@ mod trades;
 use encoding_rs::GBK;
 use magic_market_core::{
     AssetClass, Board, BookLevel, Capabilities, DataBatch, DataStatus, Exchange, FiniteNumber,
-    InstrumentId, MarketStatistics, MarketStatisticsProvider, Money, OrderBook, OrderBooks, Price,
-    PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit, RealtimeQuotes,
-    SecurityMetadata, SecurityMetadataProvider, SourceEvidence,
+    InstrumentId, MarketStatistics, MarketStatisticsProvider, Money, NumericTolerance, OrderBook,
+    OrderBooks, Price, PriceLimitRule, ProviderId, Quantity, Quote, Ratio, RatioUnit,
+    RealtimeQuotes, SecurityMetadata, SecurityMetadataProvider, SourceEvidence,
 };
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -640,7 +640,7 @@ fn validate_quote_shape(
     if let (Some(previous_close), Some(change_percent)) = (previous_close, change_percent) {
         if current > 0.0 {
             let expected = (current - previous_close) / previous_close * 100.0;
-            if (expected - change_percent).abs() > 0.02 {
+            if !NumericTolerance::new(0.02, 0.0)?.matches(expected, change_percent) {
                 return Err(TencentError::Protocol(format!(
                     "{symbol} change percent contradicts current and previous close"
                 )));

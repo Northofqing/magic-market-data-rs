@@ -1,8 +1,9 @@
 use crate::mapping::{optional_f64, optional_u32, required_string};
 use crate::{instrument_from_market, query_url, EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    DataBatch, Money, NonEmptyText, PositiveU32, PostCloseFlow, PostCloseFlowRequest,
-    PostCloseFlows, Price, Provenance, ProviderId, Ratio, RatioUnit, SourceEvidence,
+    unix_seconds_to_china_rfc3339, ClockTime, DataBatch, Money, NonEmptyText, PositiveU32,
+    PostCloseFlow, PostCloseFlowRequest, PostCloseFlows, Price, Provenance, ProviderId, Ratio,
+    RatioUnit, SourceEvidence,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -173,8 +174,8 @@ fn parse_post_close(
         previous_main_net = Some(main_net);
         let source_epoch = optional_u32(row.get("f124"))?
             .ok_or_else(|| EastmoneyError::Protocol("post-close f124 is absent".into()))?;
-        let source_at = unix_seconds_to_china_iso(i64::from(source_epoch))
-            .ok_or_else(|| EastmoneyError::Protocol("post-close f124 is out of range".into()))?;
+        let source_at = unix_seconds_to_china_rfc3339(i64::from(source_epoch))
+            .map_err(|_| EastmoneyError::Protocol("post-close f124 is out of range".into()))?;
         if source_at.get(..10) != Some(request.trading_date().as_str()) {
             return Err(EastmoneyError::Protocol(format!(
                 "post-close source timestamp {source_at} does not match requested date {}",
@@ -233,7 +234,8 @@ fn validate_capture_window(
                 "post-close ranking is available only for the current China trading date".into(),
             )
         })?;
-    if time.len() != 8 || time < "15:35:00" {
+    let time = ClockTime::parse(time)?;
+    if time < ClockTime::parse("15:35:00")? {
         return Err(EastmoneyError::InvalidRequest(
             "post-close ranking cannot be captured before 15:35:00 Asia/Shanghai".into(),
         ));
@@ -270,35 +272,8 @@ fn china_now() -> Result<String, EastmoneyError> {
         .as_secs();
     let seconds = i64::try_from(seconds)
         .map_err(|_| EastmoneyError::Transport("system clock is outside i64".into()))?;
-    unix_seconds_to_china_iso(seconds)
-        .ok_or_else(|| EastmoneyError::Transport("system clock is outside supported years".into()))
-}
-
-pub(crate) fn unix_seconds_to_china_iso(seconds: i64) -> Option<String> {
-    let local = seconds.checked_add(8 * 60 * 60)?;
-    let days = local.div_euclid(86_400);
-    let day_seconds = local.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days)?;
-    let hour = day_seconds / 3_600;
-    let minute = day_seconds % 3_600 / 60;
-    let second = day_seconds % 60;
-    Some(format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}+08:00"
-    ))
-}
-
-fn civil_from_days(days_since_epoch: i64) -> Option<(i64, i64, i64)> {
-    let z = days_since_epoch.checked_add(719_468)?;
-    let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096).div_euclid(365);
-    let mut year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2).div_euclid(153);
-    let day = doy - (153 * mp + 2).div_euclid(5) + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    year += i64::from(month <= 2);
-    (1..=9999).contains(&year).then_some((year, month, day))
+    unix_seconds_to_china_rfc3339(seconds)
+        .map_err(|_| EastmoneyError::Transport("system clock is outside supported years".into()))
 }
 
 #[cfg(test)]

@@ -558,7 +558,8 @@ fn validate_book_total(
     }
     if let Some(total) = total {
         let sum: f64 = quantities.iter().copied().map(crate::Quantity::get).sum();
-        if (sum - total.get()).abs() > f64::EPSILON * sum.abs().max(1.0) * 8.0 {
+        let tolerance = crate::NumericTolerance::new(f64::EPSILON * sum.abs().max(1.0) * 8.0, 0.0)?;
+        if !tolerance.matches(sum, total.get()) {
             return Err(crate::CoreError::InvalidValue {
                 field,
                 value: total.get().to_string(),

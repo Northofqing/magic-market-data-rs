@@ -7,12 +7,12 @@ pub use transport::{HttpMethod, HttpRequest, HttpResponse, ThsTransport};
 
 use encoding_rs::GBK;
 use magic_market_core::{
-    AssetClass, ConsensusData, ConsensusSnapshot, DataBatch, EarningsEstimate, Exchange,
-    FiniteNumber, InstrumentId, InstrumentSignalRequest, LimitPoolCapabilities, LimitPoolEntry,
-    LimitPoolKind, LimitPoolRequest, LimitPools, LoadProbeSnapshot, Money, NonEmptyText,
-    PopularityData, PopularityRank, PositiveU32, Price, ProbeRequestTracker, Provenance,
-    ProviderId, Ratio, RatioUnit, ResearchCapabilities, SignalCapabilities, SourceEvidence,
-    StrongStockReason, StrongStockReasons, VerifiedEmpty,
+    unix_seconds_to_china_rfc3339, AssetClass, ConsensusData, ConsensusSnapshot, DataBatch,
+    EarningsEstimate, Exchange, FiniteNumber, InstrumentId, InstrumentSignalRequest,
+    LimitPoolCapabilities, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools,
+    LoadProbeSnapshot, Money, NonEmptyText, PopularityData, PopularityRank, PositiveU32, Price,
+    ProbeRequestTracker, Provenance, ProviderId, Ratio, RatioUnit, ResearchCapabilities,
+    SignalCapabilities, SourceEvidence, StrongStockReason, StrongStockReasons, VerifiedEmpty,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -570,7 +570,7 @@ impl LimitPools for ThsClient {
             let high_days = optional_string(row.get("high_days"), "high_days")?;
             let first_seal_at =
                 optional_i64(row.get("first_limit_up_time"), "first_limit_up_time")?
-                    .map(unix_seconds_to_china_iso)
+                    .map(unix_seconds_to_china_rfc3339)
                     .transpose()?
                     .map(NonEmptyText::new)
                     .transpose()?;
@@ -1284,36 +1284,6 @@ fn now() -> Result<String, ThsError> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| format!("{}.{:09}", duration.as_secs(), duration.subsec_nanos()))
         .map_err(|error| ThsError::Transport(format!("system clock error: {error}")))
-}
-
-fn unix_seconds_to_china_iso(seconds: i64) -> Result<String, ThsError> {
-    let local = seconds
-        .checked_add(8 * 60 * 60)
-        .ok_or_else(|| ThsError::Schema("source timestamp overflow".into()))?;
-    let days = local.div_euclid(86_400);
-    let day_seconds = local.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days)
-        .ok_or_else(|| ThsError::Schema("source timestamp is outside supported years".into()))?;
-    let hour = day_seconds / 3_600;
-    let minute = day_seconds % 3_600 / 60;
-    let second = day_seconds % 60;
-    Ok(format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}+08:00"
-    ))
-}
-
-fn civil_from_days(days_since_epoch: i64) -> Option<(i64, i64, i64)> {
-    let z = days_since_epoch.checked_add(719_468)?;
-    let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096).div_euclid(365);
-    let mut year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2).div_euclid(153);
-    let day = doy - (153 * mp + 2).div_euclid(5) + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    year += i64::from(month <= 2);
-    (1..=9999).contains(&year).then_some((year, month, day))
 }
 
 #[cfg(test)]

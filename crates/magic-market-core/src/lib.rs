@@ -25,6 +25,7 @@ mod provider;
 mod reference_data;
 mod research;
 mod signals;
+mod time;
 mod validated;
 mod value;
 pub use batch::{DataBatch, QualityReport};
@@ -122,5 +123,6 @@ pub use signals::{
     MarketRankings, MarketSession, PopularityData, PopularityRank, SignalCapabilities,
     StrongStockReason, StrongStockReasons,
 };
+pub use time::{unix_seconds_to_china_rfc3339, unix_seconds_to_fixed_offset_rfc3339, ClockTime};
 pub use validated::{FiniteNumber, HttpsUrl, IsoDate, NonEmptyText, PositiveU32};
-pub use value::{Money, Price, Quantity, Ratio, RatioUnit};
+pub use value::{Money, NumericTolerance, Price, Quantity, Ratio, RatioUnit};
