@@ -12,8 +12,8 @@ deserialization. `magic-market-transport` owns only HTTP policy, bounded body
 reads, typed failures, and clone-shared request-start reservations. It contains
 no source URL or payload model. Provider crates consume both in later plans.
 
-**Tech Stack:** Rust 2021, `serde`, `thiserror`, `ureq 2.12.1`, `url 2`,
-`magic-market-core = 0.2.0`.
+**Tech Stack:** Rust 2021, `serde`, `thiserror`, `reqwest 0.13.4` blocking
+HTTPS, Rustls/ring, `url 2`, `magic-market-core = 0.2.0`.
 
 ---
 
@@ -787,8 +787,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+reqwest = { version = "=0.13.4", default-features = false, features = ["blocking", "rustls-no-provider"] }
+rustls = { version = "=0.23.42", default-features = false, features = ["ring", "std", "tls12"] }
 thiserror = { workspace = true }
-ureq = { version = "=2.12.1", default-features = false, features = ["tls"] }
 url = "=2.5.4"
 
 [lints]
@@ -1000,11 +1001,14 @@ pub enum TransportError {
 }
 ```
 
-`UreqTransport` uses redirects `0`, sends `Accept-Encoding: identity`, uses the
-validated timeout and a bounded `Read::take(max_bytes + 1)`, rejects any
-non-identity `Content-Encoding`, and returns `HttpStatus { status: 429 }`
-without retry. Its error formatting must never include request headers or URL
-query values.
+`ReqwestTransport` disables redirects and system proxies, sends
+`Accept-Encoding: identity`, uses both connect and total request timeouts, and
+uses a bounded `Read::take(max_bytes + 1)`. It rejects any non-identity
+`Content-Encoding` and returns `HttpStatus { status: 429 }` without retry. It
+must never enable `connection_verbose`, and its error formatting must never
+include request headers or URL query values. The original `ureq 2.12.1`
+candidate was removed after source review proved its debug logging prints the
+complete request URL, which would expose a FRED query API key.
 
 **Step 5: Add injected and no-redirect tests**
 

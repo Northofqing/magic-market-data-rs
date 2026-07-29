@@ -15,8 +15,8 @@ admission happens only after deterministic tests pass and two consecutive
 bounded production fetches plus the serial load probe succeed.
 
 **Tech Stack:** Rust 2021 workspace, `serde`, `serde_json`, `thiserror`,
-`ureq 2.12.1`, `url`, `time 0.3.54`, existing Core evidence/probe contracts,
-shell release gates.
+`reqwest 0.13.4` blocking HTTPS with Rustls/ring, `url`, `time 0.3.54`,
+existing Core evidence/probe contracts, shell release gates.
 
 ---
 

@@ -2,6 +2,7 @@
 members = [
     "crates/magic-market-core",
     "crates/magic-market-router",
+    "crates/magic-market-transport",
     "crates/magic-tdx-rs",
     "crates/magic-emquant-rs",
     "crates/magic-tencent-rs",
