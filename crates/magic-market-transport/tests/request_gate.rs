@@ -23,3 +23,14 @@ fn reservation_lock_is_not_held_during_wait_or_io() {
     assert!(reservation_started.elapsed() < Duration::from_millis(20));
     assert!(second.join().unwrap() >= Duration::from_millis(35));
 }
+
+#[test]
+fn wait_never_returns_before_its_reserved_start() {
+    let interval = Duration::from_millis(20);
+    let gate = RequestGate::new(interval).unwrap();
+    gate.wait_for_turn().unwrap();
+    let first = Instant::now();
+    gate.wait_for_turn().unwrap();
+    let second = Instant::now();
+    assert!(second.duration_since(first) >= interval);
+}

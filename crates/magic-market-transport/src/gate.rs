@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 pub struct RequestGate {
     interval: Duration,
     next_start: Mutex<Instant>,
+    next_actual_start: Mutex<Instant>,
 }
 
 impl RequestGate {
@@ -19,9 +20,11 @@ impl RequestGate {
                 "request interval must be positive".into(),
             ));
         }
+        let now = Instant::now();
         Ok(Self {
             interval,
-            next_start: Mutex::new(Instant::now()),
+            next_start: Mutex::new(now),
+            next_actual_start: Mutex::new(now),
         })
     }
 
@@ -40,9 +43,36 @@ impl RequestGate {
 
     pub fn wait_for_turn(&self) -> Result<(), TransportError> {
         let reserved = self.reserve()?;
-        if let Some(wait) = reserved.checked_duration_since(Instant::now()) {
-            std::thread::sleep(wait);
+        wait_until(reserved);
+        loop {
+            let wait = {
+                let now = Instant::now();
+                let mut next = self.next_actual_start.lock().map_err(|_| {
+                    TransportError::Internal("request gate start lock poisoned".into())
+                })?;
+                if now >= *next {
+                    *next = now.checked_add(self.interval).ok_or_else(|| {
+                        TransportError::ResourceLimit("request gate instant overflow".into())
+                    })?;
+                    None
+                } else {
+                    Some(*next)
+                }
+            };
+            match wait {
+                Some(instant) => wait_until(instant),
+                None => break,
+            }
         }
         Ok(())
+    }
+}
+
+fn wait_until(instant: Instant) {
+    while let Some(wait) = instant.checked_duration_since(Instant::now()) {
+        if wait.is_zero() {
+            break;
+        }
+        std::thread::sleep(wait);
     }
 }
