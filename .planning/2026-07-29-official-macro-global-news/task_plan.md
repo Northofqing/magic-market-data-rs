@@ -9,7 +9,7 @@ gates.
 
 ## Current Phase
 
-Detailed implementation planning
+Ready for implementation
 
 ## Phases
 
@@ -27,8 +27,8 @@ Detailed implementation planning
 
 - [x] Write file-by-file, test-first implementation plans split by independent
   subsystem.
-- [ ] Commit the reviewed implementation plan.
-- **Status:** ready to commit
+- [x] Commit the reviewed implementation plan.
+- **Status:** complete
 
 ### Phase 3: Core and Provider Implementation
 
@@ -88,3 +88,4 @@ Detailed implementation planning
 - Base: `origin/main` at `660902f`
 - Plan index:
   `docs/superpowers/plans/2026-07-29-official-macro-global-news-index.md`
+- Plan commit: `1e861ed`

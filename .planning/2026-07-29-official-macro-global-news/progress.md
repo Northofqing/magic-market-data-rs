@@ -25,7 +25,7 @@
 
 ## Detailed Implementation Planning
 
-- **Status:** complete, awaiting plan commit
+- **Status:** complete
 - Started the required test-first file mapping.
 - Split the work into foundation, China official data, global macro, SEC,
   public financial news, and final integration/release plans.
@@ -41,3 +41,4 @@
   `currency`/`searchlist` order rather than the full catalog heading list.
 - Recorded truthful blockers for NBS, PBC social financing, CFETS DR007, and
   World Bank structured units without weakening the approved contracts.
+- Committed the reviewed plan set as `1e861ed`.
