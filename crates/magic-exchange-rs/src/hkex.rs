@@ -1,7 +1,7 @@
 use crate::transport::{
     new_request_gate, validate_endpoint, validate_minimum_interval, validate_request,
     validate_response, validate_timeout, wait_for_request_start, ExchangeTransport, HttpMethod,
-    HttpRequest, HttpResponse, HttpsTransport, SharedRequestGate,
+    HttpRequest, HttpResponse, HttpsTransport, SharedMediaType, SharedRequestGate,
 };
 use crate::{ExchangeError, ProviderCapabilities};
 use magic_market_core::{
@@ -137,10 +137,18 @@ impl HkexClient {
         request: HttpRequest,
         expected_path: &str,
     ) -> Result<HttpResponse, ExchangeError> {
-        validate_request(&request, HttpMethod::Get, HOST, expected_path)?;
+        let policy = validate_request(
+            &request,
+            HttpMethod::Get,
+            HOST,
+            expected_path,
+            &[],
+            &[SharedMediaType::Javascript],
+            self.config.timeout,
+        )?;
         wait_for_request_start(&self.gate)?;
         let response = self.transport.execute(&request)?;
-        validate_response(&request, &response, &["javascript"])?;
+        validate_response(&policy, &request, &response)?;
         Ok(response)
     }
 

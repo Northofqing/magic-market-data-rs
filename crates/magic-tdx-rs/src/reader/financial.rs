@@ -39,18 +39,38 @@ pub fn parse_financial(data: &[u8]) -> Result<Vec<FinancialRecord>> {
     let report_date = u32::from_le_bytes([data[2], data[3], data[4], data[5]]);
     let max_count = u16::from_le_bytes([data[6], data[7]]) as usize;
     // data[8..12] = reserved
-    let report_size = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
-    // data[16..20] = reserved (but header is only 16 bytes based on format)
+    let report_size = usize::try_from(u32::from_le_bytes([data[12], data[13], data[14], data[15]]))
+        .map_err(|_| TdxError::InvalidData("Financial report size exceeds usize".into()))?;
+    // data[16..20] = reserved
 
+    if report_size % 4 != 0 {
+        return Err(TdxError::InvalidData(
+            "Financial report size must be a multiple of four bytes".into(),
+        ));
+    }
     let report_fields_count = report_size / 4;
+    let index_table_size = max_count
+        .checked_mul(INDEX_ITEM_SIZE)
+        .ok_or_else(|| TdxError::InvalidData("Financial index table size overflow".into()))?;
+    let index_table_end = HEADER_SIZE
+        .checked_add(index_table_size)
+        .ok_or_else(|| TdxError::InvalidData("Financial index table end overflow".into()))?;
+    if index_table_end > data.len() {
+        return Err(TdxError::InvalidData(format!(
+            "Financial index table is truncated: declared {max_count} records"
+        )));
+    }
 
     let mut result = Vec::with_capacity(max_count);
 
     for idx in 0..max_count {
-        let index_offset = HEADER_SIZE + idx * INDEX_ITEM_SIZE;
-        if index_offset + INDEX_ITEM_SIZE > data.len() {
-            break;
-        }
+        let index_offset = HEADER_SIZE
+            .checked_add(idx.checked_mul(INDEX_ITEM_SIZE).ok_or_else(|| {
+                TdxError::InvalidData(format!("Financial index {idx} offset overflow"))
+            })?)
+            .ok_or_else(|| {
+                TdxError::InvalidData(format!("Financial index {idx} offset overflow"))
+            })?;
 
         // Read stock code (6 bytes)
         let code_bytes = &data[index_offset..index_offset + 6];
@@ -59,17 +79,28 @@ pub fn parse_financial(data: &[u8]) -> Result<Vec<FinancialRecord>> {
             .to_string();
 
         // Skip 1 byte separator, read 4-byte offset
-        let foa = u32::from_le_bytes([
+        let foa = usize::try_from(u32::from_le_bytes([
             data[index_offset + 7],
             data[index_offset + 8],
             data[index_offset + 9],
             data[index_offset + 10],
-        ]) as usize;
+        ]))
+        .map_err(|_| {
+            TdxError::InvalidData(format!(
+                "Financial record {idx} report offset exceeds usize"
+            ))
+        })?;
 
         // Read report fields
-        let report_end = foa + report_fields_count * 4;
-        if report_end > data.len() {
-            continue; // Skip records with out-of-bounds offsets
+        let report_end = foa.checked_add(report_size).ok_or_else(|| {
+            TdxError::InvalidData(format!("Financial record {idx} report bounds overflow"))
+        })?;
+        if foa < index_table_end || report_end > data.len() {
+            return Err(TdxError::InvalidData(format!(
+                "Financial record {idx} report bounds {foa}..{report_end} are outside \
+                 {index_table_end}..{}",
+                data.len()
+            )));
         }
 
         let mut fields = Vec::with_capacity(report_fields_count);
@@ -152,6 +183,33 @@ mod tests {
         assert!((records[0].fields[1] - 2.5).abs() < 0.001);
         assert_eq!(records[1].code, "000858");
         assert!((records[1].fields[0] - 3.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn declared_financial_records_fail_atomically_on_bad_index_or_report_bounds() {
+        let complete = build_test_financial();
+        let truncated_index = complete[..HEADER_SIZE + INDEX_ITEM_SIZE].to_vec();
+        assert!(parse_financial(&truncated_index)
+            .unwrap_err()
+            .to_string()
+            .contains("index table"));
+
+        let mut invalid_offset = complete;
+        invalid_offset[HEADER_SIZE + 7..HEADER_SIZE + 11].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(parse_financial(&invalid_offset)
+            .unwrap_err()
+            .to_string()
+            .contains("report bounds"));
+    }
+
+    #[test]
+    fn financial_report_size_must_be_a_complete_float_width() {
+        let mut data = build_test_financial();
+        data[12..16].copy_from_slice(&7_u32.to_le_bytes());
+        assert!(parse_financial(&data)
+            .unwrap_err()
+            .to_string()
+            .contains("multiple of four"));
     }
 
     #[test]

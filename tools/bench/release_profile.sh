@@ -2,6 +2,34 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+revision="$(git -C "${repo_root}" rev-parse HEAD)"
+if [[ ! "${revision}" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "benchmark requires a full lowercase Git SHA-1 revision" >&2
+  exit 2
+fi
+initial_status="$(git -C "${repo_root}" status --porcelain=v1 --untracked-files=all)"
+if [[ -n "${initial_status}" ]]; then
+  echo "benchmark requires a clean worktree and index" >&2
+  echo "${initial_status}" >&2
+  exit 2
+fi
+
+verify_exact_source() {
+  current_revision="$(git -C "${repo_root}" rev-parse HEAD)"
+  if [[ "${current_revision}" != "${revision}" ]]; then
+    echo "benchmark revision changed during execution" >&2
+    return 2
+  fi
+  if ! git -C "${repo_root}" diff --quiet; then
+    echo "tracked worktree files changed during benchmark execution" >&2
+    return 2
+  fi
+  if ! git -C "${repo_root}" diff --cached --quiet; then
+    echo "index changed during benchmark execution" >&2
+    return 2
+  fi
+}
+
 artifact_root="${MAGIC_RELEASE_BENCH_DIR:-}"
 if [[ -z "${artifact_root}" ]]; then
   mkdir -p "${repo_root}/target"
@@ -66,7 +94,7 @@ for run in 1 2 3 4 5; do
   fi
 done
 
-revision="$(git -C "${repo_root}" rev-parse HEAD)"
+verify_exact_source
 rustc_version="$(rustc --version)"
 cargo_version="$(cargo --version)"
 platform_version="$(uname -a)"
@@ -86,6 +114,7 @@ python3 "${repo_root}/tools/bench/compare_release_profiles.py" collect \
 status=$?
 set -e
 
+verify_exact_source
 echo "benchmark_evidence=${artifact_root}/evidence.json"
 echo "benchmark_report=${artifact_root}/report.json"
 exit "${status}"

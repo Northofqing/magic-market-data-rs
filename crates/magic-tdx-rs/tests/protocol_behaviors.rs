@@ -276,6 +276,44 @@ fn index_bar_parser_rejects_an_invalid_later_row_date() {
 }
 
 #[test]
+fn bar_parsers_reject_cumulative_price_overflow() {
+    let maximum = [0xbf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
+
+    let mut security = vec![2, 0];
+    for (open, close) in [(&maximum[..], &maximum[..]), (&[2][..], &[0][..])] {
+        security.extend_from_slice(&20260723u32.to_le_bytes());
+        security.extend_from_slice(open);
+        security.extend_from_slice(close);
+        security.extend_from_slice(&[0, 0]);
+        security.extend_from_slice(&100u32.to_le_bytes());
+        security.extend_from_slice(&1_000u32.to_le_bytes());
+    }
+    assert!(parse_security_bars(&security, 4)
+        .unwrap_err()
+        .to_string()
+        .contains("open price overflow"));
+
+    let mut index = vec![2, 0];
+    for (open, close) in [(&maximum[..], &maximum[..]), (&[2][..], &[0][..])] {
+        index.extend_from_slice(&20260723u32.to_le_bytes());
+        index.extend_from_slice(open);
+        index.extend_from_slice(close);
+        index.extend_from_slice(&[0, 0]);
+        index.extend_from_slice(&100u32.to_le_bytes());
+        index.extend_from_slice(&1_000u32.to_le_bytes());
+        index.extend_from_slice(&3u16.to_le_bytes());
+        index.extend_from_slice(&4u16.to_le_bytes());
+    }
+    // The parser's conservative preflight reserves the largest minimum index
+    // row width before decoding the final variable-width row.
+    index.extend_from_slice(&[0; 4]);
+    assert!(parse_index_bars(&index, 4)
+        .unwrap_err()
+        .to_string()
+        .contains("open price overflow"));
+}
+
+#[test]
 fn minute_and_transaction_parsers_preserve_time_order_price_scale_and_volume() {
     assert_eq!(minute_time_from_index(0), "09:31");
     assert_eq!(minute_time_from_index(119), "11:30");
@@ -375,7 +413,7 @@ fn variable_record_parsers_reject_every_partial_record_prefix() {
     let mut realtime = vec![1, 0];
     realtime.extend_from_slice(&[0; 11]);
     realtime.extend_from_slice(&[10, 0, 2]);
-    assert_all_strict_prefixes_fail(&realtime, 14, |body| {
+    assert_all_strict_prefixes_fail(&realtime, 13, |body| {
         parse_minute_time_data(body, 1, "600396")
     });
 

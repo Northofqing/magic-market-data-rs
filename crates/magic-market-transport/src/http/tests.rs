@@ -43,6 +43,10 @@ fn status_errors_keep_redirects_and_throttling_typed() {
 fn media_type_matching_is_closed_and_case_insensitive() {
     assert!(MediaType::Json.matches("APPLICATION/JSON"));
     assert!(MediaType::Html.matches("text/html"));
+    assert!(MediaType::Html.matches("application/xhtml+xml"));
+    assert!(MediaType::Javascript.matches("APPLICATION/JAVASCRIPT"));
+    assert!(MediaType::Javascript.matches("text/javascript"));
+    assert!(MediaType::Javascript.matches("application/x-javascript"));
     assert!(MediaType::Xml.matches("application/xml"));
     assert!(MediaType::Xml.matches("TEXT/XML"));
     assert!(MediaType::PlainText.matches("text/plain"));
@@ -336,6 +340,7 @@ fn response_validation_covers_status_media_and_exact_url_binding() {
     let policy = policy(vec![
         MediaType::Json,
         MediaType::Html,
+        MediaType::Javascript,
         MediaType::Xml,
         MediaType::PlainText,
     ]);

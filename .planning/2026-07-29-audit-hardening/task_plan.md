@@ -7,7 +7,7 @@ and release-performance contracts without weakening provenance or dependency
 direction.
 
 ## Current Phase
-Implementation
+Testing and Verification
 
 ## Phases
 
@@ -33,14 +33,14 @@ Implementation
 - **Status:** complete
 
 ### Phase 4: Testing and Verification
-- [ ] Run focused red/green tests for every changed subsystem.
+- [x] Run focused red/green tests for every changed subsystem.
 - [ ] Run formatting, all-target/all-feature tests, strict Clippy, Rustdoc,
       documentation links, compliance, coverage, packaging, and release
       preflight.
 - **Status:** in_progress
 
 ### Phase 5: Delivery
-- [ ] Complete code review and resolve every Critical/Important finding.
+- [x] Complete code review and resolve every Critical/Important finding.
 - [ ] Integrate the approved branch without overwriting unrelated work.
 - [ ] Deliver exact evidence and remaining external blockers.
 - **Status:** pending

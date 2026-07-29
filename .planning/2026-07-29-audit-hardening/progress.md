@@ -41,6 +41,13 @@
 - Added an offline three-workload release benchmark, five-run comparison
   policy, and reproducible profile runner. The clean-revision candidate passed,
   so thin LTO and one codegen unit were enabled and documented.
+- Completed an independent code review. No Critical findings were reported;
+  all nine Important findings were repaired: remaining TDX partial/overflow
+  paths, full Exchange endpoint policies and client-level contention proof,
+  tracked BR-009 evidence, and complete exact-revision benchmark evidence.
+- Expanded the release benchmark to four workloads by adding zlib
+  compression/decompression roundtrips. A new clean-revision formal A/B run is
+  required before the final profile claim is retained.
 
 ### Test Results
 | Test | Expected | Actual | Status |
@@ -60,6 +67,10 @@
 | Numeric-policy all-target tests | Existing source boundaries remain accepted/rejected | Core/Tencent/Sina/Exchange passed; Exchange live HTTPS tests remained ignored | pass |
 | Numeric-policy strict Clippy | No new lint debt | Passed with `-D warnings` | pass |
 | Release-profile comparison on `e0bc91a` | Candidate must meet all predeclared thresholds | 6.86% combined improvement, no regression, binary -4.79% | pass |
+| TDX review-hardening suite | Remaining declared records and cumulative arithmetic fail atomically | 368 unit tests and every integration/example target passed | pass |
+| Exchange shared-policy suite | Exact query/MIME contracts and non-serialized slow I/O | Transport and Exchange tests passed; strict Clippy passed | pass |
+| BR-009 tracked-evidence suite | Reject untracked source/evidence and symlink escape | 6 checker tests and 17-row compliance registry passed | pass |
+| Four-workload evidence validation | Reject missing metadata/workloads/throughput/revision facts | 8 comparison-policy tests, example check and strict Clippy passed | pass |
 
 ### Errors
 | Error | Resolution |

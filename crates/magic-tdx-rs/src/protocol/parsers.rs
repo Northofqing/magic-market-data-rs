@@ -8,6 +8,11 @@ use crate::helpers::{get_price, get_volume};
 use super::cursor::PacketCursor;
 use super::types::*;
 
+fn checked_cumulative_value(base: i64, delta: i64, context: &str) -> Result<i64> {
+    base.checked_add(delta)
+        .ok_or_else(|| ErrorCode::TYPE_MISMATCH.err(format!("{context} overflow")))
+}
+
 // ============================================================
 // 解析证券数量
 // ============================================================
@@ -128,23 +133,42 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
 
         // 价格: 差分编码 (Python order: open, close, high, low)
         let (price_open_diff, new_pos) = get_price(body, pos)?;
-        bar.open = ((pre_diff_base + price_open_diff) as f64) / 1000.0;
+        let accumulated = checked_cumulative_value(
+            pre_diff_base,
+            price_open_diff,
+            &format!("security bar row {row_index} open price"),
+        )?;
+        bar.open = accumulated as f64 / 1000.0;
         pos = new_pos;
-        let accumulated = pre_diff_base + price_open_diff;
 
         let (price_close_diff, new_pos) = get_price(body, pos)?;
-        bar.close = ((accumulated + price_close_diff) as f64) / 1000.0;
+        let close = checked_cumulative_value(
+            accumulated,
+            price_close_diff,
+            &format!("security bar row {row_index} close price"),
+        )?;
+        bar.close = close as f64 / 1000.0;
         pos = new_pos;
 
         let (price_high_diff, new_pos) = get_price(body, pos)?;
-        bar.high = ((accumulated + price_high_diff) as f64) / 1000.0;
+        bar.high = checked_cumulative_value(
+            accumulated,
+            price_high_diff,
+            &format!("security bar row {row_index} high price"),
+        )? as f64
+            / 1000.0;
         pos = new_pos;
 
         let (price_low_diff, new_pos) = get_price(body, pos)?;
-        bar.low = ((accumulated + price_low_diff) as f64) / 1000.0;
+        bar.low = checked_cumulative_value(
+            accumulated,
+            price_low_diff,
+            &format!("security bar row {row_index} low price"),
+        )? as f64
+            / 1000.0;
         pos = new_pos;
 
-        pre_diff_base = accumulated + price_close_diff;
+        pre_diff_base = close;
 
         // vol (u32) - Python reads vol first
         let vol_raw = read_u32(body, pos)? as i64;
@@ -235,24 +259,42 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
 
         // 价格: 差分编码 (Python order: open, close, high, low)
         let (price_open_diff, new_pos) = get_price(body, pos)?;
-        bar.open = ((pre_diff_base + price_open_diff) as f64) / 1000.0;
+        let accumulated = checked_cumulative_value(
+            pre_diff_base,
+            price_open_diff,
+            &format!("index bar row {row_index} open price"),
+        )?;
+        bar.open = accumulated as f64 / 1000.0;
         pos = new_pos;
 
-        let accumulated = pre_diff_base + price_open_diff;
-
         let (price_close_diff, new_pos) = get_price(body, pos)?;
-        bar.close = ((accumulated + price_close_diff) as f64) / 1000.0;
+        let close = checked_cumulative_value(
+            accumulated,
+            price_close_diff,
+            &format!("index bar row {row_index} close price"),
+        )?;
+        bar.close = close as f64 / 1000.0;
         pos = new_pos;
 
         let (price_high_diff, new_pos) = get_price(body, pos)?;
-        bar.high = ((accumulated + price_high_diff) as f64) / 1000.0;
+        bar.high = checked_cumulative_value(
+            accumulated,
+            price_high_diff,
+            &format!("index bar row {row_index} high price"),
+        )? as f64
+            / 1000.0;
         pos = new_pos;
 
         let (price_low_diff, new_pos) = get_price(body, pos)?;
-        bar.low = ((accumulated + price_low_diff) as f64) / 1000.0;
+        bar.low = checked_cumulative_value(
+            accumulated,
+            price_low_diff,
+            &format!("index bar row {row_index} low price"),
+        )? as f64
+            / 1000.0;
         pos = new_pos;
 
-        pre_diff_base = accumulated + price_close_diff;
+        pre_diff_base = close;
 
         let vol_raw = read_u32(body, pos)? as i64;
         bar.vol = get_volume(vol_raw);
@@ -310,8 +352,8 @@ pub fn minute_time_from_index(index: usize) -> String {
 pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec<MinuteTimePrice>> {
     let coefficient = super::types::get_security_coefficient(market, code);
 
-    if body.len() < 14 {
-        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
+    if body.len() < 13 {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("minute header is truncated"));
     }
 
     let count = read_u16(body, 0)? as usize;
@@ -326,7 +368,11 @@ pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec
 
     for i in 0..count {
         let (price_diff, new_pos) = get_price(body, pos)?;
-        pre_diff_base += price_diff;
+        pre_diff_base = checked_cumulative_value(
+            pre_diff_base,
+            price_diff,
+            &format!("realtime minute row {i} cumulative price"),
+        )?;
         let price = (pre_diff_base as f64) * coefficient;
         pos = new_pos;
 
@@ -335,6 +381,11 @@ pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec
         pos = new_pos;
 
         let (vol_diff, new_pos) = get_price(body, pos)?;
+        if vol_diff < 0 {
+            return Err(
+                ErrorCode::TYPE_MISMATCH.err(format!("realtime minute row {i} volume is negative"))
+            );
+        }
         let vol = vol_diff as f64;
         pos = new_pos;
 
@@ -354,6 +405,13 @@ pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec
             avg_price,
             vol,
         });
+    }
+
+    if pos != body.len() {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "realtime minute response has {} trailing bytes after {count} declared records",
+            body.len() - pos
+        )));
     }
 
     // 倒序排列：最新记录在前
@@ -386,7 +444,11 @@ pub fn parse_history_minute_time_data(
 
     while pos < body.len() {
         let (price_diff, new_pos) = get_price(body, pos)?;
-        pre_diff_base += price_diff;
+        pre_diff_base = checked_cumulative_value(
+            pre_diff_base,
+            price_diff,
+            &format!("history minute row {index} cumulative price"),
+        )?;
         let price = (pre_diff_base as f64) * coefficient;
         pos = new_pos;
 
@@ -395,6 +457,10 @@ pub fn parse_history_minute_time_data(
         pos = new_pos;
 
         let (vol_diff, new_pos) = get_price(body, pos)?;
+        if vol_diff < 0 {
+            return Err(ErrorCode::TYPE_MISMATCH
+                .err(format!("history minute row {index} volume is negative")));
+        }
         let vol = vol_diff as f64;
         pos = new_pos;
 
@@ -594,23 +660,50 @@ pub fn parse_history_transaction_data_with_coefficient(
 
         // price (delta encoded)
         let (price_diff, new_pos) = get_price(body, pos)?;
-        last_price += price_diff;
+        last_price = checked_cumulative_value(
+            last_price,
+            price_diff,
+            &format!("historical transaction row {row_index} cumulative price"),
+        )?;
+        if last_price < 0 {
+            return Err(ErrorCode::TYPE_MISMATCH.err(format!(
+                "historical transaction row {row_index} cumulative price is negative"
+            )));
+        }
         let price = last_price as f64 * coefficient;
         pos = new_pos;
 
         // vol
         let (vol, new_pos) = get_price(body, pos)?;
-        let vol = vol as f64;
+        let vol = u32::try_from(vol).map_err(|_| {
+            ErrorCode::TYPE_MISMATCH.err(format!(
+                "historical transaction row {row_index} volume is outside the unsigned 32-bit domain"
+            ))
+        })?;
+        let vol = f64::from(vol);
         pos = new_pos;
 
         // buyorsell
         let (buyorsell, new_pos) = get_price(body, pos)?;
-        let buyorsell = buyorsell as u32;
+        let buyorsell = u32::try_from(buyorsell).map_err(|_| {
+            ErrorCode::TYPE_MISMATCH.err(format!(
+                "historical transaction row {row_index} trade side is outside the unsigned 32-bit domain"
+            ))
+        })?;
+        if buyorsell > 2 {
+            return Err(ErrorCode::TYPE_MISMATCH.err(format!(
+                "historical transaction row {row_index} trade side {buyorsell} is outside 0..=2"
+            )));
+        }
         pos = new_pos;
 
         // reserved (原 extra field，具体含义待确认)
         let (reserved, new_pos) = get_price(body, pos)?;
-        let reserved = reserved as u32;
+        let reserved = u32::try_from(reserved).map_err(|_| {
+            ErrorCode::TYPE_MISMATCH.err(format!(
+                "historical transaction row {row_index} reserved is outside the unsigned 32-bit domain"
+            ))
+        })?;
         pos = new_pos;
 
         result.push(TickData {
@@ -1192,11 +1285,10 @@ pub fn parse_block_info_meta(body: &[u8]) -> Result<BlockInfoMeta> {
 
 pub fn parse_block_info(body: &[u8]) -> Result<Vec<u8>> {
     // 跳过前 4 bytes header
-    if body.len() > 4 {
-        Ok(body[4..].to_vec())
-    } else {
-        Ok(Vec::new())
+    if body.len() < 4 {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("block-info header is truncated"));
     }
+    Ok(body[4..].to_vec())
 }
 
 // ============================================================

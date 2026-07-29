@@ -1,7 +1,7 @@
 use crate::transport::{
     new_request_gate, validate_minimum_interval, validate_response, validate_timeout,
     wait_for_request_start, ExchangeTransport, HttpMethod, HttpRequest, HttpsTransport,
-    SharedRequestGate, TlsBackend,
+    SharedMediaType, SharedRequestGate, TlsBackend,
 };
 use crate::ExchangeError;
 use magic_market_core::{
@@ -153,9 +153,20 @@ impl CffexClient {
             ],
             body: Vec::new(),
         };
+        let parsed =
+            Url::parse(url).map_err(|error| ExchangeError::InvalidRequest(error.to_string()))?;
+        let policy = crate::transport::validate_request(
+            &request,
+            HttpMethod::Get,
+            HOST,
+            parsed.path(),
+            &[],
+            &[SharedMediaType::Html],
+            self.config.timeout,
+        )?;
         wait_for_request_start(&self.gate)?;
         let response = self.transport.execute(&request)?;
-        validate_response(&request, &response, &["text/html", "application/xhtml+xml"])?;
+        validate_response(&policy, &request, &response)?;
         Ok(response.body)
     }
 
@@ -516,7 +527,10 @@ mod tests {
     use crate::transport::HttpResponse;
     use magic_market_core::PositiveU32;
     use std::collections::VecDeque;
-    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier, Mutex};
+    use std::thread;
+    use std::time::Instant;
 
     struct FixtureTransport {
         responses: Mutex<VecDeque<HttpResponse>>,
@@ -540,6 +554,29 @@ mod tests {
     impl ExchangeTransport for RejectTransport {
         fn execute(&self, _request: &HttpRequest) -> Result<HttpResponse, ExchangeError> {
             panic!("production CFFEX trait must not touch transport while capability is false");
+        }
+    }
+
+    #[derive(Clone)]
+    struct SlowTransport {
+        starts: Arc<Mutex<Vec<Instant>>>,
+        active: Arc<AtomicUsize>,
+        maximum_active: Arc<AtomicUsize>,
+    }
+
+    impl ExchangeTransport for SlowTransport {
+        fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, ExchangeError> {
+            self.starts.lock().unwrap().push(Instant::now());
+            let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.maximum_active.fetch_max(active, Ordering::SeqCst);
+            thread::sleep(Duration::from_millis(1_250));
+            self.active.fetch_sub(1, Ordering::SeqCst);
+            Ok(HttpResponse {
+                status: 200,
+                final_url: request.url.clone(),
+                content_type: Some("text/html".into()),
+                body: b"<html></html>".to_vec(),
+            })
         }
     }
 
@@ -568,6 +605,37 @@ mod tests {
             client.futures_delivery_calendar(&request()),
             Err(ExchangeError::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn cloned_cffex_client_spaces_starts_without_serializing_slow_io() {
+        let transport = SlowTransport {
+            starts: Arc::new(Mutex::new(Vec::new())),
+            active: Arc::new(AtomicUsize::new(0)),
+            maximum_active: Arc::new(AtomicUsize::new(0)),
+        };
+        let starts = Arc::clone(&transport.starts);
+        let maximum_active = Arc::clone(&transport.maximum_active);
+        let client = CffexClient::with_transport(CffexConfig::default(), transport).unwrap();
+        let barrier = Arc::new(Barrier::new(3));
+        let mut workers = Vec::new();
+        for _ in 0..2 {
+            let client = client.clone();
+            let barrier = Arc::clone(&barrier);
+            workers.push(thread::spawn(move || {
+                barrier.wait();
+                client.get_html(LIST_ENDPOINT).unwrap();
+            }));
+        }
+        barrier.wait();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let mut starts = starts.lock().unwrap().clone();
+        starts.sort_unstable();
+        assert_eq!(starts.len(), 2);
+        assert!(starts[1].duration_since(starts[0]) >= Duration::from_millis(950));
+        assert_eq!(maximum_active.load(Ordering::SeqCst), 2);
     }
 
     #[test]

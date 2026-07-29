@@ -7,6 +7,9 @@ provenance, admission, and explicit-failure contracts.
 constant ending in `_ADMITTED`. An admitted row requires an existing evidence
 document, a canonical live-evidence date, at least two bounded live probes, and
 at least three serial load calls. A false row requires an explicit blocker.
+Source, registry, and evidence files must be Git-tracked regular files inside
+the repository; symlinked or untracked evidence is rejected. `-` is the
+canonical placeholder for an intentionally empty optional field.
 
 Run the drift check without network access:
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -25,6 +26,11 @@ class AdmissionCheckerTests(unittest.TestCase):
             "# Evidence\n", encoding="utf-8"
         )
         self.registry = self.root / "docs/integrations/admissions.tsv"
+        subprocess.run(
+            ["git", "init", "-q", str(self.root)],
+            check=True,
+            capture_output=True,
+        )
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -45,7 +51,7 @@ class AdmissionCheckerTests(unittest.TestCase):
             "last_live_date": "2026-07-29",
             "live_probe_count": "2",
             "serial_load_count": "3",
-            "blocker": "",
+            "blocker": "-",
         }
         row.update(overrides)
         return row
@@ -56,7 +62,16 @@ class AdmissionCheckerTests(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
 
-    def errors(self) -> list[str]:
+    def track(self) -> None:
+        subprocess.run(
+            ["git", "-C", str(self.root), "add", "-A"],
+            check=True,
+            capture_output=True,
+        )
+
+    def errors(self, *, track: bool = True) -> list[str]:
+        if track:
+            self.track()
         return CHECKER.validate(self.root, self.registry)
 
     def test_valid_admitted_and_blocked_rows(self) -> None:
@@ -100,6 +115,37 @@ class AdmissionCheckerTests(unittest.TestCase):
 
         self.write_rows(self.row(evidence="../outside.md"))
         self.assertIn("under docs/integrations", "\n".join(self.errors()))
+
+    def test_untracked_source_and_evidence_are_rejected(self) -> None:
+        self.source()
+        self.write_rows(self.row())
+        self.track()
+
+        (self.root / "crates/provider/src/untracked.rs").write_text(
+            "pub const EXTRA_ADMITTED: bool = true;\n", encoding="utf-8"
+        )
+        self.assertIn("Rust admission source is not Git-tracked", "\n".join(self.errors(track=False)))
+
+        (self.root / "crates/provider/src/untracked.rs").unlink()
+        untracked_evidence = self.root / "docs/integrations/untracked.md"
+        untracked_evidence.write_text("# Untracked\n", encoding="utf-8")
+        self.write_rows(self.row(evidence="docs/integrations/untracked.md"))
+        subprocess.run(
+            ["git", "-C", str(self.root), "add", str(self.registry)],
+            check=True,
+            capture_output=True,
+        )
+        self.assertIn("evidence document is not Git-tracked", "\n".join(self.errors(track=False)))
+
+    def test_symlinked_evidence_is_rejected_even_when_tracked(self) -> None:
+        self.source()
+        outside = self.root / "outside.md"
+        outside.write_text("# Outside\n", encoding="utf-8")
+        link = self.root / "docs/integrations/escape.md"
+        link.symlink_to(outside)
+        self.write_rows(self.row(evidence="docs/integrations/escape.md"))
+        self.track()
+        self.assertIn("must not be a symbolic link", "\n".join(self.errors(track=False)))
 
     def test_admitted_thresholds_and_blocked_reason_are_enforced(self) -> None:
         self.source()

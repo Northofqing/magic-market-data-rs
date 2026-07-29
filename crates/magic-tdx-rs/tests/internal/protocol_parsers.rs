@@ -167,12 +167,53 @@ fn test_minute_time_too_short() {
 #[test]
 fn test_minute_time_zero_count() {
     // 头部: 2(count) + 2(padding) + 1(indicator) + 6(stock_code) + 2(unknown) = 13 bytes
-    // 需要至少 14 字节 (13 头部 + 1 数据)
     let body = [
-        0x00, 0x00, 0x00, 0x00, 0x01, 0x36, 0x30, 0x30, 0x35, 0x31, 0x39, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x36, 0x30, 0x30, 0x35, 0x31, 0x39, 0x00, 0x00,
     ];
     let result = parse_minute_time_data(&body, 1, "600519").unwrap();
     assert!(result.is_empty());
+
+    let mut unsupported_tail = body.to_vec();
+    unsupported_tail.push(0);
+    assert!(parse_minute_time_data(&unsupported_tail, 1, "600519").is_err());
+}
+
+#[test]
+fn minute_parsers_reject_price_overflow_and_negative_volume() {
+    let maximum = [0xbf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
+
+    let mut realtime_overflow = vec![3, 0];
+    realtime_overflow.extend_from_slice(&[0; 11]);
+    realtime_overflow.extend_from_slice(&maximum);
+    realtime_overflow.extend_from_slice(&[0, 1]);
+    realtime_overflow.extend_from_slice(&maximum);
+    realtime_overflow.extend_from_slice(&[0, 1, 2, 0, 1]);
+    assert!(parse_minute_time_data(&realtime_overflow, 1, "600519")
+        .unwrap_err()
+        .to_string()
+        .contains("cumulative price overflow"));
+
+    let mut realtime_negative_volume = vec![1, 0];
+    realtime_negative_volume.extend_from_slice(&[0; 11]);
+    realtime_negative_volume.extend_from_slice(&[10, 0, 0x41]);
+    assert!(
+        parse_minute_time_data(&realtime_negative_volume, 1, "600519")
+            .unwrap_err()
+            .to_string()
+            .contains("volume is negative")
+    );
+
+    let mut history_overflow = vec![0; 6];
+    history_overflow.extend_from_slice(&maximum);
+    history_overflow.extend_from_slice(&[0, 1]);
+    history_overflow.extend_from_slice(&maximum);
+    history_overflow.extend_from_slice(&[0, 1, 2, 0, 1]);
+    assert!(
+        parse_history_minute_time_data(&history_overflow, 1, "600519")
+            .unwrap_err()
+            .to_string()
+            .contains("cumulative price overflow")
+    );
 }
 
 // --- parse_history_minute_time_data ---
@@ -379,6 +420,40 @@ fn test_history_transaction_keeps_minimum_size_last_record() {
 fn test_history_transaction_rejects_truncated_record() {
     let body = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 1, 0];
     assert!(parse_history_transaction_data(&body).is_err());
+}
+
+#[test]
+fn history_transaction_rejects_invalid_domains_and_cumulative_overflow() {
+    for (offset, message) in [
+        (9, "volume is outside the unsigned 32-bit domain"),
+        (10, "trade side is outside the unsigned 32-bit domain"),
+        (11, "reserved is outside the unsigned 32-bit domain"),
+    ] {
+        let mut body = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 1, 0, 0];
+        body[offset] = 0x41;
+        assert!(parse_history_transaction_data(&body)
+            .unwrap_err()
+            .to_string()
+            .contains(message));
+    }
+
+    let invalid_side = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 1, 3, 0];
+    assert!(parse_history_transaction_data(&invalid_side)
+        .unwrap_err()
+        .to_string()
+        .contains("trade side 3 is outside 0..=2"));
+
+    let maximum = [0xbf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
+    let mut overflow = vec![3, 0, 0, 0, 0, 0];
+    for price in [&maximum[..], &maximum[..], &[2][..]] {
+        overflow.extend_from_slice(&[0x5a, 0x02]);
+        overflow.extend_from_slice(price);
+        overflow.extend_from_slice(&[1, 0, 0]);
+    }
+    assert!(parse_history_transaction_data(&overflow)
+        .unwrap_err()
+        .to_string()
+        .contains("cumulative price overflow"));
 }
 
 // --- parse_security_quotes ---
@@ -711,14 +786,17 @@ fn test_block_meta_valid() {
 
 #[test]
 fn test_block_info_empty() {
-    let result = parse_block_info(&[]).unwrap();
-    assert!(result.is_empty());
+    assert!(parse_block_info(&[]).is_err());
 }
 
 #[test]
 fn test_block_info_short_header() {
-    let result = parse_block_info(&[0u8; 3]).unwrap();
-    assert!(result.is_empty());
+    assert!(parse_block_info(&[0u8; 3]).is_err());
+}
+
+#[test]
+fn test_block_info_complete_empty_payload() {
+    assert!(parse_block_info(&[0u8; 4]).unwrap().is_empty());
 }
 
 #[test]

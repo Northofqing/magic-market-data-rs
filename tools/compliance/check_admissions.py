@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -41,13 +42,60 @@ class SourceCapability:
         return (self.crate, self.constant)
 
 
-def discover_constants(root: Path) -> tuple[dict[tuple[str, str], SourceCapability], list[str]]:
+def git_tracked_files(root: Path) -> tuple[set[Path], list[str]]:
+    result = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.decode("utf-8", errors="replace").strip()
+        return set(), [f"cannot enumerate Git-tracked files: {message or result.returncode}"]
+    try:
+        names = result.stdout.decode("utf-8").split("\0")
+    except UnicodeDecodeError:
+        return set(), ["Git-tracked file names must be valid UTF-8"]
+    return {Path(name) for name in names if name}, []
+
+
+def safe_repository_file(root: Path, path: Path, tracked: set[Path], label: str) -> list[str]:
+    errors: list[str] = []
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return [f"{label} is outside the repository: {path}"]
+    if relative not in tracked:
+        errors.append(f"{label} is not Git-tracked: {relative}")
+    if path.is_symlink():
+        errors.append(f"{label} must not be a symbolic link: {relative}")
+        return errors
+    try:
+        path.resolve(strict=True).relative_to(root.resolve(strict=True))
+    except (FileNotFoundError, ValueError):
+        errors.append(f"{label} escapes or does not exist in the repository: {relative}")
+    if not path.is_file():
+        errors.append(f"{label} is not a regular file: {relative}")
+    return errors
+
+
+def discover_constants(
+    root: Path, tracked: set[Path] | None = None
+) -> tuple[dict[tuple[str, str], SourceCapability], list[str]]:
     discovered: dict[tuple[str, str], SourceCapability] = {}
     errors: list[str] = []
+    if tracked is None:
+        tracked, tracked_errors = git_tracked_files(root)
+        errors.extend(tracked_errors)
+        if tracked_errors:
+            return {}, errors
     crates = root / "crates"
     if not crates.is_dir():
         return {}, [f"missing crates directory: {crates}"]
     for path in sorted(crates.rglob("*.rs")):
+        file_errors = safe_repository_file(root, path, tracked, "Rust admission source")
+        if file_errors:
+            errors.extend(file_errors)
+            continue
         relative = path.relative_to(crates)
         if len(relative.parts) < 2:
             continue
@@ -79,7 +127,12 @@ def read_registry(path: Path) -> tuple[list[dict[str, str]], list[str]]:
 
 
 def validate(root: Path, registry_path: Path) -> list[str]:
-    source, errors = discover_constants(root)
+    tracked, errors = git_tracked_files(root)
+    if errors:
+        return errors
+    source, source_errors = discover_constants(root, tracked)
+    errors.extend(source_errors)
+    errors.extend(safe_repository_file(root, registry_path, tracked, "admission registry"))
     rows, registry_errors = read_registry(registry_path)
     errors.extend(registry_errors)
     if registry_errors:
@@ -105,7 +158,7 @@ def validate(root: Path, registry_path: Path) -> list[str]:
                 f"{provider_key[0]}/{provider_key[1]}"
             )
         provider_capabilities.add(provider_key)
-        errors.extend(validate_row(root, row, label))
+        errors.extend(validate_row(root, tracked, row, label))
 
     missing = sorted(source.keys() - registered.keys())
     unknown = sorted(registered.keys() - source.keys())
@@ -126,7 +179,9 @@ def validate(root: Path, registry_path: Path) -> list[str]:
     return errors
 
 
-def validate_row(root: Path, row: dict[str, str], label: str) -> list[str]:
+def validate_row(
+    root: Path, tracked: set[Path], row: dict[str, str], label: str
+) -> list[str]:
     errors: list[str] = []
     if not row["crate"] or not row["provider"] or not row["constant"]:
         errors.append(f"{label}: crate, provider and constant are required")
@@ -144,8 +199,13 @@ def validate_row(root: Path, row: dict[str, str], label: str) -> list[str]:
         or ".." in evidence_path.parts
     ):
         errors.append(f"{label}: evidence must be a Markdown path under docs/integrations/")
-    elif not (root / evidence_path).is_file():
-        errors.append(f"{label}: evidence document does not exist: {evidence}")
+    else:
+        errors.extend(
+            f"{label}: {error}"
+            for error in safe_repository_file(
+                root, root / evidence_path, tracked, "evidence document"
+            )
+        )
 
     counts: dict[str, int] = {}
     for field in ("live_probe_count", "serial_load_count"):
@@ -157,7 +217,8 @@ def validate_row(root: Path, row: dict[str, str], label: str) -> list[str]:
             errors.append(f"{label}: {field} must be a non-negative integer")
 
     live_date = row["last_live_date"]
-    if live_date:
+    has_live_date = live_date not in {"", "-"}
+    if has_live_date:
         try:
             parsed = date.fromisoformat(live_date)
             if parsed.isoformat() != live_date:
@@ -168,18 +229,18 @@ def validate_row(root: Path, row: dict[str, str], label: str) -> list[str]:
     if row["admitted"] == "true":
         if row["status"] != "admitted":
             errors.append(f"{label}: admitted capability status must be admitted")
-        if not live_date:
+        if not has_live_date:
             errors.append(f"{label}: admitted capability requires last_live_date")
         if counts.get("live_probe_count", -1) < 2:
             errors.append(f"{label}: admitted capability requires at least two live probes")
         if counts.get("serial_load_count", -1) < 3:
             errors.append(f"{label}: admitted capability requires at least three serial loads")
-        if row["blocker"]:
+        if row["blocker"] not in {"", "-"}:
             errors.append(f"{label}: admitted capability must not declare a blocker")
     else:
         if row["status"] != "blocked":
             errors.append(f"{label}: unadmitted capability status must be blocked")
-        if not row["blocker"]:
+        if row["blocker"] in {"", "-"}:
             errors.append(f"{label}: unadmitted capability requires an explicit blocker")
     return errors
 

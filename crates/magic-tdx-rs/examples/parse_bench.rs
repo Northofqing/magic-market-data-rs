@@ -12,16 +12,18 @@ use std::time::{Duration, Instant};
 const BAR_ITERATIONS: u64 = 20_000;
 const JSON_ITERATIONS: u64 = 10_000;
 const ZLIB_ITERATIONS: u64 = 5_000;
+const ZLIB_ROUNDTRIP_ITERATIONS: u64 = 2_000;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let bar_packet = bar_fixture(64);
     let json_document = json_fixture()?;
-    let compressed = zlib_fixture()?;
+    let (payload, compressed) = zlib_fixture()?;
 
     let workloads = vec![
         benchmark_bar_parse(&bar_packet, BAR_ITERATIONS)?,
         benchmark_json_normalize(&json_document, JSON_ITERATIONS)?,
         benchmark_zlib_decompress(&compressed, ZLIB_ITERATIONS)?,
+        benchmark_zlib_roundtrip(&payload, ZLIB_ROUNDTRIP_ITERATIONS)?,
     ];
     serde_json::to_writer(
         std::io::stdout().lock(),
@@ -121,6 +123,40 @@ fn benchmark_zlib_decompress(compressed: &[u8], iterations: u64) -> Result<Value
     ))
 }
 
+fn benchmark_zlib_roundtrip(payload: &[u8], iterations: u64) -> Result<Value, Box<dyn Error>> {
+    let started = Instant::now();
+    let mut checksum = 0_u64;
+    for _ in 0..iterations {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(black_box(payload))?;
+        let compressed = encoder.finish()?;
+        let decoded = decompress_zlib(black_box(&compressed))?;
+        if decoded != payload {
+            return Err("fixed zlib roundtrip changed payload bytes".into());
+        }
+        let first = compressed
+            .first()
+            .copied()
+            .ok_or("fixed zlib roundtrip produced an empty stream")?;
+        let last = compressed
+            .last()
+            .copied()
+            .ok_or("fixed zlib roundtrip produced an empty stream")?;
+        checksum = checksum
+            .wrapping_add(compressed.len() as u64)
+            .wrapping_add(decoded.len() as u64)
+            .wrapping_add(u64::from(first))
+            .wrapping_add(u64::from(last));
+        black_box((compressed, decoded));
+    }
+    Ok(record(
+        "zlib_roundtrip",
+        iterations,
+        started.elapsed(),
+        checksum,
+    ))
+}
+
 fn record(workload: &str, iterations: u64, elapsed: Duration, checksum: u64) -> Value {
     let elapsed_ns = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
     let throughput_per_second = iterations as f64 / elapsed.as_secs_f64();
@@ -158,7 +194,7 @@ fn json_fixture() -> Result<Vec<u8>, serde_json::Error> {
     serde_json::to_vec(&json!({"rows": rows}))
 }
 
-fn zlib_fixture() -> Result<Vec<u8>, std::io::Error> {
+fn zlib_fixture() -> Result<(Vec<u8>, Vec<u8>), std::io::Error> {
     let mut payload = Vec::with_capacity(64 * 1_024);
     for index in 0_u32..2_048 {
         payload.extend_from_slice(
@@ -172,5 +208,6 @@ fn zlib_fixture() -> Result<Vec<u8>, std::io::Error> {
     }
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(&payload)?;
-    encoder.finish()
+    let compressed = encoder.finish()?;
+    Ok((payload, compressed))
 }

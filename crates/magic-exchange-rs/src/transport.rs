@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
+pub(crate) use magic_market_transport::MediaType as SharedMediaType;
 pub(crate) use magic_market_transport::RequestGate as SharedRequestGate;
 
 pub const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
@@ -192,6 +193,10 @@ fn map_shared_error(error: TransportError) -> ExchangeError {
         TransportError::Network(message) | TransportError::Internal(message) => {
             ExchangeError::Transport(message)
         }
+        TransportError::HttpStatus { status } if matches!(status, 401 | 403) => {
+            ExchangeError::Authentication(status)
+        }
+        TransportError::HttpStatus { status: 429 } => ExchangeError::RateLimited,
         TransportError::HttpStatus { status } => ExchangeError::HttpStatus(status),
         TransportError::Redirect(message) | TransportError::MediaType(message) => {
             ExchangeError::Schema(message)
@@ -261,18 +266,36 @@ pub(crate) fn validate_request(
     method: HttpMethod,
     expected_host: &str,
     expected_path: &str,
-) -> Result<(), ExchangeError> {
+    allowed_query_keys: &[&str],
+    allowed_media_types: &[MediaType],
+    timeout: Duration,
+) -> Result<EndpointPolicy, ExchangeError> {
+    let policy = EndpointPolicy::new(
+        expected_host,
+        vec![expected_path.to_owned()],
+        allowed_query_keys
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
+        allowed_media_types.to_vec(),
+        MAX_RESPONSE_BYTES,
+        timeout,
+    )
+    .map_err(map_shared_error)?;
     let shared_method = match request.method {
         HttpMethod::Get => SharedHttpMethod::Get,
         HttpMethod::Post => SharedHttpMethod::Post,
     };
-    SharedHttpRequest::new(
+    let shared_request = SharedHttpRequest::new(
         shared_method,
         request.url.clone(),
         request.headers.clone(),
         request.body.clone(),
     )
     .map_err(map_shared_error)?;
+    policy
+        .validate_request(&shared_request)
+        .map_err(map_shared_error)?;
     let parsed = Url::parse(&request.url)
         .map_err(|error| ExchangeError::InvalidRequest(error.to_string()))?;
     if request.method != method
@@ -293,57 +316,34 @@ pub(crate) fn validate_request(
             "request body exceeds {MAX_REQUEST_BYTES} bytes"
         )));
     }
-    Ok(())
+    Ok(policy)
 }
 
 pub(crate) fn validate_response(
+    policy: &EndpointPolicy,
     request: &HttpRequest,
     response: &HttpResponse,
-    allowed_content_types: &[&str],
 ) -> Result<(), ExchangeError> {
-    if response.body.len() > MAX_RESPONSE_BYTES {
-        return Err(ExchangeError::Incomplete(format!(
-            "response body exceeds {MAX_RESPONSE_BYTES} bytes"
-        )));
-    }
-    let expected = Url::parse(&request.url)
-        .map_err(|error| ExchangeError::InvalidRequest(error.to_string()))?;
-    let actual = Url::parse(&response.final_url)
-        .map_err(|error| ExchangeError::Schema(error.to_string()))?;
-    if expected != actual {
-        return Err(ExchangeError::Schema(
-            "redirected or final response URL does not match request".into(),
-        ));
-    }
-    match response.status {
-        200..=299 => {}
-        401 | 403 => return Err(ExchangeError::Authentication(response.status)),
-        429 => return Err(ExchangeError::RateLimited),
-        status => return Err(ExchangeError::HttpStatus(status)),
-    }
-    let content_type = response
-        .content_type
-        .as_deref()
-        .ok_or_else(|| ExchangeError::Schema("Content-Type is missing".into()))?
-        .to_ascii_lowercase();
-    let media_type = content_type
-        .split(';')
-        .next()
-        .map(str::trim)
-        .unwrap_or_default();
-    let accepted = allowed_content_types.iter().any(|allowed| match *allowed {
-        "json" => media_type == "application/json" || media_type.ends_with("+json"),
-        "javascript" => matches!(
-            media_type,
-            "application/javascript" | "text/javascript" | "application/x-javascript"
-        ),
-        exact => media_type == exact,
-    });
-    if !accepted {
-        return Err(ExchangeError::Schema(format!(
-            "unexpected Content-Type {content_type:?}"
-        )));
-    }
+    let shared_method = match request.method {
+        HttpMethod::Get => SharedHttpMethod::Get,
+        HttpMethod::Post => SharedHttpMethod::Post,
+    };
+    let shared_request = SharedHttpRequest::new(
+        shared_method,
+        request.url.clone(),
+        request.headers.clone(),
+        request.body.clone(),
+    )
+    .map_err(map_shared_error)?;
+    let shared_response = magic_market_transport::HttpResponse::new(
+        response.status,
+        response.final_url.clone(),
+        response.content_type.clone(),
+        response.body.clone(),
+    );
+    policy
+        .validate_response_for(&shared_request, shared_response)
+        .map_err(map_shared_error)?;
     Ok(())
 }
 
@@ -394,20 +394,30 @@ mod tests {
             content_type: Some("application/json;charset=UTF-8".into()),
             body: b"cb({})".to_vec(),
         };
-        assert!(validate_response(&request, &valid, &["json"]).is_ok());
+        let policy = validate_request(
+            &request,
+            HttpMethod::Get,
+            "query.sse.com.cn",
+            "/security/stock/queryCompanyBulletin.do",
+            &["x"],
+            &[SharedMediaType::Json],
+            Duration::from_secs(15),
+        )
+        .unwrap();
+        assert!(validate_response(&policy, &request, &valid).is_ok());
         let mut redirected = valid.clone();
         redirected.final_url =
             "https://query.sse.com.cn/security/stock/queryCompanyBulletin.do?x=2".into();
-        assert!(validate_response(&request, &redirected, &["json"]).is_err());
+        assert!(validate_response(&policy, &request, &redirected).is_err());
         let mut html = valid.clone();
         html.content_type = Some("text/html".into());
-        assert!(validate_response(&request, &html, &["json"]).is_err());
+        assert!(validate_response(&policy, &request, &html).is_err());
         let mut fake_javascript = valid.clone();
         fake_javascript.content_type = Some("text/notjavascript".into());
-        assert!(validate_response(&request, &fake_javascript, &["javascript"]).is_err());
+        assert!(validate_response(&policy, &request, &fake_javascript).is_err());
         let mut oversized = valid;
         oversized.body = vec![0; MAX_RESPONSE_BYTES + 1];
-        assert!(validate_response(&request, &oversized, &["json"]).is_err());
+        assert!(validate_response(&policy, &request, &oversized).is_err());
     }
 
     #[test]
@@ -422,7 +432,31 @@ mod tests {
             &request,
             HttpMethod::Get,
             "query.sse.com.cn",
-            "/security/stock/queryCompanyBulletin.do"
+            "/security/stock/queryCompanyBulletin.do",
+            &[],
+            &[SharedMediaType::Json],
+            Duration::from_secs(15),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn shared_request_contract_rejects_unknown_query_key_before_transport() {
+        let request = HttpRequest {
+            method: HttpMethod::Get,
+            url: "https://query.sse.com.cn/security/stock/queryCompanyBulletin.do?unexpected=1"
+                .into(),
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        assert!(validate_request(
+            &request,
+            HttpMethod::Get,
+            "query.sse.com.cn",
+            "/security/stock/queryCompanyBulletin.do",
+            &["productId"],
+            &[SharedMediaType::Json],
+            Duration::from_secs(15),
         )
         .is_err());
     }

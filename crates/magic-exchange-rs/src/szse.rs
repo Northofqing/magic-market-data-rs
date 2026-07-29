@@ -2,7 +2,7 @@ use crate::szse_quote::{build_quote_url, parse_quote_snapshot};
 use crate::transport::{
     new_request_gate, validate_endpoint, validate_minimum_interval, validate_request,
     validate_response, validate_timeout, wait_for_request_start, ExchangeTransport, HttpMethod,
-    HttpRequest, HttpResponse, HttpsTransport, SharedRequestGate,
+    HttpRequest, HttpResponse, HttpsTransport, SharedMediaType, SharedRequestGate,
 };
 use crate::{ExchangeError, ProviderCapabilities};
 use magic_market_core::{
@@ -21,6 +21,20 @@ const HOST: &str = "www.szse.cn";
 const PATH: &str = "/api/disc/announcement/annList";
 const QUOTE_PATH: &str = "/api/market/ssjjhq/getTimeData";
 const DRAGON_TIGER_PATH: &str = "/api/report/ShowReport/data";
+const QUOTE_QUERY_KEYS: &[&str] = &["marketId", "code"];
+const DRAGON_TIGER_QUERY_KEYS: &[&str] = &[
+    "SHOWTYPE",
+    "CATALOGID",
+    "TABKEY",
+    "PAGENO",
+    "tab1PAGESIZE",
+    "txtDMorJC",
+    "txtStart",
+    "txtEnd",
+    "DQRQ",
+    "ZQDM",
+    "ZBDM",
+];
 const PAGE_SIZE: u32 = 50;
 const MAX_RECORDS: u32 = 500;
 const USER_AGENT: &str =
@@ -155,10 +169,18 @@ impl SzseClient {
     }
 
     fn execute(&self, request: HttpRequest) -> Result<HttpResponse, ExchangeError> {
-        validate_request(&request, HttpMethod::Post, HOST, PATH)?;
+        let policy = validate_request(
+            &request,
+            HttpMethod::Post,
+            HOST,
+            PATH,
+            &[],
+            &[SharedMediaType::Json],
+            self.config.timeout,
+        )?;
         wait_for_request_start(&self.gate)?;
         let response = self.transport.execute(&request)?;
-        validate_response(&request, &response, &["json"])?;
+        validate_response(&policy, &request, &response)?;
         Ok(response)
     }
 
@@ -166,10 +188,18 @@ impl SzseClient {
         &self,
         request: HttpRequest,
     ) -> Result<HttpResponse, ExchangeError> {
-        validate_request(&request, HttpMethod::Get, HOST, DRAGON_TIGER_PATH)?;
+        let policy = validate_request(
+            &request,
+            HttpMethod::Get,
+            HOST,
+            DRAGON_TIGER_PATH,
+            DRAGON_TIGER_QUERY_KEYS,
+            &[SharedMediaType::Json],
+            self.config.timeout,
+        )?;
         wait_for_request_start(&self.gate)?;
         let response = self.transport.execute(&request)?;
-        validate_response(&request, &response, &["json"])?;
+        validate_response(&policy, &request, &response)?;
         Ok(response)
     }
 
@@ -205,10 +235,18 @@ impl SzseClient {
                 ],
                 body: Vec::new(),
             };
-            validate_request(&request, HttpMethod::Get, HOST, QUOTE_PATH)?;
+            let policy = validate_request(
+                &request,
+                HttpMethod::Get,
+                HOST,
+                QUOTE_PATH,
+                QUOTE_QUERY_KEYS,
+                &[SharedMediaType::Json],
+                self.config.timeout,
+            )?;
             wait_for_request_start(&self.gate)?;
             let response = self.transport.execute(&request)?;
-            validate_response(&request, &response, &["json"])?;
+            validate_response(&policy, &request, &response)?;
             let observed_at = now()?;
             let (quote, order_book) =
                 parse_quote_snapshot(instrument, &response.body, &observed_at, &batch_id)?

@@ -1,7 +1,7 @@
 use crate::transport::{
     new_request_gate, validate_endpoint, validate_minimum_interval, validate_request,
     validate_response, validate_timeout, wait_for_request_start, ExchangeTransport, HttpMethod,
-    HttpRequest, HttpResponse, HttpsTransport, SharedRequestGate,
+    HttpRequest, HttpResponse, HttpsTransport, SharedMediaType, SharedRequestGate,
 };
 use crate::{ExchangeError, ProviderCapabilities};
 use magic_market_core::{
@@ -19,6 +19,22 @@ const ENDPOINT: &str = "https://query.sse.com.cn/security/stock/queryCompanyBull
 const HOST: &str = "query.sse.com.cn";
 const PATH: &str = "/security/stock/queryCompanyBulletin.do";
 const DRAGON_TIGER_PATH: &str = "/infodisplay/showTradePublicFile.do";
+const ANNOUNCEMENT_QUERY_KEYS: &[&str] = &[
+    "jsonCallBack",
+    "isPagination",
+    "productId",
+    "securityType",
+    "reportType2",
+    "reportType",
+    "beginDate",
+    "endDate",
+    "pageHelp.pageSize",
+    "pageHelp.pageNo",
+    "pageHelp.beginPage",
+    "pageHelp.endPage",
+    "pageHelp.cacheSize",
+];
+const DRAGON_TIGER_QUERY_KEYS: &[&str] = &["jsonCallBack", "isPagination", "dateTx"];
 const CALLBACK: &str = "magicExchange";
 const PAGE_SIZE: u32 = 50;
 const MAX_RECORDS: u32 = 500;
@@ -142,10 +158,18 @@ impl SseClient {
     }
 
     fn execute(&self, request: HttpRequest) -> Result<HttpResponse, ExchangeError> {
-        validate_request(&request, HttpMethod::Get, HOST, PATH)?;
+        let policy = validate_request(
+            &request,
+            HttpMethod::Get,
+            HOST,
+            PATH,
+            ANNOUNCEMENT_QUERY_KEYS,
+            &[SharedMediaType::Json, SharedMediaType::Javascript],
+            self.config.timeout,
+        )?;
         wait_for_request_start(&self.gate)?;
         let response = self.transport.execute(&request)?;
-        validate_response(&request, &response, &["json", "javascript"])?;
+        validate_response(&policy, &request, &response)?;
         Ok(response)
     }
 
@@ -153,10 +177,18 @@ impl SseClient {
         &self,
         request: HttpRequest,
     ) -> Result<HttpResponse, ExchangeError> {
-        validate_request(&request, HttpMethod::Get, HOST, DRAGON_TIGER_PATH)?;
+        let policy = validate_request(
+            &request,
+            HttpMethod::Get,
+            HOST,
+            DRAGON_TIGER_PATH,
+            DRAGON_TIGER_QUERY_KEYS,
+            &[SharedMediaType::Json, SharedMediaType::Javascript],
+            self.config.timeout,
+        )?;
         wait_for_request_start(&self.gate)?;
         let response = self.transport.execute(&request)?;
-        validate_response(&request, &response, &["json", "javascript"])?;
+        validate_response(&policy, &request, &response)?;
         Ok(response)
     }
 

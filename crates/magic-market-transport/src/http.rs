@@ -20,6 +20,7 @@ pub enum HttpMethod {
 pub enum MediaType {
     Json,
     Html,
+    Javascript,
     Xml,
     PlainText,
 }
@@ -28,7 +29,14 @@ impl MediaType {
     fn matches(self, value: &str) -> bool {
         match self {
             Self::Json => value.eq_ignore_ascii_case("application/json"),
-            Self::Html => value.eq_ignore_ascii_case("text/html"),
+            Self::Html => {
+                value.eq_ignore_ascii_case("text/html")
+                    || value.eq_ignore_ascii_case("application/xhtml+xml")
+            }
+            Self::Javascript => matches!(
+                value.to_ascii_lowercase().as_str(),
+                "application/javascript" | "text/javascript" | "application/x-javascript"
+            ),
             Self::Xml => {
                 value.eq_ignore_ascii_case("application/xml")
                     || value.eq_ignore_ascii_case("text/xml")

@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import platform
+import re
 import statistics
 from pathlib import Path
 
@@ -13,6 +14,14 @@ MINIMUM_COMBINED_IMPROVEMENT = 0.05
 MAXIMUM_WORKLOAD_REGRESSION = 0.05
 MAXIMUM_BINARY_GROWTH = 0.20
 ROUNDING_EPSILON = 1e-12
+RUNNER_DESCRIPTION = "one warm-up per profile; five alternating measured rounds"
+CANDIDATE_DESCRIPTION = 'lto="thin", codegen-units=1'
+EXPECTED_WORKLOADS = {
+    "tdx_bar_parse": 20_000,
+    "json_normalize": 10_000,
+    "zlib_decompress": 5_000,
+    "zlib_roundtrip": 2_000,
+}
 
 
 def _fail(reason):
@@ -44,7 +53,17 @@ def _profile_records(profile_name, profile):
         raise ValueError(f"{profile_name} must contain exactly five measured runs")
 
     records = {}
+    run_sources = set()
     for run_index, run in enumerate(runs):
+        if not isinstance(run, dict):
+            raise ValueError(f"{profile_name} run {run_index} is not an object")
+        source = run.get("source")
+        expected_source = f"run-{run_index + 1}.json"
+        if source != expected_source or source in run_sources:
+            raise ValueError(
+                f"{profile_name} run {run_index} source must equal {expected_source}"
+            )
+        run_sources.add(source)
         workloads = run.get("workloads") if isinstance(run, dict) else None
         if not isinstance(workloads, list) or not workloads:
             raise ValueError(
@@ -57,6 +76,7 @@ def _profile_records(profile_name, profile):
             workload = record.get("workload")
             iterations = record.get("iterations")
             elapsed_ns = record.get("elapsed_ns")
+            throughput = record.get("throughput_per_second")
             checksum = record.get("checksum")
             if not isinstance(workload, str) or not workload:
                 raise ValueError(f"{profile_name} run {run_index} has an invalid workload")
@@ -70,6 +90,16 @@ def _profile_records(profile_name, profile):
                 or iterations <= 0
             ):
                 raise ValueError(f"{profile_name} {workload} iterations must be positive")
+            expected_iterations = EXPECTED_WORKLOADS.get(workload)
+            if expected_iterations is None:
+                raise ValueError(
+                    f"{profile_name} run {run_index} contains unknown workload {workload}"
+                )
+            if iterations != expected_iterations:
+                raise ValueError(
+                    f"{profile_name} {workload} iterations must equal "
+                    f"{expected_iterations}"
+                )
             if (
                 not isinstance(elapsed_ns, int)
                 or isinstance(elapsed_ns, bool)
@@ -78,13 +108,36 @@ def _profile_records(profile_name, profile):
                 raise ValueError(f"{profile_name} {workload} elapsed_ns must be positive")
             if not isinstance(checksum, int) or isinstance(checksum, bool):
                 raise ValueError(f"{profile_name} {workload} checksum must be an integer")
+            if (
+                not isinstance(throughput, (int, float))
+                or isinstance(throughput, bool)
+                or not math.isfinite(throughput)
+                or throughput <= 0
+            ):
+                raise ValueError(
+                    f"{profile_name} {workload} throughput_per_second must be finite and positive"
+                )
+            expected_throughput = iterations * 1_000_000_000 / elapsed_ns
+            if not math.isclose(
+                throughput, expected_throughput, rel_tol=1e-9, abs_tol=1e-12
+            ):
+                raise ValueError(
+                    f"{profile_name} {workload} throughput_per_second is inconsistent"
+                )
             seen.add(workload)
             records.setdefault(workload, []).append(
                 {
                     "iterations": iterations,
                     "elapsed_ns": elapsed_ns,
                     "checksum": checksum,
+                    "throughput_per_second": throughput,
                 }
+            )
+        if seen != set(EXPECTED_WORKLOADS):
+            missing = sorted(set(EXPECTED_WORKLOADS) - seen)
+            raise ValueError(
+                f"{profile_name} run {run_index} workload set is incomplete; "
+                f"missing {missing}"
             )
 
     for workload, values in records.items():
@@ -93,6 +146,28 @@ def _profile_records(profile_name, profile):
                 f"{profile_name} workload {workload} must appear in every measured run"
             )
     return size, records
+
+
+def _validate_metadata(metadata):
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata object is missing")
+    required = {"revision", "rustc", "cargo", "platform", "runner", "candidate"}
+    if set(metadata) != required:
+        raise ValueError("metadata fields must exactly match the benchmark schema")
+    revision = metadata["revision"]
+    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise ValueError("metadata revision must be a full lowercase Git SHA-1")
+    for field, prefix in (("rustc", "rustc "), ("cargo", "cargo ")):
+        value = metadata[field]
+        if not isinstance(value, str) or not value.startswith(prefix):
+            raise ValueError(f"metadata {field} must contain the exact tool version")
+    platform_value = metadata["platform"]
+    if not isinstance(platform_value, str) or not platform_value.strip():
+        raise ValueError("metadata platform must be non-empty")
+    if metadata["runner"] != RUNNER_DESCRIPTION:
+        raise ValueError("metadata runner does not match the fixed protocol")
+    if metadata["candidate"] != CANDIDATE_DESCRIPTION:
+        raise ValueError("metadata candidate does not match the fixed profile")
 
 
 def evaluate(evidence):
@@ -104,6 +179,7 @@ def evaluate(evidence):
         return _fail("profiles object is missing")
 
     try:
+        _validate_metadata(evidence.get("metadata"))
         default_size, default_records = _profile_records(
             "default", profiles.get("default")
         )
@@ -222,8 +298,8 @@ def collect_evidence(
             "rustc": metadata["rustc"],
             "cargo": metadata["cargo"],
             "platform": metadata.get("platform", platform.platform()),
-            "runner": "one warm-up per profile; five alternating measured rounds",
-            "candidate": 'lto="thin", codegen-units=1',
+            "runner": RUNNER_DESCRIPTION,
+            "candidate": CANDIDATE_DESCRIPTION,
         },
         "profiles": {
             "default": {

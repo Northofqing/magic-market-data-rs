@@ -122,3 +122,20 @@
 - The offline checker rejects missing/unknown/duplicate rows, boolean drift,
   bad evidence paths, sub-threshold admitted counts, and absent false-row
   blockers. It is called by the existing compliance gate.
+
+## Final review hardening
+
+- TDX financial archives now reject incomplete index tables, offsets into the
+  index, non-four-byte report widths, and any out-of-bounds declared report
+  atomically. Cumulative price arithmetic and unsigned transaction domains are
+  checked rather than wrapped or cast.
+- Exchange request and response validation now uses one source-specific shared
+  `EndpointPolicy` per call, including exact query-key and media-type
+  allowlists. CFFEX uses the same contract, and a cloned-client test proves
+  that slow I/O overlaps after request starts are spaced.
+- BR-009 accepts only Git-tracked regular source, registry, and evidence files
+  inside the repository. Untracked files and symlinks fail closed.
+- Release-profile evidence now requires four exact workloads, exact iteration
+  counts, complete metadata, consistent throughput, five named runs, and an
+  unchanged clean Git revision. The fourth workload measures zlib compression
+  plus decompression.
