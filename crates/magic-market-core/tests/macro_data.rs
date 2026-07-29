@@ -1,7 +1,7 @@
 use magic_market_core::{
     EconomicFrequency, EconomicObservation, EconomicObservationStatus, EconomicPeriod,
-    EconomicSeriesKey, EconomicSeriesRequest, FiniteNumber, NonEmptyText, PositiveU32, ProviderId,
-    SourceEvidence, SourcedRecord,
+    EconomicRevision, EconomicRevisionKind, EconomicSeriesKey, EconomicSeriesRequest, FiniteNumber,
+    NonEmptyText, PositiveU32, ProviderId, SourceEvidence, SourcedRecord,
 };
 
 fn key(code: &str) -> EconomicSeriesKey {
@@ -228,4 +228,94 @@ fn economic_observation_exposes_all_source_evidence() {
     assert_eq!(observation.evidence_batch_id(), "pbc-evidence");
     assert_eq!(observation.evidence_source_at(), Some(released_at));
     assert_eq!(observation.evidence_observed_at(), Some(observed_at));
+}
+
+#[test]
+fn period_absence_accessors_and_cross_variant_order_are_explicit() {
+    let day = EconomicPeriod::day("2026-07-29").unwrap();
+    let week = EconomicPeriod::iso_week(2026, 31).unwrap();
+    let month = EconomicPeriod::month(2026, 7).unwrap();
+    let quarter = EconomicPeriod::quarter(2026, 3).unwrap();
+    let year = EconomicPeriod::year(2026).unwrap();
+    let irregular = EconomicPeriod::irregular("2026-H1").unwrap();
+    for period in [&week, &month, &quarter, &year, &irregular] {
+        assert_eq!(period.as_day(), None);
+    }
+    for period in [&day, &month, &quarter, &year, &irregular] {
+        assert_eq!(period.as_iso_week(), None);
+    }
+    for period in [&day, &week, &quarter, &year, &irregular] {
+        assert_eq!(period.as_month(), None);
+    }
+    for period in [&day, &week, &month, &year, &irregular] {
+        assert_eq!(period.as_quarter(), None);
+    }
+    for period in [&day, &week, &month, &quarter, &irregular] {
+        assert_eq!(period.as_year(), None);
+    }
+    for period in [&day, &week, &month, &quarter, &year] {
+        assert_eq!(period.as_irregular(), None);
+    }
+    assert!(day < week);
+    assert!(week < month);
+    assert!(month < quarter);
+    assert!(quarter < year);
+    assert!(year < irregular);
+}
+
+#[test]
+fn economic_request_serde_and_max_rows_are_checked() {
+    let request = EconomicSeriesRequest::new(
+        vec![key("M2")],
+        EconomicPeriod::month(2026, 1).unwrap(),
+        EconomicPeriod::month(2026, 12).unwrap(),
+        PositiveU32::new(100).unwrap(),
+    )
+    .unwrap();
+    let wire = serde_json::to_string(&request).unwrap();
+    assert_eq!(
+        serde_json::from_str::<EconomicSeriesRequest>(&wire).unwrap(),
+        request
+    );
+    assert!(EconomicSeriesRequest::new(
+        vec![key("M2")],
+        EconomicPeriod::month(2026, 1).unwrap(),
+        EconomicPeriod::month(2026, 12).unwrap(),
+        PositiveU32::new(10_001).unwrap(),
+    )
+    .is_err());
+}
+
+#[test]
+fn economic_observation_optional_metadata_accessors_preserve_source_values() {
+    let source_at = "2026-07-29T09:00:00Z";
+    let evidence = evidence().with_source_at(source_at).unwrap();
+    let revision = EconomicRevision {
+        kind: EconomicRevisionKind::Preliminary,
+        label: Some(NonEmptyText::new("initial").unwrap()),
+    };
+    let observation = EconomicObservation::new(
+        key("M2"),
+        "Broad money",
+        Some(NonEmptyText::new("CN").unwrap()),
+        Some(NonEmptyText::new("China").unwrap()),
+        EconomicPeriod::month(2026, 6).unwrap(),
+        Some(FiniteNumber::new(1.0).unwrap()),
+        "CNY",
+        Some(NonEmptyText::new("billions").unwrap()),
+        Some(NonEmptyText::new("seasonally adjusted").unwrap()),
+        EconomicObservationStatus::Present,
+        Some(NonEmptyText::new(source_at).unwrap()),
+        Some(revision),
+        evidence,
+    )
+    .unwrap();
+    assert_eq!(observation.name(), "Broad money");
+    assert_eq!(observation.scale(), Some("billions"));
+    assert_eq!(
+        observation.seasonal_adjustment(),
+        Some("seasonally adjusted")
+    );
+    assert!(observation.revision().is_some());
+    assert_eq!(observation.evidence().batch_id(), "pbc-1");
 }

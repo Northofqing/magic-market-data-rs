@@ -701,26 +701,4 @@ fn redacted_url(input: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn helpers_enforce_segment_boundaries_and_redaction() {
-        assert!(path_matches_prefix("/v1/data/item", "/v1/data"));
-        assert!(!path_matches_prefix("/v1/database", "/v1/data"));
-        let safe = redacted_url("https://user:pass@example.test/v1?q=secret#fragment");
-        assert_eq!(safe, "https://example.test/v1?q=[REDACTED]#[REDACTED]");
-        assert!(!safe.contains("user"));
-        assert!(!safe.contains("pass"));
-        assert!(!safe.contains("secret"));
-    }
-
-    #[test]
-    fn status_errors_keep_redirects_and_throttling_typed() {
-        assert!(matches!(rejected_status(302), TransportError::Redirect(_)));
-        assert!(matches!(
-            rejected_status(429),
-            TransportError::HttpStatus { status: 429 }
-        ));
-    }
-}
+mod tests;

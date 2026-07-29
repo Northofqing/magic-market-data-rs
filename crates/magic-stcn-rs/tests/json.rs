@@ -137,6 +137,8 @@ fn rejects_wrong_envelope_and_non_terminal_cursor_shapes() {
     assert!(parse_quick_news(missing_page_time.as_bytes(), 1).is_err());
     let null_page_time = fixture.replace("\"page_time\": 2", "\"page_time\": null");
     assert!(parse_quick_news(null_page_time.as_bytes(), 1).is_err());
+    let missing_last_time = fixture.replace(",\n  \"last_time\": 1785291845", "");
+    assert!(parse_quick_news(missing_last_time.as_bytes(), 1).is_err());
 }
 
 #[test]

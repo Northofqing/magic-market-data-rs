@@ -26,6 +26,46 @@ fn maps_standard_one_minute_monthly_and_yearly_categories_exactly() {
 }
 
 #[test]
+fn pagination_and_preflight_helpers_reject_impossible_terminal_states() {
+    assert!(ensure_nonempty::<u8>(&[]).is_err());
+
+    let mut complete = HistoricalBarPagination::new(1);
+    complete.accept_page(vec![source_bar()]).unwrap();
+    assert!(complete.accept_page(Vec::new()).is_err());
+
+    assert!(HistoricalBarPagination::new(1).finish().is_err());
+    assert!(HistoricalBarPagination {
+        expected: 1,
+        remaining: 0,
+        offset: 0,
+        pages: Vec::new(),
+    }
+    .finish()
+    .is_err());
+
+    assert_eq!(normalize_ipo_date(0).unwrap(), None);
+    assert!(normalize_ipo_date(u32::MAX).is_err());
+
+    let option = InstrumentId::new(Exchange::Shanghai, "10000001", AssetClass::Option).unwrap();
+    assert!(matches!(
+        validate_corporate_action_request(
+            &CorporateActionRequest::new(option),
+            &IsoDate::new("2026-07-27").unwrap()
+        ),
+        Err(TdxError::Unsupported(_))
+    ));
+    let future = CorporateActionRequest::new(instrument("600001"))
+        .with_range(
+            IsoDate::new("2026-07-28").unwrap(),
+            IsoDate::new("2026-07-29").unwrap(),
+        )
+        .unwrap();
+    assert!(
+        validate_corporate_action_request(&future, &IsoDate::new("2026-07-27").unwrap()).is_err()
+    );
+}
+
+#[test]
 fn order_book_levels_preserve_absence_atomically() {
     let absent = book_level(0.0, 0.0).unwrap();
     assert!(absent.price().is_none());
@@ -2080,6 +2120,13 @@ fn order_book_helpers_validate_levels_depth_and_request_identity() {
         order_book_pairs(&ids, "test").unwrap(),
         vec![(1, "600001"), (1, "600002")]
     );
+
+    let id = instrument("600396");
+    let mut incomplete = source_quote("600396", 10.0);
+    incomplete.bid5 = 0.0;
+    let batch =
+        normalize_order_books("test", "test", std::slice::from_ref(&id), vec![incomplete]).unwrap();
+    assert!(!batch.quality().is_complete());
 }
 
 #[test]
@@ -2145,6 +2192,8 @@ fn assert_blocking_query_rejects_block_codes(query: &impl BlockingTdxQuery) {
     let _ = query.history_transaction_data(1, "880001", 0, 1, 20260723);
     let _ = query.security_count(9);
     let _ = query.security_list(9, 0);
+    let _ = query.finance_info(1, "880001");
+    let _ = query.xdxr_info(1, "880001");
 }
 
 #[test]

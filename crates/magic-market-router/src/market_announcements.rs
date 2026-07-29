@@ -1,7 +1,6 @@
 use crate::{FailoverChain, FailureKind, SourceError, SourceFn};
 use magic_market_core::{
-    Announcement, AssetClass, Exchange, IsoDate, MarketAnnouncementRequest, MarketAnnouncements,
-    ProviderId,
+    Announcement, AssetClass, IsoDate, MarketAnnouncementRequest, MarketAnnouncements, ProviderId,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -57,12 +56,7 @@ where
         let mut ids = HashSet::with_capacity(batch.records().len());
         let mut previous_source_at: Option<&str> = None;
         for record in batch.records() {
-            if record.instrument.asset_class() != AssetClass::Equity
-                || !matches!(
-                    record.instrument.exchange(),
-                    Exchange::Shanghai | Exchange::Shenzhen | Exchange::Beijing
-                )
-            {
+            if record.instrument.asset_class() != AssetClass::Equity {
                 return Err(SourceError::try_next(
                     FailureKind::Evidence,
                     "market announcement record is not an A-share equity",

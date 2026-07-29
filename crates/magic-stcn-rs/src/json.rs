@@ -320,3 +320,6 @@ fn now() -> Result<String, StcnError> {
 fn protocol(message: &str) -> StcnError {
     StcnError::Protocol(message.into())
 }
+
+#[cfg(test)]
+mod tests;

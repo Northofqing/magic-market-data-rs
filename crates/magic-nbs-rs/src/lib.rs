@@ -135,3 +135,7 @@ impl EconomicSeriesProvider for NbsClient {
 pub(crate) const fn max_response_bytes() -> usize {
     MAX_RESPONSE_BYTES
 }
+
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;

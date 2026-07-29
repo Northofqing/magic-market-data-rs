@@ -99,3 +99,7 @@ impl EconomicSeriesProvider for WorldBankClient {
         ))
     }
 }
+
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;

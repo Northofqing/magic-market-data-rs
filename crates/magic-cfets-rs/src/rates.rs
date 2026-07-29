@@ -261,3 +261,6 @@ fn validate_requested_family(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -93,3 +93,6 @@ pub fn descriptor_for_year(year: u16) -> Result<&'static PbcTableDescriptor, Pbc
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -83,6 +83,8 @@ Release gates and final integration
 | First direct CFETS page bundle stopped on HTTP 404 | CFETS audit | Inspect each official page separately instead of assuming all searched paths remain live; no alternate private/member endpoint is used. |
 | A documentation audit command used an unmatched `docs/upstream*` zsh glob | Release-file mapping | Use the exact tracked file `docs/UPSTREAM.md` and explicit paths; no planning evidence was lost. |
 | Parallel package verification exhausted disk space with several independent Rust target directories | Provider review checkpoint | Removed only explicitly named, reproducible temporary build caches and switched later verification to one reused target directory. |
+| LLVM doctest coverage requested nightly-only `-Z persist-doctests` on stable Rust | First final coverage run | Kept ordinary stable doctests in release preflight and generated production coverage without LLVM doctest persistence; no production source or threshold was excluded. |
+| A partial coverage rerun used default features and changed the measured source set | Incremental coverage attempt | Discarded the mixed profiles and regenerated one clean `workspace/all-features` report before accepting the evidence. |
 
 ## Notes
 

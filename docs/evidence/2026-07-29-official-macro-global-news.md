@@ -22,3 +22,10 @@ Core/Router, transport/China sources, global macro/SEC, and all three news
 sources each reported zero remaining Critical/Important findings. Release
 integration still requires the complete deterministic Gates A–D on the final
 tree.
+
+The final clean `workspace/all-features` production coverage report recorded
+45,230 of 51,259 lines (88.24%) overall and 26,322 of 27,707 lines (95.00%) in
+the configured critical data path. Both repository thresholds passed without
+excluding production files or lowering a threshold. Stable-toolchain doctests
+remain part of the ordinary release preflight; LLVM doctest persistence itself
+is not used because that cargo-llvm-cov mode requires nightly Rust.

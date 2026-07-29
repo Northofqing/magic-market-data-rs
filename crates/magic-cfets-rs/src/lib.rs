@@ -293,3 +293,7 @@ fn now_timestamp() -> String {
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "observed-time-unavailable".into())
 }
+
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;

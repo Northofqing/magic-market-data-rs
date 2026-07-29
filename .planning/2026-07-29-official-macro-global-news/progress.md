@@ -45,7 +45,7 @@
 
 ## Implementation
 
-- **Status:** in progress
+- **Status:** complete
 - User selected the subagent-driven execution path.
 - Started the foundation checkpoint with two non-overlapping workstreams:
   Core provider-neutral contracts and the shared bounded HTTPS transport.
@@ -88,3 +88,24 @@
   findings. STCN terminal-empty handling was tightened to return a protocol
   error rather than an unproved ordinary empty batch before the news review
   closed.
+
+## Release Validation
+
+- **Status:** in progress
+- Moved critical-source inline test bodies into path-based external test
+  modules and added boundary coverage for source identity, pagination,
+  malformed envelopes, timestamps, and explicit unavailable states.
+- Removed three duplicate Router checks whose invalid states cannot be
+  constructed through the checked Core contracts.
+- A clean `cargo llvm-cov --workspace --all-features --no-report` run passed
+  all production tests. The repository checker then passed at
+  `45230/51259 = 88.24%` overall and `26322/27707 = 95.00%` for the critical
+  data path.
+- Ordinary stable-toolchain doctests passed separately. LLVM doctest
+  persistence was not treated as release evidence because cargo-llvm-cov
+  requires nightly-only `-Z persist-doctests` for that mode.
+- The full release preflight passed on the staged final tree, including
+  formatting, all-target/all-feature checks and tests, strict Clippy, Rustdoc,
+  stable doctests, documentation links, compliance, and the supplied clean
+  coverage evidence.
+- Package verification, final diff review, and main-branch integration remain.

@@ -76,3 +76,6 @@ fn wait_until(instant: Instant) {
         std::thread::sleep(wait);
     }
 }
+
+#[cfg(test)]
+mod tests;

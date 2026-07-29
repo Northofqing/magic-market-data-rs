@@ -284,3 +284,6 @@ fn request_pair_position(
             && identity.quote().as_str() == record.quote().as_str()
     })
 }
+
+#[cfg(test)]
+mod tests;

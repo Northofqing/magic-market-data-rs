@@ -117,3 +117,7 @@ fn validate_request(request: &EconomicSeriesRequest) -> Result<(), ImfError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;

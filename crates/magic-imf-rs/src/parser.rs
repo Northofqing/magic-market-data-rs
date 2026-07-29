@@ -310,3 +310,6 @@ fn parse_year(value: &str) -> Result<u32, ImfError> {
     }
     Ok(year)
 }
+
+#[cfg(test)]
+mod tests;

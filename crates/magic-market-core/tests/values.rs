@@ -2,6 +2,18 @@ use magic_market_core::{
     AssetClass, CoreError, Exchange, FiniteNumber, HttpsUrl, InstrumentId, IsoDate, Money,
     NonEmptyText, PositiveU32, Price, Quantity, Ratio,
 };
+
+struct MinimalSourcedRecord;
+
+impl magic_market_core::SourcedRecord for MinimalSourcedRecord {
+    fn provider_id(&self) -> magic_market_core::ProviderId {
+        magic_market_core::ProviderId::Custom
+    }
+
+    fn evidence_batch_id(&self) -> &str {
+        "minimal"
+    }
+}
 #[test]
 fn rejects_invalid_financial_values() {
     assert!(matches!(
@@ -69,4 +81,15 @@ fn intelligence_primitives_are_checked_and_serde_safe() {
     assert!(serde_json::from_str::<IsoDate>(r#""2026-02-29""#).is_err());
     assert!(serde_json::from_str::<FiniteNumber>("null").is_err());
     assert!(serde_json::from_str::<PositiveU32>("0").is_err());
+}
+
+#[test]
+fn sourced_record_defaults_keep_absent_timestamps_explicit() {
+    use magic_market_core::SourcedRecord;
+
+    let record = MinimalSourcedRecord;
+    assert_eq!(record.provider_id(), magic_market_core::ProviderId::Custom);
+    assert_eq!(record.evidence_batch_id(), "minimal");
+    assert_eq!(record.evidence_source_at(), None);
+    assert_eq!(record.evidence_observed_at(), None);
 }

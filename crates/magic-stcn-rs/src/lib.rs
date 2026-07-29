@@ -190,3 +190,7 @@ fn validate_limit(limit: PositiveU32) -> Result<(), StcnError> {
         )))
     }
 }
+
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;

@@ -445,3 +445,6 @@ fn parse_year(value: &str) -> Result<u32, WorldBankError> {
     }
     Ok(year)
 }
+
+#[cfg(test)]
+mod tests;

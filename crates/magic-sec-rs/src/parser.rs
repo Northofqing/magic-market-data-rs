@@ -642,3 +642,6 @@ fn filing_identity(record: &CompanyFiling) -> FilingIdentity {
         record.accession().as_str().to_owned(),
     )
 }
+
+#[cfg(test)]
+mod tests;

@@ -186,3 +186,7 @@ fn validate_limit(limit: PositiveU32) -> Result<(), YicaiError> {
         )))
     }
 }
+
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;

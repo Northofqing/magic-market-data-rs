@@ -232,3 +232,6 @@ impl<'de> Visitor<'de> for NoDuplicatesVisitor {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

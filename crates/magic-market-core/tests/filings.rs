@@ -92,4 +92,54 @@ fn company_filing_exposes_all_source_evidence() {
     assert_eq!(filing.evidence_batch_id(), "sec-evidence");
     assert_eq!(filing.evidence_source_at(), Some(accepted_at));
     assert_eq!(filing.evidence_observed_at(), Some(observed_at));
+    assert_eq!(filing.company_name(), "Apple Inc.");
+    assert_eq!(filing.primary_document().as_str(), "report.htm");
+    assert_eq!(filing.accession().to_string(), "0000320193-25-000079");
+    assert_eq!(filing.primary_document().to_string(), "report.htm");
+}
+
+#[test]
+fn ticker_and_request_cardinality_filters_fail_closed() {
+    for ticker in ["", "TOO-LONG-123", "BAD_TICKER", "坏"] {
+        assert!(
+            SecCompanyIdentity::new("320193", Some(ticker)).is_err(),
+            "{ticker:?}"
+        );
+    }
+    let company = SecCompanyIdentity::new("320193", Some("AAPL")).unwrap();
+    let limit = PositiveU32::new(10).unwrap();
+    assert!(CompanyFilingRequest::new(vec![], vec![], None, None, limit).is_err());
+    let companies = (1..=101)
+        .map(|cik| SecCompanyIdentity::new(cik.to_string(), None::<String>).unwrap())
+        .collect();
+    assert!(CompanyFilingRequest::new(companies, vec![], None, None, limit).is_err());
+    let forms = (0..21)
+        .map(|index| NonEmptyText::new(format!("FORM-{index}")).unwrap())
+        .collect();
+    assert!(CompanyFilingRequest::new(vec![company.clone()], forms, None, None, limit).is_err());
+    let form = NonEmptyText::new("10-K").unwrap();
+    assert!(CompanyFilingRequest::new(
+        vec![company.clone()],
+        vec![form.clone(), form],
+        None,
+        None,
+        limit
+    )
+    .is_err());
+    assert!(CompanyFilingRequest::new(
+        vec![company.clone()],
+        vec![],
+        Some(IsoDate::new("2026-01-01").unwrap()),
+        None,
+        limit
+    )
+    .is_err());
+    assert!(CompanyFilingRequest::new(
+        vec![company],
+        vec![],
+        None,
+        Some(IsoDate::new("2026-12-31").unwrap()),
+        limit
+    )
+    .is_err());
 }

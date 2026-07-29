@@ -16,3 +16,6 @@ pub(crate) fn probe_landing_page(
     )?;
     Ok(transport.execute(&request)?.body().len())
 }
+
+#[cfg(test)]
+mod tests;

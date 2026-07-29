@@ -640,12 +640,6 @@ where
     Classify: Fn(Provider::Error) -> SourceError + Send + Sync + 'static,
 {
     SourceFn::new(provider_id, move |request: &TargetPriceRequest| {
-        if request.from() > request.through() {
-            return Err(SourceError::stop(
-                FailureKind::InvalidRequest,
-                "target-price request start exceeds end",
-            ));
-        }
         let batch = provider
             .target_price_consensus(request)
             .map_err(&classify)?;
@@ -957,12 +951,6 @@ where
                 "dragon-tiger seat record",
             )?;
             let rank = record.rank().get() as usize;
-            if !(1..=5).contains(&rank) {
-                return Err(SourceError::try_next(
-                    FailureKind::Quality,
-                    "dragon-tiger seat rank must be between 1 and 5",
-                ));
-            }
             let side = match record.side() {
                 magic_market_core::DragonTigerSide::Buy => 0_u8,
                 magic_market_core::DragonTigerSide::Sell => 1_u8,

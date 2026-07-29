@@ -231,6 +231,20 @@ fn percent_encoding_and_error_categories_cover_all_stable_diagnostics() {
         "https://push2.eastmoney.com/x?a-z_~.=A%20z%2F%2B%E4%B8%AD"
     );
     let core = magic_market_core::NonEmptyText::new("").unwrap_err();
+    let empty_evidence =
+        magic_market_core::SourceEvidence::new(ProviderId::Eastmoney, "observed", "empty").unwrap();
+    let empty_provenance = magic_market_core::Provenance::new("eastmoney", "observed")
+        .unwrap()
+        .with_batch_id("empty")
+        .unwrap();
+    let verified_empty = magic_market_core::VerifiedEmpty::new(
+        "reports",
+        "600519",
+        "source proved no rows",
+        empty_evidence,
+        empty_provenance,
+    )
+    .unwrap();
     let errors = [
         (
             EastmoneyError::InvalidRequest("x".into()),
@@ -244,6 +258,10 @@ fn percent_encoding_and_error_categories_cover_all_stable_diagnostics() {
         (EastmoneyError::Decode("x".into()), "decode"),
         (EastmoneyError::Protocol("x".into()), "protocol"),
         (EastmoneyError::Unsupported("x".into()), "unsupported"),
+        (
+            EastmoneyError::VerifiedEmpty(Box::new(verified_empty)),
+            "verified_empty",
+        ),
         (EastmoneyError::Core(core), "core"),
     ];
     for (error, category) in errors {

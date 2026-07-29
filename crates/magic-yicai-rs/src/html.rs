@@ -483,3 +483,6 @@ fn now() -> Result<String, YicaiError> {
 fn protocol(message: &str) -> YicaiError {
     YicaiError::Protocol(message.into())
 }
+
+#[cfg(test)]
+mod tests;

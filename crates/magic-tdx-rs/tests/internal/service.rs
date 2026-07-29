@@ -693,6 +693,7 @@ fn blocking_service_rejects_requests_before_any_transport_call() {
         service.bars(&ranged),
         Err(TdxError::Unsupported(_))
     ));
+    assert!(service.quotes(&[]).is_err());
     assert!(service.quotes_chunked(&[]).is_err());
 
     let beijing = instrument(Exchange::Beijing, "920118");

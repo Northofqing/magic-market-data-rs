@@ -1059,34 +1059,4 @@ fn applicable_revision(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn methodology_revision_is_scoped_to_m1_from_2025() {
-        let revision = EconomicRevision {
-            kind: magic_market_core::EconomicRevisionKind::SourceDefined(
-                NonEmptyText::new("source-defined").unwrap(),
-            ),
-            label: None,
-        };
-        assert!(applicable_revision(
-            "M1",
-            &EconomicPeriod::month(2025, 1).unwrap(),
-            Some(&revision)
-        )
-        .is_some());
-        assert!(applicable_revision(
-            "M0",
-            &EconomicPeriod::month(2025, 1).unwrap(),
-            Some(&revision)
-        )
-        .is_none());
-        assert!(applicable_revision(
-            "M1",
-            &EconomicPeriod::month(2024, 12).unwrap(),
-            Some(&revision)
-        )
-        .is_none());
-    }
-}
+mod tests;

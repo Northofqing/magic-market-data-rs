@@ -172,3 +172,7 @@ fn checked_api_key(value: String) -> Result<ApiKey, FredError> {
     }
     Ok(ApiKey(trimmed.to_owned()))
 }
+
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;

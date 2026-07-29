@@ -269,3 +269,6 @@ fn parse_data_identity(value: &str) -> Result<(&str, &str), NbsError> {
     }
     Ok((code, month))
 }
+
+#[cfg(test)]
+mod tests;

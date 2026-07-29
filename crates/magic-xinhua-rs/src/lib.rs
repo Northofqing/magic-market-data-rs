@@ -189,3 +189,7 @@ fn validate_limit(limit: PositiveU32) -> Result<(), XinhuaError> {
         )))
     }
 }
+
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;

@@ -363,3 +363,6 @@ fn now() -> Result<String, XinhuaError> {
 fn protocol(message: &str) -> XinhuaError {
     XinhuaError::Protocol(message.into())
 }
+
+#[cfg(test)]
+mod tests;

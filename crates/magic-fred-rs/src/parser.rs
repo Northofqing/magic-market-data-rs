@@ -346,3 +346,6 @@ fn ensure_no_duplicate_keys(body: &[u8]) -> Result<(), FredError> {
     super::transport::ensure_no_duplicate_json_keys(body)
         .map_err(|error| FredError::Decode(error.to_string()))
 }
+
+#[cfg(test)]
+mod tests;

@@ -94,6 +94,7 @@ fn normalized_bar_rejects_unparseable_market_times() {
 
     assert!(make("2026-02-30 09:30:00", "2026-02-30 09:31:00").is_err());
     assert!(make("2026-07-22 25:00:00", "2026-07-22 25:01:00").is_err());
+    assert!(make("2026-07-22 09:30:0X", "2026-07-22 09:31:00").is_err());
 }
 
 #[test]
