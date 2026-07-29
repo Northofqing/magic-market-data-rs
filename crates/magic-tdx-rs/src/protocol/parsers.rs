@@ -5,6 +5,7 @@ use crate::error::{Result, TdxError};
 use crate::error_codes::ErrorCode;
 use crate::helpers::{get_price, get_volume};
 
+use super::cursor::PacketCursor;
 use super::types::*;
 
 // ============================================================
@@ -15,7 +16,7 @@ pub fn parse_security_count(body: &[u8]) -> Result<u16> {
     if body.len() < 2 {
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short for count"));
     }
-    Ok(read_u16(body, 0))
+    read_u16(body, 0)
 }
 
 // ============================================================
@@ -23,52 +24,25 @@ pub fn parse_security_count(body: &[u8]) -> Result<u16> {
 // ============================================================
 
 pub fn parse_security_list(body: &[u8]) -> Result<Vec<SecurityInfo>> {
-    if body.len() < 2 {
-        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
-    }
-
-    let count = read_u16(body, 0) as usize;
-    let mut pos = 2;
-    let record_size = 29; // <6sH8s4sBI4s>
-
+    let mut cursor = PacketCursor::new(body);
+    let count = usize::from(cursor.read_u16_le("security-list count")?);
     let mut result = Vec::with_capacity(count);
 
-    for _ in 0..count {
-        if pos + record_size > body.len() {
-            break;
-        }
-
-        // 6 bytes code
-        let code_bytes = &body[pos..pos + 6];
+    for record_index in 0..count {
+        cursor.set_record(record_index);
+        let code_bytes = cursor.read_slice(6, "security code")?;
         let code = String::from_utf8_lossy(code_bytes)
             .trim_end_matches('\0')
             .to_string();
-        pos += 6;
-
-        // u16 volunit
-        let volunit = read_u16(body, pos);
-        pos += 2;
-
-        // 8 bytes name (GBK)
-        let name_bytes = &body[pos..pos + 8];
+        let volunit = cursor.read_u16_le("volume unit")?;
+        let name_bytes = cursor.read_slice(8, "security name")?;
         let (name, _, _) = GBK.decode(name_bytes);
         let name = name.trim_end_matches('\0').to_string();
-        pos += 8;
-
-        // 4 bytes reversed
-        pos += 4;
-
-        // u8 decimal_point
-        let decimal_point = body[pos];
-        pos += 1;
-
-        // u32 pre_close_raw (decoded via get_volume)
-        let pre_close_raw = read_u32(body, pos) as i64;
+        cursor.read_slice(4, "security-list reserved bytes")?;
+        let decimal_point = cursor.read_u8("decimal point")?;
+        let pre_close_raw = i64::from(cursor.read_u32_le("previous close")?);
         let pre_close = get_volume(pre_close_raw);
-        pos += 4;
-
-        // 4 bytes reversed
-        pos += 4;
+        cursor.read_slice(4, "security-list trailing reserved bytes")?;
 
         result.push(SecurityInfo {
             code,
@@ -77,6 +51,12 @@ pub fn parse_security_list(body: &[u8]) -> Result<Vec<SecurityInfo>> {
             name,
             pre_close,
         });
+    }
+    if !cursor.is_empty() {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "security-list response has {} trailing bytes after {count} declared records",
+            cursor.remaining()
+        )));
     }
 
     Ok(result)
@@ -91,7 +71,7 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
     }
 
-    let count = read_u16(body, 0) as usize;
+    let count = read_u16(body, 0)? as usize;
     let mut pos = 2;
     let mut result = Vec::with_capacity(count);
     let mut pre_diff_base: i64 = 0;
@@ -119,7 +99,7 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
         };
 
         // 日期时间
-        let (year, month, day, hour, minute, new_pos) = get_datetime(category, body, pos);
+        let (year, month, day, hour, minute, new_pos) = get_datetime(category, body, pos)?;
         // 校验日期合法性 — 服务器可能返回损坏数据或无效代码的垃圾数据
         if year < 1980
             || year > max_valid_year()
@@ -147,36 +127,42 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
         }
 
         // 价格: 差分编码 (Python order: open, close, high, low)
-        let (price_open_diff, new_pos) = get_price(body, pos);
+        let (price_open_diff, new_pos) = get_price(body, pos)?;
         bar.open = ((pre_diff_base + price_open_diff) as f64) / 1000.0;
         pos = new_pos;
         let accumulated = pre_diff_base + price_open_diff;
 
-        let (price_close_diff, new_pos) = get_price(body, pos);
+        let (price_close_diff, new_pos) = get_price(body, pos)?;
         bar.close = ((accumulated + price_close_diff) as f64) / 1000.0;
         pos = new_pos;
 
-        let (price_high_diff, new_pos) = get_price(body, pos);
+        let (price_high_diff, new_pos) = get_price(body, pos)?;
         bar.high = ((accumulated + price_high_diff) as f64) / 1000.0;
         pos = new_pos;
 
-        let (price_low_diff, new_pos) = get_price(body, pos);
+        let (price_low_diff, new_pos) = get_price(body, pos)?;
         bar.low = ((accumulated + price_low_diff) as f64) / 1000.0;
         pos = new_pos;
 
         pre_diff_base = accumulated + price_close_diff;
 
         // vol (u32) - Python reads vol first
-        let vol_raw = read_u32(body, pos) as i64;
+        let vol_raw = read_u32(body, pos)? as i64;
         bar.vol = get_volume(vol_raw);
         pos += 4;
 
         // amount (u32) - Python reads amount (db_vol) second
-        let amount_raw = read_u32(body, pos) as i64;
+        let amount_raw = read_u32(body, pos)? as i64;
         bar.amount = get_volume(amount_raw);
         pos += 4;
 
         result.push(bar);
+    }
+    let trailing = body.len() - pos;
+    if trailing != 0 && trailing != 4 {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "security bar response has {trailing} unsupported trailing bytes after {count} declared records"
+        )));
     }
 
     Ok(result)
@@ -191,7 +177,7 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
     }
 
-    let count = read_u16(body, 0) as usize;
+    let count = read_u16(body, 0)? as usize;
     let mut pos = 2;
     let mut result = Vec::with_capacity(count);
     let mut pre_diff_base: i64 = 0;
@@ -220,7 +206,7 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
         };
 
         // 日期时间
-        let (year, month, day, hour, minute, new_pos) = get_datetime(category, body, pos);
+        let (year, month, day, hour, minute, new_pos) = get_datetime(category, body, pos)?;
         // 校验日期合法性 — 服务器可能返回损坏数据或无效代码的垃圾数据
         if year < 1980
             || year > max_valid_year()
@@ -248,41 +234,47 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
         }
 
         // 价格: 差分编码 (Python order: open, close, high, low)
-        let (price_open_diff, new_pos) = get_price(body, pos);
+        let (price_open_diff, new_pos) = get_price(body, pos)?;
         bar.open = ((pre_diff_base + price_open_diff) as f64) / 1000.0;
         pos = new_pos;
 
         let accumulated = pre_diff_base + price_open_diff;
 
-        let (price_close_diff, new_pos) = get_price(body, pos);
+        let (price_close_diff, new_pos) = get_price(body, pos)?;
         bar.close = ((accumulated + price_close_diff) as f64) / 1000.0;
         pos = new_pos;
 
-        let (price_high_diff, new_pos) = get_price(body, pos);
+        let (price_high_diff, new_pos) = get_price(body, pos)?;
         bar.high = ((accumulated + price_high_diff) as f64) / 1000.0;
         pos = new_pos;
 
-        let (price_low_diff, new_pos) = get_price(body, pos);
+        let (price_low_diff, new_pos) = get_price(body, pos)?;
         bar.low = ((accumulated + price_low_diff) as f64) / 1000.0;
         pos = new_pos;
 
         pre_diff_base = accumulated + price_close_diff;
 
-        let vol_raw = read_u32(body, pos) as i64;
+        let vol_raw = read_u32(body, pos)? as i64;
         bar.vol = get_volume(vol_raw);
         pos += 4;
 
-        let amount_raw = read_u32(body, pos) as i64;
+        let amount_raw = read_u32(body, pos)? as i64;
         bar.amount = get_volume(amount_raw);
         pos += 4;
 
         // up_count, down_count (u16 each)
-        bar.up_count = read_u16(body, pos) as u32;
+        bar.up_count = read_u16(body, pos)? as u32;
         pos += 2;
-        bar.down_count = read_u16(body, pos) as u32;
+        bar.down_count = read_u16(body, pos)? as u32;
         pos += 2;
 
         result.push(bar);
+    }
+    let trailing = body.len() - pos;
+    if trailing != 0 && trailing != 4 {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "index bar response has {trailing} unsupported trailing bytes after {count} declared records"
+        )));
     }
 
     Ok(result)
@@ -322,7 +314,7 @@ pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
     }
 
-    let count = read_u16(body, 0) as usize;
+    let count = read_u16(body, 0)? as usize;
     // 实时分时数据头部: 2(count) + 2(padding) + 1(indicator) + 6(stock_code) + 2(unknown) = 13 bytes
     // 注意: 此偏移量基于逆向分析，可能不完全准确
     let mut pos = 13;
@@ -333,16 +325,16 @@ pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec
     let mut cum_vol: f64 = 0.0;
 
     for i in 0..count {
-        let (price_diff, new_pos) = get_price(body, pos);
+        let (price_diff, new_pos) = get_price(body, pos)?;
         pre_diff_base += price_diff;
         let price = (pre_diff_base as f64) * coefficient;
         pos = new_pos;
 
         // reversed1 (skipped)
-        let (_, new_pos) = get_price(body, pos);
+        let (_, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
-        let (vol_diff, new_pos) = get_price(body, pos);
+        let (vol_diff, new_pos) = get_price(body, pos)?;
         let vol = vol_diff as f64;
         pos = new_pos;
 
@@ -380,6 +372,9 @@ pub fn parse_history_minute_time_data(
 ) -> Result<Vec<MinuteTimePrice>> {
     let coefficient = super::types::get_security_coefficient(market, code);
 
+    if body.len() < 6 {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("history minute header is truncated"));
+    }
     // 跳过 6 bytes header
     let mut pos = 6;
 
@@ -389,26 +384,19 @@ pub fn parse_history_minute_time_data(
     let mut cum_vol: f64 = 0.0;
     let mut index: usize = 0;
 
-    // get_price 在越界时返回 (0, data.len())，不会 panic
     while pos < body.len() {
-        let old_pos = pos;
-        let (price_diff, new_pos) = get_price(body, pos);
+        let (price_diff, new_pos) = get_price(body, pos)?;
         pre_diff_base += price_diff;
         let price = (pre_diff_base as f64) * coefficient;
         pos = new_pos;
 
         // reversed1 (skipped)
-        let (_, new_pos) = get_price(body, pos);
+        let (_, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
-        let (vol_diff, new_pos) = get_price(body, pos);
+        let (vol_diff, new_pos) = get_price(body, pos)?;
         let vol = vol_diff as f64;
         pos = new_pos;
-
-        // 防止无限循环 (get_price 越界时 pos 不变)
-        if pos == old_pos {
-            break;
-        }
 
         // 均价 = 累计金额 / 累计成交量
         cum_amount += price * vol;
@@ -459,7 +447,7 @@ fn checked_transaction_varint(
                 "current transaction row {row_index} {field} has invalid variable-length framing"
             ))
         })?;
-    let (value, new_pos) = get_price(body, pos);
+    let (value, new_pos) = get_price(body, pos)?;
     debug_assert_eq!(new_pos, pos + encoded_len);
     Ok((value, new_pos))
 }
@@ -491,7 +479,7 @@ pub fn parse_transaction_data_with_coefficient(
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
     }
 
-    let count = read_u16(body, 0) as usize;
+    let count = read_u16(body, 0)? as usize;
     let mut pos = 2;
     let mut result = Vec::with_capacity(count);
 
@@ -505,7 +493,7 @@ pub fn parse_transaction_data_with_coefficient(
         }
 
         // time (u16 minutes)
-        let minutes = read_u16(body, pos) as u32;
+        let minutes = read_u16(body, pos)? as u32;
         pos += 2;
         let hour = minutes / 60;
         let minute = minutes % 60;
@@ -583,45 +571,45 @@ pub fn parse_history_transaction_data_with_coefficient(
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short"));
     }
 
-    let count = read_u16(body, 0) as usize;
+    let count = read_u16(body, 0)? as usize;
     // 跳过 2 bytes count + 4 bytes header
     let mut pos = 6;
 
     let mut result = Vec::with_capacity(count);
     let mut last_price: i64 = 0;
 
-    for _ in 0..count {
+    for row_index in 0..count {
         // time(2) plus four minimally one-byte variable integers.
         if body.len().saturating_sub(pos) < 6 {
-            return Err(
-                ErrorCode::RESPONSE_LENGTH_MISMATCH.err("truncated historical transaction record")
-            );
+            return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+                "historical transaction row {row_index} is truncated"
+            )));
         }
         // time (u16 minutes)
-        let minutes = read_u16(body, pos) as u32;
+        let minutes = read_u16(body, pos)? as u32;
         pos += 2;
         let hour = minutes / 60;
         let minute = minutes % 60;
         let time = format!("{:02}:{:02}", hour, minute);
 
         // price (delta encoded)
-        let (price_diff, new_pos) = get_price(body, pos);
+        let (price_diff, new_pos) = get_price(body, pos)?;
         last_price += price_diff;
         let price = last_price as f64 * coefficient;
         pos = new_pos;
 
         // vol
-        let (vol, new_pos) = get_price(body, pos);
+        let (vol, new_pos) = get_price(body, pos)?;
         let vol = vol as f64;
         pos = new_pos;
 
         // buyorsell
-        let (buyorsell, new_pos) = get_price(body, pos);
+        let (buyorsell, new_pos) = get_price(body, pos)?;
         let buyorsell = buyorsell as u32;
         pos = new_pos;
 
         // reserved (原 extra field，具体含义待确认)
-        let (reserved, new_pos) = get_price(body, pos);
+        let (reserved, new_pos) = get_price(body, pos)?;
         let reserved = reserved as u32;
         pos = new_pos;
 
@@ -633,6 +621,12 @@ pub fn parse_history_transaction_data_with_coefficient(
             buyorsell,
             reserved,
         });
+    }
+    if pos != body.len() {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "historical transaction response has {} trailing bytes after {count} declared records",
+            body.len() - pos
+        )));
     }
 
     Ok(result)
@@ -650,15 +644,15 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
     let mut pos = 0;
     pos += 2; // skip b1 cb
 
-    let count = read_u16(body, pos) as usize;
+    let count = read_u16(body, pos)? as usize;
     pos += 2;
 
     let mut result = Vec::with_capacity(count);
 
-    for _ in 0..count {
-        // 边界保护: 每条记录至少需要 ~30 字节，不足则提前终止
-        if pos + 30 > body.len() {
-            break;
+    for row_index in 0..count {
+        if body.len().saturating_sub(pos) < 30 {
+            return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH
+                .err(format!("quote row {row_index} is truncated")));
         }
 
         // market (u8) + code (6 bytes) + active1 (u16)
@@ -671,63 +665,63 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
             .to_string();
         pos += 6;
 
-        let active1 = read_u16(body, pos);
+        let active1 = read_u16(body, pos)?;
         pos += 2;
 
         let coefficient = super::types::get_security_coefficient(market, &code);
 
         // price (base price, delta encoded)
-        let (price_raw, new_pos) = get_price(body, pos);
+        let (price_raw, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // last_close (diff from price)
-        let (last_close_diff, new_pos) = get_price(body, pos);
+        let (last_close_diff, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // open (diff from price)
-        let (open_diff, new_pos) = get_price(body, pos);
+        let (open_diff, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // high (diff from price)
-        let (high_diff, new_pos) = get_price(body, pos);
+        let (high_diff, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // low (diff from price)
-        let (low_diff, new_pos) = get_price(body, pos);
+        let (low_diff, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // reversed_bytes0 (get_price as i64, used for servertime)
-        let (reversed_bytes0, new_pos) = get_price(body, pos);
+        let (reversed_bytes0, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
-        let (reversed_bytes1, new_pos) = get_price(body, pos);
+        let (reversed_bytes1, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // vol (get_price)
-        let (vol, new_pos) = get_price(body, pos);
+        let (vol, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // cur_vol (get_price)
-        let (cur_vol, new_pos) = get_price(body, pos);
+        let (cur_vol, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // amount (u32 raw, use get_volume)
-        let amount_raw = read_u32(body, pos) as i64;
+        let amount_raw = read_u32(body, pos)? as i64;
         let amount = get_volume(amount_raw);
         pos += 4;
 
         // s_vol (get_price)
-        let (s_vol, new_pos) = get_price(body, pos);
+        let (s_vol, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // b_vol (get_price)
-        let (b_vol, new_pos) = get_price(body, pos);
+        let (b_vol, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // reversed_bytes2, reversed_bytes3
-        let (reversed_bytes2, new_pos) = get_price(body, pos);
+        let (reversed_bytes2, new_pos) = get_price(body, pos)?;
         pos = new_pos;
-        let (reversed_bytes3, new_pos) = get_price(body, pos);
+        let (reversed_bytes3, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // bid1-ask5: interleaved pairs (bid, ask, bid_vol, ask_vol) x 5
@@ -737,35 +731,35 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
         let mut ask_vols = [0.0f64; 5];
 
         for i in 0..5 {
-            let (diff, new_pos) = get_price(body, pos);
+            let (diff, new_pos) = get_price(body, pos)?;
             bid_prices[i] = ((price_raw + diff) as f64) * coefficient;
             pos = new_pos;
 
-            let (diff, new_pos) = get_price(body, pos);
+            let (diff, new_pos) = get_price(body, pos)?;
             ask_prices[i] = ((price_raw + diff) as f64) * coefficient;
             pos = new_pos;
 
-            let (vol, new_pos) = get_price(body, pos);
+            let (vol, new_pos) = get_price(body, pos)?;
             bid_vols[i] = vol as f64;
             pos = new_pos;
 
-            let (vol, new_pos) = get_price(body, pos);
+            let (vol, new_pos) = get_price(body, pos)?;
             ask_vols[i] = vol as f64;
             pos = new_pos;
         }
 
         // reversed_bytes4 (u16)
-        let reversed_bytes4 = read_u16(body, pos) as u32;
+        let reversed_bytes4 = read_u16(body, pos)? as u32;
         pos += 2;
 
         // reversed_bytes5, reversed_bytes6, reversed_bytes7, reversed_bytes8
-        let (reversed_bytes5, new_pos) = get_price(body, pos);
+        let (reversed_bytes5, new_pos) = get_price(body, pos)?;
         pos = new_pos;
-        let (reversed_bytes6, new_pos) = get_price(body, pos);
+        let (reversed_bytes6, new_pos) = get_price(body, pos)?;
         pos = new_pos;
-        let (reversed_bytes7, new_pos) = get_price(body, pos);
+        let (reversed_bytes7, new_pos) = get_price(body, pos)?;
         pos = new_pos;
-        let (reversed_bytes8, new_pos) = get_price(body, pos);
+        let (reversed_bytes8, new_pos) = get_price(body, pos)?;
         pos = new_pos;
 
         // reversed_bytes9 (i16) + active2 (u16)
@@ -774,7 +768,7 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
         }
         let reversed_bytes9 = i16::from_le_bytes([body[pos], body[pos + 1]]);
         pos += 2;
-        let active2 = read_u16(body, pos);
+        let active2 = read_u16(body, pos)?;
         pos += 2;
 
         // `reversed_bytes0` is correlated with server time, but its wire format is not
@@ -835,6 +829,12 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
             active2,
         });
     }
+    if pos != body.len() {
+        return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+            "quote response has {} trailing bytes after {count} declared records",
+            body.len() - pos
+        )));
+    }
 
     Ok(result)
 }
@@ -848,7 +848,7 @@ pub fn parse_finance_info(body: &[u8], market: u8, code: &str) -> Result<Finance
     if body.len() < 2 {
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short for finance count"));
     }
-    let count = read_u16(body, 0);
+    let count = read_u16(body, 0)?;
     if count != 1 {
         return Err(TdxError::InvalidData(format!(
             "single-security finance response declared {count} records instead of exactly one"
@@ -878,19 +878,19 @@ pub fn parse_finance_info(body: &[u8], market: u8, code: &str) -> Result<Finance
     pos += 4;
 
     // u16 province
-    let province = read_u16(body, pos);
+    let province = read_u16(body, pos)?;
     pos += 2;
 
     // u16 industry
-    let industry = read_u16(body, pos);
+    let industry = read_u16(body, pos)?;
     pos += 2;
 
     // u32 updated_date
-    let updated_date = read_u32(body, pos);
+    let updated_date = read_u32(body, pos)?;
     pos += 4;
 
     // u32 ipo_date
-    let ipo_date = read_u32(body, pos);
+    let ipo_date = read_u32(body, pos)?;
     pos += 4;
     if ipo_date != 0 {
         validate_compact_source_date(ipo_date, "finance IPO date")?;
@@ -966,7 +966,7 @@ pub fn parse_xdxr_info(body: &[u8]) -> Result<Vec<XdXrInfo>> {
     }
 
     let mut pos = 9;
-    let count = read_u16(body, pos) as usize;
+    let count = read_u16(body, pos)? as usize;
     pos += 2;
     let expected_len = 11usize
         .checked_add(count.checked_mul(29).ok_or_else(|| {
@@ -1002,7 +1002,7 @@ pub fn parse_xdxr_info(body: &[u8]) -> Result<Vec<XdXrInfo>> {
         pos += 1;
 
         // datetime (category 9 → YYYYMMDD u32)
-        let (year, month, day, _hour, _minute, new_pos) = get_datetime(9, body, pos);
+        let (year, month, day, _hour, _minute, new_pos) = get_datetime(9, body, pos)?;
         pos = new_pos;
         let compact_date = year
             .checked_mul(10_000)
@@ -1041,10 +1041,10 @@ pub fn parse_xdxr_info(body: &[u8]) -> Result<Vec<XdXrInfo>> {
                 xingquanjia = Some(f32::from_le_bytes([d[0], d[1], d[2], d[3]]) as f64);
                 fenshu = Some(f32::from_le_bytes([d[8], d[9], d[10], d[11]]) as f64);
             } else {
-                let pqlt_raw = read_u32(d, 0);
-                let qzgb_raw = read_u32(d, 4);
-                let phlt_raw = read_u32(d, 8);
-                let hzgb_raw = read_u32(d, 12);
+                let pqlt_raw = read_u32(d, 0)?;
+                let qzgb_raw = read_u32(d, 4)?;
+                let phlt_raw = read_u32(d, 8)?;
+                let hzgb_raw = read_u32(d, 12)?;
                 panqianliutong = Some(if pqlt_raw == 0 {
                     0.0
                 } else {
@@ -1176,7 +1176,7 @@ pub fn parse_block_info_meta(body: &[u8]) -> Result<BlockInfoMeta> {
         return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("body too short for block meta"));
     }
 
-    let size = read_u32(body, 0);
+    let size = read_u32(body, 0)?;
 
     // 1 byte separator
     // 32 bytes hash
@@ -1203,11 +1203,15 @@ pub fn parse_block_info(body: &[u8]) -> Result<Vec<u8>> {
 // 辅助函数: 日期时间解码
 // ============================================================
 
-fn get_datetime(category: u8, buffer: &[u8], pos: usize) -> (u32, u32, u32, u32, u32, usize) {
+fn get_datetime(
+    category: u8,
+    buffer: &[u8],
+    pos: usize,
+) -> Result<(u32, u32, u32, u32, u32, usize)> {
     if category < 4 || category == 7 || category == 8 {
         // 分钟级: u16 date + u16 minutes
-        let zip_day = read_u16(buffer, pos) as u32;
-        let minutes = read_u16(buffer, pos + 2) as u32;
+        let zip_day = read_u16(buffer, pos)? as u32;
+        let minutes = read_u16(buffer, pos + 2)? as u32;
 
         let year = (zip_day >> 11) + 2004;
         let month = (zip_day % 2048) / 100;
@@ -1215,15 +1219,15 @@ fn get_datetime(category: u8, buffer: &[u8], pos: usize) -> (u32, u32, u32, u32,
         let hour = minutes / 60;
         let minute = minutes % 60;
 
-        (year, month, day, hour, minute, pos + 4)
+        Ok((year, month, day, hour, minute, pos + 4))
     } else {
         // 日/周/月级: u32 date (YYYYMMDD)
-        let zip_day = read_u32(buffer, pos);
+        let zip_day = read_u32(buffer, pos)?;
         let year = zip_day / 10000;
         let month = (zip_day % 10000) / 100;
         let day = zip_day % 100;
 
-        (year, month, day, 0, 0, pos + 4)
+        Ok((year, month, day, 0, 0, pos + 4))
     }
 }
 

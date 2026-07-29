@@ -42,13 +42,13 @@ pub fn parse_daily_bar(data: &[u8], coefficient: f64) -> Result<Vec<DailyBarReco
 
     for i in 0..count {
         let offset = i * RECORD_SIZE;
-        let date_num = read_u32(data, offset);
-        let open = read_u32(data, offset + 4) as f64 * coefficient;
-        let high = read_u32(data, offset + 8) as f64 * coefficient;
-        let low = read_u32(data, offset + 12) as f64 * coefficient;
-        let close = read_u32(data, offset + 16) as f64 * coefficient;
-        let amount = read_f32(data, offset + 20) as f64;
-        let volume = read_u32(data, offset + 24) as f64;
+        let date_num = read_u32(data, offset)?;
+        let open = read_u32(data, offset + 4)? as f64 * coefficient;
+        let high = read_u32(data, offset + 8)? as f64 * coefficient;
+        let low = read_u32(data, offset + 12)? as f64 * coefficient;
+        let close = read_u32(data, offset + 16)? as f64 * coefficient;
+        let amount = read_f32(data, offset + 20)? as f64;
+        let volume = read_u32(data, offset + 24)? as f64;
 
         let (year, month, day) = decode_date(date_num);
 

@@ -1,6 +1,9 @@
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
+use crate::error::Result;
+use crate::protocol::cursor::PacketCursor;
+
 /// 日期校验的最大年份 (运行时计算: 当前年份 + 10, 首次调用后缓存)
 pub fn max_valid_year() -> u32 {
     static YEAR: OnceLock<u32> = OnceLock::new();
@@ -59,55 +62,40 @@ pub fn format_datetime(year: u32, month: u32, day: u32, hour: u32, minute: u32) 
     )
 }
 
-/// 安全的字节切片索引
+/// 读取单个字节。截断输入返回带位置的错误。
 #[inline(always)]
-pub fn get_byte(data: &[u8], pos: usize) -> u8 {
-    data[pos]
+pub fn get_byte(data: &[u8], pos: usize) -> Result<u8> {
+    PacketCursor::at(data, pos)?.read_u8("byte")
 }
 
-/// 安全地读取 u32 (little-endian)
+/// 读取 u32 (little-endian)。截断输入不会静默补零。
 #[inline(always)]
-pub fn read_u32(data: &[u8], pos: usize) -> u32 {
-    if pos + 4 > data.len() {
-        return 0;
-    }
-    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+pub fn read_u32(data: &[u8], pos: usize) -> Result<u32> {
+    PacketCursor::at(data, pos)?.read_u32_le("u32")
 }
 
-/// 安全地读取 u16 (little-endian)
+/// 读取 u16 (little-endian)。截断输入不会静默补零。
 #[inline(always)]
-pub fn read_u16(data: &[u8], pos: usize) -> u16 {
-    if pos + 2 > data.len() {
-        return 0;
-    }
-    u16::from_le_bytes([data[pos], data[pos + 1]])
+pub fn read_u16(data: &[u8], pos: usize) -> Result<u16> {
+    PacketCursor::at(data, pos)?.read_u16_le("u16")
 }
 
-/// 安全地读取 f32 (little-endian)
+/// 读取 f32 (little-endian)。
 #[inline(always)]
-pub fn read_f32(data: &[u8], pos: usize) -> f32 {
-    f32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+pub fn read_f32(data: &[u8], pos: usize) -> Result<f32> {
+    PacketCursor::at(data, pos)?.read_f32_le("f32")
 }
 
-/// 安全地读取 i32 (little-endian)
+/// 读取 i32 (little-endian)。
 #[inline(always)]
-pub fn read_i32(data: &[u8], pos: usize) -> i32 {
-    i32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+pub fn read_i32(data: &[u8], pos: usize) -> Result<i32> {
+    PacketCursor::at(data, pos)?.read_i32_le("i32")
 }
 
-/// 安全地读取 i64 (little-endian)
+/// 读取 i64 (little-endian)。
 #[inline(always)]
-pub fn read_i64(data: &[u8], pos: usize) -> i64 {
-    i64::from_le_bytes([
-        data[pos],
-        data[pos + 1],
-        data[pos + 2],
-        data[pos + 3],
-        data[pos + 4],
-        data[pos + 5],
-        data[pos + 6],
-        data[pos + 7],
-    ])
+pub fn read_i64(data: &[u8], pos: usize) -> Result<i64> {
+    PacketCursor::at(data, pos)?.read_i64_le("i64")
 }
 
 #[cfg(test)]
@@ -159,5 +147,15 @@ mod tests {
     #[test]
     fn test_format_datetime() {
         assert_eq!(format_datetime(2026, 6, 23, 14, 30), "2026-06-23 14:30");
+    }
+
+    #[test]
+    fn fixed_readers_reject_truncated_input() {
+        assert!(get_byte(&[], 0).is_err());
+        assert!(read_u16(&[0], 0).is_err());
+        assert!(read_u32(&[0, 0, 0], 0).is_err());
+        assert!(read_f32(&[0, 0, 0], 0).is_err());
+        assert!(read_i32(&[0, 0, 0], 0).is_err());
+        assert!(read_i64(&[0; 7], 0).is_err());
     }
 }

@@ -31,6 +31,21 @@ current trades. Beijing security metadata is explicitly unsupported because
 live servers close the market-2 security-list request; it is never remapped to
 Shanghai or Shenzhen.
 
+## Strict packet boundary
+
+TDX binary responses are decoded atomically. A declared batch is returned only
+after every declared record and its protocol-specific tail have been checked.
+Truncated fixed fields, unterminated variable integers, and missing later
+records return `TdxError` with
+`ErrorCode::RESPONSE_LENGTH_MISMATCH`; they are never converted into zero-valued
+fields or a shorter successful batch.
+
+The public low-level helpers `constants::{get_byte, read_u16, read_u32,
+read_f32, read_i32, read_i64}` and `helpers::get_price` return `Result` as of
+0.2.0. This is an intentional pre-1.0 safety break: callers must propagate or
+handle decoder failure instead of relying on the previous panic/zero fallback.
+Valid wire-encoded zero values still decode successfully as zero.
+
 ## Production board Provider
 
 `TdxBoardProvider` implements provider-neutral board directory, exact

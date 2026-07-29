@@ -25,7 +25,7 @@ Implementation
 - **Status:** complete
 
 ### Phase 3: Implementation
-- [ ] Make TDX binary parsing fallible and atomic.
+- [x] Make TDX binary parsing fallible and atomic.
 - [ ] Migrate Exchange pacing/policy to shared transport primitives.
 - [ ] Add BR-009 admission-registry compliance checks.
 - [ ] Centralize fixed-offset timestamps and typed numeric tolerances.

@@ -59,14 +59,14 @@ pub fn parse_min_bar(data: &[u8]) -> Result<Vec<MinBarRecord>> {
 
     for i in 0..count {
         let offset = i * RECORD_SIZE;
-        let date_num = read_u16(data, offset);
-        let time_num = read_u16(data, offset + 2);
-        let open = read_u32(data, offset + 4) as f64 / 100.0;
-        let high = read_u32(data, offset + 8) as f64 / 100.0;
-        let low = read_u32(data, offset + 12) as f64 / 100.0;
-        let close = read_u32(data, offset + 16) as f64 / 100.0;
-        let amount = read_f32(data, offset + 20) as f64;
-        let volume = read_u32(data, offset + 24) as f64;
+        let date_num = read_u16(data, offset)?;
+        let time_num = read_u16(data, offset + 2)?;
+        let open = read_u32(data, offset + 4)? as f64 / 100.0;
+        let high = read_u32(data, offset + 8)? as f64 / 100.0;
+        let low = read_u32(data, offset + 12)? as f64 / 100.0;
+        let close = read_u32(data, offset + 16)? as f64 / 100.0;
+        let amount = read_f32(data, offset + 20)? as f64;
+        let volume = read_u32(data, offset + 24)? as f64;
 
         let (year, month, day) = decode_date_u16(date_num);
         let (hour, minute) = decode_time(time_num);
@@ -108,14 +108,14 @@ pub fn parse_lc_min_bar(data: &[u8]) -> Result<Vec<LcMinBarRecord>> {
 
     for i in 0..count {
         let offset = i * RECORD_SIZE;
-        let date_num = read_u16(data, offset);
-        let time_num = read_u16(data, offset + 2);
-        let open = read_f32(data, offset + 4) as f64;
-        let high = read_f32(data, offset + 8) as f64;
-        let low = read_f32(data, offset + 12) as f64;
-        let close = read_f32(data, offset + 16) as f64;
-        let amount = read_f32(data, offset + 20) as f64;
-        let volume = read_u32(data, offset + 24) as f64;
+        let date_num = read_u16(data, offset)?;
+        let time_num = read_u16(data, offset + 2)?;
+        let open = read_f32(data, offset + 4)? as f64;
+        let high = read_f32(data, offset + 8)? as f64;
+        let low = read_f32(data, offset + 12)? as f64;
+        let close = read_f32(data, offset + 16)? as f64;
+        let amount = read_f32(data, offset + 20)? as f64;
+        let volume = read_u32(data, offset + 24)? as f64;
 
         let (year, month, day) = decode_date_u16(date_num);
         let (hour, minute) = decode_time(time_num);

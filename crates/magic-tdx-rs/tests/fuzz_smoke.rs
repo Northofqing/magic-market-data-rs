@@ -28,6 +28,20 @@ fn truncated_inputs_never_panic() {
         let financial = catch_unwind(AssertUnwindSafe(|| parse_financial(&bytes)));
         let block = catch_unwind(AssertUnwindSafe(|| parse_block(&bytes)));
         let block_group = catch_unwind(AssertUnwindSafe(|| parse_block_group(&bytes)));
+        if let Ok(Ok(records)) = &bars {
+            assert_eq!(
+                records.len(),
+                u16::from_le_bytes([bytes[0], bytes[1]]) as usize,
+                "bar parser returned a partial declared batch at length {len}"
+            );
+        }
+        if let Ok(Ok(records)) = &quotes {
+            assert_eq!(
+                records.len(),
+                u16::from_le_bytes([bytes[2], bytes[3]]) as usize,
+                "quote parser returned a partial declared batch at length {len}"
+            );
+        }
         assert!(bars.is_ok(), "bars panic at length {len}");
         assert!(quotes.is_ok(), "quotes panic at length {len}");
         assert!(minute.is_ok(), "minute panic at length {len}");

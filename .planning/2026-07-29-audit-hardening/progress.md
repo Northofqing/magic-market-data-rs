@@ -22,6 +22,9 @@
 - Wrote and self-reviewed the seven-task, test-first implementation plan at
   `docs/superpowers/plans/2026-07-29-audit-hardening.md`. Coverage,
   placeholder, command, and diff-whitespace checks passed.
+- Implemented the checked TDX packet cursor, fallible public low-level readers,
+  exact declared-record parsing, explicit K-line tail rules, atomic
+  security-list/quote/trade failures, and stronger truncation/fuzz properties.
 
 ### Test Results
 | Test | Expected | Actual | Status |
@@ -29,6 +32,8 @@
 | TDX focused protocol/fuzz tests | Existing baseline passes | 14 passed, 0 failed | pass |
 | `cargo build --workspace --locked --offline` | Clean build | Passed | pass |
 | `cargo test --workspace --all-targets --locked --offline` | Clean baseline | Passed, only explicitly ignored live HTTPS tests | pass |
+| `cargo test -p magic-tdx-rs --all-targets --locked --offline` | Strict decoder remains compatible with complete packets | 363 unit tests plus all integration/example targets passed | pass |
+| `cargo clippy -p magic-tdx-rs --all-targets --locked --offline -- -D warnings` | No new lint debt | Passed | pass |
 
 ### Errors
 | Error | Resolution |

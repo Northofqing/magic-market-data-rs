@@ -57,3 +57,17 @@
 - `docs/PERFORMANCE_RESULTS.md`
 - `tools/compliance/check.sh`
 - Provider integration documents under `docs/integrations/`
+# Implementation Findings
+
+## TDX packet boundary
+
+- Both security and index bar fixtures demonstrate a protocol-authorized
+  optional four-byte tail. The strict parser therefore accepts exactly zero or
+  four tail bytes and rejects every other tail length.
+- A single checked cursor now distinguishes valid encoded zero from truncated
+  or unterminated data. Public fixed-width readers and `get_price` return
+  `Result`, so workspace callers can no longer silently manufacture zero.
+- Security lists, declared bar batches, transaction batches, and realtime quote
+  batches reject a missing later record atomically. Historical minute data has
+  no count field, so its six-byte header is required and every started
+  price/auxiliary/volume tuple must finish.

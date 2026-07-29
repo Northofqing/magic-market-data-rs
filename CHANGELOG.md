@@ -7,6 +7,9 @@ immutable records.
 
 Breaking migrations:
 
+- TDX low-level byte/number readers and `helpers::get_price` are now fallible.
+  TDX parsers reject truncated declared batches atomically instead of
+  panicking, filling missing fields with zero, or returning a shorter vector.
 - Removed the repository Rust version selector and MSRV declaration. Local and
   release gates use the active default toolchain, CI uses current stable, and
   packaged artifacts record the actual `rustc` and Cargo versions.

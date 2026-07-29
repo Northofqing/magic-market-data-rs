@@ -47,8 +47,12 @@ fn test_security_list_truncated_record() {
     // count=1 but only 10 bytes (need 29)
     let mut data = vec![0x01, 0x00];
     data.extend_from_slice(&[0u8; 10]);
-    let result = parse_security_list(&data).unwrap();
-    assert!(result.is_empty()); // breaks early
+    let error = parse_security_list(&data).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains("record 0"));
 }
 
 #[test]
@@ -66,6 +70,21 @@ fn test_security_list_one_record() {
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].code, "600519");
     assert_eq!(result[0].name, "贵州茅台");
+}
+
+#[test]
+fn security_list_rejects_a_missing_later_record_atomically() {
+    let mut data = vec![0x02, 0x00];
+    let mut record = vec![0u8; 29];
+    record[..6].copy_from_slice(b"600519");
+    data.extend_from_slice(&record);
+
+    let error = parse_security_list(&data).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains("record 1"));
 }
 
 // --- parse_security_bars ---
@@ -160,15 +179,13 @@ fn test_minute_time_zero_count() {
 
 #[test]
 fn test_history_minute_time_empty() {
-    let result = parse_history_minute_time_data(&[], 1, "600519").unwrap();
-    assert!(result.is_empty());
+    assert!(parse_history_minute_time_data(&[], 1, "600519").is_err());
 }
 
 #[test]
 fn test_history_minute_time_short_header() {
     // Less than 6 bytes header
-    let result = parse_history_minute_time_data(&[0u8; 5], 1, "600519").unwrap();
-    assert!(result.is_empty());
+    assert!(parse_history_minute_time_data(&[0u8; 5], 1, "600519").is_err());
 }
 
 // --- parse_transaction_data ---

@@ -325,6 +325,25 @@ fn quote_packet() -> Vec<u8> {
     body
 }
 
+fn assert_all_strict_prefixes_fail<T>(
+    packet: &[u8],
+    minimum_prefix: usize,
+    parser: impl Fn(&[u8]) -> magic_tdx_rs::error::Result<T>,
+) {
+    for length in minimum_prefix..packet.len() {
+        let error = parser(&packet[..length]).err();
+        assert!(
+            error.is_some(),
+            "truncated packet prefix of {length} bytes was accepted"
+        );
+        assert_eq!(
+            error.and_then(|value| value.error_code()),
+            Some(ErrorCode::RESPONSE_LENGTH_MISMATCH),
+            "prefix length {length}"
+        );
+    }
+}
+
 #[test]
 fn quote_parser_decodes_complete_depth_and_rejects_a_truncated_tail() {
     let body = quote_packet();
@@ -342,6 +361,31 @@ fn quote_parser_decodes_complete_depth_and_rejects_a_truncated_tail() {
     let mut truncated = body;
     truncated.pop();
     assert!(parse_security_quotes(&truncated).is_err());
+}
+
+#[test]
+fn variable_record_parsers_reject_every_partial_record_prefix() {
+    let mut security = vec![1, 0];
+    security.extend_from_slice(&20260723u32.to_le_bytes());
+    security.extend_from_slice(&[10, 1, 2, 0]);
+    security.extend_from_slice(&100u32.to_le_bytes());
+    security.extend_from_slice(&1_000u32.to_le_bytes());
+    assert_all_strict_prefixes_fail(&security, 0, |body| parse_security_bars(body, 4));
+
+    let mut realtime = vec![1, 0];
+    realtime.extend_from_slice(&[0; 11]);
+    realtime.extend_from_slice(&[10, 0, 2]);
+    assert_all_strict_prefixes_fail(&realtime, 14, |body| {
+        parse_minute_time_data(body, 1, "600396")
+    });
+
+    let history = [vec![0; 6], vec![10, 0, 2]].concat();
+    assert_all_strict_prefixes_fail(&history, 7, |body| {
+        parse_history_minute_time_data(body, 1, "600396")
+    });
+
+    let quote = quote_packet();
+    assert_all_strict_prefixes_fail(&quote, 0, parse_security_quotes);
 }
 
 fn xdxr_packet(categories: &[u8]) -> Vec<u8> {

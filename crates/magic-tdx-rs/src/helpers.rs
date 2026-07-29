@@ -1,3 +1,6 @@
+use crate::error::Result;
+use crate::protocol::cursor::PacketCursor;
+
 /// 变长整数解码 - 类似 UTF-8 的有符号编码
 /// 对应 Python tdxpy helper.py 中的 get_price 函数
 ///
@@ -6,36 +9,12 @@
 /// - 后续字节: [1][7bit data] (如果有更多字节)
 /// - 最后字节: [0][7bit data]
 ///
-/// 返回 (value, new_pos)。如果数据不足，返回 (0, data.len())。
+/// 返回 `(value, new_pos)`。数据不足或编码未终止时返回带位置的错误。
 #[inline(always)]
-pub fn get_price(data: &[u8], pos: usize) -> (i64, usize) {
-    if pos >= data.len() {
-        return (0, data.len());
-    }
-    let mut pos = pos;
-    let first = data[pos];
-    let sign = (first & 0x40) != 0;
-    let mut result = (first & 0x3F) as i64;
-    let mut shift = 6;
-
-    if (first & 0x80) != 0 {
-        loop {
-            pos += 1;
-            if pos >= data.len() {
-                return (0, data.len());
-            }
-            let b = data[pos];
-            result |= ((b & 0x7F) as i64) << shift;
-            shift += 7;
-            if (b & 0x80) == 0 {
-                break;
-            }
-        }
-    }
-
-    pos += 1;
-    let val = if sign { -result } else { result };
-    (val, pos)
+pub fn get_price(data: &[u8], pos: usize) -> Result<(i64, usize)> {
+    let mut cursor = PacketCursor::at(data, pos)?;
+    let value = cursor.read_tdx_varint("TDX variable integer")?;
+    Ok((value, cursor.position()))
 }
 
 /// 交易量解码 - 对应 Python tdxpy helper.py 中的 get_volume 函数
@@ -93,7 +72,7 @@ mod tests {
     fn test_get_price_simple() {
         // 单字节正数: 0b0000_0010 = 2
         let data = [0x02];
-        let (val, pos) = get_price(&data, 0);
+        let (val, pos) = get_price(&data, 0).unwrap();
         assert_eq!(val, 2);
         assert_eq!(pos, 1);
     }
@@ -102,7 +81,7 @@ mod tests {
     fn test_get_price_negative() {
         // 单字节负数: 0b0100_0010 = sign=true, data=2 -> -2
         let data = [0x42];
-        let (val, pos) = get_price(&data, 0);
+        let (val, pos) = get_price(&data, 0).unwrap();
         assert_eq!(val, -2);
         assert_eq!(pos, 1);
     }
@@ -113,7 +92,7 @@ mod tests {
         // first: data=1, shift=6
         // second: data=1, result = 1 | (1 << 6) = 65
         let data = [0x81, 0x01];
-        let (val, pos) = get_price(&data, 0);
+        let (val, pos) = get_price(&data, 0).unwrap();
         assert_eq!(val, 65);
         assert_eq!(pos, 2);
     }
@@ -121,7 +100,7 @@ mod tests {
     #[test]
     fn test_get_price_zero() {
         let data = [0x00];
-        let (val, pos) = get_price(&data, 0);
+        let (val, pos) = get_price(&data, 0).unwrap();
         assert_eq!(val, 0);
         assert_eq!(pos, 1);
     }
@@ -130,7 +109,7 @@ mod tests {
     fn test_get_price_max_single_byte() {
         // 0b0011_1111 = 63 (max positive single byte)
         let data = [0x3F];
-        let (val, pos) = get_price(&data, 0);
+        let (val, pos) = get_price(&data, 0).unwrap();
         assert_eq!(val, 63);
         assert_eq!(pos, 1);
     }
@@ -139,7 +118,7 @@ mod tests {
     fn test_get_price_max_negative_single_byte() {
         // 0b0111_1111 = sign=true, data=63 -> -63
         let data = [0x7F];
-        let (val, pos) = get_price(&data, 0);
+        let (val, pos) = get_price(&data, 0).unwrap();
         assert_eq!(val, -63);
         assert_eq!(pos, 1);
     }
@@ -147,9 +126,11 @@ mod tests {
     #[test]
     fn test_get_price_out_of_bounds() {
         let data: [u8; 0] = [];
-        let (val, pos) = get_price(&data, 0);
-        assert_eq!(val, 0);
-        assert_eq!(pos, 0);
+        let error = get_price(&data, 0).unwrap_err();
+        assert_eq!(
+            error.error_code(),
+            Some(crate::error_codes::ErrorCode::RESPONSE_LENGTH_MISMATCH)
+        );
     }
 
     #[test]
@@ -159,7 +140,7 @@ mod tests {
         // second: data=1, result |= 1<<6 = 65, shift=13
         // third: data=1, result |= 1<<13 = 65 + 8192 = 8257
         let data = [0x81, 0x81, 0x01];
-        let (val, pos) = get_price(&data, 0);
+        let (val, pos) = get_price(&data, 0).unwrap();
         assert_eq!(val, 8257);
         assert_eq!(pos, 3);
     }
@@ -168,7 +149,7 @@ mod tests {
     fn test_get_price_with_offset() {
         // Test reading at an offset
         let data = [0xFF, 0x02, 0x03];
-        let (val, pos) = get_price(&data, 1);
+        let (val, pos) = get_price(&data, 1).unwrap();
         assert_eq!(val, 2);
         assert_eq!(pos, 2);
     }
