@@ -28,6 +28,10 @@
 - Replaced the Exchange full-I/O mutex gate with shared short-lock request
   reservations, retained explicit Rustls/native-tls wire behavior, and reused
   compatible shared endpoint/request validation.
+- Added the 17-row machine-readable BR-009 registry, its source-drift checker
+  and deterministic checker tests. Re-ran WallstreetCN's bounded production
+  protocol to meet the uniform threshold without fabricating or grandfathering
+  evidence.
 
 ### Test Results
 | Test | Expected | Actual | Status |
@@ -40,6 +44,9 @@
 | `cargo test -p magic-market-transport --all-targets --locked --offline` | Shared pacing contract remains correct | 24 tests passed | pass |
 | `cargo test -p magic-exchange-rs --all-targets --locked --offline` | Exchange starts stay spaced without serializing I/O | All tests passed; 2 live HTTPS tests ignored | pass |
 | `cargo clippy -p magic-exchange-rs --all-targets --locked --offline -- -D warnings` | No new lint debt | Passed | pass |
+| WallstreetCN bounded live/load admission | Preserve existing production capability under the uniform threshold | 2 live probes × 20 rows and 3 serial loads × 10 rows passed | pass |
+| `python3 -m unittest tools/compliance/test_check_admissions.py` | Checker rejects every modeled drift | 4 tests passed | pass |
+| `bash tools/compliance/check.sh` | All source/docs/business-rule contracts pass | Passed; 17 admission constants registered | pass |
 
 ### Errors
 | Error | Resolution |

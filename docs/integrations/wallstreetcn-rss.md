@@ -13,7 +13,9 @@ cookies, browser/login state, authenticated content, or inferred security
 identities.
 
 On 2026-07-26 the release production client passed one bounded metadata probe
-and two consecutive serial fetches through one shared gate. Consequently:
+and two consecutive serial fetches through one shared gate. On 2026-07-29 the
+same production protocol passed two consecutive bounded live probes and a
+three-call serial load probe. Consequently:
 
 - `global_news=true`;
 - `instrument_news=false`;
@@ -135,6 +137,14 @@ Admission evidence on 2026-07-26:
 One later optional title-match attempt had a typed DNS `Transport` failure; the
 unchanged bounded probe passed on the permitted outside-sandbox retry.
 Transient failures remain observable and do not trigger fallback.
+
+Re-admission evidence on 2026-07-29 under the uniform BR-009 threshold:
+
+- two consecutive live probes each returned 20 complete metadata-only rows;
+- the three-call serial load probe returned 30 records and
+  `load_probe_status=passed`;
+- all batches retained `ProviderId::WallstreetCn`, first-party canonical URLs,
+  source time, absent summary/content, and strict complete quality.
 
 ## Failure semantics
 

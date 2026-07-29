@@ -13,6 +13,8 @@ required=(
   docs/DEPLOYMENT.md
   docs/MULTI_PROVIDER_ROUTING.md
   docs/integrations/tencent-web.md
+  docs/integrations/README.md
+  docs/integrations/admissions.tsv
   docs/integrations/sina-web.md
   docs/integrations/eastmoney-web.md
   docs/integrations/cninfo-web.md
@@ -72,6 +74,7 @@ for required_file in "${required[@]}"; do
     exit 1
   }
 done
+python3 tools/compliance/check_admissions.py
 
 for toolchain_file in rust-toolchain rust-toolchain.toml; do
   if [[ -e "$toolchain_file" ]]; then

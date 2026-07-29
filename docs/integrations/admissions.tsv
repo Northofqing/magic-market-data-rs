@@ -1,0 +1,18 @@
+crate	provider	constant	admitted	evidence	status	last_live_date	live_probe_count	serial_load_count	blocker
+magic-cfets-rs	Cfets	SHIBOR_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	
+magic-cfets-rs	Cfets	LPR_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	
+magic-cfets-rs	Cfets	DR007_ADMITTED	false	docs/integrations/cfets-official.md	blocked	2026-07-29	0	0	No equivalent proven public DR007 history contract
+magic-cfets-rs	Cfets	OFFICIAL_FX_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	
+magic-fred-rs	Fred	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/fred-api.md	blocked		0	0	No configured secret-bearing live admission has been recorded
+magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-07-29	0	0	Official diagnostic remains HTTP 403 without a proven series contract
+magic-nbs-rs	Nbs	NATIONAL_SERIES_ADMITTED	false	docs/integrations/nbs-official.md	blocked	2026-07-29	0	0	No supported machine-readable national series contract was proved
+magic-nbs-rs	Nbs	REGIONAL_SERIES_ADMITTED	false	docs/integrations/nbs-official.md	blocked	2026-07-29	0	0	No supported machine-readable regional series contract was proved
+magic-pbc-rs	Pbc	MONEY_SUPPLY_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-07-29	2	3	
+magic-pbc-rs	Pbc	SOCIAL_FINANCING_ADMITTED	false	docs/integrations/pbc-official.md	blocked	2026-07-29	0	0	No cataloged audited social-financing table contract
+magic-pbc-rs	Pbc	REGIONAL_SERIES_ADMITTED	false	docs/integrations/pbc-official.md	blocked	2026-07-29	0	0	Regional series are outside the exact 2024 money-supply catalog
+magic-sec-rs	SecEdgar	FILING_METADATA_ADMITTED	false	docs/integrations/sec-edgar.md	blocked		0	0	No operator-identified live and serial-load admission has been recorded
+magic-stcn-rs	SecuritiesTimes	GLOBAL_NEWS_ADMITTED	true	docs/integrations/securities-times.md	admitted	2026-07-29	2	3	
+magic-wallstreetcn-rs	WallstreetCn	GLOBAL_NEWS_ADMITTED	true	docs/integrations/wallstreetcn-rss.md	admitted	2026-07-29	2	3	
+magic-worldbank-rs	WorldBank	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/worldbank-indicators.md	blocked	2026-07-29	1	0	Official indicator metadata exposes an empty structured unit
+magic-xinhua-rs	XinhuaFinance	GLOBAL_NEWS_ADMITTED	true	docs/integrations/xinhua-finance.md	admitted	2026-07-29	2	3	
+magic-yicai-rs	Yicai	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yicai-news.md	admitted	2026-07-29	2	3	

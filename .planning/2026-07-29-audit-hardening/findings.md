@@ -82,3 +82,15 @@
 - Existing CFFEX integration coverage and the new transport test observe
   spaced actual starts with overlapping slow injected I/O, while TLS backend
   error evidence remains unchanged.
+
+## BR-009 registry
+
+- Source discovery found 17 public `*_ADMITTED` constants across 11 Provider
+  crates. The TSV registry now binds every constant to its exact Provider,
+  boolean, evidence document, date/counts, and blocker.
+- WallstreetCN's older evidence predated the uniform threshold. Two consecutive
+  live probes and a three-call serial load probe passed on 2026-07-29, so its
+  existing `true` capability remains evidence-backed without an exception.
+- The offline checker rejects missing/unknown/duplicate rows, boolean drift,
+  bad evidence paths, sub-threshold admitted counts, and absent false-row
+  blockers. It is called by the existing compliance gate.
