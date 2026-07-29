@@ -1,0 +1,31 @@
+{
+  "cik":"0000320193",
+  "entityType":"operating",
+  "sic":"3571",
+  "sicDescription":"Electronic Computers",
+  "name":"Apple Inc.",
+  "tickers":["AAPL"],
+  "exchanges":["Nasdaq"],
+  "filings":{
+    "recent":{
+      "accessionNumber":["0000320193-25-000057","0000320193-25-000079"],
+      "filingDate":["2025-04-04","2025-05-02"],
+      "reportDate":["","2025-03-29"],
+      "acceptanceDateTime":["2025-04-04T16:31:42.000Z","2025-05-01T18:26:29.000Z"],
+      "act":["34","34"],
+      "form":["8-K","10-Q"],
+      "fileNumber":["001-36743","001-36743"],
+      "filmNumber":["25712642","25905524"],
+      "items":["5.07",""],
+      "size":[412345,15234567],
+      "isXBRL":[1,1],
+      "isInlineXBRL":[1,1],
+      "primaryDocument":["aapl-20250404.htm","aapl-20250329.htm"],
+      "primaryDocDescription":["8-K","10-Q"]
+    },
+    "files":[
+      {"name":"CIK0000320193-submissions-001.json",
+       "filingCount":2,"filingFrom":"2024-01-01","filingTo":"2024-12-31"}
+    ]
+  }
+}
