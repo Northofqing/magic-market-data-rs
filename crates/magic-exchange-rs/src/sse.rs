@@ -1,7 +1,7 @@
 use crate::transport::{
-    validate_endpoint, validate_minimum_interval, validate_request, validate_response,
-    validate_timeout, ExchangeTransport, HttpMethod, HttpRequest, HttpResponse, HttpsTransport,
-    RequestGate,
+    new_request_gate, validate_endpoint, validate_minimum_interval, validate_request,
+    validate_response, validate_timeout, wait_for_request_start, ExchangeTransport, HttpMethod,
+    HttpRequest, HttpResponse, HttpsTransport, SharedRequestGate,
 };
 use crate::{ExchangeError, ProviderCapabilities};
 use magic_market_core::{
@@ -62,7 +62,7 @@ impl SseConfig {
 pub struct SseClient {
     config: SseConfig,
     transport: Arc<dyn ExchangeTransport>,
-    gate: Arc<RequestGate>,
+    gate: Arc<SharedRequestGate>,
 }
 
 impl std::fmt::Debug for SseClient {
@@ -98,7 +98,7 @@ impl SseClient {
         transport: Arc<dyn ExchangeTransport>,
     ) -> Result<Self, ExchangeError> {
         Ok(Self {
-            gate: Arc::new(RequestGate::new(config.minimum_interval)),
+            gate: Arc::new(new_request_gate(config.minimum_interval)?),
             config,
             transport,
         })
@@ -143,7 +143,8 @@ impl SseClient {
 
     fn execute(&self, request: HttpRequest) -> Result<HttpResponse, ExchangeError> {
         validate_request(&request, HttpMethod::Get, HOST, PATH)?;
-        let response = self.gate.execute(|| self.transport.execute(&request))?;
+        wait_for_request_start(&self.gate)?;
+        let response = self.transport.execute(&request)?;
         validate_response(&request, &response, &["json", "javascript"])?;
         Ok(response)
     }
@@ -153,7 +154,8 @@ impl SseClient {
         request: HttpRequest,
     ) -> Result<HttpResponse, ExchangeError> {
         validate_request(&request, HttpMethod::Get, HOST, DRAGON_TIGER_PATH)?;
-        let response = self.gate.execute(|| self.transport.execute(&request))?;
+        wait_for_request_start(&self.gate)?;
+        let response = self.transport.execute(&request)?;
         validate_response(&request, &response, &["json", "javascript"])?;
         Ok(response)
     }

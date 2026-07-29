@@ -25,6 +25,9 @@
 - Implemented the checked TDX packet cursor, fallible public low-level readers,
   exact declared-record parsing, explicit K-line tail rules, atomic
   security-list/quote/trade failures, and stronger truncation/fuzz properties.
+- Replaced the Exchange full-I/O mutex gate with shared short-lock request
+  reservations, retained explicit Rustls/native-tls wire behavior, and reused
+  compatible shared endpoint/request validation.
 
 ### Test Results
 | Test | Expected | Actual | Status |
@@ -34,6 +37,9 @@
 | `cargo test --workspace --all-targets --locked --offline` | Clean baseline | Passed, only explicitly ignored live HTTPS tests | pass |
 | `cargo test -p magic-tdx-rs --all-targets --locked --offline` | Strict decoder remains compatible with complete packets | 363 unit tests plus all integration/example targets passed | pass |
 | `cargo clippy -p magic-tdx-rs --all-targets --locked --offline -- -D warnings` | No new lint debt | Passed | pass |
+| `cargo test -p magic-market-transport --all-targets --locked --offline` | Shared pacing contract remains correct | 24 tests passed | pass |
+| `cargo test -p magic-exchange-rs --all-targets --locked --offline` | Exchange starts stay spaced without serializing I/O | All tests passed; 2 live HTTPS tests ignored | pass |
+| `cargo clippy -p magic-exchange-rs --all-targets --locked --offline -- -D warnings` | No new lint debt | Passed | pass |
 
 ### Errors
 | Error | Resolution |

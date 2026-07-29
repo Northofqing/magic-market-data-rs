@@ -1,6 +1,7 @@
 use crate::transport::{
-    validate_minimum_interval, validate_response, validate_timeout, ExchangeTransport, HttpMethod,
-    HttpRequest, HttpsTransport, RequestGate, TlsBackend,
+    new_request_gate, validate_minimum_interval, validate_response, validate_timeout,
+    wait_for_request_start, ExchangeTransport, HttpMethod, HttpRequest, HttpsTransport,
+    SharedRequestGate, TlsBackend,
 };
 use crate::ExchangeError;
 use magic_market_core::{
@@ -64,7 +65,7 @@ impl CffexConfig {
 pub struct CffexClient {
     config: CffexConfig,
     transport: Arc<dyn ExchangeTransport>,
-    gate: Arc<RequestGate>,
+    gate: Arc<SharedRequestGate>,
 }
 
 impl std::fmt::Debug for CffexClient {
@@ -101,7 +102,7 @@ impl CffexClient {
         transport: Arc<dyn ExchangeTransport>,
     ) -> Result<Self, ExchangeError> {
         Ok(Self {
-            gate: Arc::new(RequestGate::new(config.minimum_interval)),
+            gate: Arc::new(new_request_gate(config.minimum_interval)?),
             config,
             transport,
         })
@@ -152,7 +153,8 @@ impl CffexClient {
             ],
             body: Vec::new(),
         };
-        let response = self.gate.execute(|| self.transport.execute(&request))?;
+        wait_for_request_start(&self.gate)?;
+        let response = self.transport.execute(&request)?;
         validate_response(&request, &response, &["text/html", "application/xhtml+xml"])?;
         Ok(response.body)
     }

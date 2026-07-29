@@ -1,12 +1,16 @@
 use crate::ExchangeError;
+use magic_market_transport::{
+    EndpointPolicy, HttpMethod as SharedHttpMethod, HttpRequest as SharedHttpRequest, MediaType,
+    RequestGate, TransportError,
+};
 use std::io::Read;
 use std::str::FromStr;
 #[cfg(feature = "native-tls")]
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use url::Url;
+
+pub(crate) use magic_market_transport::RequestGate as SharedRequestGate;
 
 pub const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
@@ -173,38 +177,26 @@ fn classify_transport_error(backend: TlsBackend, error: ureq::Transport) -> Exch
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct RequestGate {
-    minimum_interval: Duration,
-    last_started: Mutex<Option<Instant>>,
+pub(crate) fn new_request_gate(interval: Duration) -> Result<RequestGate, ExchangeError> {
+    RequestGate::new(interval).map_err(map_shared_error)
 }
 
-impl RequestGate {
-    pub(crate) fn new(minimum_interval: Duration) -> Self {
-        Self {
-            minimum_interval,
-            last_started: Mutex::new(None),
-        }
-    }
+pub(crate) fn wait_for_request_start(gate: &RequestGate) -> Result<(), ExchangeError> {
+    gate.wait_for_turn().map_err(map_shared_error)
+}
 
-    /// Keeps the mutex through the complete response so client clones cannot
-    /// overlap requests even when a transport call is slow.
-    pub(crate) fn execute<T>(
-        &self,
-        operation: impl FnOnce() -> Result<T, ExchangeError>,
-    ) -> Result<T, ExchangeError> {
-        let mut last_started = self
-            .last_started
-            .lock()
-            .map_err(|_| ExchangeError::Transport("request limiter mutex poisoned".into()))?;
-        if let Some(previous) = *last_started {
-            let elapsed = previous.elapsed();
-            if elapsed < self.minimum_interval {
-                thread::sleep(self.minimum_interval - elapsed);
-            }
+fn map_shared_error(error: TransportError) -> ExchangeError {
+    match error {
+        TransportError::InvalidRequest(message) => ExchangeError::InvalidRequest(message),
+        TransportError::Authentication(message) => ExchangeError::InvalidRequest(message),
+        TransportError::Network(message) | TransportError::Internal(message) => {
+            ExchangeError::Transport(message)
         }
-        *last_started = Some(Instant::now());
-        operation()
+        TransportError::HttpStatus { status } => ExchangeError::HttpStatus(status),
+        TransportError::Redirect(message) | TransportError::MediaType(message) => {
+            ExchangeError::Schema(message)
+        }
+        TransportError::ResourceLimit(message) => ExchangeError::Incomplete(message),
     }
 }
 
@@ -231,6 +223,21 @@ pub(crate) fn validate_endpoint(
     expected_host: &str,
     expected_path: &str,
 ) -> Result<(), ExchangeError> {
+    let policy = EndpointPolicy::new(
+        expected_host,
+        vec![expected_path.to_owned()],
+        Vec::new(),
+        vec![MediaType::Json],
+        MAX_RESPONSE_BYTES,
+        Duration::from_secs(15),
+    )
+    .map_err(map_shared_error)?;
+    let shared_request =
+        SharedHttpRequest::new(SharedHttpMethod::Get, value, Vec::new(), Vec::new())
+            .map_err(map_shared_error)?;
+    policy
+        .validate_request(&shared_request)
+        .map_err(map_shared_error)?;
     let parsed =
         Url::parse(value).map_err(|error| ExchangeError::InvalidRequest(error.to_string()))?;
     if parsed.scheme() != "https"
@@ -255,6 +262,17 @@ pub(crate) fn validate_request(
     expected_host: &str,
     expected_path: &str,
 ) -> Result<(), ExchangeError> {
+    let shared_method = match request.method {
+        HttpMethod::Get => SharedHttpMethod::Get,
+        HttpMethod::Post => SharedHttpMethod::Post,
+    };
+    SharedHttpRequest::new(
+        shared_method,
+        request.url.clone(),
+        request.headers.clone(),
+        request.body.clone(),
+    )
+    .map_err(map_shared_error)?;
     let parsed = Url::parse(&request.url)
         .map_err(|error| ExchangeError::InvalidRequest(error.to_string()))?;
     if request.method != method
@@ -332,7 +350,10 @@ pub(crate) fn validate_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier, Mutex};
+    use std::thread;
+    use std::time::Instant;
 
     #[test]
     fn endpoint_allowlist_is_https_host_and_path_exact() {
@@ -390,6 +411,23 @@ mod tests {
     }
 
     #[test]
+    fn shared_request_contract_rejects_credentials_before_transport() {
+        let request = HttpRequest {
+            method: HttpMethod::Get,
+            url: "https://query.sse.com.cn/security/stock/queryCompanyBulletin.do".into(),
+            headers: vec![("Cookie".into(), "session=secret".into())],
+            body: Vec::new(),
+        };
+        assert!(validate_request(
+            &request,
+            HttpMethod::Get,
+            "query.sse.com.cn",
+            "/security/stock/queryCompanyBulletin.do"
+        )
+        .is_err());
+    }
+
+    #[test]
     fn timeout_bounds_are_strict() {
         assert!(validate_timeout(Duration::ZERO).is_err());
         assert!(validate_timeout(Duration::from_secs(15)).is_ok());
@@ -409,27 +447,36 @@ mod tests {
     }
 
     #[test]
-    fn clone_shared_gate_serializes_and_spaces_start_times() {
-        let gate = Arc::new(RequestGate::new(Duration::from_millis(30)));
+    fn clone_shared_gate_spaces_starts_without_serializing_io() {
+        let gate = Arc::new(new_request_gate(Duration::from_millis(30)).unwrap());
         let starts = Arc::new(Mutex::new(Vec::new()));
+        let barrier = Arc::new(Barrier::new(3));
+        let active = Arc::new(AtomicUsize::new(0));
+        let maximum_active = Arc::new(AtomicUsize::new(0));
         let mut threads = Vec::new();
         for _ in 0..2 {
             let gate = Arc::clone(&gate);
             let starts = Arc::clone(&starts);
+            let barrier = Arc::clone(&barrier);
+            let active = Arc::clone(&active);
+            let maximum_active = Arc::clone(&maximum_active);
             threads.push(thread::spawn(move || {
-                gate.execute(|| {
-                    starts.lock().unwrap().push(Instant::now());
-                    thread::sleep(Duration::from_millis(15));
-                    Ok(())
-                })
-                .unwrap();
+                barrier.wait();
+                wait_for_request_start(&gate).unwrap();
+                starts.lock().unwrap().push(Instant::now());
+                let now_active = active.fetch_add(1, Ordering::SeqCst) + 1;
+                maximum_active.fetch_max(now_active, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(80));
+                active.fetch_sub(1, Ordering::SeqCst);
             }));
         }
+        barrier.wait();
         for thread in threads {
             thread.join().unwrap();
         }
         let mut starts = starts.lock().unwrap().clone();
         starts.sort_unstable();
         assert!(starts[1].duration_since(starts[0]) >= Duration::from_millis(25));
+        assert_eq!(maximum_active.load(Ordering::SeqCst), 2);
     }
 }

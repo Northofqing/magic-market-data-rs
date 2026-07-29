@@ -1,8 +1,8 @@
 use crate::szse_quote::{build_quote_url, parse_quote_snapshot};
 use crate::transport::{
-    validate_endpoint, validate_minimum_interval, validate_request, validate_response,
-    validate_timeout, ExchangeTransport, HttpMethod, HttpRequest, HttpResponse, HttpsTransport,
-    RequestGate,
+    new_request_gate, validate_endpoint, validate_minimum_interval, validate_request,
+    validate_response, validate_timeout, wait_for_request_start, ExchangeTransport, HttpMethod,
+    HttpRequest, HttpResponse, HttpsTransport, SharedRequestGate,
 };
 use crate::{ExchangeError, ProviderCapabilities};
 use magic_market_core::{
@@ -63,7 +63,7 @@ impl SzseConfig {
 pub struct SzseClient {
     config: SzseConfig,
     transport: Arc<dyn ExchangeTransport>,
-    gate: Arc<RequestGate>,
+    gate: Arc<SharedRequestGate>,
 }
 
 impl std::fmt::Debug for SzseClient {
@@ -99,7 +99,7 @@ impl SzseClient {
         transport: Arc<dyn ExchangeTransport>,
     ) -> Result<Self, ExchangeError> {
         Ok(Self {
-            gate: Arc::new(RequestGate::new(config.minimum_interval)),
+            gate: Arc::new(new_request_gate(config.minimum_interval)?),
             config,
             transport,
         })
@@ -156,7 +156,8 @@ impl SzseClient {
 
     fn execute(&self, request: HttpRequest) -> Result<HttpResponse, ExchangeError> {
         validate_request(&request, HttpMethod::Post, HOST, PATH)?;
-        let response = self.gate.execute(|| self.transport.execute(&request))?;
+        wait_for_request_start(&self.gate)?;
+        let response = self.transport.execute(&request)?;
         validate_response(&request, &response, &["json"])?;
         Ok(response)
     }
@@ -166,7 +167,8 @@ impl SzseClient {
         request: HttpRequest,
     ) -> Result<HttpResponse, ExchangeError> {
         validate_request(&request, HttpMethod::Get, HOST, DRAGON_TIGER_PATH)?;
-        let response = self.gate.execute(|| self.transport.execute(&request))?;
+        wait_for_request_start(&self.gate)?;
+        let response = self.transport.execute(&request)?;
         validate_response(&request, &response, &["json"])?;
         Ok(response)
     }
@@ -204,7 +206,8 @@ impl SzseClient {
                 body: Vec::new(),
             };
             validate_request(&request, HttpMethod::Get, HOST, QUOTE_PATH)?;
-            let response = self.gate.execute(|| self.transport.execute(&request))?;
+            wait_for_request_start(&self.gate)?;
+            let response = self.transport.execute(&request)?;
             validate_response(&request, &response, &["json"])?;
             let observed_at = now()?;
             let (quote, order_book) =

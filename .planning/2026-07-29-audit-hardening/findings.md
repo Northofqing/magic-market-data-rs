@@ -71,3 +71,14 @@
   batches reject a missing later record atomically. Historical minute data has
   no count field, so its six-byte header is required and every started
   price/auxiliary/volume tuple must finish.
+
+## Exchange request pacing
+
+- `magic-exchange-rs` now uses the shared reservation gate. The mutex protects
+  reservation arithmetic only; waiting and HTTP execution occur after release.
+- The source-specific `ureq` adapter remains because Exchange exposes explicit
+  Rustls/native-tls selection. Compatible endpoint and request-header
+  validation now pass through shared transport value contracts.
+- Existing CFFEX integration coverage and the new transport test observe
+  spaced actual starts with overlapping slow injected I/O, while TLS backend
+  error evidence remains unchanged.

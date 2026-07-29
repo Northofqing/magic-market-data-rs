@@ -45,9 +45,20 @@ counts, ETF turnover, exact Top10 ranks and the quota `999,999,999` sentinel as
 
 All transports enforce credential-free HTTPS host/path allowlists, port 443,
 zero redirects, exact final URLs, bounded content types, an 8 MiB response
-ceiling and 1–60 second timeouts. Client clones share a serial request gate and
-hold it through the complete response read; request starts are at least one
-second apart.
+ceiling and 1–60 second timeouts. Compatible endpoint/request validation and
+request-start pacing use `magic-market-transport`; the Exchange wire adapter
+remains source-specific so explicit Rustls/native-tls evidence is preserved.
+Client clones reserve spaced request starts under a short mutex, release it
+before waiting, and perform the complete HTTP exchange without holding the
+gate. Slow responses may therefore overlap while their starts remain at least
+the configured interval apart.
+
+The deterministic transport test uses two 80 ms injected I/O operations at a
+30 ms start interval and verifies both the minimum start gap and a maximum of
+two concurrent operations. The public live load probe remains serial by
+default to keep official-source traffic bounded; its
+`minimum_attempt_start_gap_ms` describes high-level attempts, not internal HTTP
+starts.
 
 ## Probes
 

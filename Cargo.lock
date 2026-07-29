@@ -703,6 +703,7 @@ name = "magic-exchange-rs"
 version = "0.2.0"
 dependencies = [
  "magic-market-core",
+ "magic-market-transport",
  "serde",
  "serde_json",
  "thiserror",

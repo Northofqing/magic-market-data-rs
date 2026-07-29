@@ -1,7 +1,7 @@
 use crate::transport::{
-    validate_endpoint, validate_minimum_interval, validate_request, validate_response,
-    validate_timeout, ExchangeTransport, HttpMethod, HttpRequest, HttpResponse, HttpsTransport,
-    RequestGate,
+    new_request_gate, validate_endpoint, validate_minimum_interval, validate_request,
+    validate_response, validate_timeout, wait_for_request_start, ExchangeTransport, HttpMethod,
+    HttpRequest, HttpResponse, HttpsTransport, SharedRequestGate,
 };
 use crate::{ExchangeError, ProviderCapabilities};
 use magic_market_core::{
@@ -53,7 +53,7 @@ impl HkexConfig {
 pub struct HkexClient {
     config: HkexConfig,
     transport: Arc<dyn ExchangeTransport>,
-    gate: Arc<RequestGate>,
+    gate: Arc<SharedRequestGate>,
 }
 
 impl std::fmt::Debug for HkexClient {
@@ -89,7 +89,7 @@ impl HkexClient {
         transport: Arc<dyn ExchangeTransport>,
     ) -> Result<Self, ExchangeError> {
         Ok(Self {
-            gate: Arc::new(RequestGate::new(config.minimum_interval)),
+            gate: Arc::new(new_request_gate(config.minimum_interval)?),
             config,
             transport,
         })
@@ -138,7 +138,8 @@ impl HkexClient {
         expected_path: &str,
     ) -> Result<HttpResponse, ExchangeError> {
         validate_request(&request, HttpMethod::Get, HOST, expected_path)?;
-        let response = self.gate.execute(|| self.transport.execute(&request))?;
+        wait_for_request_start(&self.gate)?;
+        let response = self.transport.execute(&request)?;
         validate_response(&request, &response, &["javascript"])?;
         Ok(response)
     }
