@@ -7,7 +7,7 @@ and release-performance contracts without weakening provenance or dependency
 direction.
 
 ## Current Phase
-Design specification
+Implementation
 
 ## Phases
 
@@ -16,13 +16,13 @@ Design specification
 - [x] Confirm the repair scope and success criteria with the user.
 - [x] Agree on targeted boundary hardening rather than a sweeping rewrite.
 - [x] Write and self-review the design spec.
-- [ ] Commit and receive user approval for the written design spec.
-- **Status:** in_progress
+- [x] Commit and receive user approval for the written design spec.
+- **Status:** complete
 
 ### Phase 2: Detailed Implementation Plan
-- [ ] Map exact files and test-first steps.
-- [ ] Self-review the implementation plan.
-- **Status:** pending
+- [x] Map exact files and test-first steps.
+- [x] Self-review the implementation plan.
+- **Status:** complete
 
 ### Phase 3: Implementation
 - [ ] Make TDX binary parsing fallible and atomic.
@@ -30,7 +30,7 @@ Design specification
 - [ ] Add BR-009 admission-registry compliance checks.
 - [ ] Centralize fixed-offset timestamps and typed numeric tolerances.
 - [ ] Benchmark candidate release profiles and apply only proven settings.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 4: Testing and Verification
 - [ ] Run focused red/green tests for every changed subsystem.
