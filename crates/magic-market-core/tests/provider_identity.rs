@@ -46,3 +46,22 @@ fn financial_news_provider_identity_names_are_stable() {
         "\"WallstreetCn\""
     );
 }
+
+#[test]
+fn official_macro_and_news_provider_identity_names_are_stable() {
+    let cases = [
+        (ProviderId::Nbs, "\"Nbs\""),
+        (ProviderId::Pbc, "\"Pbc\""),
+        (ProviderId::Cfets, "\"Cfets\""),
+        (ProviderId::Fred, "\"Fred\""),
+        (ProviderId::Imf, "\"Imf\""),
+        (ProviderId::WorldBank, "\"WorldBank\""),
+        (ProviderId::SecEdgar, "\"SecEdgar\""),
+        (ProviderId::XinhuaFinance, "\"XinhuaFinance\""),
+        (ProviderId::Yicai, "\"Yicai\""),
+        (ProviderId::SecuritiesTimes, "\"SecuritiesTimes\""),
+    ];
+    for (provider, expected) in cases {
+        assert_eq!(serde_json::to_string(&provider).unwrap(), expected);
+    }
+}

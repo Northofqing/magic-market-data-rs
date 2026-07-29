@@ -10,16 +10,19 @@ mod discovery;
 mod enrichment;
 mod error;
 mod evidence;
+mod filings;
 mod global;
 mod instrument;
 mod lifecycle;
 mod limit_pool;
+mod macro_data;
 mod market_announcements;
 mod options;
 mod policy;
 mod probe;
 mod provenance;
 mod provider;
+mod reference_data;
 mod research;
 mod signals;
 mod validated;
@@ -57,6 +60,10 @@ pub use enrichment::{
 };
 pub use error::CoreError;
 pub use evidence::SourceEvidence;
+pub use filings::{
+    CompanyFiling, CompanyFilingRequest, CompanyFilingsProvider, FilingCapabilities,
+    SecAccessionNumber, SecCompanyIdentity, SecPrimaryDocument,
+};
 pub use global::{
     ForeignExchangeProvider, FxPair, FxQuote, FxRequest, GlobalIndexCode, GlobalIndexProvider,
     GlobalIndexQuote, GlobalIndexRequest, GlobalMarketCapabilities,
@@ -69,6 +76,11 @@ pub use lifecycle::{
 };
 pub use limit_pool::{
     LimitPoolCapabilities, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools,
+};
+pub use macro_data::{
+    EconomicDataCapabilities, EconomicFrequency, EconomicObservation, EconomicObservationStatus,
+    EconomicPeriod, EconomicRevision, EconomicRevisionKind, EconomicSeriesKey,
+    EconomicSeriesProvider, EconomicSeriesRequest,
 };
 pub use market_announcements::{MarketAnnouncementRequest, MarketAnnouncements};
 pub use options::{
@@ -88,6 +100,11 @@ pub use provider::{
     DataStatus, HistoricalBars, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
     OrderBook, OrderBooks, PriceLimitRule, ProviderId, Quote, RealtimeQuotes, SecurityMetadata,
     SecurityMetadataProvider, SourcedRecord, Trade, TradeSide, Trades, TradesRequest,
+};
+pub use reference_data::{
+    CurrencyCode, OfficialFxFixing, OfficialFxFixingIdentity, OfficialFxFixingProvider,
+    OfficialFxFixingRequest, ReferenceDataCapabilities, ReferenceRateIdentity, ReferenceRateKind,
+    ReferenceRateObservation, ReferenceRateProvider, ReferenceRateRequest, ReferenceTenor,
 };
 pub use research::{
     ConsensusData, ConsensusSnapshot, EarningsEstimate, ReportScope, ResearchCapabilities,
