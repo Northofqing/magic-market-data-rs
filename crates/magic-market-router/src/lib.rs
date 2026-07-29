@@ -4,7 +4,9 @@
 mod adapters;
 mod discovery;
 mod error;
+mod filings;
 mod intelligence;
+mod macro_data;
 mod market_announcements;
 mod router;
 mod source;
@@ -39,11 +41,16 @@ pub use discovery::{
     DragonTigerDiscoveryRouter, NamedBoardMembership,
 };
 pub use error::{FailureAction, FailureKind, SourceError};
+pub use filings::{company_filing_source, CompanyFilingRouter};
 pub use intelligence::{
     economic_calendar_source, foreign_exchange_source, futures_delivery_source,
     global_index_source, policy_document_source, research_document_source, EconomicCalendarRouter,
     ForeignExchangeRouter, FuturesDeliveryRouter, GlobalIndexRouter, PolicyDocumentRouter,
     ResearchDocumentRouter,
+};
+pub use macro_data::{
+    economic_series_source, official_fx_fixing_source, reference_rate_source, EconomicSeriesRouter,
+    OfficialFxFixingRouter, ReferenceRateRouter,
 };
 pub use market_announcements::{market_announcement_source, MarketAnnouncementRouter};
 pub use router::{

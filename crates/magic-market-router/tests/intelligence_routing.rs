@@ -271,6 +271,34 @@ fn global_news_router_accepts_wallstreetcn_identity() {
 }
 
 #[test]
+fn global_news_router_accepts_new_metadata_only_identities() {
+    for provider_id in [
+        ProviderId::XinhuaFinance,
+        ProviderId::Yicai,
+        ProviderId::SecuritiesTimes,
+    ] {
+        let provider = Arc::new(NewsFixtureProvider {
+            record_provider: provider_id,
+            batch_source: "first-party-metadata-v1",
+            item_count: 1,
+            duplicate_id: false,
+        });
+        let mut router =
+            GlobalNewsRouter::new(AcceptancePolicy::new().with_require_source_at(true));
+        router
+            .register(global_news_source(provider_id, provider, classify))
+            .unwrap();
+        assert_eq!(
+            router
+                .route(&PositiveU32::new(1).unwrap())
+                .unwrap()
+                .selected_provider(),
+            provider_id
+        );
+    }
+}
+
+#[test]
 fn global_news_router_rejects_wallstreetcn_identity_mismatch() {
     let wrong = Arc::new(NewsFixtureProvider {
         record_provider: ProviderId::ThePaper,
