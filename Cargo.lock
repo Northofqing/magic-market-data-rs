@@ -642,6 +642,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-cfets-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+]
+
+[[package]]
 name = "magic-cls-rs"
 version = "0.2.0"
 dependencies = [
@@ -699,6 +711,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-fred-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+]
+
+[[package]]
 name = "magic-gov-rs"
 version = "0.2.0"
 dependencies = [
@@ -707,6 +731,18 @@ dependencies = [
  "thiserror",
  "ureq",
  "url",
+]
+
+[[package]]
+name = "magic-imf-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
 ]
 
 [[package]]
@@ -769,6 +805,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-nbs-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+]
+
+[[package]]
+name = "magic-pbc-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+]
+
+[[package]]
+name = "magic-sec-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+]
+
+[[package]]
 name = "magic-sina-rs"
 version = "0.2.0"
 dependencies = [
@@ -779,6 +851,18 @@ dependencies = [
  "thiserror",
  "ureq",
  "url",
+]
+
+[[package]]
+name = "magic-stcn-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
 ]
 
 [[package]]
@@ -840,6 +924,42 @@ dependencies = [
  "thiserror",
  "time",
  "ureq",
+]
+
+[[package]]
+name = "magic-worldbank-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+]
+
+[[package]]
+name = "magic-xinhua-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+]
+
+[[package]]
+name = "magic-yicai-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
 ]
 
 [[package]]
