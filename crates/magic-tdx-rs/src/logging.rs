@@ -93,9 +93,13 @@ pub fn level() -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static TEST_LEVEL_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_default_level() {
+        let _guard = TEST_LEVEL_LOCK.lock().unwrap();
         init();
         // release build → WARN, debug build → DEBUG
         let lvl = level();
@@ -104,6 +108,7 @@ mod tests {
 
     #[test]
     fn test_set_level() {
+        let _guard = TEST_LEVEL_LOCK.lock().unwrap();
         set_level(OFF);
         assert_eq!(level(), OFF);
         set_level(ERROR);
@@ -126,6 +131,7 @@ mod tests {
 
     #[test]
     fn test_macros_dont_panic() {
+        let _guard = TEST_LEVEL_LOCK.lock().unwrap();
         // 这些宏在运行时检查 level, 低 level 时不应输出
         set_level(OFF);
         logd!("test", "should not print");

@@ -314,6 +314,32 @@ fn bar_parsers_reject_cumulative_price_overflow() {
 }
 
 #[test]
+fn bar_parsers_reject_negative_derived_prices() {
+    let mut security = vec![1, 0];
+    security.extend_from_slice(&20260723u32.to_le_bytes());
+    security.extend_from_slice(&[0x41, 0, 0, 0]);
+    security.extend_from_slice(&100u32.to_le_bytes());
+    security.extend_from_slice(&1_000u32.to_le_bytes());
+    assert!(parse_security_bars(&security, 4)
+        .unwrap_err()
+        .to_string()
+        .contains("open price is negative"));
+
+    let mut index = vec![1, 0];
+    index.extend_from_slice(&20260723u32.to_le_bytes());
+    index.extend_from_slice(&[0x41, 0, 0, 0]);
+    index.extend_from_slice(&100u32.to_le_bytes());
+    index.extend_from_slice(&1_000u32.to_le_bytes());
+    index.extend_from_slice(&3u16.to_le_bytes());
+    index.extend_from_slice(&4u16.to_le_bytes());
+    index.extend_from_slice(&[0; 4]);
+    assert!(parse_index_bars(&index, 4)
+        .unwrap_err()
+        .to_string()
+        .contains("open price is negative"));
+}
+
+#[test]
 fn minute_and_transaction_parsers_preserve_time_order_price_scale_and_volume() {
     assert_eq!(minute_time_from_index(0), "09:31");
     assert_eq!(minute_time_from_index(119), "11:30");
@@ -399,6 +425,35 @@ fn quote_parser_decodes_complete_depth_and_rejects_a_truncated_tail() {
     let mut truncated = body;
     truncated.pop();
     assert!(parse_security_quotes(&truncated).is_err());
+}
+
+#[test]
+fn quote_parser_rejects_negative_prices_volumes_and_unsigned_raw_fields() {
+    for (offset, expected) in [
+        (13, "base price is negative"),
+        (20, "volume is negative"),
+        (32, "bid level 1 volume is negative"),
+        (18, "reversed_bytes0 is negative"),
+    ] {
+        let mut body = quote_packet();
+        body[offset] = 0x41;
+        let error = parse_security_quotes(&body).unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+    }
+
+    let mut negative_last_close = quote_packet();
+    negative_last_close[14] = 0x4b;
+    assert!(parse_security_quotes(&negative_last_close)
+        .unwrap_err()
+        .to_string()
+        .contains("last close price is negative"));
+
+    let mut oversized_volume = quote_packet();
+    oversized_volume.splice(20..21, [0x80, 0x80, 0x80, 0x80, 0x20]);
+    assert!(parse_security_quotes(&oversized_volume)
+        .unwrap_err()
+        .to_string()
+        .contains("unsigned 32-bit domain"));
 }
 
 #[test]

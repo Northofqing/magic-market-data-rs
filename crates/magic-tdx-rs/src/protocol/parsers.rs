@@ -13,6 +13,26 @@ fn checked_cumulative_value(base: i64, delta: i64, context: &str) -> Result<i64>
         .ok_or_else(|| ErrorCode::TYPE_MISMATCH.err(format!("{context} overflow")))
 }
 
+fn checked_nonnegative_value(value: i64, context: &str) -> Result<i64> {
+    if value < 0 {
+        return Err(ErrorCode::TYPE_MISMATCH.err(format!("{context} is negative")));
+    }
+    Ok(value)
+}
+
+fn checked_nonnegative_cumulative_value(base: i64, delta: i64, context: &str) -> Result<i64> {
+    checked_nonnegative_value(checked_cumulative_value(base, delta, context)?, context)
+}
+
+fn checked_unsigned_32(value: i64, context: &str) -> Result<u32> {
+    if value < 0 {
+        return Err(ErrorCode::TYPE_MISMATCH.err(format!("{context} is negative")));
+    }
+    u32::try_from(value).map_err(|_| {
+        ErrorCode::TYPE_MISMATCH.err(format!("{context} is outside the unsigned 32-bit domain"))
+    })
+}
+
 // ============================================================
 // 解析证券数量
 // ============================================================
@@ -133,7 +153,7 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
 
         // 价格: 差分编码 (Python order: open, close, high, low)
         let (price_open_diff, new_pos) = get_price(body, pos)?;
-        let accumulated = checked_cumulative_value(
+        let accumulated = checked_nonnegative_cumulative_value(
             pre_diff_base,
             price_open_diff,
             &format!("security bar row {row_index} open price"),
@@ -142,7 +162,7 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
         pos = new_pos;
 
         let (price_close_diff, new_pos) = get_price(body, pos)?;
-        let close = checked_cumulative_value(
+        let close = checked_nonnegative_cumulative_value(
             accumulated,
             price_close_diff,
             &format!("security bar row {row_index} close price"),
@@ -151,7 +171,7 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
         pos = new_pos;
 
         let (price_high_diff, new_pos) = get_price(body, pos)?;
-        bar.high = checked_cumulative_value(
+        bar.high = checked_nonnegative_cumulative_value(
             accumulated,
             price_high_diff,
             &format!("security bar row {row_index} high price"),
@@ -160,7 +180,7 @@ pub fn parse_security_bars(body: &[u8], category: u8) -> Result<Vec<SecurityBar>
         pos = new_pos;
 
         let (price_low_diff, new_pos) = get_price(body, pos)?;
-        bar.low = checked_cumulative_value(
+        bar.low = checked_nonnegative_cumulative_value(
             accumulated,
             price_low_diff,
             &format!("security bar row {row_index} low price"),
@@ -259,7 +279,7 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
 
         // 价格: 差分编码 (Python order: open, close, high, low)
         let (price_open_diff, new_pos) = get_price(body, pos)?;
-        let accumulated = checked_cumulative_value(
+        let accumulated = checked_nonnegative_cumulative_value(
             pre_diff_base,
             price_open_diff,
             &format!("index bar row {row_index} open price"),
@@ -268,7 +288,7 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
         pos = new_pos;
 
         let (price_close_diff, new_pos) = get_price(body, pos)?;
-        let close = checked_cumulative_value(
+        let close = checked_nonnegative_cumulative_value(
             accumulated,
             price_close_diff,
             &format!("index bar row {row_index} close price"),
@@ -277,7 +297,7 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
         pos = new_pos;
 
         let (price_high_diff, new_pos) = get_price(body, pos)?;
-        bar.high = checked_cumulative_value(
+        bar.high = checked_nonnegative_cumulative_value(
             accumulated,
             price_high_diff,
             &format!("index bar row {row_index} high price"),
@@ -286,7 +306,7 @@ pub fn parse_index_bars(body: &[u8], category: u8) -> Result<Vec<IndexBar>> {
         pos = new_pos;
 
         let (price_low_diff, new_pos) = get_price(body, pos)?;
-        bar.low = checked_cumulative_value(
+        bar.low = checked_nonnegative_cumulative_value(
             accumulated,
             price_low_diff,
             &format!("index bar row {row_index} low price"),
@@ -368,7 +388,7 @@ pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec
 
     for i in 0..count {
         let (price_diff, new_pos) = get_price(body, pos)?;
-        pre_diff_base = checked_cumulative_value(
+        pre_diff_base = checked_nonnegative_cumulative_value(
             pre_diff_base,
             price_diff,
             &format!("realtime minute row {i} cumulative price"),
@@ -381,12 +401,10 @@ pub fn parse_minute_time_data(body: &[u8], market: u8, code: &str) -> Result<Vec
         pos = new_pos;
 
         let (vol_diff, new_pos) = get_price(body, pos)?;
-        if vol_diff < 0 {
-            return Err(
-                ErrorCode::TYPE_MISMATCH.err(format!("realtime minute row {i} volume is negative"))
-            );
-        }
-        let vol = vol_diff as f64;
+        let vol = f64::from(checked_unsigned_32(
+            vol_diff,
+            &format!("realtime minute row {i} volume"),
+        )?);
         pos = new_pos;
 
         // 均价 = 累计金额 / 累计成交量
@@ -444,7 +462,7 @@ pub fn parse_history_minute_time_data(
 
     while pos < body.len() {
         let (price_diff, new_pos) = get_price(body, pos)?;
-        pre_diff_base = checked_cumulative_value(
+        pre_diff_base = checked_nonnegative_cumulative_value(
             pre_diff_base,
             price_diff,
             &format!("history minute row {index} cumulative price"),
@@ -457,11 +475,10 @@ pub fn parse_history_minute_time_data(
         pos = new_pos;
 
         let (vol_diff, new_pos) = get_price(body, pos)?;
-        if vol_diff < 0 {
-            return Err(ErrorCode::TYPE_MISMATCH
-                .err(format!("history minute row {index} volume is negative")));
-        }
-        let vol = vol_diff as f64;
+        let vol = f64::from(checked_unsigned_32(
+            vol_diff,
+            &format!("history minute row {index} volume"),
+        )?);
         pos = new_pos;
 
         // 均价 = 累计金额 / 累计成交量
@@ -765,6 +782,8 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 
         // price (base price, delta encoded)
         let (price_raw, new_pos) = get_price(body, pos)?;
+        let price_raw =
+            checked_nonnegative_value(price_raw, &format!("quote row {row_index} base price"))?;
         pos = new_pos;
 
         // last_close (diff from price)
@@ -785,17 +804,28 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 
         // reversed_bytes0 (get_price as i64, used for servertime)
         let (reversed_bytes0, new_pos) = get_price(body, pos)?;
+        let reversed_bytes0 = checked_unsigned_32(
+            reversed_bytes0,
+            &format!("quote row {row_index} reversed_bytes0"),
+        )?;
         pos = new_pos;
 
         let (reversed_bytes1, new_pos) = get_price(body, pos)?;
+        let reversed_bytes1 = checked_unsigned_32(
+            reversed_bytes1,
+            &format!("quote row {row_index} reversed_bytes1"),
+        )?;
         pos = new_pos;
 
         // vol (get_price)
         let (vol, new_pos) = get_price(body, pos)?;
+        let vol = checked_unsigned_32(vol, &format!("quote row {row_index} volume"))?;
         pos = new_pos;
 
         // cur_vol (get_price)
         let (cur_vol, new_pos) = get_price(body, pos)?;
+        let cur_vol =
+            checked_unsigned_32(cur_vol, &format!("quote row {row_index} current volume"))?;
         pos = new_pos;
 
         // amount (u32 raw, use get_volume)
@@ -805,16 +835,26 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 
         // s_vol (get_price)
         let (s_vol, new_pos) = get_price(body, pos)?;
+        let s_vol = checked_unsigned_32(s_vol, &format!("quote row {row_index} sell volume"))?;
         pos = new_pos;
 
         // b_vol (get_price)
         let (b_vol, new_pos) = get_price(body, pos)?;
+        let b_vol = checked_unsigned_32(b_vol, &format!("quote row {row_index} buy volume"))?;
         pos = new_pos;
 
         // reversed_bytes2, reversed_bytes3
         let (reversed_bytes2, new_pos) = get_price(body, pos)?;
+        let reversed_bytes2 = checked_unsigned_32(
+            reversed_bytes2,
+            &format!("quote row {row_index} reversed_bytes2"),
+        )?;
         pos = new_pos;
         let (reversed_bytes3, new_pos) = get_price(body, pos)?;
+        let reversed_bytes3 = checked_unsigned_32(
+            reversed_bytes3,
+            &format!("quote row {row_index} reversed_bytes3"),
+        )?;
         pos = new_pos;
 
         // bid1-ask5: interleaved pairs (bid, ask, bid_vol, ask_vol) x 5
@@ -825,19 +865,35 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 
         for i in 0..5 {
             let (diff, new_pos) = get_price(body, pos)?;
-            bid_prices[i] = ((price_raw + diff) as f64) * coefficient;
+            bid_prices[i] = checked_nonnegative_cumulative_value(
+                price_raw,
+                diff,
+                &format!("quote row {row_index} bid level {} price", i + 1),
+            )? as f64
+                * coefficient;
             pos = new_pos;
 
             let (diff, new_pos) = get_price(body, pos)?;
-            ask_prices[i] = ((price_raw + diff) as f64) * coefficient;
+            ask_prices[i] = checked_nonnegative_cumulative_value(
+                price_raw,
+                diff,
+                &format!("quote row {row_index} ask level {} price", i + 1),
+            )? as f64
+                * coefficient;
             pos = new_pos;
 
             let (vol, new_pos) = get_price(body, pos)?;
-            bid_vols[i] = vol as f64;
+            bid_vols[i] = f64::from(checked_unsigned_32(
+                vol,
+                &format!("quote row {row_index} bid level {} volume", i + 1),
+            )?);
             pos = new_pos;
 
             let (vol, new_pos) = get_price(body, pos)?;
-            ask_vols[i] = vol as f64;
+            ask_vols[i] = f64::from(checked_unsigned_32(
+                vol,
+                &format!("quote row {row_index} ask level {} volume", i + 1),
+            )?);
             pos = new_pos;
         }
 
@@ -847,19 +903,35 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 
         // reversed_bytes5, reversed_bytes6, reversed_bytes7, reversed_bytes8
         let (reversed_bytes5, new_pos) = get_price(body, pos)?;
+        let reversed_bytes5 = checked_unsigned_32(
+            reversed_bytes5,
+            &format!("quote row {row_index} reversed_bytes5"),
+        )?;
         pos = new_pos;
         let (reversed_bytes6, new_pos) = get_price(body, pos)?;
+        let reversed_bytes6 = checked_unsigned_32(
+            reversed_bytes6,
+            &format!("quote row {row_index} reversed_bytes6"),
+        )?;
         pos = new_pos;
         let (reversed_bytes7, new_pos) = get_price(body, pos)?;
+        let reversed_bytes7 = checked_unsigned_32(
+            reversed_bytes7,
+            &format!("quote row {row_index} reversed_bytes7"),
+        )?;
         pos = new_pos;
         let (reversed_bytes8, new_pos) = get_price(body, pos)?;
+        let reversed_bytes8 = checked_unsigned_32(
+            reversed_bytes8,
+            &format!("quote row {row_index} reversed_bytes8"),
+        )?;
         pos = new_pos;
 
-        // reversed_bytes9 (i16) + active2 (u16)
+        // reversed_bytes9 (opaque u16 wire bits) + active2 (u16)
         if pos.checked_add(4).is_none_or(|end| end > body.len()) {
             return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err("quote tail truncated"));
         }
-        let reversed_bytes9 = i16::from_le_bytes([body[pos], body[pos + 1]]);
+        let reversed_bytes9 = read_u16(body, pos)?;
         pos += 2;
         let active2 = read_u16(body, pos)?;
         pos += 2;
@@ -869,10 +941,30 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
         let servertime = String::new();
 
         let price = (price_raw as f64) * coefficient;
-        let last_close = ((price_raw + last_close_diff) as f64) * coefficient;
-        let open = ((price_raw + open_diff) as f64) * coefficient;
-        let high = ((price_raw + high_diff) as f64) * coefficient;
-        let low = ((price_raw + low_diff) as f64) * coefficient;
+        let last_close = checked_nonnegative_cumulative_value(
+            price_raw,
+            last_close_diff,
+            &format!("quote row {row_index} last close price"),
+        )? as f64
+            * coefficient;
+        let open = checked_nonnegative_cumulative_value(
+            price_raw,
+            open_diff,
+            &format!("quote row {row_index} open price"),
+        )? as f64
+            * coefficient;
+        let high = checked_nonnegative_cumulative_value(
+            price_raw,
+            high_diff,
+            &format!("quote row {row_index} high price"),
+        )? as f64
+            * coefficient;
+        let low = checked_nonnegative_cumulative_value(
+            price_raw,
+            low_diff,
+            &format!("quote row {row_index} low price"),
+        )? as f64
+            * coefficient;
 
         result.push(SecurityQuote {
             market,
@@ -884,11 +976,11 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
             high,
             low,
             servertime,
-            vol: vol as f64,
-            cur_vol: cur_vol as f64,
+            vol: f64::from(vol),
+            cur_vol: f64::from(cur_vol),
             amount,
-            s_vol: s_vol as f64,
-            b_vol: b_vol as f64,
+            s_vol: f64::from(s_vol),
+            b_vol: f64::from(b_vol),
             bid1: bid_prices[0],
             bid_vol1: bid_vols[0],
             bid2: bid_prices[1],
@@ -909,16 +1001,16 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
             ask_vol4: ask_vols[3],
             ask5: ask_prices[4],
             ask_vol5: ask_vols[4],
-            reversed_bytes0: reversed_bytes0 as u32,
-            reversed_bytes1: reversed_bytes1 as u32,
-            reversed_bytes2: reversed_bytes2 as u32,
-            reversed_bytes3: reversed_bytes3 as u32,
+            reversed_bytes0,
+            reversed_bytes1,
+            reversed_bytes2,
+            reversed_bytes3,
             reversed_bytes4,
-            reversed_bytes5: reversed_bytes5 as u32,
-            reversed_bytes6: reversed_bytes6 as u32,
-            reversed_bytes7: reversed_bytes7 as u32,
-            reversed_bytes8: reversed_bytes8 as u32,
-            reversed_bytes9: reversed_bytes9 as u32,
+            reversed_bytes5,
+            reversed_bytes6,
+            reversed_bytes7,
+            reversed_bytes8,
+            reversed_bytes9: u32::from(reversed_bytes9),
             active2,
         });
     }

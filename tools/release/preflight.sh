@@ -18,6 +18,8 @@ cargo -V
 cargo fmt --all -- --check
 bash -n tools/compliance/check.sh tools/release/preflight.sh tools/release/package.sh
 python3 -m unittest discover -s tools/coverage -p 'test_*.py'
+python3 -m unittest discover -s tools/bench -p 'test_*.py'
+python3 -m unittest discover -s tools/compliance -p 'test_*.py'
 coverage_json=${MAGIC_COVERAGE_JSON:-}
 require_coverage=${MAGIC_REQUIRE_COVERAGE_EVIDENCE:-0}
 if [[ -n "$coverage_json" ]]; then

@@ -18,6 +18,7 @@ def evidence(
             "binary_bytes": size,
             "runs": [
                 {
+                    "schema": 1,
                     "source": f"run-{run_index}.json",
                     "workloads": [
                         {
@@ -44,10 +45,11 @@ def evidence(
         "schema": 1,
         "metadata": {
             "revision": "1" * 40,
-            "rustc": "rustc 1.95.0",
-            "cargo": "cargo 1.95.0",
+            "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+            "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
             "platform": "test-platform",
             "runner": "one warm-up per profile; five alternating measured rounds",
+            "default": "lto=false, codegen-units=16",
             "candidate": 'lto="thin", codegen-units=1',
         },
         "profiles": {"default": default, "candidate": candidate},
@@ -138,6 +140,43 @@ class ReleaseProfilePolicyTests(unittest.TestCase):
         report = evaluate(sample)
         self.assertFalse(report["qualified"])
         self.assertIn("iterations must equal", " ".join(report["reasons"]))
+
+    def test_boolean_float_schema_and_forged_tool_versions_fail_closed(self):
+        for invalid_schema in (True, 1.0):
+            sample = evidence()
+            sample["schema"] = invalid_schema
+            report = evaluate(sample)
+            self.assertFalse(report["qualified"])
+            self.assertIn("schema must be integer", " ".join(report["reasons"]))
+
+        sample = evidence()
+        sample["profiles"]["default"]["runs"][0]["schema"] = True
+        report = evaluate(sample)
+        self.assertFalse(report["qualified"])
+        self.assertIn("run 0 schema must be integer", " ".join(report["reasons"]))
+
+        for field, forged in (("rustc", "rustc forged"), ("cargo", "cargo forged")):
+            sample = evidence()
+            sample["metadata"][field] = forged
+            report = evaluate(sample)
+            self.assertFalse(report["qualified"])
+            self.assertIn(
+                f"metadata {field} must contain the exact tool version",
+                " ".join(report["reasons"]),
+            )
+
+    def test_default_profile_metadata_is_required_and_exact(self):
+        sample = evidence()
+        del sample["metadata"]["default"]
+        report = evaluate(sample)
+        self.assertFalse(report["qualified"])
+        self.assertIn("metadata fields", " ".join(report["reasons"]))
+
+        sample = evidence()
+        sample["metadata"]["default"] = "forged"
+        report = evaluate(sample)
+        self.assertFalse(report["qualified"])
+        self.assertIn("metadata default", " ".join(report["reasons"]))
 
 
 if __name__ == "__main__":

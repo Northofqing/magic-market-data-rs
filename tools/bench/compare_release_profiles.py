@@ -14,7 +14,9 @@ MINIMUM_COMBINED_IMPROVEMENT = 0.05
 MAXIMUM_WORKLOAD_REGRESSION = 0.05
 MAXIMUM_BINARY_GROWTH = 0.20
 ROUNDING_EPSILON = 1e-12
+SCHEMA_VERSION = 1
 RUNNER_DESCRIPTION = "one warm-up per profile; five alternating measured rounds"
+DEFAULT_DESCRIPTION = "lto=false, codegen-units=16"
 CANDIDATE_DESCRIPTION = 'lto="thin", codegen-units=1'
 EXPECTED_WORKLOADS = {
     "tdx_bar_parse": 20_000,
@@ -57,6 +59,11 @@ def _profile_records(profile_name, profile):
     for run_index, run in enumerate(runs):
         if not isinstance(run, dict):
             raise ValueError(f"{profile_name} run {run_index} is not an object")
+        if type(run.get("schema")) is not int or run["schema"] != SCHEMA_VERSION:
+            raise ValueError(
+                f"{profile_name} run {run_index} schema must be integer "
+                f"{SCHEMA_VERSION}"
+            )
         source = run.get("source")
         expected_source = f"run-{run_index + 1}.json"
         if source != expected_source or source in run_sources:
@@ -151,29 +158,51 @@ def _profile_records(profile_name, profile):
 def _validate_metadata(metadata):
     if not isinstance(metadata, dict):
         raise ValueError("metadata object is missing")
-    required = {"revision", "rustc", "cargo", "platform", "runner", "candidate"}
+    required = {
+        "revision",
+        "rustc",
+        "cargo",
+        "platform",
+        "runner",
+        "default",
+        "candidate",
+    }
     if set(metadata) != required:
         raise ValueError("metadata fields must exactly match the benchmark schema")
     revision = metadata["revision"]
     if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
         raise ValueError("metadata revision must be a full lowercase Git SHA-1")
-    for field, prefix in (("rustc", "rustc "), ("cargo", "cargo ")):
+    version_pattern = re.compile(
+        r"^(rustc|cargo) [0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)? "
+        r"\([0-9a-f]{9,40} [0-9]{4}-[0-9]{2}-[0-9]{2}\)$"
+    )
+    for field, prefix in (("rustc", "rustc"), ("cargo", "cargo")):
         value = metadata[field]
-        if not isinstance(value, str) or not value.startswith(prefix):
+        if (
+            not isinstance(value, str)
+            or version_pattern.fullmatch(value) is None
+            or not value.startswith(f"{prefix} ")
+        ):
             raise ValueError(f"metadata {field} must contain the exact tool version")
     platform_value = metadata["platform"]
     if not isinstance(platform_value, str) or not platform_value.strip():
         raise ValueError("metadata platform must be non-empty")
     if metadata["runner"] != RUNNER_DESCRIPTION:
         raise ValueError("metadata runner does not match the fixed protocol")
+    if metadata["default"] != DEFAULT_DESCRIPTION:
+        raise ValueError("metadata default does not match the fixed profile")
     if metadata["candidate"] != CANDIDATE_DESCRIPTION:
         raise ValueError("metadata candidate does not match the fixed profile")
 
 
 def evaluate(evidence):
     """Return a structured qualification report without raising on bad evidence."""
-    if not isinstance(evidence, dict) or evidence.get("schema") != 1:
-        return _fail("evidence schema must equal 1")
+    if (
+        not isinstance(evidence, dict)
+        or type(evidence.get("schema")) is not int
+        or evidence["schema"] != SCHEMA_VERSION
+    ):
+        return _fail(f"evidence schema must be integer {SCHEMA_VERSION}")
     profiles = evidence.get("profiles")
     if not isinstance(profiles, dict):
         return _fail("profiles object is missing")
@@ -271,12 +300,24 @@ def _load_benchmark_runs(profile_name, directory):
     runs = []
     for path in paths:
         document = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(document, dict) or document.get("schema") != 1:
-            raise ValueError(f"{path} benchmark schema must equal 1")
+        if (
+            not isinstance(document, dict)
+            or type(document.get("schema")) is not int
+            or document["schema"] != SCHEMA_VERSION
+        ):
+            raise ValueError(
+                f"{path} benchmark schema must be integer {SCHEMA_VERSION}"
+            )
         workloads = document.get("workloads")
         if not isinstance(workloads, list) or not workloads:
             raise ValueError(f"{path} benchmark workloads are missing")
-        runs.append({"source": path.name, "workloads": workloads})
+        runs.append(
+            {
+                "schema": document["schema"],
+                "source": path.name,
+                "workloads": workloads,
+            }
+        )
     return runs
 
 
@@ -292,13 +333,14 @@ def collect_evidence(
         if not path.is_file():
             raise ValueError(f"benchmark binary is missing: {path}")
     return {
-        "schema": 1,
+        "schema": SCHEMA_VERSION,
         "metadata": {
             "revision": metadata["revision"],
             "rustc": metadata["rustc"],
             "cargo": metadata["cargo"],
             "platform": metadata.get("platform", platform.platform()),
             "runner": RUNNER_DESCRIPTION,
+            "default": DEFAULT_DESCRIPTION,
             "candidate": CANDIDATE_DESCRIPTION,
         },
         "profiles": {

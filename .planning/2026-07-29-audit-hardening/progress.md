@@ -49,6 +49,11 @@
   compression/decompression roundtrips. The clean-revision formal A/B run
   improved the combined median by only 1.29%, below the required 5%; the
   release-profile override was therefore removed.
+- Follow-up review reported three remaining Important gaps. TDX raw parsers
+  now reject negative prices and non-`u32` volumes, benchmark schema/tool
+  metadata are exact, and the runner detects runtime untracked files and
+  inherited build configuration. Four fake-build runner integration tests
+  exercise the clean success and each failure boundary.
 
 ### Test Results
 | Test | Expected | Actual | Status |
@@ -72,6 +77,8 @@
 | Exchange shared-policy suite | Exact query/MIME contracts and non-serialized slow I/O | Transport and Exchange tests passed; strict Clippy passed | pass |
 | BR-009 tracked-evidence suite | Reject untracked source/evidence and symlink escape | 6 checker tests and 17-row compliance registry passed | pass |
 | Four-workload evidence validation | Reject missing metadata/workloads/throughput/revision facts | 8 comparison-policy tests, example check and strict Clippy passed | pass |
+| Follow-up TDX domain suite | Raw public decoders must not return negative prices/quantities | 368 unit tests plus all integration/example targets passed; strict Clippy passed | pass |
+| Benchmark failure-closed suite | Reject weak schemas, forged tools, runtime untracked files and build env | 15 benchmark tests passed, including 4 runner integration tests | pass |
 
 ### Errors
 | Error | Resolution |
@@ -79,3 +86,4 @@
 | Incorrect Core test target name during audit | Inspected the actual `values` and `serde_contracts` tests. |
 | Existing workspace test occupied root target lock | Kept it untouched and isolated subsequent work. |
 | Rust build cache filled the remaining disk during focused tests | Removed only the isolated worktree's 6.0 GiB `target` cache and reran successfully. |
+| Parallel TDX logging tests raced on one global atomic level | Serialized the three state-mutating tests with a test-only mutex; the normal parallel suite now passes. |

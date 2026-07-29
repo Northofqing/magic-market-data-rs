@@ -40,7 +40,7 @@ Testing and Verification
 - **Status:** in_progress
 
 ### Phase 5: Delivery
-- [x] Complete code review and resolve every Critical/Important finding.
+- [ ] Complete code review and resolve every Critical/Important finding.
 - [ ] Integrate the approved branch without overwriting unrelated work.
 - [ ] Deliver exact evidence and remaining external blockers.
 - **Status:** pending

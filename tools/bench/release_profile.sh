@@ -1,18 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 revision="$(git -C "${repo_root}" rev-parse HEAD)"
 if [[ ! "${revision}" =~ ^[0-9a-f]{40}$ ]]; then
   echo "benchmark requires a full lowercase Git SHA-1 revision" >&2
   exit 2
 fi
-initial_status="$(git -C "${repo_root}" status --porcelain=v1 --untracked-files=all)"
-if [[ -n "${initial_status}" ]]; then
-  echo "benchmark requires a clean worktree and index" >&2
-  echo "${initial_status}" >&2
-  exit 2
-fi
+
+reject_build_environment() {
+  rejected=0
+  while IFS='=' read -r name _; do
+    case "${name}" in
+      CARGO_* | RUST* | SCCACHE_*)
+        echo "benchmark rejects inherited build environment variable: ${name}" >&2
+        rejected=1
+        ;;
+    esac
+  done < <(env)
+  if [[ "${rejected}" != 0 ]]; then
+    return 2
+  fi
+}
 
 verify_exact_source() {
   current_revision="$(git -C "${repo_root}" rev-parse HEAD)"
@@ -28,7 +37,16 @@ verify_exact_source() {
     echo "index changed during benchmark execution" >&2
     return 2
   fi
+  current_status="$(git -C "${repo_root}" status --porcelain=v1 --untracked-files=all)"
+  if [[ -n "${current_status}" ]]; then
+    echo "benchmark requires a clean worktree and index" >&2
+    echo "${current_status}" >&2
+    return 2
+  fi
 }
+
+reject_build_environment
+verify_exact_source
 
 artifact_root="${MAGIC_RELEASE_BENCH_DIR:-}"
 if [[ -z "${artifact_root}" ]]; then
@@ -40,6 +58,15 @@ elif [[ -e "${artifact_root}" ]]; then
 else
   mkdir -p "${artifact_root}"
 fi
+artifact_root="$(cd -P "${artifact_root}" && pwd -P)"
+if [[ "${artifact_root}" == "${repo_root}" || "${artifact_root}" == "${repo_root}/"* ]]; then
+  if [[ "${artifact_root}" != "${repo_root}/target/"* ]] \
+    || ! git -C "${repo_root}" check-ignore -q -- "${artifact_root}"; then
+    echo "in-repository benchmark artifacts must use a Git-ignored path" >&2
+    exit 2
+  fi
+fi
+verify_exact_source
 
 default_target="${artifact_root}/default-target"
 candidate_target="${artifact_root}/candidate-target"

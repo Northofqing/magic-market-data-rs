@@ -1,0 +1,188 @@
+from __future__ import annotations
+
+import os
+import shutil
+import stat
+import subprocess
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+
+SOURCE_DIR = Path(__file__).resolve().parent
+
+
+class ReleaseProfileRunnerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        bench = self.repo / "tools/bench"
+        bench.mkdir(parents=True)
+        shutil.copy2(SOURCE_DIR / "release_profile.sh", bench / "release_profile.sh")
+        shutil.copy2(
+            SOURCE_DIR / "compare_release_profiles.py",
+            bench / "compare_release_profiles.py",
+        )
+        (self.repo / "Cargo.toml").write_text(
+            "[workspace]\nresolver = \"2\"\n", encoding="utf-8"
+        )
+        (self.repo / ".gitignore").write_text("/target\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "init", "-q", str(self.repo)], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(self.repo), "config", "user.name", "Runner Test"],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.repo),
+                "config",
+                "user.email",
+                "runner@example.invalid",
+            ],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.repo), "add", "-A"], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(self.repo), "commit", "-qm", "fixture"],
+            check=True,
+            capture_output=True,
+        )
+
+        self.fake_bin = self.root / "bin"
+        self.fake_bin.mkdir()
+        self._write_executable(
+            self.fake_bin / "rustc",
+            "#!/bin/sh\nprintf '%s\\n' 'rustc 1.95.0 (59807616e 2026-04-14)'\n",
+        )
+        self._write_executable(
+            self.fake_bin / "cargo",
+            textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import json
+                import os
+                import pathlib
+                import sys
+
+                if sys.argv[1:] == ["--version"]:
+                    print("cargo 1.95.0 (f2d3ce0bd 2026-03-21)")
+                    raise SystemExit(0)
+
+                candidate = os.environ.get("CARGO_PROFILE_RELEASE_LTO") == "thin"
+                elapsed = 90 if candidate else 100
+                workloads = [
+                    ("tdx_bar_parse", 20_000, 11),
+                    ("json_normalize", 10_000, 12),
+                    ("zlib_decompress", 5_000, 13),
+                    ("zlib_roundtrip", 2_000, 14),
+                ]
+                document = {
+                    "schema": 1,
+                    "workloads": [
+                        {
+                            "workload": name,
+                            "iterations": iterations,
+                            "elapsed_ns": elapsed,
+                            "throughput_per_second": iterations * 1_000_000_000 / elapsed,
+                            "checksum": checksum,
+                        }
+                        for name, iterations, checksum in workloads
+                    ],
+                }
+                target = pathlib.Path(os.environ["CARGO_TARGET_DIR"])
+                binary = target / "release/examples/parse_bench"
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                encoded = json.dumps(document, separators=(",", ":"))
+                binary.write_text(
+                    "#!/usr/bin/env python3\\n"
+                    f"print({encoded!r})\\n",
+                    encoding="utf-8",
+                )
+                binary.chmod(0o755)
+
+                if candidate and os.environ.get("FAKE_CREATE_UNTRACKED") == "1":
+                    config = pathlib.Path(os.environ["FAKE_REPO_ROOT"]) / ".cargo/config.toml"
+                    config.parent.mkdir(parents=True, exist_ok=True)
+                    config.write_text("[build]\\nrustflags=[]\\n", encoding="utf-8")
+                """
+            ),
+        )
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    @staticmethod
+    def _write_executable(path: Path, content: str) -> None:
+        path.write_text(content, encoding="utf-8")
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+    def run_runner(
+        self, artifact: Path, extra_environment: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        environment = {
+            name: value
+            for name, value in os.environ.items()
+            if not (
+                name.startswith("CARGO_")
+                or name.startswith("RUST")
+                or name.startswith("SCCACHE_")
+            )
+        }
+        environment.update(
+            {
+                "PATH": f"{self.fake_bin}{os.pathsep}{environment['PATH']}",
+                "MAGIC_RELEASE_BENCH_DIR": str(artifact),
+                "FAKE_REPO_ROOT": str(self.repo),
+            }
+        )
+        if extra_environment:
+            environment.update(extra_environment)
+        return subprocess.run(
+            ["bash", "tools/bench/release_profile.sh"],
+            cwd=self.repo,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_clean_external_artifact_run_is_qualified(self) -> None:
+        result = self.run_runner(self.root / "artifacts")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "artifacts/evidence.json").is_file())
+        self.assertIn('"qualified": true', result.stdout)
+
+    def test_untracked_file_created_during_build_fails_closed(self) -> None:
+        result = self.run_runner(
+            self.root / "artifacts",
+            {"FAKE_CREATE_UNTRACKED": "1"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("benchmark requires a clean worktree", result.stderr)
+        self.assertIn(".cargo/", result.stderr)
+
+    def test_inherited_build_environment_is_rejected(self) -> None:
+        result = self.run_runner(
+            self.root / "artifacts",
+            {"RUSTFLAGS": "-C target-cpu=native"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("RUSTFLAGS", result.stderr)
+
+    def test_unignored_in_repository_artifact_path_is_rejected(self) -> None:
+        result = self.run_runner(self.repo / "bench-output")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Git-ignored path", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

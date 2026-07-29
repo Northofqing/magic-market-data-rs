@@ -141,3 +141,13 @@
   counts, complete metadata, consistent throughput, five named runs, and an
   unchanged clean Git revision. The fourth workload measures zlib compression
   plus decompression.
+- Follow-up review found that raw TDX bars/minutes/quotes could still expose
+  negative derived prices or signed volumes before Core normalization. These
+  public parsers now reject negative price results, require every quantity to
+  fit `u32`, and reject rather than wrap opaque varints stored in unsigned
+  fields.
+- Benchmark schemas now require an integer version, exact run schemas, full
+  Rust/Cargo version formats, and fixed default/candidate descriptions. The
+  runner rejects inherited Rust/Cargo build variables, rechecks untracked
+  files after execution, and permits in-repository artifacts only below the
+  ignored `target/` tree.

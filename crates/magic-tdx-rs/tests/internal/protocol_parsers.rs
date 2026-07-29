@@ -181,6 +181,7 @@ fn test_minute_time_zero_count() {
 #[test]
 fn minute_parsers_reject_price_overflow_and_negative_volume() {
     let maximum = [0xbf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
+    let above_u32 = [0x80, 0x80, 0x80, 0x80, 0x20];
 
     let mut realtime_overflow = vec![3, 0];
     realtime_overflow.extend_from_slice(&[0; 11]);
@@ -203,6 +204,27 @@ fn minute_parsers_reject_price_overflow_and_negative_volume() {
             .contains("volume is negative")
     );
 
+    let mut realtime_negative_price = vec![1, 0];
+    realtime_negative_price.extend_from_slice(&[0; 11]);
+    realtime_negative_price.extend_from_slice(&[0x41, 0, 1]);
+    assert!(
+        parse_minute_time_data(&realtime_negative_price, 1, "600519")
+            .unwrap_err()
+            .to_string()
+            .contains("cumulative price is negative")
+    );
+
+    let mut realtime_oversized_volume = vec![1, 0];
+    realtime_oversized_volume.extend_from_slice(&[0; 11]);
+    realtime_oversized_volume.extend_from_slice(&[10, 0]);
+    realtime_oversized_volume.extend_from_slice(&above_u32);
+    assert!(
+        parse_minute_time_data(&realtime_oversized_volume, 1, "600519")
+            .unwrap_err()
+            .to_string()
+            .contains("unsigned 32-bit domain")
+    );
+
     let mut history_overflow = vec![0; 6];
     history_overflow.extend_from_slice(&maximum);
     history_overflow.extend_from_slice(&[0, 1]);
@@ -213,6 +235,14 @@ fn minute_parsers_reject_price_overflow_and_negative_volume() {
             .unwrap_err()
             .to_string()
             .contains("cumulative price overflow")
+    );
+
+    let history_negative_price = [vec![0; 6], vec![0x41, 0, 1]].concat();
+    assert!(
+        parse_history_minute_time_data(&history_negative_price, 1, "600519")
+            .unwrap_err()
+            .to_string()
+            .contains("cumulative price is negative")
     );
 }
 
