@@ -38,6 +38,9 @@
 - Added a checked absolute/relative numeric-tolerance value and migrated the
   money, order-book, Tencent, Sina, and SZSE policies without changing their
   business units or source acceptance boundaries.
+- Added an offline three-workload release benchmark, five-run comparison
+  policy, and reproducible profile runner. The clean-revision candidate passed,
+  so thin LTO and one codegen unit were enabled and documented.
 
 ### Test Results
 | Test | Expected | Actual | Status |
@@ -56,6 +59,7 @@
 | Fixed-time provider test group | Shared converter preserves every provider contract | Core plus Eastmoney/THS/CNInfo/CLS/ThePaper passed | pass |
 | Numeric-policy all-target tests | Existing source boundaries remain accepted/rejected | Core/Tencent/Sina/Exchange passed; Exchange live HTTPS tests remained ignored | pass |
 | Numeric-policy strict Clippy | No new lint debt | Passed with `-D warnings` | pass |
+| Release-profile comparison on `e0bc91a` | Candidate must meet all predeclared thresholds | 6.86% combined improvement, no regression, binary -4.79% | pass |
 
 ### Errors
 | Error | Resolution |

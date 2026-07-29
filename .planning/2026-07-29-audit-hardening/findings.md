@@ -61,6 +61,18 @@
   top-of-book prices, and SZSE source precision retain their previous units
   and acceptance boundaries.
 
+## Release-profile evidence
+
+- The deterministic benchmark measures 64-row TDX bar/variable parsing, JSON
+  decode plus checked normalization, and bounded zlib decompression. Every
+  profile/run produced identical per-workload checksums.
+- On clean revision `e0bc91a`, thin LTO with one codegen unit improved the
+  geometric combined median by 6.86%. TDX parsing improved 12.16%, JSON
+  normalization improved 7.49%, and zlib improved 0.58%.
+- No workload crossed the 5% regression budget. The example binary shrank
+  4.79%, so the candidate passed the predeclared 5% combined/5% individual/20%
+  size policy and was applied to `[profile.release]`.
+
 ## Issues Encountered
 | Issue | Resolution |
 |-------|------------|

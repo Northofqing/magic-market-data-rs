@@ -29,15 +29,15 @@ Implementation
 - [x] Migrate Exchange pacing/policy to shared transport primitives.
 - [x] Add BR-009 admission-registry compliance checks.
 - [x] Centralize fixed-offset timestamps and typed numeric tolerances.
-- [ ] Benchmark candidate release profiles and apply only proven settings.
-- **Status:** in_progress
+- [x] Benchmark candidate release profiles and apply only proven settings.
+- **Status:** complete
 
 ### Phase 4: Testing and Verification
 - [ ] Run focused red/green tests for every changed subsystem.
 - [ ] Run formatting, all-target/all-feature tests, strict Clippy, Rustdoc,
       documentation links, compliance, coverage, packaging, and release
       preflight.
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 5: Delivery
 - [ ] Complete code review and resolve every Critical/Important finding.

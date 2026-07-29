@@ -22,6 +22,8 @@ mkdir -p "${default_runs}" "${candidate_runs}"
 echo "benchmark_artifact_root=${artifact_root}"
 echo "building_profile=default"
 CARGO_TARGET_DIR="${default_target}" \
+  CARGO_PROFILE_RELEASE_LTO=false \
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
   cargo build --manifest-path "${repo_root}/Cargo.toml" \
   -p magic-tdx-rs --example parse_bench --release --locked --offline
 

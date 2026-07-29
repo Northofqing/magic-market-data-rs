@@ -16,6 +16,45 @@ iterations=1000000 elapsed_ms=31.475 ns_per_op=31.48
 
 This is a parser microbenchmark, not a network throughput claim.
 
+## Evidence-driven release profile
+
+On 2026-07-29, revision
+`e0bc91a750bfd93a50a1185aba0788452d5f95c8` was measured with:
+
+```bash
+bash tools/bench/release_profile.sh
+```
+
+The runner built separate default and candidate target directories, warmed
+each binary once, and then alternated five measured runs per profile. Inputs
+were fixed and offline. The candidate used `lto="thin"` and
+`codegen-units=1`; the default used Cargo's release defaults.
+
+Environment:
+
+```text
+rustc 1.95.0 (59807616e 2026-04-14)
+cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+Darwin 25.5.0 x86_64
+```
+
+The comparison gate required identical checksums, at least 5% combined median
+improvement, no workload regression above 5%, and binary growth no greater
+than 20%.
+
+| Workload | Iterations | Default median (ns) | Candidate median (ns) | Elapsed change | Checksum |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| TDX bar/variable decode | 20,000 | 1,137,977,772 | 999,600,373 | -12.16% | 4,287,391,093,950,792,928 |
+| JSON decode/normalization | 10,000 | 1,577,880,413 | 1,459,711,907 | -7.49% | 7,267,965,373,649,679,376 |
+| zlib decompression | 5,000 | 977,841,422 | 972,183,690 | -0.58% | 440,610,000 |
+
+The geometric combined elapsed ratio was `0.931369`, a 6.86% improvement. The
+example binary decreased from 658,920 to 627,344 bytes (-4.79%), and no
+workload regressed. The candidate therefore passed every predeclared threshold,
+so the workspace release profile now enables thin LTO with one codegen unit.
+These are local deterministic microbenchmark results, not market-data latency
+or network-throughput claims.
+
 ## Local concurrency coverage
 
 `cargo test --workspace --all-targets --offline` passes the imported TDX suite,
