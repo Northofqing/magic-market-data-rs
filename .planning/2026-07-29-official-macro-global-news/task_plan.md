@@ -9,7 +9,7 @@ gates.
 
 ## Current Phase
 
-Design review
+Detailed implementation planning
 
 ## Phases
 
@@ -20,14 +20,15 @@ Design review
 - [x] Establish an isolated worktree from current `origin/main`.
 - [x] Complete the written design specification.
 - [x] Commit the written design specification.
-- [ ] Receive review approval for the written specification.
-- **Status:** in progress
+- [x] Receive review approval for the written specification.
+- **Status:** complete
 
 ### Phase 2: Detailed Implementation Plan
 
-- [ ] Write a file-by-file, test-first implementation plan.
-- [ ] Commit the approved implementation plan.
-- **Status:** pending
+- [x] Write file-by-file, test-first implementation plans split by independent
+  subsystem.
+- [ ] Commit the reviewed implementation plan.
+- **Status:** ready to commit
 
 ### Phase 3: Core and Provider Implementation
 
@@ -63,12 +64,21 @@ Design review
 | Treat news as metadata-only | Avoids copying article bodies and keeps the existing `NewsItem` boundary. |
 | Keep paid/authenticated feeds in a later phase | Public endpoints do not justify bypassing licenses or login controls. |
 | Admit capabilities only after deterministic and live proof | Fixtures cannot prove a current production endpoint. |
+| Split implementation into foundation, China official, global macro, SEC, news, and integration plans | Each subsystem can produce independently testable software and remain reviewable. |
+| Keep World Bank production admission false under the approved mandatory-unit contract | The audited official structured unit fields are empty; inferring units from prose would violate the contract. |
+| Keep PBC social financing false in this slice | Current official flow tables are PDF/XLSX rather than the admitted structured HTML family; no generic document scraper is introduced. |
+| Keep CFETS DR007 false | No equivalent bounded public history contract was proven; R007/Shibor are not substitutes. |
 
 ## Errors Encountered
 
 | Error | Attempt | Resolution |
 | --- | --- | --- |
 | None | Baseline and design phase | Build and all-target test baselines passed without failures. |
+| Direct source-audit curl first failed DNS inside the sandbox | First page audit | Retried outside the sandbox as required. |
+| NBS page returned HTTP 403 to a minimal curl client | Escalated page audit | Preserve this as access evidence; the NBS implementation plan starts diagnostic-only and requires a browser-compatible, terms-compliant live audit before admission. |
+| First Securities Times JSON inspection assumed `data` was always an array | Quick-news audit | The source returned `data:""` for explicit empty cursors; recorded the polymorphic empty shape and changed the next request to omit undefined cursor keys exactly as jQuery does. |
+| First direct CFETS page bundle stopped on HTTP 404 | CFETS audit | Inspect each official page separately instead of assuming all searched paths remain live; no alternate private/member endpoint is used. |
+| A documentation audit command used an unmatched `docs/upstream*` zsh glob | Release-file mapping | Use the exact tracked file `docs/UPSTREAM.md` and explicit paths; no planning evidence was lost. |
 
 ## Notes
 
@@ -76,3 +86,5 @@ Design review
   `/Users/zhangzhen/Desktop/Quant/magic-market-data-rs/.worktrees/official-macro-global-news`
 - Branch: `feat/official-macro-global-news`
 - Base: `origin/main` at `660902f`
+- Plan index:
+  `docs/superpowers/plans/2026-07-29-official-macro-global-news-index.md`
