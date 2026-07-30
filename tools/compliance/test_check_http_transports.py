@@ -23,6 +23,7 @@ class HttpTransportCheckerTests(unittest.TestCase):
         (self.root / "crates").mkdir()
         (self.root / "docs/integrations").mkdir(parents=True)
         self.registry = self.root / "docs/integrations/http-transports.tsv"
+        self.write_workspace("crates/*")
         subprocess.run(
             ["git", "init", "-q", str(self.root)], check=True, capture_output=True
         )
@@ -30,14 +31,26 @@ class HttpTransportCheckerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def manifest(self, crate: str, dependencies: str = "") -> None:
-        path = self.root / "crates" / crate
+    def write_workspace(self, *members: str) -> None:
+        quoted = ", ".join(f'"{member}"' for member in members)
+        (self.root / "Cargo.toml").write_text(
+            f"[workspace]\nmembers = [{quoted}]\nresolver = \"2\"\n",
+            encoding="utf-8",
+        )
+
+    def manifest_at(
+        self, relative: str, crate: str, dependencies: str = ""
+    ) -> None:
+        path = self.root / relative
         path.mkdir(parents=True, exist_ok=True)
         (path / "Cargo.toml").write_text(
             f'[package]\nname = "{crate}"\nversion = "0.1.0"\n'
             f"\n[dependencies]\n{dependencies}",
             encoding="utf-8",
         )
+
+    def manifest(self, crate: str, dependencies: str = "") -> None:
+        self.manifest_at(f"crates/{crate}", crate, dependencies)
 
     def row(self, **overrides: str) -> dict[str, str]:
         row = {
@@ -153,7 +166,7 @@ class HttpTransportCheckerTests(unittest.TestCase):
         self.track()
         self.manifest("untracked", 'ureq = "2"\n')
         self.assertIn(
-            "HTTP transport manifest is not Git-tracked",
+            "workspace member manifest is not Git-tracked",
             "\n".join(self.errors(track=False)),
         )
 
@@ -167,6 +180,79 @@ class HttpTransportCheckerTests(unittest.TestCase):
         self.assertIn(
             "must not be a symbolic link", "\n".join(self.errors(track=False))
         )
+
+    def test_nested_target_specific_and_renamed_dependencies_are_discovered(
+        self,
+    ) -> None:
+        self.write_workspace(
+            "providers/region/nested",
+            "crates/target-specific",
+            "crates/renamed",
+        )
+        self.manifest_at(
+            "providers/region/nested",
+            "nested-provider",
+            'reqwest = "1"\n',
+        )
+        self.manifest_at(
+            "crates/target-specific",
+            "target-provider",
+            "\n[target.'cfg(unix)'.dependencies]\nureq = \"2\"\n",
+        )
+        self.manifest_at(
+            "crates/renamed",
+            "renamed-provider",
+            'http = { package = "reqwest", version = "1" }\n',
+        )
+        self.write_rows()
+        errors = "\n".join(self.errors())
+        self.assertIn(
+            "HTTP transport crate missing from registry: nested-provider",
+            errors,
+        )
+        self.assertIn(
+            "HTTP transport crate missing from registry: target-provider",
+            errors,
+        )
+        self.assertIn(
+            "HTTP transport crate missing from registry: renamed-provider",
+            errors,
+        )
+
+    def test_extra_and_missing_registry_fields_are_diagnostics(self) -> None:
+        self.manifest("provider", 'ureq = "2"\n')
+        values = [self.row()[field] for field in CHECKER.FIELDS]
+        self.registry.write_text(
+            "\t".join(CHECKER.FIELDS)
+            + "\n"
+            + "\t".join(values)
+            + "\textra\n",
+            encoding="utf-8",
+        )
+        self.assertIn("extra field", "\n".join(self.errors()))
+
+        self.registry.write_text(
+            "\t".join(CHECKER.FIELDS) + "\n" + "\t".join(values[:-1]) + "\n",
+            encoding="utf-8",
+        )
+        self.assertIn("missing field", "\n".join(self.errors()))
+
+    def test_invalid_utf8_registry_is_a_diagnostic(self) -> None:
+        self.manifest("provider", 'ureq = "2"\n')
+        self.registry.write_bytes(b"\xff")
+        self.assertIn("cannot read HTTP transport registry", "\n".join(self.errors()))
+
+    def test_malformed_quoted_registry_is_a_diagnostic(self) -> None:
+        self.manifest("provider", 'ureq = "2"\n')
+        values = [self.row()[field] for field in CHECKER.FIELDS[:-1]]
+        self.registry.write_text(
+            "\t".join(CHECKER.FIELDS)
+            + "\n"
+            + "\t".join(values)
+            + '\t"unterminated\n',
+            encoding="utf-8",
+        )
+        self.assertIn("cannot parse HTTP transport registry", "\n".join(self.errors()))
 
 
 if __name__ == "__main__":

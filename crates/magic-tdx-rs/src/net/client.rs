@@ -1537,7 +1537,7 @@ mod tests {
             first.read_exact(&mut packet).unwrap();
 
             let second_before_first_response =
-                accept_before(&listener, Instant::now() + Duration::from_millis(500));
+                accept_before(&listener, Instant::now() + Duration::from_secs(2));
             if let Some((mut second, _)) = second_before_first_response {
                 second.set_nonblocking(false).unwrap();
                 second

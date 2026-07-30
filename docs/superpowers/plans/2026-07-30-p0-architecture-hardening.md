@@ -6,6 +6,12 @@
 
 **Architecture:** Keep the public Rust API unchanged. The TDX fix shortens only the lifetime of the outer pool-handle mutex by cloning its `Arc` before socket I/O, with a loopback regression proving two requests can be in flight. HTTP migration remains a later Gate A program; this slice records the current infrastructure/shared/legacy/hybrid topology in a tracked TSV and verifies production manifest dependencies with a standard-library Python checker.
 
+**Review amendment (2026-07-30):** The checker implementation additionally
+derives manifests from the root workspace membership, includes target-specific
+production dependencies, resolves dependency aliases through `package`, and
+rejects malformed TSV row shapes/encoding/quoting. These adversarial cases close
+reviewed bypasses without changing the approved boundary or public Rust API.
+
 **Tech Stack:** Rust standard library TCP/thread synchronization, existing `magic-tdx-rs` pool, Python 3 `csv`/`tomllib`/`unittest`, Bash compliance gates, Markdown documentation.
 
 ---

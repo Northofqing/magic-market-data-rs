@@ -1,6 +1,6 @@
 # P0 Architecture Hardening Design
 
-**Status:** Proposed for user review
+**Status:** Approved in conversation on 2026-07-30
 **Date:** 2026-07-30
 **Scope:** synchronous TDX pool concurrency, blocking-runtime documentation, and HTTP transport-boundary governance
 
@@ -178,8 +178,10 @@ admission.
 ### Compliance checker
 
 Create `tools/compliance/check_http_transports.py` using Python's standard
-library. It will parse tracked workspace manifests, discover the production
-dependency facts above, read the TSV, and fail when:
+library. It will parse the tracked root workspace membership and member
+manifests, discover top-level and target-specific production dependency facts,
+normalize dependency aliases through their `package` values, read the TSV, and
+fail when:
 
 - a discovered crate has no registry row;
 - a registry row has no corresponding discovered crate;
@@ -187,12 +189,14 @@ dependency facts above, read the TSV, and fail when:
 - direct dependency names differ from the manifest;
 - a legacy/exception row lacks a reason;
 - a new direct HTTP dependency appears without review;
+- a TSV row has missing or extra fields, malformed quoting, or invalid UTF-8;
 - a path is untracked, missing, outside the repository, or a symbolic link.
 
 The checker is read-only. It does not rewrite manifests or the registry.
 
 Unit tests will exercise valid shared/direct/hybrid rows plus missing,
-duplicate, stale, contradictory, and malformed rows in temporary repositories.
+duplicate, stale, contradictory, aliased, target-specific, nested-member, and
+malformed rows in temporary repositories.
 
 `tools/compliance/check.sh` will require the registry and guide, then invoke the
 new checker. `docs/integrations/README.md` will link the registry without

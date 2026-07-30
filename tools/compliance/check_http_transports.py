@@ -10,6 +10,7 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 FIELDS = [
     "crate",
@@ -89,36 +90,174 @@ def classify(crate: str, direct: tuple[str, ...], shared: bool) -> str:
     return "shared"
 
 
+def dependency_package_name(
+    alias: str,
+    specification: Any,
+    workspace_dependencies: dict[str, Any],
+    label: str,
+) -> tuple[str | None, list[str]]:
+    if isinstance(specification, str):
+        return alias, []
+    if not isinstance(specification, dict):
+        return None, [f"{label}: dependency {alias} must be a TOML string or table"]
+    package = specification.get("package")
+    if package is not None:
+        if isinstance(package, str) and package:
+            return package, []
+        return None, [f"{label}: dependency {alias}.package must be a non-empty string"]
+    if specification.get("workspace") is True:
+        inherited = workspace_dependencies.get(alias)
+        if inherited is None:
+            return None, [
+                f"{label}: dependency {alias} inherits a missing "
+                "[workspace.dependencies] entry"
+            ]
+        return dependency_package_name(
+            alias,
+            inherited,
+            {},
+            f"{label} inherited workspace dependency",
+        )
+    return alias, []
+
+
+def production_dependency_names(
+    document: dict[str, Any],
+    workspace_dependencies: dict[str, Any],
+    manifest: Path,
+) -> tuple[set[str], list[str]]:
+    dependency_tables: list[tuple[str, Any]] = [
+        ("[dependencies]", document.get("dependencies", {}))
+    ]
+    errors: list[str] = []
+    targets = document.get("target", {})
+    if not isinstance(targets, dict):
+        return set(), [f"{manifest}: [target] must be a TOML table"]
+    for target, target_table in targets.items():
+        if not isinstance(target_table, dict):
+            errors.append(f"{manifest}: [target.{target}] must be a TOML table")
+            continue
+        dependency_tables.append(
+            (
+                f"[target.{target}.dependencies]",
+                target_table.get("dependencies", {}),
+            )
+        )
+
+    names: set[str] = set()
+    for table_label, dependencies in dependency_tables:
+        if not isinstance(dependencies, dict):
+            errors.append(f"{manifest}: {table_label} must be a TOML table")
+            continue
+        for alias, specification in dependencies.items():
+            package, dependency_errors = dependency_package_name(
+                alias,
+                specification,
+                workspace_dependencies,
+                f"{manifest}: {table_label}",
+            )
+            errors.extend(dependency_errors)
+            if package is not None:
+                names.add(package)
+    return names, errors
+
+
+def expand_workspace_paths(
+    root: Path, patterns: Any, label: str
+) -> tuple[set[Path], list[str]]:
+    if not isinstance(patterns, list) or any(
+        not isinstance(pattern, str) or not pattern for pattern in patterns
+    ):
+        return set(), [f"{label} must be an array of non-empty strings"]
+    root_resolved = root.resolve(strict=True)
+    manifests: set[Path] = set()
+    errors: list[str] = []
+    for pattern in patterns:
+        candidate = root / pattern
+        try:
+            candidate.resolve(strict=False).relative_to(root_resolved)
+        except ValueError:
+            errors.append(f"{label} path escapes the repository: {pattern}")
+            continue
+        try:
+            matches = sorted(root.glob(pattern))
+        except (NotImplementedError, OSError, ValueError) as error:
+            errors.append(f"{label} pattern cannot be expanded ({pattern}): {error}")
+            continue
+        if not matches:
+            errors.append(f"{label} pattern matches no workspace member: {pattern}")
+            continue
+        for match in matches:
+            manifest = match if match.name == "Cargo.toml" else match / "Cargo.toml"
+            manifests.add(manifest)
+    return manifests, errors
+
+
+def workspace_manifests(
+    root: Path, tracked: set[Path]
+) -> tuple[set[Path], dict[str, Any], list[str]]:
+    root_manifest = root / "Cargo.toml"
+    errors = safe_repository_file(
+        root, root_manifest, tracked, "workspace Cargo manifest"
+    )
+    try:
+        document = tomllib.loads(root_manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+        return set(), {}, errors + [f"cannot parse {root_manifest}: {error}"]
+    workspace = document.get("workspace")
+    if not isinstance(workspace, dict):
+        return set(), {}, errors + [
+            f"{root_manifest}: [workspace] must be a TOML table"
+        ]
+    members, member_errors = expand_workspace_paths(
+        root, workspace.get("members"), "workspace.members"
+    )
+    errors.extend(member_errors)
+    excluded, exclude_errors = expand_workspace_paths(
+        root, workspace.get("exclude", []), "workspace.exclude"
+    )
+    errors.extend(exclude_errors)
+    members.difference_update(excluded)
+    if isinstance(document.get("package"), dict):
+        members.add(root_manifest)
+    for manifest in sorted(members):
+        errors.extend(
+            safe_repository_file(root, manifest, tracked, "workspace member manifest")
+        )
+
+    dependencies = workspace.get("dependencies", {})
+    if not isinstance(dependencies, dict):
+        errors.append(
+            f"{root_manifest}: [workspace.dependencies] must be a TOML table"
+        )
+        dependencies = {}
+    return members, dependencies, errors
+
+
 def discover_boundaries(
     root: Path, tracked: set[Path]
 ) -> tuple[dict[str, HttpBoundary], list[str]]:
     discovered: dict[str, HttpBoundary] = {}
-    errors: list[str] = []
-    crates = root / "crates"
-    if not crates.is_dir():
-        return {}, [f"missing crates directory: {crates}"]
-    for manifest in sorted(crates.glob("*/Cargo.toml")):
+    manifests, workspace_dependencies, errors = workspace_manifests(root, tracked)
+    for manifest in sorted(manifests):
         try:
             document = tomllib.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
             errors.append(f"cannot parse {manifest}: {error}")
-            continue
-        dependencies = document.get("dependencies", {})
-        if not isinstance(dependencies, dict):
-            errors.append(f"{manifest}: [dependencies] must be a TOML table")
             continue
         package = document.get("package", {})
         crate = package.get("name") if isinstance(package, dict) else None
         if not isinstance(crate, str) or not crate:
             errors.append(f"{manifest}: package.name must be a non-empty string")
             continue
-        direct = tuple(sorted(DIRECT_HTTP_DEPENDENCIES & dependencies.keys()))
+        dependencies, dependency_errors = production_dependency_names(
+            document, workspace_dependencies, manifest
+        )
+        errors.extend(dependency_errors)
+        direct = tuple(sorted(DIRECT_HTTP_DEPENDENCIES & dependencies))
         shared = SHARED_TRANSPORT in dependencies
         if crate != INFRASTRUCTURE_CRATE and not direct and not shared:
             continue
-        errors.extend(
-            safe_repository_file(root, manifest, tracked, "HTTP transport manifest")
-        )
         boundary = HttpBoundary(
             crate=crate,
             mode=classify(crate, direct, shared),
@@ -136,17 +275,24 @@ def discover_boundaries(
     return discovered, errors
 
 
-def read_registry(path: Path) -> tuple[list[dict[str, str]], list[str]]:
+def read_registry(
+    path: Path,
+) -> tuple[list[dict[str | None, str | list[str] | None]], list[str]]:
     if not path.is_file():
         return [], [f"missing HTTP transport registry: {path}"]
-    with path.open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        if reader.fieldnames != FIELDS:
-            return [], [
-                "HTTP transport registry header mismatch: "
-                f"expected {FIELDS!r}, got {reader.fieldnames!r}"
-            ]
-        return list(reader), []
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle, delimiter="\t", strict=True)
+            if reader.fieldnames != FIELDS:
+                return [], [
+                    "HTTP transport registry header mismatch: "
+                    f"expected {FIELDS!r}, got {reader.fieldnames!r}"
+                ]
+            return list(reader), []
+    except csv.Error as error:
+        return [], [f"cannot parse HTTP transport registry {path}: {error}"]
+    except (OSError, UnicodeError) as error:
+        return [], [f"cannot read HTTP transport registry {path}: {error}"]
 
 
 def parse_direct_dependencies(
@@ -170,45 +316,57 @@ def parse_direct_dependencies(
     return tuple(parts), errors
 
 
-def validate_row(row: dict[str, str], label: str) -> list[str]:
+def validate_row(
+    row: dict[str | None, str | list[str] | None], label: str
+) -> tuple[dict[str, str] | None, list[str]]:
     errors: list[str] = []
-    if any(row[field] != row[field].strip() for field in FIELDS):
+    if None in row:
+        errors.append(f"{label}: extra field(s) are not allowed")
+    missing = [field for field in FIELDS if not isinstance(row.get(field), str)]
+    if missing:
+        errors.append(f"{label}: missing field(s): {', '.join(missing)}")
+    if errors:
+        return None, errors
+    normalized = {field: row[field] for field in FIELDS}
+    if any(
+        normalized[field] != normalized[field].strip() for field in FIELDS
+    ):
         errors.append(f"{label}: fields must not contain outer whitespace")
-    if not row["crate"]:
+    if not normalized["crate"]:
         errors.append(f"{label}: crate is required")
-    if row["mode"] not in MODES:
+    if normalized["mode"] not in MODES:
         errors.append(f"{label}: mode must be one of {sorted(MODES)!r}")
-    if row["shared_transport"] not in {"true", "false"}:
+    if normalized["shared_transport"] not in {"true", "false"}:
         errors.append(f"{label}: shared_transport must be true or false")
-    if row["migration_status"] not in MIGRATION_STATUSES:
+    if normalized["migration_status"] not in MIGRATION_STATUSES:
         errors.append(
             f"{label}: migration_status must be one of "
             f"{sorted(MIGRATION_STATUSES)!r}"
         )
     _, dependency_errors = parse_direct_dependencies(
-        row["direct_dependencies"], label
+        normalized["direct_dependencies"], label
     )
     errors.extend(dependency_errors)
-    if row["mode"] in {"infrastructure", "shared"}:
-        if row["migration_status"] != "target":
+    if normalized["mode"] in {"infrastructure", "shared"}:
+        if normalized["migration_status"] != "target":
             errors.append(
                 f"{label}: infrastructure/shared mode requires target status"
             )
-        if row["reason"] != "-":
+        if normalized["reason"] != "-":
             errors.append(
                 f"{label}: infrastructure/shared target reason must be '-'"
             )
-    elif row["mode"] in {"legacy-direct", "hybrid"}:
-        if row["migration_status"] not in {"legacy", "reviewed-exception"}:
+    elif normalized["mode"] in {"legacy-direct", "hybrid"}:
+        if normalized["migration_status"] not in {"legacy", "reviewed-exception"}:
             errors.append(
                 f"{label}: legacy-direct/hybrid status must be legacy or "
                 "reviewed-exception"
             )
-        if row["reason"] in {"", "-"}:
+        if normalized["reason"] in {"", "-"}:
             errors.append(
                 f"{label}: legacy-direct/hybrid mode requires an explicit reason"
             )
-    return errors
+    return normalized, errors
 
 
 def validate(root: Path, registry_path: Path) -> list[str]:
@@ -228,12 +386,15 @@ def validate(root: Path, registry_path: Path) -> list[str]:
     registered: dict[str, dict[str, str]] = {}
     for line_number, row in enumerate(rows, start=2):
         label = f"{registry_path}:{line_number}"
-        errors.extend(validate_row(row, label))
-        crate = row["crate"]
+        normalized, row_errors = validate_row(row, label)
+        errors.extend(row_errors)
+        if normalized is None:
+            continue
+        crate = normalized["crate"]
         if crate in registered:
             errors.append(f"{label}: duplicate registry key {crate}")
         else:
-            registered[crate] = row
+            registered[crate] = normalized
 
     for crate in sorted(discovered.keys() - registered.keys()):
         errors.append(f"HTTP transport crate missing from registry: {crate}")

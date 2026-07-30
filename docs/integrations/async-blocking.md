@@ -28,14 +28,14 @@ async fn tencent_quote(
     Ok(batch)
 }
 
-# async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let client = TencentClient::new()?;
-let instrument =
-    InstrumentId::new(Exchange::Shanghai, "600000", AssetClass::Equity)?;
-let batch = tencent_quote(client, instrument).await?;
-# let _ = batch;
-# Ok(())
-# }
+async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    let client = TencentClient::new()?;
+    let instrument =
+        InstrumentId::new(Exchange::Shanghai, "600000", AssetClass::Equity)?;
+    let batch = tencent_quote(client.clone(), instrument).await?;
+    let _ = batch;
+    Ok(())
+}
 ```
 
 `spawn_blocking` 只保护异步 executor，不提供请求取消：future 被丢弃后，已经开始的
