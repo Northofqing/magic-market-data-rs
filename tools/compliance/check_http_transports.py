@@ -72,7 +72,9 @@ def safe_repository_file(
         return errors
     try:
         path.resolve(strict=True).relative_to(root.resolve(strict=True))
-    except (FileNotFoundError, ValueError):
+    except (OSError, RuntimeError) as error:
+        errors.append(f"{label} cannot be resolved: {relative}: {error}")
+    except ValueError:
         errors.append(
             f"{label} escapes or does not exist in the repository: {relative}"
         )
@@ -226,7 +228,15 @@ def path_dependency_manifests(
                 continue
             candidate = Path(os.path.abspath(base / path / "Cargo.toml"))
             try:
-                candidate.resolve(strict=False).relative_to(root_resolved)
+                resolved = candidate.resolve(strict=False)
+            except (OSError, RuntimeError) as error:
+                errors.append(
+                    f"{manifest}: {table_label} dependency {alias}.path "
+                    f"cannot be resolved: {error}"
+                )
+                continue
+            try:
+                resolved.relative_to(root_resolved)
             except ValueError:
                 continue
             manifests.add(candidate)
@@ -246,7 +256,12 @@ def expand_workspace_paths(
     for pattern in patterns:
         candidate = root / pattern
         try:
-            candidate.resolve(strict=False).relative_to(root_resolved)
+            resolved = candidate.resolve(strict=False)
+        except (OSError, RuntimeError) as error:
+            errors.append(f"{label} path cannot be resolved ({pattern}): {error}")
+            continue
+        try:
+            resolved.relative_to(root_resolved)
         except ValueError:
             errors.append(f"{label} path escapes the repository: {pattern}")
             continue

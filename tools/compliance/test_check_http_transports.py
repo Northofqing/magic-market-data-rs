@@ -321,6 +321,83 @@ class HttpTransportCheckerTests(unittest.TestCase):
         self.write_rows()
         self.assertEqual(self.errors(), [])
 
+    def test_recursive_path_dependency_cycle_terminates_and_finds_deep_member(
+        self,
+    ) -> None:
+        self.write_workspace("crates/application")
+        self.manifest(
+            "application",
+            'middle = { path = "../../providers/middle" }\n',
+        )
+        self.manifest_at(
+            "providers/middle",
+            "middle",
+            'deep = { path = "../deep" }\n',
+        )
+        self.manifest_at(
+            "providers/deep",
+            "deep-provider",
+            'middle = { path = "../middle" }\nreqwest = "1"\n',
+        )
+        self.write_rows()
+        self.assertIn(
+            "HTTP transport crate missing from registry: deep-provider",
+            "\n".join(self.errors()),
+        )
+
+    def test_dev_build_and_target_path_dependency_members_are_discovered(
+        self,
+    ) -> None:
+        self.write_workspace(
+            "crates/application-dev",
+            "crates/application-build",
+            "crates/application-target",
+        )
+        self.manifest_at(
+            "crates/application-dev",
+            "application-dev",
+            '\n[dev-dependencies]\nprovider = { path = "../../providers/dev" }\n',
+        )
+        self.manifest_at(
+            "crates/application-build",
+            "application-build",
+            '\n[build-dependencies]\nprovider = { path = "../../providers/build" }\n',
+        )
+        self.manifest_at(
+            "crates/application-target",
+            "application-target",
+            "\n[target.'cfg(unix)'.dependencies]\n"
+            'provider = { path = "../../providers/target" }\n',
+        )
+        for kind in ("dev", "build", "target"):
+            self.manifest_at(
+                f"providers/{kind}",
+                f"{kind}-provider",
+                'ureq = "2"\n',
+            )
+        self.write_rows()
+        errors = "\n".join(self.errors())
+        for kind in ("dev", "build", "target"):
+            self.assertIn(
+                f"HTTP transport crate missing from registry: {kind}-provider",
+                errors,
+            )
+
+    def test_path_dependency_symlink_loop_is_a_controlled_diagnostic(self) -> None:
+        self.write_workspace("crates/application")
+        self.manifest(
+            "application",
+            'loop = { path = "../../providers/loop" }\n',
+        )
+        providers = self.root / "providers"
+        providers.mkdir()
+        (providers / "loop").symlink_to("loop", target_is_directory=True)
+        self.write_rows()
+        self.assertIn(
+            "workspace member manifest cannot be resolved",
+            "\n".join(self.errors()),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
