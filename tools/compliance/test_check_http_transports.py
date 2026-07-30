@@ -254,6 +254,73 @@ class HttpTransportCheckerTests(unittest.TestCase):
         )
         self.assertIn("cannot parse HTTP transport registry", "\n".join(self.errors()))
 
+    def test_implicit_in_tree_path_dependency_member_is_discovered(self) -> None:
+        self.write_workspace("crates/application")
+        self.manifest(
+            "application",
+            'nested = { path = "../../providers/nested" }\n',
+        )
+        self.manifest_at(
+            "providers/nested",
+            "implicit-provider",
+            'reqwest = "1"\n',
+        )
+        self.write_rows()
+        self.assertIn(
+            "HTTP transport crate missing from registry: implicit-provider",
+            "\n".join(self.errors()),
+        )
+
+    def test_root_package_workspace_does_not_require_members_key(self) -> None:
+        (self.root / "Cargo.toml").write_text(
+            '[package]\nname = "root-provider"\nversion = "0.1.0"\n'
+            '\n[workspace]\nresolver = "2"\n'
+            '\n[dependencies]\nureq = "2"\n',
+            encoding="utf-8",
+        )
+        self.write_rows(self.row(crate="root-provider"))
+        self.assertEqual(self.errors(), [])
+
+    def test_workspace_inherited_path_dependency_member_is_discovered(self) -> None:
+        (self.root / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/application"]\nresolver = "2"\n'
+            '\n[workspace.dependencies]\n'
+            'nested = { path = "providers/nested" }\n',
+            encoding="utf-8",
+        )
+        self.manifest(
+            "application",
+            "nested = { workspace = true }\n",
+        )
+        self.manifest_at(
+            "providers/nested",
+            "inherited-provider",
+            'rustls = "1"\n',
+        )
+        self.write_rows()
+        self.assertIn(
+            "HTTP transport crate missing from registry: inherited-provider",
+            "\n".join(self.errors()),
+        )
+
+    def test_excluded_in_tree_path_dependency_is_not_a_workspace_member(self) -> None:
+        (self.root / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/application"]\n'
+            'exclude = ["providers/nested"]\nresolver = "2"\n',
+            encoding="utf-8",
+        )
+        self.manifest(
+            "application",
+            'nested = { path = "../../providers/nested" }\n',
+        )
+        self.manifest_at(
+            "providers/nested",
+            "excluded-provider",
+            'reqwest = "1"\n',
+        )
+        self.write_rows()
+        self.assertEqual(self.errors(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import subprocess
 import sys
 import tomllib
@@ -162,6 +163,76 @@ def production_dependency_names(
     return names, errors
 
 
+def path_dependency_manifests(
+    document: dict[str, Any],
+    manifest: Path,
+    workspace_dependencies: dict[str, Any],
+    root: Path,
+) -> tuple[set[Path], list[str]]:
+    table_names = ("dependencies", "dev-dependencies", "build-dependencies")
+    dependency_tables: list[tuple[str, Any]] = [
+        (f"[{name}]", document.get(name, {})) for name in table_names
+    ]
+    errors: list[str] = []
+    targets = document.get("target", {})
+    if not isinstance(targets, dict):
+        return set(), [f"{manifest}: [target] must be a TOML table"]
+    for target, target_table in targets.items():
+        if not isinstance(target_table, dict):
+            errors.append(f"{manifest}: [target.{target}] must be a TOML table")
+            continue
+        dependency_tables.extend(
+            (
+                f"[target.{target}.{name}]",
+                target_table.get(name, {}),
+            )
+            for name in table_names
+        )
+
+    root_resolved = root.resolve(strict=True)
+    manifests: set[Path] = set()
+    for table_label, dependencies in dependency_tables:
+        if not isinstance(dependencies, dict):
+            errors.append(f"{manifest}: {table_label} must be a TOML table")
+            continue
+        for alias, original in dependencies.items():
+            specification = original
+            base = manifest.parent
+            if isinstance(specification, dict) and specification.get("workspace") is True:
+                specification = workspace_dependencies.get(alias)
+                base = root
+                if specification is None:
+                    errors.append(
+                        f"{manifest}: {table_label} dependency {alias} inherits "
+                        "a missing [workspace.dependencies] entry"
+                    )
+                    continue
+            if isinstance(specification, str):
+                continue
+            if not isinstance(specification, dict):
+                errors.append(
+                    f"{manifest}: {table_label} dependency {alias} must be "
+                    "a TOML string or table"
+                )
+                continue
+            path = specification.get("path")
+            if path is None:
+                continue
+            if not isinstance(path, str) or not path:
+                errors.append(
+                    f"{manifest}: {table_label} dependency {alias}.path must "
+                    "be a non-empty string"
+                )
+                continue
+            candidate = Path(os.path.abspath(base / path / "Cargo.toml"))
+            try:
+                candidate.resolve(strict=False).relative_to(root_resolved)
+            except ValueError:
+                continue
+            manifests.add(candidate)
+    return manifests, errors
+
+
 def expand_workspace_paths(
     root: Path, patterns: Any, label: str
 ) -> tuple[set[Path], list[str]]:
@@ -209,8 +280,14 @@ def workspace_manifests(
         return set(), {}, errors + [
             f"{root_manifest}: [workspace] must be a TOML table"
         ]
+    dependencies = workspace.get("dependencies", {})
+    if not isinstance(dependencies, dict):
+        errors.append(
+            f"{root_manifest}: [workspace.dependencies] must be a TOML table"
+        )
+        dependencies = {}
     members, member_errors = expand_workspace_paths(
-        root, workspace.get("members"), "workspace.members"
+        root, workspace.get("members", []), "workspace.members"
     )
     errors.extend(member_errors)
     excluded, exclude_errors = expand_workspace_paths(
@@ -220,17 +297,37 @@ def workspace_manifests(
     members.difference_update(excluded)
     if isinstance(document.get("package"), dict):
         members.add(root_manifest)
-    for manifest in sorted(members):
+    if not members:
+        errors.append(f"{root_manifest}: workspace has no package members")
+
+    pending = list(sorted(members))
+    visited: set[Path] = set()
+    while pending:
+        manifest = pending.pop()
+        if manifest in visited:
+            continue
+        visited.add(manifest)
         errors.extend(
             safe_repository_file(root, manifest, tracked, "workspace member manifest")
         )
-
-    dependencies = workspace.get("dependencies", {})
-    if not isinstance(dependencies, dict):
-        errors.append(
-            f"{root_manifest}: [workspace.dependencies] must be a TOML table"
+        try:
+            member_document = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+            errors.append(f"cannot parse {manifest}: {error}")
+            continue
+        path_manifests, path_errors = path_dependency_manifests(
+            member_document,
+            manifest,
+            dependencies,
+            root,
         )
-        dependencies = {}
+        errors.extend(path_errors)
+        for dependency_manifest in sorted(path_manifests):
+            if dependency_manifest in excluded or dependency_manifest in members:
+                continue
+            members.add(dependency_manifest)
+            pending.append(dependency_manifest)
+
     return members, dependencies, errors
 
 

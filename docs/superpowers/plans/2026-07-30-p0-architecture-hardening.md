@@ -11,6 +11,8 @@ derives manifests from the root workspace membership, includes target-specific
 production dependencies, resolves dependency aliases through `package`, and
 rejects malformed TSV row shapes/encoding/quoting. These adversarial cases close
 reviewed bypasses without changing the approved boundary or public Rust API.
+It also follows in-repository path dependencies recursively because Cargo makes
+them implicit workspace members, while respecting explicit workspace excludes.
 
 **Tech Stack:** Rust standard library TCP/thread synchronization, existing `magic-tdx-rs` pool, Python 3 `csv`/`tomllib`/`unittest`, Bash compliance gates, Markdown documentation.
 

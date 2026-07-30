@@ -179,9 +179,10 @@ admission.
 
 Create `tools/compliance/check_http_transports.py` using Python's standard
 library. It will parse the tracked root workspace membership and member
-manifests, discover top-level and target-specific production dependency facts,
-normalize dependency aliases through their `package` values, read the TSV, and
-fail when:
+manifests, recursively include Cargo's implicit in-repository path-dependency
+members while honoring `workspace.exclude`, discover top-level and
+target-specific production dependency facts, normalize dependency aliases
+through their `package` values, read the TSV, and fail when:
 
 - a discovered crate has no registry row;
 - a registry row has no corresponding discovered crate;
@@ -196,7 +197,7 @@ The checker is read-only. It does not rewrite manifests or the registry.
 
 Unit tests will exercise valid shared/direct/hybrid rows plus missing,
 duplicate, stale, contradictory, aliased, target-specific, nested-member, and
-malformed rows in temporary repositories.
+implicit/excluded path-member and malformed rows in temporary repositories.
 
 `tools/compliance/check.sh` will require the registry and guide, then invoke the
 new checker. `docs/integrations/README.md` will link the registry without
