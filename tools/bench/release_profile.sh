@@ -80,6 +80,61 @@ create_isolated_cargo_home() {
   done
 }
 
+snapshot_digest() {
+  python3 - "$1" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+root = os.path.realpath(sys.argv[1])
+digest = hashlib.sha256()
+
+
+def add_bytes(value):
+    digest.update(len(value).to_bytes(8, "big"))
+    digest.update(value)
+
+
+def visit(path, relative):
+    metadata = os.lstat(path)
+    mode = stat.S_IMODE(metadata.st_mode)
+    encoded_relative = os.fsencode(relative)
+    if stat.S_ISLNK(metadata.st_mode):
+        add_bytes(b"symlink")
+        add_bytes(encoded_relative)
+        add_bytes(os.fsencode(os.readlink(path)))
+        return
+    if mode & 0o222:
+        print(f"benchmark source snapshot is writable: {path}", file=sys.stderr)
+        raise SystemExit(2)
+    if stat.S_ISDIR(metadata.st_mode):
+        add_bytes(b"directory")
+        add_bytes(encoded_relative)
+        add_bytes(f"{mode:o}".encode())
+        with os.scandir(path) as entries:
+            ordered = sorted(entries, key=lambda entry: os.fsencode(entry.name))
+        for entry in ordered:
+            child_relative = entry.name if relative == "." else f"{relative}/{entry.name}"
+            visit(entry.path, child_relative)
+        return
+    if stat.S_ISREG(metadata.st_mode):
+        add_bytes(b"file")
+        add_bytes(encoded_relative)
+        add_bytes(f"{mode:o}".encode())
+        with open(path, "rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+        return
+    print(f"benchmark source snapshot contains unsupported file type: {path}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+visit(root, ".")
+print(digest.hexdigest())
+PY
+}
+
 reject_build_environment
 verify_exact_source
 
@@ -116,39 +171,63 @@ git -C "${repo_root}" archive --format=tar "${revision}" \
 source_root="$(cd -P "${source_root}" && pwd -P)"
 reject_automatic_cargo_configs "${source_root}"
 create_isolated_cargo_home "${isolated_cargo_home}"
+chmod -R a-w "${source_root}"
+expected_source_digest="$(snapshot_digest "${source_root}")"
+
+verify_benchmark_inputs() {
+  verify_exact_source
+  reject_automatic_cargo_configs "${source_root}"
+  # Cargo configuration discovery begins at the process working directory.
+  # Builds run from /, whose ancestry cannot contain another directory.
+  reject_automatic_cargo_configs "/"
+  current_source_digest="$(snapshot_digest "${source_root}")"
+  if [[ "${current_source_digest}" != "${expected_source_digest}" ]]; then
+    echo "benchmark source snapshot changed during execution" >&2
+    return 2
+  fi
+}
+
+verify_benchmark_inputs
 verify_exact_source
 
 echo "benchmark_artifact_root=${artifact_root}"
 echo "benchmark_source_revision=${revision}"
 echo "building_profile=default"
+verify_benchmark_inputs
 (
-  cd "${source_root}"
+  cd /
   CARGO_HOME="${isolated_cargo_home}" \
     CARGO_TARGET_DIR="${default_target}" \
     CARGO_PROFILE_RELEASE_LTO=false \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
-    cargo build --manifest-path Cargo.toml \
+    cargo build --manifest-path "${source_root}/Cargo.toml" \
     -p magic-tdx-rs --example parse_bench --release --locked --offline
 )
+verify_benchmark_inputs
 
 echo "building_profile=thin-lto-codegen1"
+verify_benchmark_inputs
 (
-  cd "${source_root}"
+  cd /
   CARGO_HOME="${isolated_cargo_home}" \
     CARGO_TARGET_DIR="${candidate_target}" \
     CARGO_PROFILE_RELEASE_LTO=thin \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
-    cargo build --manifest-path Cargo.toml \
+    cargo build --manifest-path "${source_root}/Cargo.toml" \
     -p magic-tdx-rs --example parse_bench --release --locked --offline
 )
+verify_benchmark_inputs
 
 default_binary="${default_target}/release/examples/parse_bench"
 candidate_binary="${candidate_target}/release/examples/parse_bench"
 
 echo "warming_profile=default"
+verify_benchmark_inputs
 "${default_binary}" >/dev/null
+verify_benchmark_inputs
 echo "warming_profile=thin-lto-codegen1"
 "${candidate_binary}" >/dev/null
+verify_benchmark_inputs
 
 run_profile() {
   profile="$1"
@@ -161,7 +240,9 @@ run_profile() {
     output="${candidate_runs}/run-${run}.json"
   fi
   echo "measuring_profile=${profile} run=${run}"
+  verify_benchmark_inputs
   "${binary}" >"${output}"
+  verify_benchmark_inputs
 }
 
 for run in 1 2 3 4 5; do
@@ -174,27 +255,34 @@ for run in 1 2 3 4 5; do
   fi
 done
 
-verify_exact_source
+verify_benchmark_inputs
 rustc_version="$(rustc --version)"
-cargo_version="$(CARGO_HOME="${isolated_cargo_home}" cargo --version)"
+cargo_version="$(
+  cd /
+  CARGO_HOME="${isolated_cargo_home}" cargo --version
+)"
 platform_version="$(uname -a)"
 
+verify_benchmark_inputs
 set +e
-python3 "${source_root}/tools/bench/compare_release_profiles.py" collect \
-  --default-dir "${default_runs}" \
-  --candidate-dir "${candidate_runs}" \
-  --default-binary "${default_binary}" \
-  --candidate-binary "${candidate_binary}" \
-  --evidence "${artifact_root}/evidence.json" \
-  --report "${artifact_root}/report.json" \
-  --revision "${revision}" \
-  --rustc "${rustc_version}" \
-  --cargo "${cargo_version}" \
-  --platform "${platform_version}"
+(
+  cd /
+  python3 "${source_root}/tools/bench/compare_release_profiles.py" collect \
+    --default-dir "${default_runs}" \
+    --candidate-dir "${candidate_runs}" \
+    --default-binary "${default_binary}" \
+    --candidate-binary "${candidate_binary}" \
+    --evidence "${artifact_root}/evidence.json" \
+    --report "${artifact_root}/report.json" \
+    --revision "${revision}" \
+    --rustc "${rustc_version}" \
+    --cargo "${cargo_version}" \
+    --platform "${platform_version}"
+)
 status=$?
 set -e
 
-verify_exact_source
+verify_benchmark_inputs
 echo "benchmark_evidence=${artifact_root}/evidence.json"
 echo "benchmark_report=${artifact_root}/report.json"
 exit "${status}"

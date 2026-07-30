@@ -74,13 +74,15 @@
 - No workload crossed the 5% regression budget and the binary shrank 4.85%,
   but combined improvement missed the required 5%. The candidate failed
   closed and `[profile.release]` was removed.
-- A second clean hardened-runner session on `d9555c6` measured 7.25% combined
-  improvement with no workload regression and a 4.87% smaller binary. The
-  first session used `8c8e9b5`; parser hot-path code, the runner, and default
-  binary size changed before the second session. The sessions are not directly
-  comparable and provide insufficient evidence for a workspace-wide profile.
-  Both raw sessions are retained and the repository continues to use Cargo's
-  default release profile.
+- A second clean runner session on `d9555c6` measured 7.25% combined
+  improvement with no workload regression and a 4.87% smaller binary. It
+  passed the historical numerical policy, but that runner rejected only
+  inherited `CARGO_*`, `RUST*`, and `SCCACHE_*` variables; it did not isolate
+  automatic Cargo config or provide the current read-only, digest-checked
+  snapshot. The first session also used a different revision, `8c8e9b5`, whose
+  parser hot path and default binary differed. Both raw sessions are retained
+  as non-qualifying historical evidence and the repository continues to use
+  Cargo's default release profile.
 
 ## Issues Encountered
 | Issue | Resolution |
@@ -158,11 +160,11 @@
   runner rejects inherited Rust/Cargo build variables, rechecks untracked
   files after execution, and permits in-repository artifacts only below the
   ignored `target/` tree.
-- The final runner builds both profiles from an isolated archive of the
+- The final runner builds both profiles from a read-only archive of the
   captured commit. It uses an isolated Cargo home linked only to offline cache
-  directories and rejects automatic Cargo configuration in the source or any
-  ancestor, so a transient worktree edit or user config cannot alter one
-  profile while evidence still records the original revision.
+  directories, runs Cargo from `/` rather than mutable project ancestry, and
+  verifies the snapshot digest, modes, automatic-config boundaries, and Git
+  state before and after every build and measurement.
 - Inline critical-module tests were moved to `tests/internal/` through
   `#[path]` modules so coverage evidence measures production lines rather than
   counting test bodies. Additional Core and TDX boundary cases raised the

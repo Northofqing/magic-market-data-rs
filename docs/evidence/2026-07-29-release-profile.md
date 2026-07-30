@@ -54,11 +54,15 @@ fixed minimum. No optimization claim is inferred from binary size alone.
 - Default binary: 664,120 bytes
 - Candidate binary: 631,792 bytes
 
-This session used the hardened runner. It required a clean full Git porcelain
-state before the build and at every verification point, rejected inherited
-Rust/Cargo build configuration, required the exact four-workload schema and
-tool-version formats, and restricted in-repository artifacts to the ignored
-`target/` tree. Checksums were identical across all profiles and runs.
+This session used the runner present at `d9555c6`. It required a clean full Git
+porcelain state before the build and at every verification point, rejected
+inherited environment variables matching `CARGO_*`, `RUST*`, and `SCCACHE_*`,
+required the exact four-workload schema and tool-version formats, and
+restricted in-repository artifacts to the ignored `target/` tree. It did not
+isolate `$HOME/.cargo/config{,.toml}` or Cargo configuration in mutable
+ancestor directories, and it did not build from the current read-only,
+digest-checked snapshot. Checksums were identical across all profiles and
+runs, but the session does not meet the current provenance standard.
 
 ## Session B raw elapsed nanoseconds
 
@@ -81,7 +85,8 @@ tool-version formats, and restricted in-repository artifacts to the ignored
 | Largest workload regression | -4.785083% | at most 5% | pass |
 | Binary growth | -4.867795% | at most 20% | pass |
 
-Session B qualifies under the fixed per-session comparison policy.
+Session B passes the numerical comparison policy used by that historical
+runner. It does not qualify under the current provenance standard.
 
 ## Cross-session repository decision
 

@@ -72,16 +72,28 @@ class ReleaseProfileRunnerTests(unittest.TestCase):
                 import json
                 import os
                 import pathlib
+                import stat
                 import sys
 
                 if sys.argv[1:] == ["--version"]:
                     print("cargo 1.95.0 (f2d3ce0bd 2026-03-21)")
                     raise SystemExit(0)
 
+                manifest_index = sys.argv.index("--manifest-path") + 1
+                manifest = pathlib.Path(sys.argv[manifest_index])
+                source_root = manifest.parent
+                if pathlib.Path.cwd() != pathlib.Path("/"):
+                    print("build did not use the controlled root directory", file=sys.stderr)
+                    raise SystemExit(11)
+                for path in (source_root, manifest, source_root / "bench-input.txt"):
+                    if path.stat().st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+                        print(f"build source remains writable: {path}", file=sys.stderr)
+                        raise SystemExit(12)
+
                 if os.environ.get("FAKE_TRANSIENT_MUTATION") == "1":
                     original = pathlib.Path(os.environ["FAKE_REPO_ROOT"]) / "bench-input.txt"
                     original.write_text("tampered\\n", encoding="utf-8")
-                    build_input = (pathlib.Path.cwd() / "bench-input.txt").read_text(
+                    build_input = (source_root / "bench-input.txt").read_text(
                         encoding="utf-8"
                     )
                     original.write_text("committed\\n", encoding="utf-8")
@@ -99,6 +111,21 @@ class ReleaseProfileRunnerTests(unittest.TestCase):
                     if cargo_home == inherited_home or (cargo_home / "config.toml").exists():
                         print("build consumed inherited Cargo configuration", file=sys.stderr)
                         raise SystemExit(10)
+
+                if (
+                    os.environ.get("FAKE_MUTATE_SNAPSHOT") == "1"
+                    and os.environ.get("CARGO_PROFILE_RELEASE_LTO") != "thin"
+                ):
+                    manifest.chmod(manifest.stat().st_mode | stat.S_IWUSR)
+                    manifest.write_text("[workspace]\\nmembers = []\\n", encoding="utf-8")
+
+                if (
+                    os.environ.get("FAKE_CREATE_ANCESTOR_CONFIG") == "1"
+                    and os.environ.get("CARGO_PROFILE_RELEASE_LTO") != "thin"
+                ):
+                    config = source_root.parent / ".cargo/config.toml"
+                    config.parent.mkdir(parents=True, exist_ok=True)
+                    config.write_text("[build]\\nrustflags=[]\\n", encoding="utf-8")
 
                 candidate = os.environ.get("CARGO_PROFILE_RELEASE_LTO") == "thin"
                 elapsed = 90 if candidate else 100
@@ -233,6 +260,22 @@ class ReleaseProfileRunnerTests(unittest.TestCase):
             },
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_snapshot_is_read_only_and_digest_checked_after_build(self) -> None:
+        result = self.run_runner(
+            self.root / "artifacts",
+            {"FAKE_MUTATE_SNAPSHOT": "1"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("source snapshot", result.stderr)
+
+    def test_config_created_in_snapshot_ancestry_fails_after_build(self) -> None:
+        result = self.run_runner(
+            self.root / "artifacts",
+            {"FAKE_CREATE_ANCESTOR_CONFIG": "1"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("automatic Cargo config", result.stderr)
 
     def test_ancestor_cargo_configuration_is_rejected(self) -> None:
         cargo_directory = self.root / ".cargo"

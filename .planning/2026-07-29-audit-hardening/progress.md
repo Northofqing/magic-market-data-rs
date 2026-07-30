@@ -54,17 +54,21 @@
   metadata are exact, and the runner detects runtime untracked files and
   inherited build configuration. Four fake-build runner integration tests
   exercise the clean success and each failure boundary.
-- Repeated the formal four-workload A/B benchmark with the hardened runner on
-  clean revision `d9555c6`. That session qualified at 7.25%, but the earlier
-  clean session at a different revision qualified at only 1.29%. The parser
-  hot path, runner, and default binary changed between them, so this is not a
-  same-revision repeatability experiment. Both raw datasets are archived as
-  non-comparable evidence and Cargo's default release profile remains in
-  force.
+- Repeated the formal four-workload A/B benchmark with the then-current runner
+  on clean revision `d9555c6`. It passed the historical numerical policy at
+  7.25%, but did not isolate automatic Cargo config and therefore does not
+  satisfy the current provenance gate. The earlier session also used a
+  different revision whose parser hot path and default binary differed. Both
+  raw datasets are archived as non-qualifying historical evidence and Cargo's
+  default release profile remains in force.
 - Final review found that an exact worktree SHA did not by itself prove the
   source consumed during each build. The runner now builds the captured commit
   from an isolated archive snapshot, isolates Cargo home/cache from user
   configuration, and rejects every automatic Cargo config on the build path.
+- A second review showed that the extracted snapshot itself was still
+  writable. The runner now removes all write modes, hashes the complete source
+  tree, runs Cargo from `/`, and revalidates the tree, config boundaries, and
+  Git state around every build, warm-up, measurement, and comparison.
 - Moved critical-module test bodies out of production source attribution and
   added explicit Core/TDX failure-boundary tests. A fresh all-feature,
   offline, single-job llvm-cov run passed every test and the unchanged release
@@ -94,8 +98,9 @@
 | Four-workload evidence validation | Reject missing metadata/workloads/throughput/revision facts | 8 comparison-policy tests, example check and strict Clippy passed | pass |
 | Follow-up TDX domain suite | Raw public decoders must not return negative prices/quantities | 368 unit tests plus all integration/example targets passed; strict Clippy passed | pass |
 | Benchmark failure-closed suite | Reject weak schemas, forged tools, runtime untracked files and build env | 15 benchmark tests passed, including 4 runner integration tests | pass |
-| Historical four-workload comparison on `d9555c6` | Preserve the independent result without comparing unlike revisions | Session B 7.25%, versus Session A 1.29%; evidence declared non-comparable | pass |
-| Snapshot/config runner isolation | A transient worktree edit or user Cargo config cannot affect captured-revision builds | 7 runner tests pass, including snapshot mutation and config boundaries | pass |
+| Historical four-workload comparison on `d9555c6` | Preserve raw results without promoting evidence that fails the current provenance gate | Session B passed its old numerical policy at 7.25%, but automatic Cargo config was not isolated; evidence is explicitly non-qualifying | pass |
+| Snapshot/config runner isolation | Source is read-only and digest/config/Git state is checked at every execution boundary | 9 runner tests pass, including snapshot tampering, transient worktree mutation, controlled CWD, and config boundaries | pass |
+| Benchmark and runner suite | All comparison/schema/runner contracts pass | 20 Python tests passed | pass |
 | Full Gate D coverage evidence | Overall >=80% and critical paths >=95% without excluding production code | Overall 45,493/51,765 = 87.88%; critical 26,656/28,056 = 95.01% | pass |
 
 ### Errors
