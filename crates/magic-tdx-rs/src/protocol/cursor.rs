@@ -159,45 +159,5 @@ fn length_error(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fixed_reads_report_field_and_offset() {
-        let mut cursor = PacketCursor::at(&[1], 1).unwrap();
-        let error = cursor.read_u16_le("record volume").unwrap_err();
-        assert_eq!(
-            error.error_code(),
-            Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
-        );
-        assert!(error.to_string().contains("record volume at offset 1"));
-    }
-
-    #[test]
-    fn bounded_slice_never_reads_past_packet() {
-        let mut cursor = PacketCursor::new(&[1, 2]);
-        assert_eq!(cursor.read_slice(2, "payload").unwrap(), &[1, 2]);
-        assert!(cursor.is_empty());
-        assert!(cursor.read_u8("tail").is_err());
-    }
-
-    #[test]
-    fn valid_zero_is_not_a_decoder_failure() {
-        let mut cursor = PacketCursor::new(&[0]);
-        assert_eq!(cursor.read_tdx_varint("price").unwrap(), 0);
-        assert_eq!(cursor.position(), 1);
-    }
-
-    #[test]
-    fn unterminated_and_overlong_varints_are_rejected() {
-        for length in 1..=MAX_TDX_VARINT_BYTES {
-            let bytes = vec![0x80; length];
-            let mut cursor = PacketCursor::new(&bytes);
-            let error = cursor.read_tdx_varint("price").unwrap_err();
-            assert_eq!(
-                error.error_code(),
-                Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
-            );
-        }
-    }
-}
+#[path = "../../tests/internal/protocol_cursor.rs"]
+mod tests;

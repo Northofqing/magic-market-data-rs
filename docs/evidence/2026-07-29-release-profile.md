@@ -85,9 +85,11 @@ Session B qualifies under the fixed per-session comparison policy.
 
 ## Cross-session repository decision
 
-Session A and Session B were both clean, offline measurements on the same
-machine and toolchain, but their combined improvements were respectively 1.29%
-and 7.25%. They therefore fall on opposite sides of the predeclared 5%
-threshold. A workspace-wide release-profile claim is not repeatable across the
-available evidence. The repository retains Cargo's default release profile
-until repeated independent sessions consistently satisfy the policy.
+Session A and Session B were clean, offline measurements on the same machine
+and toolchain, and their combined improvements were respectively 1.29% and
+7.25%. They are not a repeatability experiment: Session B used a different
+revision that changed the TDX parser hot path and hardened the runner, and the
+default binary sizes differ. The two results cannot be compared to qualify a
+workspace-wide release-profile claim. The evidence is insufficient, so the
+repository retains Cargo's default release profile until independent sessions
+at one exact revision consistently satisfy the policy.

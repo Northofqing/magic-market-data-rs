@@ -95,6 +95,20 @@ fn dragon_tiger_missing_amounts_remain_absent() {
         serde_json::from_value::<DragonTigerSeat>(serde_json::to_value(&seat).unwrap()).unwrap(),
         seat
     );
+    assert!(DragonTigerSeat::new(
+        NonEmptyText::new("entry-1").unwrap(),
+        instrument(),
+        IsoDate::new("2026-07-23").unwrap(),
+        DragonTigerSide::Buy,
+        PositiveU32::new(1).unwrap(),
+        NonEmptyText::new("机构专用").unwrap(),
+        Money::new(100.0).unwrap(),
+        None,
+        None,
+        None,
+        dated_evidence(ProviderId::Eastmoney, "missing-side-amount"),
+    )
+    .is_err());
 }
 
 #[test]

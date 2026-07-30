@@ -404,6 +404,23 @@ fn post_close_flow_preserves_rank_and_source_backed_limit_metadata() {
         Ratio::new(3.2, RatioUnit::Percent).unwrap(),
         None,
         None,
+        SourceEvidence::new(ProviderId::Eastmoney, "2026-07-22T15:35:00+08:00", "batch",)
+            .unwrap()
+            .with_source_at("2026-07-23 15:00:00")
+            .unwrap(),
+    )
+    .is_err());
+    assert!(PostCloseFlow::new(
+        instrument(),
+        None,
+        IsoDate::new("2026-07-23").unwrap(),
+        PositiveU32::new(1).unwrap(),
+        Price::new(4.36).unwrap(),
+        Ratio::new(2.1, RatioUnit::Percent).unwrap(),
+        Money::new(12_000_000.0).unwrap(),
+        Ratio::new(3.2, RatioUnit::Percent).unwrap(),
+        None,
+        None,
         evidence().with_source_at("short").unwrap(),
     )
     .is_err());

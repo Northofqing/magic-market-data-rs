@@ -56,9 +56,19 @@
   exercise the clean success and each failure boundary.
 - Repeated the formal four-workload A/B benchmark with the hardened runner on
   clean revision `d9555c6`. That session qualified at 7.25%, but the earlier
-  clean session qualified at only 1.29%. Because the sessions cross the fixed
-  5% threshold, the performance result is not repeatable; both raw datasets
-  are archived and Cargo's default release profile remains in force.
+  clean session at a different revision qualified at only 1.29%. The parser
+  hot path, runner, and default binary changed between them, so this is not a
+  same-revision repeatability experiment. Both raw datasets are archived as
+  non-comparable evidence and Cargo's default release profile remains in
+  force.
+- Final review found that an exact worktree SHA did not by itself prove the
+  source consumed during each build. The runner now builds the captured commit
+  from an isolated archive snapshot, isolates Cargo home/cache from user
+  configuration, and rejects every automatic Cargo config on the build path.
+- Moved critical-module test bodies out of production source attribution and
+  added explicit Core/TDX failure-boundary tests. A fresh all-feature,
+  offline, single-job llvm-cov run passed every test and the unchanged release
+  thresholds.
 
 ### Test Results
 | Test | Expected | Actual | Status |
@@ -84,7 +94,9 @@
 | Four-workload evidence validation | Reject missing metadata/workloads/throughput/revision facts | 8 comparison-policy tests, example check and strict Clippy passed | pass |
 | Follow-up TDX domain suite | Raw public decoders must not return negative prices/quantities | 368 unit tests plus all integration/example targets passed; strict Clippy passed | pass |
 | Benchmark failure-closed suite | Reject weak schemas, forged tools, runtime untracked files and build env | 15 benchmark tests passed, including 4 runner integration tests | pass |
-| Repeated four-workload comparison on `d9555c6` | Independent session must support a repeatable optimization claim | Session B 7.25%, versus Session A 1.29%; cross-session claim rejected | pass |
+| Historical four-workload comparison on `d9555c6` | Preserve the independent result without comparing unlike revisions | Session B 7.25%, versus Session A 1.29%; evidence declared non-comparable | pass |
+| Snapshot/config runner isolation | A transient worktree edit or user Cargo config cannot affect captured-revision builds | 7 runner tests pass, including snapshot mutation and config boundaries | pass |
+| Full Gate D coverage evidence | Overall >=80% and critical paths >=95% without excluding production code | Overall 45,493/51,765 = 87.88%; critical 26,656/28,056 = 95.01% | pass |
 
 ### Errors
 | Error | Resolution |

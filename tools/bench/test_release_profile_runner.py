@@ -29,6 +29,7 @@ class ReleaseProfileRunnerTests(unittest.TestCase):
         (self.repo / "Cargo.toml").write_text(
             "[workspace]\nresolver = \"2\"\n", encoding="utf-8"
         )
+        (self.repo / "bench-input.txt").write_text("committed\n", encoding="utf-8")
         (self.repo / ".gitignore").write_text("/target\n", encoding="utf-8")
         subprocess.run(
             ["git", "init", "-q", str(self.repo)], check=True, capture_output=True
@@ -76,6 +77,28 @@ class ReleaseProfileRunnerTests(unittest.TestCase):
                 if sys.argv[1:] == ["--version"]:
                     print("cargo 1.95.0 (f2d3ce0bd 2026-03-21)")
                     raise SystemExit(0)
+
+                if os.environ.get("FAKE_TRANSIENT_MUTATION") == "1":
+                    original = pathlib.Path(os.environ["FAKE_REPO_ROOT"]) / "bench-input.txt"
+                    original.write_text("tampered\\n", encoding="utf-8")
+                    build_input = (pathlib.Path.cwd() / "bench-input.txt").read_text(
+                        encoding="utf-8"
+                    )
+                    original.write_text("committed\\n", encoding="utf-8")
+                    if build_input != "committed\\n":
+                        print("build consumed transient worktree mutation", file=sys.stderr)
+                        raise SystemExit(9)
+
+                if os.environ.get("FAKE_REQUIRE_ISOLATED_CARGO_HOME") == "1":
+                    raw_cargo_home = os.environ.get("CARGO_HOME")
+                    if not raw_cargo_home:
+                        print("build did not isolate Cargo home", file=sys.stderr)
+                        raise SystemExit(10)
+                    cargo_home = pathlib.Path(raw_cargo_home)
+                    inherited_home = pathlib.Path(os.environ["HOME"]) / ".cargo"
+                    if cargo_home == inherited_home or (cargo_home / "config.toml").exists():
+                        print("build consumed inherited Cargo configuration", file=sys.stderr)
+                        raise SystemExit(10)
 
                 candidate = os.environ.get("CARGO_PROFILE_RELEASE_LTO") == "thin"
                 elapsed = 90 if candidate else 100
@@ -182,6 +205,45 @@ class ReleaseProfileRunnerTests(unittest.TestCase):
         result = self.run_runner(self.repo / "bench-output")
         self.assertEqual(result.returncode, 2)
         self.assertIn("Git-ignored path", result.stderr)
+
+    def test_transient_tracked_mutation_cannot_affect_snapshot_build(self) -> None:
+        result = self.run_runner(
+            self.root / "artifacts",
+            {"FAKE_TRANSIENT_MUTATION": "1"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            (self.repo / "bench-input.txt").read_text(encoding="utf-8"),
+            "committed\n",
+        )
+
+    def test_home_cargo_configuration_is_isolated_from_builds(self) -> None:
+        fake_home = self.root / "home"
+        cargo_home = fake_home / ".cargo"
+        cargo_home.mkdir(parents=True)
+        (cargo_home / "config.toml").write_text(
+            "[build]\nrustflags = ['-C', 'target-cpu=native']\n",
+            encoding="utf-8",
+        )
+        result = self.run_runner(
+            self.root / "artifacts",
+            {
+                "HOME": str(fake_home),
+                "FAKE_REQUIRE_ISOLATED_CARGO_HOME": "1",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_ancestor_cargo_configuration_is_rejected(self) -> None:
+        cargo_directory = self.root / ".cargo"
+        cargo_directory.mkdir()
+        (cargo_directory / "config.toml").write_text(
+            "[build]\nrustflags = ['-C', 'target-cpu=native']\n",
+            encoding="utf-8",
+        )
+        result = self.run_runner(self.root / "artifacts")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("automatic Cargo config", result.stderr)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,41 @@ verify_exact_source() {
   fi
 }
 
+reject_automatic_cargo_configs() {
+  search_root="$1"
+  while true; do
+    for candidate in \
+      "${search_root}/.cargo/config" \
+      "${search_root}/.cargo/config.toml"; do
+      if [[ -e "${candidate}" || -L "${candidate}" ]]; then
+        echo "benchmark rejects automatic Cargo config: ${candidate}" >&2
+        return 2
+      fi
+    done
+    if [[ "${search_root}" == "/" ]]; then
+      break
+    fi
+    search_root="$(dirname "${search_root}")"
+  done
+}
+
+create_isolated_cargo_home() {
+  destination="$1"
+  if [[ -z "${HOME:-}" ]]; then
+    echo "benchmark requires HOME to locate the offline Cargo cache" >&2
+    return 2
+  fi
+  source_home="${HOME}/.cargo"
+  mkdir -p "${destination}"
+  for cache_directory in registry git; do
+    source_path="${source_home}/${cache_directory}"
+    if [[ -d "${source_path}" ]]; then
+      source_path="$(cd -P "${source_path}" && pwd -P)"
+      ln -s "${source_path}" "${destination}/${cache_directory}"
+    fi
+  done
+}
+
 reject_build_environment
 verify_exact_source
 
@@ -72,22 +107,40 @@ default_target="${artifact_root}/default-target"
 candidate_target="${artifact_root}/candidate-target"
 default_runs="${artifact_root}/default-runs"
 candidate_runs="${artifact_root}/candidate-runs"
-mkdir -p "${default_runs}" "${candidate_runs}"
+source_root="${artifact_root}/source"
+isolated_cargo_home="${artifact_root}/cargo-home"
+mkdir -p "${default_runs}" "${candidate_runs}" "${source_root}"
+
+git -C "${repo_root}" archive --format=tar "${revision}" \
+  | tar -xf - -C "${source_root}"
+source_root="$(cd -P "${source_root}" && pwd -P)"
+reject_automatic_cargo_configs "${source_root}"
+create_isolated_cargo_home "${isolated_cargo_home}"
+verify_exact_source
 
 echo "benchmark_artifact_root=${artifact_root}"
+echo "benchmark_source_revision=${revision}"
 echo "building_profile=default"
-CARGO_TARGET_DIR="${default_target}" \
-  CARGO_PROFILE_RELEASE_LTO=false \
-  CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
-  cargo build --manifest-path "${repo_root}/Cargo.toml" \
-  -p magic-tdx-rs --example parse_bench --release --locked --offline
+(
+  cd "${source_root}"
+  CARGO_HOME="${isolated_cargo_home}" \
+    CARGO_TARGET_DIR="${default_target}" \
+    CARGO_PROFILE_RELEASE_LTO=false \
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+    cargo build --manifest-path Cargo.toml \
+    -p magic-tdx-rs --example parse_bench --release --locked --offline
+)
 
 echo "building_profile=thin-lto-codegen1"
-CARGO_TARGET_DIR="${candidate_target}" \
-  CARGO_PROFILE_RELEASE_LTO=thin \
-  CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
-  cargo build --manifest-path "${repo_root}/Cargo.toml" \
-  -p magic-tdx-rs --example parse_bench --release --locked --offline
+(
+  cd "${source_root}"
+  CARGO_HOME="${isolated_cargo_home}" \
+    CARGO_TARGET_DIR="${candidate_target}" \
+    CARGO_PROFILE_RELEASE_LTO=thin \
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
+    cargo build --manifest-path Cargo.toml \
+    -p magic-tdx-rs --example parse_bench --release --locked --offline
+)
 
 default_binary="${default_target}/release/examples/parse_bench"
 candidate_binary="${candidate_target}/release/examples/parse_bench"
@@ -123,11 +176,11 @@ done
 
 verify_exact_source
 rustc_version="$(rustc --version)"
-cargo_version="$(cargo --version)"
+cargo_version="$(CARGO_HOME="${isolated_cargo_home}" cargo --version)"
 platform_version="$(uname -a)"
 
 set +e
-python3 "${repo_root}/tools/bench/compare_release_profiles.py" collect \
+python3 "${source_root}/tools/bench/compare_release_profiles.py" collect \
   --default-dir "${default_runs}" \
   --candidate-dir "${candidate_runs}" \
   --default-binary "${default_binary}" \

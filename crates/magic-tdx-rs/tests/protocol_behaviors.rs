@@ -205,6 +205,18 @@ fn bar_parsers_decode_daily_and_intraday_records_with_explicit_units() {
     assert_eq!(parsed[0].datetime, "2026-07-23");
     assert_eq!(parsed[0].up_count, 3);
     assert_eq!(parsed[0].down_count, 4);
+
+    let mut intraday_index = vec![1, 0];
+    intraday_index.extend_from_slice(&minute_date(2026, 7, 23).to_le_bytes());
+    intraday_index.extend_from_slice(&(9u16 * 60 + 31).to_le_bytes());
+    intraday_index.extend_from_slice(&[10, 1, 2, 0]);
+    intraday_index.extend_from_slice(&100u32.to_le_bytes());
+    intraday_index.extend_from_slice(&1_000u32.to_le_bytes());
+    intraday_index.extend_from_slice(&3u16.to_le_bytes());
+    intraday_index.extend_from_slice(&4u16.to_le_bytes());
+    intraday_index.extend_from_slice(&[0; 4]);
+    let parsed = parse_index_bars(&intraday_index, 0).unwrap();
+    assert_eq!(parsed[0].datetime, "2026-07-23 09:31");
 }
 
 #[test]
@@ -337,6 +349,34 @@ fn bar_parsers_reject_negative_derived_prices() {
         .unwrap_err()
         .to_string()
         .contains("open price is negative"));
+
+    for (price_index, expected) in [
+        (1, "close price is negative"),
+        (2, "high price is negative"),
+        (3, "low price is negative"),
+    ] {
+        let mut prices = [10, 0, 0, 0];
+        prices[price_index] = 0x4b;
+
+        let mut security = vec![1, 0];
+        security.extend_from_slice(&20260723u32.to_le_bytes());
+        security.extend_from_slice(&prices);
+        security.extend_from_slice(&100u32.to_le_bytes());
+        security.extend_from_slice(&1_000u32.to_le_bytes());
+        let error = parse_security_bars(&security, 4).unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+
+        let mut index = vec![1, 0];
+        index.extend_from_slice(&20260723u32.to_le_bytes());
+        index.extend_from_slice(&prices);
+        index.extend_from_slice(&100u32.to_le_bytes());
+        index.extend_from_slice(&1_000u32.to_le_bytes());
+        index.extend_from_slice(&3u16.to_le_bytes());
+        index.extend_from_slice(&4u16.to_le_bytes());
+        index.extend_from_slice(&[0; 4]);
+        let error = parse_index_bars(&index, 4).unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+    }
 }
 
 #[test]
@@ -431,8 +471,19 @@ fn quote_parser_decodes_complete_depth_and_rejects_a_truncated_tail() {
 fn quote_parser_rejects_negative_prices_volumes_and_unsigned_raw_fields() {
     for (offset, expected) in [
         (13, "base price is negative"),
+        (19, "reversed_bytes1 is negative"),
         (20, "volume is negative"),
+        (21, "current volume is negative"),
+        (26, "sell volume is negative"),
+        (27, "buy volume is negative"),
+        (28, "reversed_bytes2 is negative"),
+        (29, "reversed_bytes3 is negative"),
         (32, "bid level 1 volume is negative"),
+        (33, "ask level 1 volume is negative"),
+        (52, "reversed_bytes5 is negative"),
+        (53, "reversed_bytes6 is negative"),
+        (54, "reversed_bytes7 is negative"),
+        (55, "reversed_bytes8 is negative"),
         (18, "reversed_bytes0 is negative"),
     ] {
         let mut body = quote_packet();
@@ -447,6 +498,19 @@ fn quote_parser_rejects_negative_prices_volumes_and_unsigned_raw_fields() {
         .unwrap_err()
         .to_string()
         .contains("last close price is negative"));
+
+    for (offset, expected) in [
+        (15, "open price is negative"),
+        (16, "high price is negative"),
+        (17, "low price is negative"),
+        (30, "bid level 1 price is negative"),
+        (31, "ask level 1 price is negative"),
+    ] {
+        let mut body = quote_packet();
+        body[offset] = 0x4b;
+        let error = parse_security_quotes(&body).unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+    }
 
     let mut oversized_volume = quote_packet();
     oversized_volume.splice(20..21, [0x80, 0x80, 0x80, 0x80, 0x20]);

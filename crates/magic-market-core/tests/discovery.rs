@@ -13,6 +13,24 @@ fn discovery_requests_are_explicit_bounded_and_serde_checked() {
     assert_eq!(request.trading_date(), &date);
     assert_eq!(request.exchange(), Some(Exchange::Beijing));
     assert_eq!(request.limit().get(), 10_000);
+    assert_eq!(
+        serde_json::from_value::<DragonTigerDiscoveryRequest>(
+            serde_json::to_value(&request).unwrap()
+        )
+        .unwrap()
+        .exchange(),
+        Some(Exchange::Beijing)
+    );
+    let all_exchanges =
+        DragonTigerDiscoveryRequest::new(date.clone(), PositiveU32::new(1).unwrap()).unwrap();
+    assert_eq!(
+        serde_json::from_value::<DragonTigerDiscoveryRequest>(
+            serde_json::to_value(&all_exchanges).unwrap()
+        )
+        .unwrap()
+        .exchange(),
+        None
+    );
     assert!(DragonTigerDiscoveryRequest::new(date, PositiveU32::new(10_001).unwrap()).is_err());
 
     let mut oversized = serde_json::to_value(&request).unwrap();
@@ -56,6 +74,7 @@ fn board_definition_is_sourced_and_serde_checked() {
     assert_eq!(board.board_name().as_str(), "电力");
     assert_eq!(board.category(), BoardCategory::Industry);
     assert_eq!(board.member_count().get(), 42);
+    assert_eq!(board.evidence().provider(), ProviderId::Tdx);
     assert_eq!(board.provider_id(), ProviderId::Tdx);
     assert_eq!(board.evidence_batch_id(), "batch");
 

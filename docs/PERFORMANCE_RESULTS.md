@@ -10,12 +10,13 @@ bash tools/bench/release_profile.sh
 ```
 
 The current runner requires a clean Git worktree and index, rejects inherited
-Rust/Cargo build configuration, captures the full revision, builds separate
-default and candidate target directories, warms each binary once, and then
-alternates five measured runs per profile. It verifies the full porcelain
-state before evidence collection and before exit. Inputs are fixed and
-offline. The candidate uses `lto="thin"` and `codegen-units=1`; the default
-uses Cargo's release defaults.
+Rust/Cargo build environment and automatic Cargo configuration, captures the
+full revision, and builds both profiles from an isolated `git archive` source
+snapshot with an isolated Cargo home. It builds separate default and candidate
+target directories, warms each binary once, and then alternates five measured
+runs per profile. It verifies the full porcelain state before evidence
+collection and before exit. Inputs are fixed and offline. The candidate uses
+`lto="thin"` and `codegen-units=1`; the default uses Cargo's release defaults.
 
 Environment:
 
@@ -55,9 +56,11 @@ revision `d9555c6b06bcb27360a98a13765b8d0051ff575a` produced:
 
 The second session's geometric combined elapsed ratio was `0.927543`, a 7.25%
 improvement, and its binary decreased from 664,120 to 631,792 bytes (-4.87%).
-It passed the per-session policy. However, the two clean sessions fall on
-opposite sides of the 5% qualification threshold. The improvement is therefore
-not repeatable evidence for a workspace-wide optimization claim. The
+It passed the per-session policy. However, the sessions measured different
+revisions: the later revision changed the TDX parser hot path and hardened the
+runner, and its default binary size also differed. The results are therefore
+not a same-revision repeatability experiment and cannot be compared to qualify
+a workspace-wide optimization. The available evidence is insufficient, so the
 repository fails closed and retains Cargo's default release profile.
 
 Exact identities, all raw elapsed values, and both decisions are recorded in

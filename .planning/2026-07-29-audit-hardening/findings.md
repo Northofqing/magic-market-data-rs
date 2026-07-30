@@ -75,10 +75,12 @@
   but combined improvement missed the required 5%. The candidate failed
   closed and `[profile.release]` was removed.
 - A second clean hardened-runner session on `d9555c6` measured 7.25% combined
-  improvement with no workload regression and a 4.87% smaller binary. Because
-  the first and second clean sessions fall on opposite sides of the 5% gate,
-  the result is not repeatable evidence. Both raw sessions are retained and
-  the repository continues to use Cargo's default release profile.
+  improvement with no workload regression and a 4.87% smaller binary. The
+  first session used `8c8e9b5`; parser hot-path code, the runner, and default
+  binary size changed before the second session. The sessions are not directly
+  comparable and provide insufficient evidence for a workspace-wide profile.
+  Both raw sessions are retained and the repository continues to use Cargo's
+  default release profile.
 
 ## Issues Encountered
 | Issue | Resolution |
@@ -156,3 +158,13 @@
   runner rejects inherited Rust/Cargo build variables, rechecks untracked
   files after execution, and permits in-repository artifacts only below the
   ignored `target/` tree.
+- The final runner builds both profiles from an isolated archive of the
+  captured commit. It uses an isolated Cargo home linked only to offline cache
+  directories and rejects automatic Cargo configuration in the source or any
+  ancestor, so a transient worktree edit or user config cannot alter one
+  profile while evidence still records the original revision.
+- Inline critical-module tests were moved to `tests/internal/` through
+  `#[path]` modules so coverage evidence measures production lines rather than
+  counting test bodies. Additional Core and TDX boundary cases raised the
+  measured workspace coverage to 87.88% and critical-path coverage to 95.01%,
+  satisfying the unchanged 80% and 95% release thresholds.

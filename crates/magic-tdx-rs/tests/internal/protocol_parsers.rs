@@ -87,6 +87,16 @@ fn security_list_rejects_a_missing_later_record_atomically() {
     assert!(error.to_string().contains("record 1"));
 }
 
+#[test]
+fn security_list_rejects_undeclared_trailing_bytes() {
+    let error = parse_security_list(&[0, 0, 0]).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains("trailing bytes"));
+}
+
 // --- parse_security_bars ---
 
 #[test]
@@ -125,6 +135,23 @@ fn test_security_bars_daily_format() {
     assert_eq!(result[0].year, 2026);
     assert_eq!(result[0].month, 4);
     assert_eq!(result[0].day, 29);
+}
+
+#[test]
+fn bar_parsers_accept_only_the_protocol_authorized_tail() {
+    for trailing in [1_usize, 2, 3, 5] {
+        let security = [vec![0, 0], vec![0; trailing]].concat();
+        let error = parse_security_bars(&security, 4).unwrap_err();
+        assert!(error.to_string().contains("unsupported trailing bytes"));
+
+        let index = [vec![0, 0], vec![0; trailing]].concat();
+        let error = parse_index_bars(&index, 4).unwrap_err();
+        assert!(error.to_string().contains("unsupported trailing bytes"));
+    }
+    assert!(parse_security_bars(&[0, 0, 0, 0, 0, 0], 4)
+        .unwrap()
+        .is_empty());
+    assert!(parse_index_bars(&[0, 0, 0, 0, 0, 0], 4).unwrap().is_empty());
 }
 
 // --- parse_index_bars ---
@@ -244,6 +271,39 @@ fn minute_parsers_reject_price_overflow_and_negative_volume() {
             .to_string()
             .contains("cumulative price is negative")
     );
+
+    let history_negative_volume = [vec![0; 6], vec![10, 0, 0x41]].concat();
+    assert!(
+        parse_history_minute_time_data(&history_negative_volume, 1, "600519")
+            .unwrap_err()
+            .to_string()
+            .contains("volume is negative")
+    );
+
+    let history_oversized_volume = [vec![0; 6], vec![10, 0], above_u32.to_vec()].concat();
+    assert!(
+        parse_history_minute_time_data(&history_oversized_volume, 1, "600519")
+            .unwrap_err()
+            .to_string()
+            .contains("unsigned 32-bit domain")
+    );
+}
+
+#[test]
+fn minute_parsers_preserve_zero_volume_without_division() {
+    let mut realtime = vec![1, 0];
+    realtime.extend_from_slice(&[0; 11]);
+    realtime.extend_from_slice(&[10, 0, 0]);
+    let rows = parse_minute_time_data(&realtime, 1, "600519").unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].price, rows[0].avg_price);
+    assert_eq!(rows[0].vol, 0.0);
+
+    let history = [vec![0; 6], vec![10, 0, 0]].concat();
+    let rows = parse_history_minute_time_data(&history, 1, "600519").unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].price, rows[0].avg_price);
+    assert_eq!(rows[0].vol, 0.0);
 }
 
 // --- parse_history_minute_time_data ---
@@ -486,6 +546,18 @@ fn history_transaction_rejects_invalid_domains_and_cumulative_overflow() {
         .contains("cumulative price overflow"));
 }
 
+#[test]
+fn history_transaction_rejects_negative_price_and_trailing_bytes() {
+    let negative_price = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 0x41, 1, 0, 0];
+    let error = parse_history_transaction_data(&negative_price).unwrap_err();
+    assert!(error.to_string().contains("cumulative price is negative"));
+
+    let mut trailing = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 1, 0, 0].to_vec();
+    trailing.push(0);
+    let error = parse_history_transaction_data(&trailing).unwrap_err();
+    assert!(error.to_string().contains("trailing bytes"));
+}
+
 // --- parse_security_quotes ---
 
 #[test]
@@ -503,6 +575,16 @@ fn test_quotes_zero_count() {
     // b1 cb (2 bytes) + count=0 (2 bytes)
     let result = parse_security_quotes(&[0x00, 0x00, 0x00, 0x00]).unwrap();
     assert!(result.is_empty());
+}
+
+#[test]
+fn zero_quote_count_rejects_undeclared_trailing_bytes() {
+    let error = parse_security_quotes(&[0, 0, 0, 0, 0]).unwrap_err();
+    assert_eq!(
+        error.error_code(),
+        Some(ErrorCode::RESPONSE_LENGTH_MISMATCH)
+    );
+    assert!(error.to_string().contains("trailing bytes"));
 }
 
 // --- parse_finance_info ---
