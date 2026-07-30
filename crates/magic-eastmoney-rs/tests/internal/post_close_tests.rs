@@ -187,6 +187,78 @@ fn public_post_close_provider_is_explicitly_unadmitted() {
 }
 
 #[test]
+fn public_diagnostic_rejects_a_non_current_trading_date_before_transport() {
+    let transport = ScriptedTransport::from_results(std::iter::empty());
+    let requests = transport.requests();
+    let client = EastmoneyClient::with_transport(transport);
+    let historical_request = PostCloseFlowRequest::new(
+        IsoDate::new("2000-01-04").unwrap(),
+        PositiveU32::new(2).unwrap(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        client.diagnose_post_close_flows(&historical_request),
+        Err(EastmoneyError::InvalidRequest(message))
+            if message.contains("current China trading date")
+    ));
+    assert!(requests.lock().unwrap().is_empty());
+}
+
+#[test]
+fn post_close_diagnostic_stops_on_non_transport_failures() {
+    let transport = ScriptedTransport::from_results([Err(EastmoneyError::Decode(
+        "invalid response encoding".into(),
+    ))]);
+    let requests = transport.requests();
+    let client = EastmoneyClient::with_transport(transport);
+
+    assert!(matches!(
+        client.diagnose_post_close_flows_with_clock(
+            &request(),
+            || Ok("2026-07-24T15:35:00+08:00".into())
+        ),
+        Err(EastmoneyError::Decode(message))
+            if message.contains("encoding")
+    ));
+    assert_eq!(requests.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn post_close_diagnostic_exhausts_bounded_transport_failover_explicitly() {
+    let transport = ScriptedTransport::from_results(
+        (1..=6).map(|attempt| Err(EastmoneyError::Transport(format!("tls-{attempt}")))),
+    );
+    let requests = transport.requests();
+    let client = EastmoneyClient::with_transport(transport);
+
+    assert!(matches!(
+        client.diagnose_post_close_flows_with_clock(
+            &request(),
+            || Ok("2026-07-24T15:35:00+08:00".into())
+        ),
+        Err(EastmoneyError::Transport(message))
+            if message.contains("all Eastmoney post-close HTTPS endpoints failed")
+                && message.contains("tls-6")
+    ));
+    assert_eq!(requests.lock().unwrap().len(), 6);
+}
+
+#[test]
+fn post_close_url_rejects_unregistered_endpoints_and_zero_limits() {
+    assert!(matches!(
+        post_close_url("https://example.invalid/api", 1),
+        Err(EastmoneyError::InvalidRequest(message))
+            if message.contains("unregistered")
+    ));
+    assert!(matches!(
+        post_close_url(PRIMARY_ENDPOINT, 0),
+        Err(EastmoneyError::InvalidRequest(message))
+            if message.contains("zero limit")
+    ));
+}
+
+#[test]
 fn transport_failover_retries_primary_then_uses_one_complete_delay_snapshot() {
     let transport = ScriptedTransport::from_results([
         Err(EastmoneyError::Transport("primary-1".into())),
