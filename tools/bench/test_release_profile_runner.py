@@ -108,9 +108,25 @@ class ReleaseProfileRunnerTests(unittest.TestCase):
                         raise SystemExit(10)
                     cargo_home = pathlib.Path(raw_cargo_home)
                     inherited_home = pathlib.Path(os.environ["HOME"]) / ".cargo"
-                    if cargo_home == inherited_home or (cargo_home / "config.toml").exists():
+                    if (
+                        cargo_home == inherited_home
+                        or (cargo_home / "config").exists()
+                        or (cargo_home / "config.toml").exists()
+                        or cargo_home.stat().st_mode
+                        & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+                    ):
                         print("build consumed inherited Cargo configuration", file=sys.stderr)
                         raise SystemExit(10)
+
+                if (
+                    os.environ.get("FAKE_CREATE_ISOLATED_HOME_CONFIG") == "1"
+                    and os.environ.get("CARGO_PROFILE_RELEASE_LTO") != "thin"
+                ):
+                    cargo_home = pathlib.Path(os.environ["CARGO_HOME"])
+                    cargo_home.chmod(cargo_home.stat().st_mode | stat.S_IWUSR)
+                    (cargo_home / "config.toml").write_text(
+                        "[build]\\nrustflags=[]\\n", encoding="utf-8"
+                    )
 
                 if (
                     os.environ.get("FAKE_MUTATE_SNAPSHOT") == "1"
@@ -276,6 +292,14 @@ class ReleaseProfileRunnerTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("automatic Cargo config", result.stderr)
+
+    def test_config_created_in_isolated_cargo_home_fails_after_build(self) -> None:
+        result = self.run_runner(
+            self.root / "artifacts",
+            {"FAKE_CREATE_ISOLATED_HOME_CONFIG": "1"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("isolated Cargo home config", result.stderr)
 
     def test_ancestor_cargo_configuration_is_rejected(self) -> None:
         cargo_directory = self.root / ".cargo"

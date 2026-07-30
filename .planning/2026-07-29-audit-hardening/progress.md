@@ -69,6 +69,10 @@
   writable. The runner now removes all write modes, hashes the complete source
   tree, runs Cargo from `/`, and revalidates the tree, config boundaries, and
   Git state around every build, warm-up, measurement, and comparison.
+- Follow-up review found that the isolated Cargo-home root could still accept
+  a config between profiles. Its root is now read-only after precreating
+  Cargo's lock file, and every boundary rejects either Cargo-home config path
+  and any restored write mode.
 - Moved critical-module test bodies out of production source attribution and
   added explicit Core/TDX failure-boundary tests. A fresh all-feature,
   offline, single-job llvm-cov run passed every test and the unchanged release
@@ -99,8 +103,8 @@
 | Follow-up TDX domain suite | Raw public decoders must not return negative prices/quantities | 368 unit tests plus all integration/example targets passed; strict Clippy passed | pass |
 | Benchmark failure-closed suite | Reject weak schemas, forged tools, runtime untracked files and build env | 15 benchmark tests passed, including 4 runner integration tests | pass |
 | Historical four-workload comparison on `d9555c6` | Preserve raw results without promoting evidence that fails the current provenance gate | Session B passed its old numerical policy at 7.25%, but automatic Cargo config was not isolated; evidence is explicitly non-qualifying | pass |
-| Snapshot/config runner isolation | Source is read-only and digest/config/Git state is checked at every execution boundary | 9 runner tests pass, including snapshot tampering, transient worktree mutation, controlled CWD, and config boundaries | pass |
-| Benchmark and runner suite | All comparison/schema/runner contracts pass | 20 Python tests passed | pass |
+| Snapshot/config runner isolation | Source and Cargo-home root are read-only and digest/config/Git state is checked at every execution boundary | 10 runner tests pass, including snapshot tampering, transient worktree mutation, controlled CWD, Cargo-home injection, and ancestry config boundaries | pass |
+| Benchmark and runner suite | All comparison/schema/runner contracts pass | 21 Python tests passed | pass |
 | Full Gate D coverage evidence | Overall >=80% and critical paths >=95% without excluding production code | Overall 45,493/51,765 = 87.88%; critical 26,656/28,056 = 95.01% | pass |
 
 ### Errors

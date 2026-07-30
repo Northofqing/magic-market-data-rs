@@ -78,6 +78,32 @@ create_isolated_cargo_home() {
       ln -s "${source_path}" "${destination}/${cache_directory}"
     fi
   done
+  # Cargo takes an advisory lock on this file. Precreate it before making the
+  # home root read-only so builds cannot add configuration between profiles.
+  : >"${destination}/.package-cache"
+  chmod a-w "${destination}"
+}
+
+verify_isolated_cargo_home() {
+  for candidate in \
+    "${isolated_cargo_home}/config" \
+    "${isolated_cargo_home}/config.toml"; do
+    if [[ -e "${candidate}" || -L "${candidate}" ]]; then
+      echo "benchmark rejects isolated Cargo home config: ${candidate}" >&2
+      return 2
+    fi
+  done
+  python3 - "${isolated_cargo_home}" <<'PY'
+import os
+import stat
+import sys
+
+root = sys.argv[1]
+mode = stat.S_IMODE(os.lstat(root).st_mode)
+if mode & 0o222:
+    print(f"benchmark isolated Cargo home is writable: {root}", file=sys.stderr)
+    raise SystemExit(2)
+PY
 }
 
 snapshot_digest() {
@@ -180,6 +206,7 @@ verify_benchmark_inputs() {
   # Cargo configuration discovery begins at the process working directory.
   # Builds run from /, whose ancestry cannot contain another directory.
   reject_automatic_cargo_configs "/"
+  verify_isolated_cargo_home
   current_source_digest="$(snapshot_digest "${source_root}")"
   if [[ "${current_source_digest}" != "${expected_source_digest}" ]]; then
     echo "benchmark source snapshot changed during execution" >&2

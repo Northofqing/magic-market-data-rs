@@ -12,13 +12,14 @@ bash tools/bench/release_profile.sh
 The current runner requires a clean Git worktree and index, rejects inherited
 Rust/Cargo build environment and automatic Cargo configuration, captures the
 full revision, and builds both profiles from a read-only `git archive` source
-snapshot with an isolated Cargo home. Cargo runs from `/`, outside any mutable
-project ancestry. The runner rechecks the snapshot tree digest, read-only
-modes, automatic-config boundaries, and full Git porcelain before and after
-each build and measurement. It builds separate default and candidate target
-directories, warms each binary once, and then alternates five measured runs
-per profile. Inputs are fixed and offline. The candidate uses `lto="thin"` and
-`codegen-units=1`; the default uses Cargo's release defaults.
+snapshot with an isolated, read-only-root Cargo home. Cargo runs from `/`,
+outside any mutable project ancestry. The runner rechecks the snapshot tree
+digest, source and Cargo-home modes, every Cargo config location, and full Git
+porcelain before and after each build and measurement. It builds separate
+default and candidate target directories, warms each binary once, and then
+alternates five measured runs per profile. Inputs are fixed and offline. The
+candidate uses `lto="thin"` and `codegen-units=1`; the default uses Cargo's
+release defaults.
 
 Environment:
 

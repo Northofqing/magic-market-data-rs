@@ -162,9 +162,10 @@
   ignored `target/` tree.
 - The final runner builds both profiles from a read-only archive of the
   captured commit. It uses an isolated Cargo home linked only to offline cache
-  directories, runs Cargo from `/` rather than mutable project ancestry, and
-  verifies the snapshot digest, modes, automatic-config boundaries, and Git
-  state before and after every build and measurement.
+  directories whose root is also read-only, runs Cargo from `/` rather than
+  mutable project ancestry, and verifies the snapshot digest, source/Cargo-home
+  modes, every automatic-config boundary, and Git state before and after every
+  build and measurement.
 - Inline critical-module tests were moved to `tests/internal/` through
   `#[path]` modules so coverage evidence measures production lines rather than
   counting test bodies. Additional Core and TDX boundary cases raised the
