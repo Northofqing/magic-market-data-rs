@@ -92,10 +92,11 @@ The loopback server will:
 4. accept and reply to the second request;
 5. report whether both requests were concurrently in flight.
 
-Each response is a valid empty 16-byte TDX response header. The test requires
-both client calls to succeed and requires the server to have observed the
-second request before the first response. It fails on the current lock lifetime
-and passes after the `Arc` clone repair.
+Each response is a valid 16-byte TDX response header declaring a one-byte body,
+followed by that body byte. The test requires both client calls to succeed and
+requires the server to have observed the second request before the first
+response. It fails on the current lock lifetime and passes after the `Arc`
+clone repair.
 
 ## 2. Blocking-runtime contract
 
