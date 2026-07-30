@@ -1,0 +1,26 @@
+crate	mode	direct_dependencies	shared_transport	migration_status	reason
+magic-baidu-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-cfets-rs	shared	-	true	target	-
+magic-cls-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-cninfo-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-eastmoney-rs	legacy-direct	ring,ureq	false	legacy	existing provider-local ureq and ring stack; migrate behind shared transport
+magic-exchange-rs	hybrid	ureq	true	legacy	official exchange paths are split between shared transport and legacy ureq
+magic-fred-rs	shared	-	true	target	-
+magic-gov-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-imf-rs	shared	-	true	target	-
+magic-iwencai-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-jin10-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-market-transport	infrastructure	reqwest,rustls	false	target	-
+magic-nbs-rs	shared	-	true	target	-
+magic-pbc-rs	shared	-	true	target	-
+magic-sec-rs	shared	-	true	target	-
+magic-sina-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-stcn-rs	shared	-	true	target	-
+magic-tencent-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-thepaper-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-ths-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-wallstreetcn-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-worldbank-rs	shared	-	true	target	-
+magic-xinhua-rs	shared	-	true	target	-
+magic-yicai-rs	shared	-	true	target	-
+magic-yonhap-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
