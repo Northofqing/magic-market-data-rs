@@ -11,8 +11,8 @@ bash tools/compliance/check.sh
 bash tools/docs/check_links.sh
 ```
 
-The same deterministic gates can be run with the pinned minimum toolchain and
-locked dependencies after `cargo fetch --locked`:
+The same deterministic gates can be run with the current default/rolling-stable
+toolchain and locked, pre-fetched dependencies:
 
 ```bash
 bash tools/release/preflight.sh

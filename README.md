@@ -54,6 +54,11 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 生产应用应在自己的服务层补充并发预算、限频、熔断、缓存、持久化、交易阶段新鲜度
 判断和监控。本项目负责源适配、数据校验、证据保留和显式切源。
 
+当前 HTTP Provider API 是同步阻塞接口；在 Tokio/Axum 服务中必须通过
+`spawn_blocking` 和服务级并发预算调用。参见
+[异步服务集成指南](docs/integrations/async-blocking.md)；当前共享、遗留与混合
+HTTP 栈由 [transport registry](docs/integrations/http-transports.tsv) 机械校验。
+
 ## 工作区结构
 
 | Crate | 责任 | 明确边界 |

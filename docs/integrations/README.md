@@ -22,3 +22,14 @@ The registry does not execute probes, grant data rights, or turn a diagnostic
 implementation into a production capability. It binds already-recorded
 evidence to the exact Rust constant so source and documentation changes cannot
 silently diverge.
+
+## Runtime and architecture boundaries
+
+- [`async-blocking.md`](async-blocking.md) explains how to call the current
+  synchronous HTTP providers from Tokio without blocking executor workers.
+- [`http-transports.tsv`](http-transports.tsv) records the reviewed production
+  HTTP dependency boundary and is checked against tracked Cargo manifests.
+
+The HTTP transport registry is an architecture-control inventory. It does not
+grant provider admission; `admissions.tsv` remains the BR-009 capability
+evidence index.

@@ -829,7 +829,7 @@ Create `docs/integrations/async-blocking.md`:
 当前 HTTP Provider 客户端执行同步阻塞 I/O：共享
 `magic-market-transport` 使用 `reqwest::blocking`，其余已登记 Provider 仍可能
 使用同步 `ureq`；transport 节流也会阻塞当前线程。完整边界见
-[`http-transports.tsv`](http-transports.tsv)。
+[`http-transports.tsv`](docs/integrations/http-transports.tsv)。
 
 不要在 Tokio executor worker 上直接调用这些客户端。把客户端 clone、请求数据和
 阻塞调用一起移入 `tokio::task::spawn_blocking`：
@@ -879,9 +879,9 @@ Append to `docs/integrations/README.md`:
 ```markdown
 ## Runtime and architecture boundaries
 
-- [`async-blocking.md`](async-blocking.md) explains how to call the current
+- [`async-blocking.md`](docs/integrations/async-blocking.md) explains how to call the current
   synchronous HTTP providers from Tokio without blocking executor workers.
-- [`http-transports.tsv`](http-transports.tsv) records the reviewed production
+- [`http-transports.tsv`](docs/integrations/http-transports.tsv) records the reviewed production
   HTTP dependency boundary and is checked against tracked Cargo manifests.
 
 The HTTP transport registry is an architecture-control inventory. It does not
