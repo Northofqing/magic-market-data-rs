@@ -30,6 +30,7 @@ sessions, credentials, portfolios, or order data.
 | Popularity | `PopularityData` | `emappdata.eastmoney.com`, `push2.eastmoney.com` | rank and rank change, with separately evidenced quote join |
 | Strict post-close ranking diagnostic | `EastmoneyClient::diagnose_post_close_flows` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | current China date after 15:35, exact limit, one source timestamp, contiguous rank, code and name; production capability is false and formal `PostCloseFlows` returns `Unsupported` |
 | Full-market rankings | `MarketRankings` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | complete A-share pagination for volume ratio and main-net inflow, including code, name, source session, three-market coverage and one common source time (zero skew); a transport failure discards all pages and restarts at page one on the alternate HTTPS host; capability stays false until a stable-session live probe satisfies every gate |
+| Provider Top-N rankings | `ProviderTopNRankings` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | one provider-ordered page after 15:35 on the current China date; exact selected metric/code/name, local source-response ordinal, per-security `f297` latest trading date, provider-declared total, inspected row count and no fabricated batch `source_at`; this is not full-market coverage or breadth |
 | Global latest finance news | `NewsProvider::global_news` | `roll.eastmoney.com`, `finance.eastmoney.com` | complete first-page validation, newest-first minute time, numeric article identity and canonical URL |
 
 Unsupported operations fail explicitly. Provider-published earnings consensus, semantic search,
@@ -54,6 +55,28 @@ again at page one. Intraday page drift remains an explicit atomic failure.
 named diagnostic method performs network I/O. A diagnostic success prints
 `admitted=false` and still requires human review before the capability can be
 enabled.
+
+Provider Top-N admission is a separate capability family:
+
+| Metric | `ProviderTopNRankingCapabilities` | Current production admission |
+| --- | --- | --- |
+| Volume ratio | `volume_ratio` | `true` |
+| Main-net inflow | `main_net_inflow` | `true` |
+
+These values do not change `MarketRankingCapabilities` or
+`SignalCapabilities.market_rankings`; both complete-market metrics remain
+false. Provider Top-N accepts at most 100 records from exactly one response and
+must be described as “Eastmoney single-response provider-ordered Top-N with
+the requested metric present in every returned row.” It must not feed market
+breadth or claim complete-universe coverage.
+Consumers build requests with
+`EastmoneyClient::provider_top_n_a_share_request`; the provider crate owns the
+canonical A-share filter wire grammar. The concrete composition constructor
+uses `EastmoneyClient::provider_top_n_source_identity` and
+`EastmoneyClient::provider_top_n_ranking_capabilities`; it creates the
+production `EastmoneyClient` internally and exposes neither client injection
+nor generic registration, so downstream code cannot substitute an injected
+transport or impersonate source/capability ownership.
 The callable fund-flow method is retained for deterministic fixtures and
 diagnostics, but it is not an admitted capability because neither public host
 has completed a successful live probe on this environment.
@@ -169,6 +192,11 @@ MAGIC_EASTMONEY_TARGET_THROUGH=2026-07-27 \
 cargo run -p magic-eastmoney-rs --example live_probe --release --locked
 
 MAGIC_EASTMONEY_LIVE_OPERATION=market-rankings \
+MAGIC_EASTMONEY_RANKING_KIND=all \
+cargo run -p magic-eastmoney-rs --example live_probe --release --locked
+
+MAGIC_EASTMONEY_LIVE_OPERATION=provider-topn-rankings \
+MAGIC_EASTMONEY_TOPN_DATE=<current-Asia/Shanghai-date> \
 MAGIC_EASTMONEY_RANKING_KIND=all \
 cargo run -p magic-eastmoney-rs --example live_probe --release --locked
 

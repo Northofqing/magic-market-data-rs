@@ -18,6 +18,7 @@ mod market_rankings;
 mod news;
 mod popularity;
 mod post_close;
+mod provider_top_n_rankings;
 mod reports;
 mod transport;
 
@@ -28,8 +29,8 @@ mod test_support;
 use magic_market_core::{
     AssetClass, CapitalCapabilities, ContentCapabilities, DataBatch, Exchange, InstrumentId,
     LimitPoolCapabilities, LoadProbeSnapshot, MarketDiscoveryCapabilities,
-    MarketRankingCapabilities, Provenance, ProviderId, ResearchCapabilities, SignalCapabilities,
-    SourceEvidence,
+    MarketRankingCapabilities, Provenance, ProviderId, ProviderTopNRankingCapabilities,
+    ResearchCapabilities, SignalCapabilities, SourceEvidence,
 };
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -130,6 +131,15 @@ impl EastmoneyClient {
         MarketRankingCapabilities {
             volume_ratio: false,
             main_net_inflow: false,
+        }
+    }
+
+    /// Per-metric admission for the separate single-response post-close
+    /// provider Top-N contract. This never changes full-market capabilities.
+    pub const fn provider_top_n_ranking_capabilities() -> ProviderTopNRankingCapabilities {
+        ProviderTopNRankingCapabilities {
+            volume_ratio: true,
+            main_net_inflow: true,
         }
     }
 

@@ -682,9 +682,11 @@ name = "magic-eastmoney-rs"
 version = "0.2.0"
 dependencies = [
  "magic-market-core",
+ "ring",
  "serde",
  "serde_json",
  "thiserror",
+ "time",
  "ureq",
 ]
 
@@ -772,6 +774,17 @@ version = "0.2.0"
 dependencies = [
  "magic-market-core",
  "thiserror",
+]
+
+[[package]]
+name = "magic-market-composition"
+version = "0.2.0"
+dependencies = [
+ "magic-eastmoney-rs",
+ "magic-market-core",
+ "magic-market-router",
+ "thiserror",
+ "time",
 ]
 
 [[package]]

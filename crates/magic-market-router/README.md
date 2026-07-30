@@ -53,8 +53,16 @@ target-price route. The adapter admits exactly one complete consensus for the
 requested instrument and date range, and checks the registered Provider,
 provenance batch ID, aggregate/input evidence, canonical report ordering,
 deduplication and derived observation/contributor boundaries before failover
-selection. Provider-specific clients remain registered only at the application
-boundary; the Router crate depends solely on Core contracts.
+selection. Generic provider families remain registered at the application
+boundary.
+
+The narrow Eastmoney provider Top-N route lives in
+`magic-market-composition`, not this provider-neutral crate. That concrete
+boundary depends on both Router and Eastmoney, constructs its production
+`EastmoneyClient` internally, exposes neither client injection nor generic
+registration, and still applies Core's dedicated Top-N validator plus Router
+attempt tracing. This crate therefore retains no concrete-provider production
+dependency.
 
 Run the real TDX-to-Tencent Quote route:
 

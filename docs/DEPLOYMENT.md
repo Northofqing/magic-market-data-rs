@@ -35,6 +35,8 @@
 - `magic-xinhua-{live,load}-probe`：新华财经首屏 metadata；
 - `magic-yicai-{live,load}-probe`：第一财经首屏 metadata；
 - `magic-stcn-{live,load}-probe`：证券时报人民财讯首屏 metadata；
+- `magic-provider-topn-live-probe`：零参数生产 composition 的东财量比/主力净流入
+  单响应页 Top-N 探针，仅可在所选中国日期 15:35 后运行；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建
@@ -53,7 +55,7 @@ bash tools/release/package.sh
 预检先打印当前工具链版本，再在每次新建的隔离 target 目录中，以离线模式运行格式、
 全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
 空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
-构建四十八个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
+构建四十九个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
 可重复流程，不自动证明任意未来工作树已经通过 release gate；当前合并版本的实际
 门禁和覆盖率证据记录在根目录 README 的“当前验收状态”：
 
@@ -94,6 +96,7 @@ target/dist/GIT_SHA/
 │   ├── magic-yicai-load-probe[.exe]
 │   ├── magic-stcn-live-probe[.exe]
 │   ├── magic-stcn-load-probe[.exe]
+│   ├── magic-provider-topn-live-probe[.exe]
 │   ├── magic-router-live-probe[.exe]
 │   ├── magic-sina-live-probe[.exe]
 │   ├── magic-sina-load-probe[.exe]

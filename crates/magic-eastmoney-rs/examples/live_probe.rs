@@ -7,17 +7,47 @@ use magic_market_core::{
     InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents,
     MarginData, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingEntry,
     MarketRankingKind, MarketRankings, NewsProvider, PopularityData, PositiveU32,
-    PostCloseFlowRequest, ProbeAdmissionPolicy, ProbeStatus, ProviderId, ReportScope,
-    ResearchReports, ResearchRequest, SourceEvidence, TargetPriceConsensus, TargetPriceData,
-    TargetPriceRequest,
+    PostCloseFlowRequest, ProbeAdmissionPolicy, ProbeStatus, ProviderId, ProviderTopNRankingEntry,
+    ProviderTopNRankings, ReportScope, ResearchReports, ResearchRequest, SourceEvidence,
+    TargetPriceConsensus, TargetPriceData, TargetPriceRequest,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::error::Error;
 use std::fmt::Debug;
+use time::{OffsetDateTime, UtcOffset};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let client = EastmoneyClient::new()?;
     let mut failures = Vec::new();
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("provider-topn-rankings") {
+        let trading_date = IsoDate::new(required_env("MAGIC_EASTMONEY_TOPN_DATE")?)?;
+        let limit = PositiveU32::new(env("MAGIC_EASTMONEY_TOPN_LIMIT", "20").parse::<u32>()?)?;
+        let kinds = match env("MAGIC_EASTMONEY_RANKING_KIND", "all").as_str() {
+            "all" => vec![
+                MarketRankingKind::VolumeRatio,
+                MarketRankingKind::MainNetInflow,
+            ],
+            "volume-ratio" => vec![MarketRankingKind::VolumeRatio],
+            "main-net-inflow" => vec![MarketRankingKind::MainNetInflow],
+            other => {
+                return Err(format!(
+                    "MAGIC_EASTMONEY_RANKING_KIND must be all, volume-ratio, or main-net-inflow; got {other:?}"
+                )
+                .into())
+            }
+        };
+        for kind in kinds {
+            let request = EastmoneyClient::provider_top_n_a_share_request(
+                kind.clone(),
+                trading_date.clone(),
+                limit,
+            )?;
+            let acquisition_started_at = china_now()?;
+            let result = client.provider_top_n_rankings(&request);
+            probe_provider_top_n(&kind, &acquisition_started_at, result, &mut failures);
+        }
+        return print_summary(&failures);
+    }
     if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("market-rankings") {
         let limit = PositiveU32::new(20)?;
         let kinds = match env("MAGIC_EASTMONEY_RANKING_KIND", "all").as_str() {
@@ -459,6 +489,60 @@ fn probe_market_ranking<E: std::fmt::Display>(
             failures.push(format!("{label}: {error}"));
         }
     }
+}
+
+fn probe_provider_top_n<E: std::fmt::Display>(
+    kind: &MarketRankingKind,
+    acquisition_started_at: &str,
+    result: Result<DataBatch<ProviderTopNRankingEntry>, E>,
+    failures: &mut Vec<String>,
+) {
+    let label = format!("provider_top_n_rankings.{kind:?}");
+    println!("\n=== {label} ===");
+    println!("capability_admitted=true");
+    println!("acquisition_started_at={acquisition_started_at}");
+    match result {
+        Ok(batch) => {
+            println!("status={}", ProbeStatus::Admitted);
+            println!("records={}", batch.records().len());
+            println!("batch_observed_at={}", batch.provenance().fetched_at());
+            println!("batch_source_at={:?}", batch.provenance().source_at());
+            if let Some(first) = batch.records().first() {
+                println!(
+                    "first_record_observed_at={} filter_identity={} provider_declared_total={} inspected_row_count={} latest_trading_date={}",
+                    first.evidence().observed_at(),
+                    first.filter_identity(),
+                    first.provider_declared_total().get(),
+                    first.inspected_row_count().get(),
+                    first.latest_trading_date()
+                );
+            }
+            for record in batch.records() {
+                println!(
+                    "source_order_ordinal={} stock={} name={} value={} unit={:?} latest_trading_date={} source_at={:?}",
+                    record.source_order_ordinal().get(),
+                    instrument_identity(record.instrument()),
+                    record.label(),
+                    record.value().get(),
+                    record.unit(),
+                    record.latest_trading_date(),
+                    record.evidence().source_at()
+                );
+            }
+        }
+        Err(error) => {
+            println!("status={}", ProbeStatus::Failed);
+            println!("error={error}");
+            failures.push(format!("{label}: {error}"));
+        }
+    }
+}
+
+fn china_now() -> Result<String, Box<dyn Error>> {
+    let china_offset = UtcOffset::from_hms(8, 0, 0)?;
+    Ok(OffsetDateTime::now_utc()
+        .to_offset(china_offset)
+        .format(&time::format_description::well_known::Rfc3339)?)
 }
 
 fn probe_target_price(

@@ -265,7 +265,7 @@ fn optional_nonempty(value: Option<&Value>) -> Result<Option<NonEmptyText>, East
     }
 }
 
-fn china_now() -> Result<String, EastmoneyError> {
+pub(crate) fn china_now() -> Result<String, EastmoneyError> {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| EastmoneyError::Transport(format!("system clock error: {error}")))?

@@ -72,6 +72,34 @@ the dynamic quote records. Universe and limit-pool sources publish date-level
 coverage only; their exact evidence is retained but must not be promoted from a
 date or local fetch time into a fabricated intraday source instant.
 
+Provider Top-N ranking is a separate, explicitly narrower contract. It may
+accept only one provider-ordered response page within the source's proved page
+cap, and it must retain the provider-declared total, exact inspected row count,
+continuous locally assigned source-response ordinal, selected-row metric
+completeness, every record's `latest_trading_date`, and one exact batch
+identity. It must not claim complete-universe coverage, synthesize a common
+source time, feed market breadth, or be routed through the complete-universe
+ranking type. Post-close admission additionally binds every selected
+latest-trading date to the exact requested China date, requires acquisition
+start and post-response observation at or after 15:35 on that same date, and
+rejects a response crossing midnight. Per-security quote/update time and
+latest-trading date must not be promoted to the ranking metric's source time;
+Top-N batch evidence therefore has no `source_at` and is not eligible for
+generic realtime freshness. Each metric has an independent Top-N capability
+and remains unsupported until its own same-day live probe passes. Existing
+full-market ranking capabilities remain false. A concrete admitted route must
+construct its production provider client inside the composition layer and
+must not expose client/transport injection; the provider-neutral Core trait
+and Router primitives alone are not an admission witness, and
+downstream-local wrappers must not impersonate a provider identity or
+capability. The deterministic Top-N batch identity must bind the metric,
+trading date, exact limit, admitted filter identity, post-response observation
+time and a SHA-256 digest of the canonical response. Canonicalization sorts
+object keys, length-prefixes scalar and container boundaries, and preserves
+array/source order. Different metrics or normalized response contents must not
+share an identity; JSON whitespace or object-key order alone must not change
+it. Random values and locally fabricated `source_at` values are prohibited.
+
 ## BR-035 Licensed and authenticated data boundaries
 The complete opening-auction contract requires provider-backed matched price,
 previous close, change, matched quantity and amount, unmatched bid and ask

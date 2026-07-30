@@ -18,6 +18,7 @@
 | 打板 | `LimitPools` | 涨停、炸板、跌停、昨日涨停 |
 | 热度 | `PopularityData` | 当前人气排名，并保留榜单与行情的两份证据 |
 | 严格盘后资金榜诊断 | `EastmoneyClient::diagnose_post_close_flows` | 中国当前交易日 15:35 后，精确 limit、同一源时间、连续排名、代码+名称；production capability 为 false，正式 `PostCloseFlows` 返回 `Unsupported` |
+| Provider Top-N 排名 | `ProviderTopNRankings` + `EastmoneyProviderTopNRankingRouter` | 当前中国日期 15:35 后单响应页量比/主力净流入 Top-N；上限 100，保留源响应顺序、名称、`f297`、源总数和检查行数；不声明全市场覆盖或 `source_at` |
 | 最新财经资讯 | `NewsProvider::global_news` | 东财财经滚动页首屏，最多 20 条；完整列表校验后截断 |
 | 关键词新闻诊断 | `NewsProvider::instrument_news` | 响应无结构化证券身份，capability 为 false 且正式调用返回 `Unsupported` |
 
@@ -75,6 +76,12 @@ typed error。
   主力净占比。2026-07-27 实网返回缺失指标和混合 `f124`，因此
   `CapitalCapabilities.post_close_flow=false`，正式 trait 明确
   `Unsupported`，只有命名诊断方法会访问网络。
+- Provider Top-N 是独立能力族，只接受同一次 `clist/get` 响应中按 `f10` 或
+  `f62` 非递增排列的最多 100 行。每行必须有代码、名称、请求指标和等于请求日的
+  `f297`；批次保留响应后的 `observed_at`，但 `f297`/`f124` 都不得提升为
+  `source_at`。它不证明完整市场、宽度、覆盖率或截止位并列集合。生产只能通过
+  `magic-market-composition::EastmoneyProviderTopNRankingRouter` 的无参数
+  生产构造器创建；下游不能注入 transport 或注册本地 wrapper 冒充 Eastmoney。
 
 ## 探针
 
@@ -101,6 +108,18 @@ MAGIC_EASTMONEY_DRAGON_TIGER_DATE=2026-07-22 \
 MAGIC_EASTMONEY_DRAGON_TIGER_LIMIT=5 \
 cargo run -p magic-eastmoney-rs --example market_dragon_tiger_probe --release --locked
 ```
+
+只验证当日盘后 Provider Top-N：
+
+```bash
+MAGIC_EASTMONEY_LIVE_OPERATION=provider-topn-rankings \
+MAGIC_EASTMONEY_TOPN_DATE=<当前 Asia/Shanghai 日期> \
+MAGIC_EASTMONEY_RANKING_KIND=all \
+cargo run -p magic-eastmoney-rs --example live_probe --release --locked
+```
+
+探针逐指标打印 `acquisition_started_at`、批次/首条记录
+`observed_at`、`source_at=None`、源总数和检查行数；任一指标失败均非零退出。
 
 独立探针只打印标准化证券身份、源 `entry_id`、席位数量、净买额和批次证据，不输出
 原始响应。手动 GitHub Actions 工作流也将源交易日期设为必填输入。
