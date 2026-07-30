@@ -1568,11 +1568,10 @@ mod tests {
             connect_timeout: 2.0,
             handshake_fn: None,
         };
-        *sync::lock(&client.pool, "test pool").unwrap() =
-            Arc::new(ConnectionPool::new_single(
-                (address.ip().to_string(), address.port()),
-                config,
-            ));
+        *sync::lock(&client.pool, "test pool").unwrap() = Arc::new(ConnectionPool::new_single(
+            (address.ip().to_string(), address.port()),
+            config,
+        ));
 
         let client = Arc::new(client);
         let start = Arc::new(Barrier::new(3));
