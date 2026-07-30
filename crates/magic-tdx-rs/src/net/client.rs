@@ -595,7 +595,7 @@ impl TdxHqClient {
         let server = sync::lock(&self.last_server, "last server")?
             .clone()
             .unwrap_or_else(|| (PRIMARY_SERVERS[0].1.to_string(), PRIMARY_SERVERS[0].2));
-        let pool = sync::lock(&self.pool, "connection pool handle")?;
+        let pool = Arc::clone(&*sync::lock(&self.pool, "connection pool handle")?);
         let mut guard = pool.borrow(&server)?;
 
         let conn = guard.conn();
@@ -1405,6 +1405,35 @@ impl TdxHqClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{ErrorKind, Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::Barrier;
+
+    fn write_test_response(stream: &mut TcpStream) {
+        let mut response = [0_u8; RSP_HEADER_LEN + 1];
+        response[12..14].copy_from_slice(&1_u16.to_le_bytes());
+        response[14..16].copy_from_slice(&1_u16.to_le_bytes());
+        response[RSP_HEADER_LEN] = 7;
+        stream.write_all(&response).unwrap();
+    }
+
+    fn accept_before(
+        listener: &TcpListener,
+        deadline: Instant,
+    ) -> Option<(TcpStream, std::net::SocketAddr)> {
+        loop {
+            match listener.accept() {
+                Ok(connection) => return Some(connection),
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return None;
+                    }
+                    std::thread::yield_now();
+                }
+                Err(error) => panic!("loopback accept failed: {error}"),
+            }
+        }
+    }
 
     #[derive(Clone, Copy)]
     enum ProbeFailure {
@@ -1488,6 +1517,84 @@ mod tests {
         assert!(tcp_ms >= 0.0);
         assert!(handshake_ms >= 0.0);
         assert!(api_ms >= 0.0);
+    }
+
+    #[test]
+    fn blocking_pool_allows_two_in_flight_requests() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let (mut first, _) =
+                accept_before(&listener, deadline).expect("first request must connect");
+            first.set_nonblocking(false).unwrap();
+            first
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut packet = [0_u8; 1];
+            first.read_exact(&mut packet).unwrap();
+
+            let second_before_first_response =
+                accept_before(&listener, Instant::now() + Duration::from_millis(500));
+            if let Some((mut second, _)) = second_before_first_response {
+                second.set_nonblocking(false).unwrap();
+                second
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                second.read_exact(&mut packet).unwrap();
+                write_test_response(&mut first);
+                write_test_response(&mut second);
+                true
+            } else {
+                write_test_response(&mut first);
+                first.read_exact(&mut packet).unwrap();
+                write_test_response(&mut first);
+                false
+            }
+        });
+
+        let client = TdxHqClient::new();
+        client.set_auto_retry(false);
+        client.set_rate_limit(0);
+        client.set_rate_limit_daily(0);
+        client.rate_limiter_minute.set_rps(0);
+        client.connected.store(true, Ordering::SeqCst);
+        *sync::lock(&client.last_server, "test last server").unwrap() =
+            Some((address.ip().to_string(), address.port()));
+        let config = PoolConfig {
+            max_size: 2,
+            connect_timeout: 2.0,
+            handshake_fn: None,
+        };
+        *sync::lock(&client.pool, "test pool").unwrap() =
+            Arc::new(ConnectionPool::new_single(
+                (address.ip().to_string(), address.port()),
+                config,
+            ));
+
+        let client = Arc::new(client);
+        let start = Arc::new(Barrier::new(3));
+        let workers: Vec<_> = (0..2)
+            .map(|_| {
+                let client = Arc::clone(&client);
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    client.send_raw_and_recv(&[1])
+                })
+            })
+            .collect();
+        start.wait();
+
+        for worker in workers {
+            assert_eq!(worker.join().unwrap().unwrap(), vec![7]);
+        }
+        assert!(
+            server.join().unwrap(),
+            "the second pool slot was not usable while the first request awaited a response"
+        );
     }
 
     fn local_failure_client() -> TdxHqClient {
