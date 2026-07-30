@@ -1,5 +1,6 @@
 use super::{
-    parse_market_ranking_pages, parse_page, ranking_url, ranking_url_for, session_for_source_at,
+    parse_market_ranking_pages, parse_page, ranking_unit, ranking_url, ranking_url_for,
+    session_for_source_at,
 };
 use crate::test_support::ScriptedTransport;
 use magic_market_core::{
@@ -202,6 +203,37 @@ fn main_net_inflow_uses_yuan_and_all_other_kinds_stay_explicitly_unsupported() {
         1,
     )
     .is_err());
+}
+
+#[test]
+fn ranking_unit_rejects_metrics_without_source_proof() {
+    assert!(matches!(
+        ranking_unit(&MarketRankingKind::Popularity),
+        Err(crate::EastmoneyError::Unsupported(message))
+            if message.contains("not source-proven")
+    ));
+}
+
+#[test]
+fn one_ranking_batch_cannot_mix_source_trading_dates() {
+    let mixed_dates = [
+        row("600001", 1, "A", "3", "30", 1_784_872_800),
+        row("000001", 0, "B", "2", "20", 1_784_959_200),
+    ]
+    .join(",");
+    let error = parse_market_ranking_pages(
+        &[page(2, &mixed_dates)],
+        &MarketRankingKind::VolumeRatio,
+        PositiveU32::new(2).unwrap(),
+        2,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        crate::EastmoneyError::Protocol(message)
+            if message.contains("source dates differ across the universe")
+    ));
 }
 
 #[test]

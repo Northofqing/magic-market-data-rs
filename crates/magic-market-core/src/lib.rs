@@ -22,6 +22,7 @@ mod policy;
 mod probe;
 mod provenance;
 mod provider;
+mod provider_top_n_rankings;
 mod reference_data;
 mod research;
 mod signals;
@@ -100,6 +101,10 @@ pub use provider::{
     DataStatus, HistoricalBars, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
     OrderBook, OrderBooks, PriceLimitRule, ProviderId, Quote, RealtimeQuotes, SecurityMetadata,
     SecurityMetadataProvider, SourcedRecord, Trade, TradeSide, Trades, TradesRequest,
+};
+pub use provider_top_n_rankings::{
+    validate_provider_top_n_ranking_batch, ProviderTopNRankingCapabilities,
+    ProviderTopNRankingEntry, ProviderTopNRankingRequest, ProviderTopNRankings,
 };
 pub use reference_data::{
     CurrencyCode, OfficialFxFixing, OfficialFxFixingIdentity, OfficialFxFixingProvider,

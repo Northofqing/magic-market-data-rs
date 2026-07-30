@@ -15,6 +15,7 @@ CRITICAL_REQUIRED = 95
 CRITICAL_GLOBS = (
     "crates/magic-market-core/src/*.rs",
     "crates/magic-market-router/src/*.rs",
+    "crates/magic-market-composition/src/*.rs",
     "crates/magic-tdx-rs/src/net/packet.rs",
     "crates/magic-tdx-rs/src/net/utils.rs",
     "crates/magic-tdx-rs/src/protocol/*.rs",

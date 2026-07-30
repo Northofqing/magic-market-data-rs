@@ -72,6 +72,7 @@ build_probe magic-tencent-rs load_probe magic-tencent-load-probe
 build_probe magic-sina-rs live_probe magic-sina-live-probe
 build_probe magic-sina-rs load_probe magic-sina-load-probe
 build_probe magic-market-router live_probe magic-router-live-probe
+build_probe magic-market-composition provider_top_n_live_probe magic-provider-topn-live-probe
 build_probe magic-eastmoney-rs live_probe magic-eastmoney-live-probe
 build_probe magic-eastmoney-rs load_probe magic-eastmoney-load-probe
 build_probe magic-cninfo-rs live_probe magic-cninfo-live-probe

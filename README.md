@@ -60,6 +60,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 | --- | --- | --- |
 | `magic-market-core` | Provider 无关的证券标识、请求、值对象、标准化记录、批次证据和 Provider traits | 不联网，不选择数据源 |
 | `magic-market-router` | 第一个合格批次的顺序切源、错误分类、质量门、来源时间门和完整 attempt trace | 不缓存、不跨源合并、不维护熔断状态 |
+| `magic-market-composition` | 具体 Provider 与 Router 的不可伪造组合边界；当前绑定 Eastmoney provider Top-N | 不定义通用数据合同，不接受本地 wrapper 冒充 Provider |
 | `magic-market-transport` | 严格 HTTPS allowlist、无重定向/代理、整体超时、有界 body 与不持锁节流 | 不含数据源语义，不记录完整凭据 URL |
 | `magic-tdx-rs` | 纯 Rust TDX 协议、同步/异步/直连/Smart 客户端、服务门面和本地文件读取器 | MoneyFlow 与集合竞价显式不支持 |
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
@@ -93,6 +94,11 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 ```text
 业务服务
    │
+   ├── magic-market-composition
+   │       ├──────────────────→ magic-market-router
+   │       ├──────────────────→ magic-market-core
+   │       └──────────────────→ magic-eastmoney-rs
+   │
    ├── magic-market-router ──→ magic-market-core
    │          ▲
    │          └── Provider 注册适配
@@ -115,8 +121,9 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
    └── magic-market-analysis → magic-market-core
 ```
 
-Router 的生产依赖只有 Core，具体 Provider 在应用注册边界接入，避免公共契约反向依赖
-某个厂商实现。
+Router 的生产依赖只有 Core。需要不可伪造具体来源身份的窄契约在 composition
+边界绑定真实 Provider 客户端，避免公共契约反向依赖某个厂商实现，也避免本地
+wrapper 冒充已准入来源。
 
 ## 统一数据契约与证据
 
@@ -161,6 +168,7 @@ Router 适配器已经通过确定性测试。
 | 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 与 SSE/SZSE 龙虎榜、TDX 行业/概念目录和成员、Eastmoney/THS 人气、THS 强势原因实盘 |
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
 | 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Core/Router 严格合同和 Eastmoney 诊断实现完成；实网存在缺失指标与混合 `f124`，production capability 为 false、正式 trait 返回 `Unsupported` |
+| Provider Top-N 排名 | `ProviderTopNRankingEntry`、`ProviderTopNRankingRequest` | Eastmoney 当日 15:35 后单响应页量比/主力净流入已准入；不声明全市场覆盖、宽度或 `source_at` |
 | 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10、WallstreetCN、新华财经、第一财经、证券时报全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；Yonhap 中文 RSS metadata 已实现但 live 未准入；个股新闻仍待结构化证券身份来源 |
 | 官方宏观与利率 | `EconomicObservation`、`ReferenceRateObservation`、`OfficialFxFixing` | NBS/PBC/CFETS/FRED/IMF/World Bank 严格实现与路由完成；PBC 2024 货币供应量及 CFETS Shibor/LPR/官方中间价已准入，其余按来源显式关闭 |
 | 海外申报元数据 | `CompanyFiling` | SEC submissions recent/older 原子分页实现；只返回元数据与规范链接，待描述性 User-Agent 实网准入 |
@@ -210,7 +218,7 @@ Router 适配器已经通过确定性测试。
 
 | Provider | 已真实取得或当前诊断状态 | 当前明确边界 |
 | --- | --- | --- |
-| Eastmoney Web | 个股/行业研报及原始 PDF、报告级目标价及区间聚合、最新财经资讯、三类板块流、个股/全市场龙虎榜、融资融券、大宗、户数、解禁、分红、四类打板、人气；严格 15:35 资金榜仅诊断 | 目标价保留源代码+名称及 L/T 原字段；最新资讯无证券身份；关键词搜索不准入；15:35 榜实网存在缺失指标与混合 `f124`，capability 为 false、正式 trait 返回 `Unsupported` |
+| Eastmoney Web | 个股/行业研报及原始 PDF、报告级目标价及区间聚合、最新财经资讯、三类板块流、个股/全市场龙虎榜、融资融券、大宗、户数、解禁、分红、四类打板、人气；单响应页 Provider Top-N；严格 15:35 全市场资金榜仅诊断 | Provider Top-N 只证明源顺序和所请求指标，不证明完整市场；目标价保留源代码+名称及 L/T 原字段；最新资讯无证券身份；关键词搜索不准入；全市场资金榜 capability 为 false |
 | CNInfo | 个股公告、完整全市场公告发现、PDF metadata、互动易问答 | 内容源，不提供行情；公告 PDF 仍只返回 URL |
 | THS | 一致预期、强势原因、涨停池/原因、股票热榜 | 只声明已验证涨停池，不声明其他三类池 |
 | CLS | 签名全球电报及来源时间、发布者、关联股票/主题 | 不伪造个股过滤，不是行情源 |
@@ -255,6 +263,7 @@ Router 适配器已经通过确定性测试。
 | 期货交割日历 | CFFEX 诊断实现（生产 capability 未准入） | 有界扫描官方交易通知目录及同站详情；通知必须明确 IF/IH/IC/IM、请求月份的实际交割日与交割结算价；未独立证明交割方式时保留 `NotProvided`，未证明最后交易日时保留空值；不使用公式推算；生产 trait 返回 `Unsupported` |
 | 15:35 资金榜 | Eastmoney 诊断实现（生产 capability 未准入） | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称；2026-07-27 主站返回空响应，延迟站同一榜内混合源时间，正式 trait 返回 `Unsupported` |
 | 全市场量比/主力净流入排名 | Eastmoney 诊断实现 | 固定按源端每页 100 条完整翻页，要求沪深京、代码+名称、排序、时间与覆盖原子一致；2026-07-27 完整实网尚未通过，per-metric capability 保持 false |
+| Provider Top-N 量比/主力净流入 | Eastmoney + `magic-market-composition` | 当前中国日期 15:35 后，单响应页最多 100 行；代码+名称、`f297`、请求指标、源总数和响应顺序完整；无 `source_at`，不得用于市场宽度或完整覆盖 |
 | 市场宽度 | LocalAnalysis | 显式版本证券全集 + 原子 Quote 批次 + 完整涨停/跌停池；输出总数、有效/涨/跌/平、覆盖率、时间偏斜及全部输入证据，不冒充单一 Provider 原子榜 |
 
 ### TDX
@@ -724,6 +733,7 @@ target/dist/GIT_SHA/
 │   ├── magic-iwencai-load-probe
 │   ├── magic-jin10-live-probe
 │   ├── magic-jin10-load-probe
+│   ├── magic-provider-topn-live-probe
 │   ├── magic-router-live-probe
 │   ├── magic-sina-live-probe
 │   ├── magic-sina-load-probe
@@ -856,9 +866,10 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Eastmoney target price / THS consensus | 通过 | 600519.SH 两项均同时保留代码和“贵州茅台”名称；东财 Provider 实网返回目标价 6 样本/4 机构，`TargetPriceRouter` 的严格准入由 7 个确定性路由测试证明；THS Router 实网选中 1 条一致预期 |
 | Full-market rankings | 未准入 | 源端每页上限 100；主入口传输失败时丢弃全部分页并从 `push2delay` 第 1 页重启，绝不混拼快照。5,541 行全量探针分别因部分证券缺 `f10`/`f62` 被原子拒绝；末页还有 19 个 `f124`，跨度 08:00:00–16:11:58，无法证明同一源快照，两个 per-metric capability 保持 false |
 | Eastmoney strict 15:35 post-close flow | 诊断实现通过；生产未准入 | 正式 trait 返回 typed `Unsupported` 且 capability=false；当前日全量诊断因证券间源时间不一致返回 `diagnostic_probe_status=unadmitted`，不输出生产成功标记 |
+| Eastmoney Provider Top-N | 通过 | 2026-07-29 22:25 +08:00 正式 trait 分别返回量比/主力净流入 20 行；请求开始和响应后 observation 均在 15:35 后，源总数 5,542，`source_at=None` |
 | CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602；2026-07-27 双 TLS 均未取得 HTTP。官方明文页诊断确认 2026-07-17 及 IF/IH/IC/IM 结算价，但明文不进入 Provider，capability 仍为 false |
 | iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
-| Release package | 每个提交独立构建 | 四十八个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
+| Release package | 每个提交独立构建 | 四十九个独立 probe、跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 
 任何 Provider 字段、授权、服务器或网页协议发生变化后，都必须重新运行对应的
 确定性测试和真实 probe。旧验收记录不能自动证明新版本仍然可用。
@@ -877,6 +888,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | [Sina 接入合同](docs/integrations/sina-web.md) | 基础行情、财务三表、ETF 期权、字段与负载结果 |
 | [Choice/EMQuant 接入](docs/integrations/eastmoney-emquant.md) | SDK bridge、激活、能力映射和当前权限状态 |
 | [Eastmoney Web 接入](docs/integrations/eastmoney-web.md) | 研报、最新财经资讯、资金面、龙虎榜、打板、人气及未准入诊断 |
+| [Eastmoney Provider Top-N 准入证据](docs/evidence/2026-07-29-eastmoney-provider-topn-rankings.md) | 单响应页边界、15:35 时间证据、两个独立指标及禁止完整市场声明 |
 | [CNInfo 接入](docs/integrations/cninfo-web.md) | 证券/org 映射、公告/PDF 和互动易问答 |
 | [THS 接入](docs/integrations/tonghuashun-web.md) | 一致预期、强势原因、涨停池和热榜 |
 | [CLS 接入](docs/integrations/cls-web.md) | 签名全球电报、字段和限流边界 |

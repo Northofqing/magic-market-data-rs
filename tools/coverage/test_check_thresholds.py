@@ -28,6 +28,7 @@ class CoverageTests(unittest.TestCase):
         self.critical_paths = [
             "crates/magic-market-core/src/batch.rs",
             "crates/magic-market-router/src/router.rs",
+            "crates/magic-market-composition/src/eastmoney_provider_top_n_rankings.rs",
             "crates/magic-tdx-rs/src/net/packet.rs",
             "crates/magic-tdx-rs/src/net/utils.rs",
             "crates/magic-tdx-rs/src/protocol/parsers.rs",
@@ -80,6 +81,7 @@ class CoverageTests(unittest.TestCase):
             (
                 "crates/magic-market-core/src/*.rs",
                 "crates/magic-market-router/src/*.rs",
+                "crates/magic-market-composition/src/*.rs",
                 "crates/magic-tdx-rs/src/net/packet.rs",
                 "crates/magic-tdx-rs/src/net/utils.rs",
                 "crates/magic-tdx-rs/src/protocol/*.rs",
@@ -107,12 +109,12 @@ class CoverageTests(unittest.TestCase):
 
     def test_exact_overall_and_critical_boundaries_pass(self) -> None:
         files = self.passing_critical()
-        files.append(coverage_file(self.noncritical_path, 5_720, 7_600))
+        files.append(coverage_file(self.noncritical_path, 5_705, 7_600))
         self.assert_report_status(files, 0)
 
     def test_overall_79_99_percent_fails(self) -> None:
         files = self.passing_critical()
-        files.append(coverage_file(self.noncritical_path, 5_719, 7_600))
+        files.append(coverage_file(self.noncritical_path, 5_704, 7_600))
         self.assert_report_status(files, 1)
 
     def test_critical_94_99_percent_fails(self) -> None:

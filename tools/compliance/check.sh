@@ -50,6 +50,7 @@ required=(
   crates/magic-yicai-rs/Cargo.toml
   crates/magic-stcn-rs/Cargo.toml
   crates/magic-market-router/Cargo.toml
+  crates/magic-market-composition/Cargo.toml
   crates/magic-market-analysis/Cargo.toml
   crates/magic-tencent-rs/Cargo.toml
   crates/magic-sina-rs/Cargo.toml
@@ -98,6 +99,7 @@ fi
 workspace_members=(
   crates/magic-market-core
   crates/magic-market-router
+  crates/magic-market-composition
   crates/magic-tdx-rs
   crates/magic-emquant-rs
   crates/magic-tencent-rs
