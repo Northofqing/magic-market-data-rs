@@ -1,7 +1,7 @@
 # P0 Architecture Hardening Design
 
-**Status:** Proposed for user review  
-**Date:** 2026-07-30  
+**Status:** Proposed for user review
+**Date:** 2026-07-30
 **Scope:** synchronous TDX pool concurrency, blocking-runtime documentation, and HTTP transport-boundary governance
 
 ## Intent
