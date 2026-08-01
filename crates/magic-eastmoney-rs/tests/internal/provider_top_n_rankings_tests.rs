@@ -211,13 +211,14 @@ fn rejects_partial_missing_unsorted_duplicate_and_wrong_date_pages_atomically() 
 }
 
 #[test]
-fn capture_gate_rejects_pre_window_wrong_offset_and_cross_midnight_completion() {
+fn capture_gate_admits_later_settled_date_but_rejects_pre_window_and_cross_midnight() {
     let request = request(MarketRankingKind::VolumeRatio, 2);
     assert!(validate_capture_observation(&request, "2026-07-29T15:35:00+08:00").is_ok());
+    assert!(validate_capture_observation(&request, "2026-07-30T08:00:00+08:00").is_ok());
     for observed_at in [
         "2026-07-29T15:34:59+08:00",
         "2026-07-29T15:35:00Z",
-        "2026-07-30T15:35:00+08:00",
+        "2026-07-28T23:59:59+08:00",
     ] {
         assert!(validate_capture_observation(&request, observed_at).is_err());
     }
@@ -230,6 +231,24 @@ fn capture_gate_rejects_pre_window_wrong_offset_and_cross_midnight_completion() 
             Ok(times.next().unwrap().into())
         })
         .is_err());
+}
+
+#[test]
+fn later_calendar_capture_keeps_exact_requested_trading_date_evidence() {
+    let transport = ScriptedTransport::from_results([Ok(fixture())]);
+    let client = EastmoneyClient::with_transport(transport);
+    let batch = client
+        .diagnose_provider_top_n_rankings_with_clock(
+            &request(MarketRankingKind::VolumeRatio, 2),
+            || Ok("2026-07-30T08:00:00+08:00".into()),
+        )
+        .unwrap();
+
+    assert!(batch
+        .records()
+        .iter()
+        .all(|record| record.latest_trading_date().as_str() == "2026-07-29"));
+    assert_eq!(batch.provenance().fetched_at(), "2026-07-30T08:00:00+08:00");
 }
 
 #[test]

@@ -81,7 +81,7 @@ impl EastmoneyClient {
     {
         validate_request(request)?;
         let capture_started_at = clock()?;
-        validate_capture_observation(request, &capture_started_at)?;
+        let capture_started_date = validate_capture_observation(request, &capture_started_at)?;
         let field = ranking_field(request.kind())?;
         let mut last_transport_error = None;
         for endpoint in ENDPOINTS {
@@ -96,6 +96,15 @@ impl EastmoneyClient {
                 ) {
                     Ok(bytes) => {
                         let observed_at = clock()?;
+                        let capture_completed_date =
+                            validate_capture_observation(request, &observed_at)?;
+                        if capture_completed_date != capture_started_date {
+                            return Err(EastmoneyError::InvalidRequest(format!(
+                                "provider Top-N capture crossed China calendar midnight from {} to {}",
+                                capture_started_date.as_str(),
+                                capture_completed_date.as_str()
+                            )));
+                        }
                         return parse_provider_top_n(&bytes, request, &observed_at);
                     }
                     Err(EastmoneyError::Transport(message)) => {
@@ -392,23 +401,56 @@ fn parse_latest_trading_date(value: Option<&Value>) -> Result<IsoDate, Eastmoney
 fn validate_capture_observation(
     request: &ProviderTopNRankingRequest,
     observed_at: &str,
-) -> Result<(), EastmoneyError> {
-    let prefix = format!("{}T", request.trading_date().as_str());
-    let time = observed_at
-        .strip_prefix(&prefix)
-        .and_then(|value| value.strip_suffix("+08:00"))
-        .ok_or_else(|| {
-            EastmoneyError::InvalidRequest(
-                "provider Top-N is available only for the current China date with explicit +08:00"
-                    .into(),
-            )
-        })?;
-    if time.len() != 8 || time < "15:35:00" {
+) -> Result<IsoDate, EastmoneyError> {
+    let local = observed_at.strip_suffix("+08:00").ok_or_else(|| {
+        EastmoneyError::InvalidRequest(
+            "provider Top-N capture must use an explicit +08:00 observation".into(),
+        )
+    })?;
+    let (date, time) = local.split_once('T').ok_or_else(|| {
+        EastmoneyError::InvalidRequest(
+            "provider Top-N capture must use YYYY-MM-DDTHH:MM:SS+08:00".into(),
+        )
+    })?;
+    let capture_date = IsoDate::new(date.to_owned()).map_err(|error| {
+        EastmoneyError::InvalidRequest(format!(
+            "provider Top-N capture has invalid China calendar date: {error}"
+        ))
+    })?;
+    let bytes = time.as_bytes();
+    let valid_time_shape = bytes.len() == 8
+        && bytes[2] == b':'
+        && bytes[5] == b':'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 2 || index == 5 || byte.is_ascii_digit());
+    if !valid_time_shape {
         return Err(EastmoneyError::InvalidRequest(
-            "provider Top-N cannot be captured before 15:35:00 Asia/Shanghai".into(),
+            "provider Top-N capture must use YYYY-MM-DDTHH:MM:SS+08:00".into(),
         ));
     }
-    Ok(())
+    let hour = time[0..2].parse::<u8>().unwrap_or(u8::MAX);
+    let minute = time[3..5].parse::<u8>().unwrap_or(u8::MAX);
+    let second = time[6..8].parse::<u8>().unwrap_or(u8::MAX);
+    if hour > 23 || minute > 59 || second > 59 {
+        return Err(EastmoneyError::InvalidRequest(
+            "provider Top-N capture has an invalid China clock time".into(),
+        ));
+    }
+    if &capture_date < request.trading_date() {
+        return Err(EastmoneyError::InvalidRequest(format!(
+            "provider Top-N capture date {} predates requested trading date {}",
+            capture_date.as_str(),
+            request.trading_date().as_str()
+        )));
+    }
+    if &capture_date == request.trading_date() && time < "15:35:00" {
+        return Err(EastmoneyError::InvalidRequest(
+            "same-date provider Top-N cannot be captured before 15:35:00 Asia/Shanghai".into(),
+        ));
+    }
+    Ok(capture_date)
 }
 
 #[cfg(test)]

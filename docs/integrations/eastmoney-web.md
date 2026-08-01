@@ -18,7 +18,7 @@
 | 打板 | `LimitPools` | 涨停、炸板、跌停、昨日涨停 |
 | 热度 | `PopularityData` | 当前人气排名，并保留榜单与行情的两份证据 |
 | 严格盘后资金榜诊断 | `EastmoneyClient::diagnose_post_close_flows` | 中国当前交易日 15:35 后，精确 limit、同一源时间、连续排名、代码+名称；production capability 为 false，正式 `PostCloseFlows` 返回 `Unsupported` |
-| Provider Top-N 排名 | `ProviderTopNRankings` + `EastmoneyProviderTopNRankingRouter` | 当前中国日期 15:35 后单响应页量比/主力净流入 Top-N；上限 100，保留源响应顺序、名称、`f297`、源总数和检查行数；不声明全市场覆盖或 `source_at` |
+| Provider Top-N 排名 | `ProviderTopNRankings` + `EastmoneyProviderTopNRankingRouter` | 同日 15:35 后或后续休市日读取最新已结算交易日的单响应页量比/主力净流入 Top-N；上限 100，每行 `f297` 必须严格等于请求交易日；不声明任意历史、全市场覆盖或 `source_at` |
 | 最新财经资讯 | `NewsProvider::global_news` | 东财财经滚动页首屏，最多 20 条；完整列表校验后截断 |
 | 关键词新闻诊断 | `NewsProvider::instrument_news` | 响应无结构化证券身份，capability 为 false 且正式调用返回 `Unsupported` |
 
@@ -82,6 +82,9 @@ typed error。
   `source_at`。它不证明完整市场、宽度、覆盖率或截止位并列集合。生产只能通过
   `magic-market-composition::EastmoneyProviderTopNRankingRouter` 的无参数
   生产构造器创建；下游不能注入 transport 或注册本地 wrapper 冒充 Eastmoney。
+  请求日不得晚于当前上海日期；同日采集必须在 15:35 后，后续休市日可在任意时刻
+  采集，但只有响应中全部 `f297` 仍严格等于请求日才可证明最新已结算会话。该路径
+  不提供任意历史回放，旧日期会因 `f297` 不匹配而整批失败。
 
 ## 探针
 

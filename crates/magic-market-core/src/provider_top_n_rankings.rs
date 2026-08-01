@@ -465,15 +465,20 @@ fn validate_post_close_observed_at(
     observed_at: &str,
     trading_date: &IsoDate,
 ) -> Result<(), CoreError> {
-    let expected_prefix = format!("{}T", trading_date.as_str());
-    let time = observed_at
-        .strip_prefix(&expected_prefix)
-        .and_then(|value| value.strip_suffix("+08:00"))
-        .ok_or_else(|| {
-            provider_top_n_error(
-                "observed_at must use the requested China date and explicit +08:00 offset",
-            )
-        })?;
+    let local = observed_at
+        .strip_suffix("+08:00")
+        .ok_or_else(|| provider_top_n_error("observed_at must use an explicit +08:00 offset"))?;
+    let (date, time) = local
+        .split_once('T')
+        .ok_or_else(|| provider_top_n_error("observed_at must use YYYY-MM-DDTHH:MM:SS+08:00"))?;
+    let observed_date = IsoDate::new(date.to_owned()).map_err(|_| {
+        provider_top_n_error("observed_at must contain a valid China calendar date")
+    })?;
+    if &observed_date < trading_date {
+        return Err(provider_top_n_error(
+            "observed_at calendar date must not predate the requested trading date",
+        ));
+    }
     let clock = time.split_once('.').map_or(time, |(clock, fraction)| {
         if fraction.is_empty() || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
             ""
@@ -501,9 +506,9 @@ fn validate_post_close_observed_at(
             "observed_at contains an invalid clock time",
         ));
     }
-    if (hour, minute, second) < (15, 35, 0) {
+    if &observed_date == trading_date && (hour, minute, second) < (15, 35, 0) {
         return Err(provider_top_n_error(
-            "provider Top-N cannot be observed before 15:35:00 Asia/Shanghai",
+            "same-date provider Top-N cannot be observed before 15:35:00 Asia/Shanghai",
         ));
     }
     Ok(())

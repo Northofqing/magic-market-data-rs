@@ -36,7 +36,8 @@
 - `magic-yicai-{live,load}-probe`：第一财经首屏 metadata；
 - `magic-stcn-{live,load}-probe`：证券时报人民财讯首屏 metadata；
 - `magic-provider-topn-live-probe`：零参数生产 composition 的东财量比/主力净流入
-  单响应页 Top-N 探针，仅可在所选中国日期 15:35 后运行；
+  单响应页 Top-N 探针；同日仅可在 15:35 后运行，后续休市日仅在全部 `f297`
+  严格等于所选已结算交易日时准入；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
 
 ## 可重复构建

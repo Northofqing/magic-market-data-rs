@@ -1,6 +1,6 @@
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    validate_provider_top_n_ranking_batch, DataBatch, NonEmptyText, ProviderId,
+    validate_provider_top_n_ranking_batch, DataBatch, IsoDate, NonEmptyText, ProviderId,
     ProviderTopNRankingCapabilities, ProviderTopNRankingEntry, ProviderTopNRankingRequest,
     ProviderTopNRankings,
 };
@@ -246,11 +246,16 @@ impl EastmoneyProviderTopNRankingRouter {
     ) -> Result<RouteOutcome<ProviderTopNRankingEntry>, EastmoneyProviderTopNRouterError> {
         let current_china_date =
             (self.china_date_clock)().map_err(EastmoneyProviderTopNRouterError::Clock)?;
-        if request.trading_date().as_str() != current_china_date {
+        let current_china_date = IsoDate::new(current_china_date).map_err(|error| {
+            EastmoneyProviderTopNRouterError::Clock(format!(
+                "current China date is invalid: {error}"
+            ))
+        })?;
+        if request.trading_date() > &current_china_date {
             return Err(EastmoneyProviderTopNRouterError::RejectedRequest(format!(
-                "provider Top-N request date {} is not current China date {}",
+                "provider Top-N request date {} is later than current China date {}",
                 request.trading_date().as_str(),
-                current_china_date
+                current_china_date.as_str()
             )));
         }
         Ok(self.chain.route(request)?)

@@ -173,7 +173,7 @@ Router 适配器已经通过确定性测试。
 | 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 与 SSE/SZSE 龙虎榜、TDX 行业/概念目录和成员、Eastmoney/THS 人气、THS 强势原因实盘 |
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
 | 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Core/Router 严格合同和 Eastmoney 诊断实现完成；实网存在缺失指标与混合 `f124`，production capability 为 false、正式 trait 返回 `Unsupported` |
-| Provider Top-N 排名 | `ProviderTopNRankingEntry`、`ProviderTopNRankingRequest` | Eastmoney 当日 15:35 后单响应页量比/主力净流入已准入；不声明全市场覆盖、宽度或 `source_at` |
+| Provider Top-N 排名 | `ProviderTopNRankingEntry`、`ProviderTopNRankingRequest` | Eastmoney 同日 15:35 后或后续休市日读取最新已结算交易日的单响应页量比/主力净流入；每行 `f297` 严格绑定请求交易日，不声明任意历史、全市场覆盖、宽度或 `source_at` |
 | 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10、WallstreetCN、新华财经、第一财经、证券时报全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；Yonhap 中文 RSS metadata 已实现但 live 未准入；个股新闻仍待结构化证券身份来源 |
 | 官方宏观与利率 | `EconomicObservation`、`ReferenceRateObservation`、`OfficialFxFixing` | NBS/PBC/CFETS/FRED/IMF/World Bank 严格实现与路由完成；PBC 2024 货币供应量及 CFETS Shibor/LPR/官方中间价已准入，其余按来源显式关闭 |
 | 海外申报元数据 | `CompanyFiling` | SEC submissions recent/older 原子分页实现；只返回元数据与规范链接，待描述性 User-Agent 实网准入 |
@@ -268,7 +268,7 @@ Router 适配器已经通过确定性测试。
 | 期货交割日历 | CFFEX 诊断实现（生产 capability 未准入） | 有界扫描官方交易通知目录及同站详情；通知必须明确 IF/IH/IC/IM、请求月份的实际交割日与交割结算价；未独立证明交割方式时保留 `NotProvided`，未证明最后交易日时保留空值；不使用公式推算；生产 trait 返回 `Unsupported` |
 | 15:35 资金榜 | Eastmoney 诊断实现（生产 capability 未准入） | 中国当前日、窗口后、同一 `f124`、连续 rank、精确 limit、代码+名称；2026-07-27 主站返回空响应，延迟站同一榜内混合源时间，正式 trait 返回 `Unsupported` |
 | 全市场量比/主力净流入排名 | Eastmoney 诊断实现 | 固定按源端每页 100 条完整翻页，要求沪深京、代码+名称、排序、时间与覆盖原子一致；2026-07-27 完整实网尚未通过，per-metric capability 保持 false |
-| Provider Top-N 量比/主力净流入 | Eastmoney + `magic-market-composition` | 当前中国日期 15:35 后，单响应页最多 100 行；代码+名称、`f297`、请求指标、源总数和响应顺序完整；无 `source_at`，不得用于市场宽度或完整覆盖 |
+| Provider Top-N 量比/主力净流入 | Eastmoney + `magic-market-composition` | 同日 15:35 后或后续休市日读取最新已结算交易日，单响应页最多 100 行；代码+名称、与请求交易日一致的 `f297`、请求指标、源总数和响应顺序完整；无 `source_at`，不得用于任意历史、市场宽度或完整覆盖 |
 | 市场宽度 | LocalAnalysis | 显式版本证券全集 + 原子 Quote 批次 + 完整涨停/跌停池；输出总数、有效/涨/跌/平、覆盖率、时间偏斜及全部输入证据，不冒充单一 Provider 原子榜 |
 
 ### TDX
