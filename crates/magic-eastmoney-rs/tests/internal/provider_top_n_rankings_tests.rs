@@ -382,9 +382,12 @@ fn provider_top_n_parser_rejects_resource_and_date_shape_boundaries() {
     }
 
     for observed_at in [
+        "2026-07-29 15:35:00+08:00",
+        "2026-02-30T15:35:00+08:00",
         "2026-07-29T1:35:00+08:00",
         "2026-07-29T153500+08:00",
         "2026-07-29T15:35:000+08:00",
+        "2026-07-29T24:00:00+08:00",
     ] {
         assert!(validate_capture_observation(&request, observed_at).is_err());
     }

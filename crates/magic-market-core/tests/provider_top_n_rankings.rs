@@ -705,6 +705,8 @@ fn provider_top_n_batch_rejects_malformed_fraction_and_invalid_clock_values() {
         main_net_inflow: false,
     };
     for observed_at in [
+        "2026-07-29 15:35:01+08:00",
+        "2026-02-30T15:35:01+08:00",
         "2026-07-29T15:35:01.+08:00",
         "2026-07-29T15:35:01.a+08:00",
         "2026-07-29T24:00:00+08:00",

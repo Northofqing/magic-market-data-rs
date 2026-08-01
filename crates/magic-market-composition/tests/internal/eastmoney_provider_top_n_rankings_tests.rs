@@ -322,12 +322,21 @@ fn provider_failure_is_classified_before_batch_validation() {
 
 #[test]
 fn clock_and_unadmitted_capability_fail_explicitly() {
-    let router = router(
+    let unavailable_clock_router = router(
         source(batch(SOURCE)).unwrap(),
         Arc::new(|| Err("clock unavailable".into())),
     );
     assert!(matches!(
-        router.route(&request()).unwrap_err(),
+        unavailable_clock_router.route(&request()).unwrap_err(),
+        EastmoneyProviderTopNRouterError::Clock(_)
+    ));
+
+    let invalid_date_router = router(
+        source(batch(SOURCE)).unwrap(),
+        Arc::new(|| Ok("2026-02-30".into())),
+    );
+    assert!(matches!(
+        invalid_date_router.route(&request()).unwrap_err(),
         EastmoneyProviderTopNRouterError::Clock(_)
     ));
 
