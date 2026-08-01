@@ -579,11 +579,12 @@ fn sequential_client_pacing_and_non_text_aliases_are_explicit() {
     client
         .semantic_search(&request(50))
         .expect("first fixture request");
-    let second_started = Instant::now();
     client
         .semantic_search(&request(50))
         .expect("second fixture request");
-    assert!(second_started.elapsed() >= interval);
+    let snapshot = client.load_probe_snapshot().expect("probe snapshot");
+    assert_eq!(snapshot.request_starts(), 2);
+    assert!(snapshot.minimum_start_gap().expect("two request starts") >= interval);
 
     let object = serde_json::json!({"uid": true});
     assert_eq!(

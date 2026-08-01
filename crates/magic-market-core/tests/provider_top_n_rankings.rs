@@ -488,7 +488,7 @@ fn provider_top_n_batch_rejects_bad_cardinality_order_identity_and_context() {
 }
 
 #[test]
-fn provider_top_n_batch_rejects_pre_close_wrong_date_and_cross_midnight_evidence() {
+fn provider_top_n_batch_admits_later_capture_but_rejects_pre_close_and_earlier_date() {
     let request = request(MarketRankingKind::VolumeRatio, 3);
     let capabilities = ProviderTopNRankingCapabilities {
         volume_ratio: true,
@@ -553,7 +553,29 @@ fn provider_top_n_batch_rejects_pre_close_wrong_date_and_cross_midnight_evidence
             )
         })
         .collect();
-    assert!(validate(next_date, "2026-07-30T00:00:01+08:00").is_err());
+    validate(next_date, "2026-07-30T00:00:01+08:00").unwrap();
+
+    let previous_date = valid_records()
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| {
+            entry(
+                record.kind().clone(),
+                u32::try_from(index + 1).unwrap(),
+                record.instrument().exchange(),
+                record.instrument().code(),
+                record.value().get(),
+                "2026-07-29",
+                record.filter_identity().as_str(),
+                5_542,
+                3,
+                ProviderId::Eastmoney,
+                "2026-07-28T23:59:59+08:00",
+                "eastmoney-topn-1",
+            )
+        })
+        .collect();
+    assert!(validate(previous_date, "2026-07-28T23:59:59+08:00").is_err());
 }
 
 #[test]
@@ -683,6 +705,8 @@ fn provider_top_n_batch_rejects_malformed_fraction_and_invalid_clock_values() {
         main_net_inflow: false,
     };
     for observed_at in [
+        "2026-07-29 15:35:01+08:00",
+        "2026-02-30T15:35:01+08:00",
         "2026-07-29T15:35:01.+08:00",
         "2026-07-29T15:35:01.a+08:00",
         "2026-07-29T24:00:00+08:00",

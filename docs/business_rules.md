@@ -80,13 +80,18 @@ completeness, every record's `latest_trading_date`, and one exact batch
 identity. It must not claim complete-universe coverage, synthesize a common
 source time, feed market breadth, or be routed through the complete-universe
 ranking type. Post-close admission additionally binds every selected
-latest-trading date to the exact requested China date, requires acquisition
-start and post-response observation at or after 15:35 on that same date, and
-rejects a response crossing midnight. Per-security quote/update time and
+latest-trading date to the exact requested China trading date. A request date
+later than the current Asia/Shanghai date fails before transport. Acquisition
+on the requested date requires both start and post-response observation at or
+after 15:35. A later calendar-date capture is admitted at any time only when
+every selected `f297` still equals the exact requested trading date; this
+proves the provider's latest settled session, not arbitrary historical
+retrieval. Capture before the requested date and a response crossing its
+capture-calendar midnight are rejected. Per-security quote/update time and
 latest-trading date must not be promoted to the ranking metric's source time;
 Top-N batch evidence therefore has no `source_at` and is not eligible for
 generic realtime freshness. Each metric has an independent Top-N capability
-and remains unsupported until its own same-day live probe passes. Existing
+and remains unsupported until its own bounded live probe passes. Existing
 full-market ranking capabilities remain false. A concrete admitted route must
 construct its production provider client inside the composition layer and
 must not expose client/transport injection; the provider-neutral Core trait

@@ -165,7 +165,7 @@ fn route_rejects_a_provider_batch_with_wrong_source_identity() {
 }
 
 #[test]
-fn route_rechecks_the_china_date_after_a_midnight_rollover() {
+fn route_admits_a_past_settled_date_after_a_midnight_rollover() {
     let date = Arc::new(std::sync::Mutex::new(DATE.to_owned()));
     let date_for_clock = Arc::clone(&date);
     let router = router(
@@ -176,12 +176,53 @@ fn route_rechecks_the_china_date_after_a_midnight_rollover() {
     router.route(&request()).unwrap();
     *date.lock().unwrap() = "2026-07-30".into();
 
+    let outcome = router.route(&request()).unwrap();
+    assert_eq!(outcome.selected_provider(), ProviderId::Eastmoney);
+}
+
+#[test]
+fn route_rejects_a_future_request_before_provider_io() {
+    let calls = Arc::new(AtomicUsize::new(0));
+
+    #[derive(Clone)]
+    struct CountingProvider {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl ProviderTopNRankings for CountingProvider {
+        type Error = FixtureError;
+
+        fn provider_top_n_rankings(
+            &self,
+            _request: &ProviderTopNRankingRequest,
+        ) -> Result<DataBatch<ProviderTopNRankingEntry>, Self::Error> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(batch(SOURCE))
+        }
+    }
+
+    let source = build_source(
+        ProviderId::Eastmoney,
+        NonEmptyText::new(SOURCE).unwrap(),
+        ProviderTopNRankingCapabilities {
+            volume_ratio: true,
+            main_net_inflow: false,
+        },
+        Arc::new(CountingProvider {
+            calls: Arc::clone(&calls),
+        }),
+        |_| SourceError::try_next(FailureKind::Transport, "fixture failure"),
+    )
+    .unwrap();
+    let router = router(source, Arc::new(|| Ok("2026-07-28".into())));
+
     let error = router.route(&request()).unwrap_err();
     assert!(matches!(
         error,
         EastmoneyProviderTopNRouterError::RejectedRequest(_)
     ));
     assert!(error.attempts().is_empty());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -281,12 +322,21 @@ fn provider_failure_is_classified_before_batch_validation() {
 
 #[test]
 fn clock_and_unadmitted_capability_fail_explicitly() {
-    let router = router(
+    let unavailable_clock_router = router(
         source(batch(SOURCE)).unwrap(),
         Arc::new(|| Err("clock unavailable".into())),
     );
     assert!(matches!(
-        router.route(&request()).unwrap_err(),
+        unavailable_clock_router.route(&request()).unwrap_err(),
+        EastmoneyProviderTopNRouterError::Clock(_)
+    ));
+
+    let invalid_date_router = router(
+        source(batch(SOURCE)).unwrap(),
+        Arc::new(|| Ok("2026-02-30".into())),
+    );
+    assert!(matches!(
+        invalid_date_router.route(&request()).unwrap_err(),
         EastmoneyProviderTopNRouterError::Clock(_)
     ));
 

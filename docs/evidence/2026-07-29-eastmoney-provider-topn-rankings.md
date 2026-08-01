@@ -1,5 +1,10 @@
 # Eastmoney Provider Top-N Ranking Admission Evidence
 
+> Historical evidence note: this document records the original same-date
+> admission run. Observation-date semantics were subsequently amended by
+> `docs/superpowers/specs/2026-08-01-eastmoney-provider-topn-settled-capture-design.md`;
+> exact per-row `f297` binding remains unchanged.
+
 **Date:** 2026-07-29 Asia/Shanghai
 **Rules:** BR-009, BR-010, BR-011, BR-021, BR-033, BR-034
 

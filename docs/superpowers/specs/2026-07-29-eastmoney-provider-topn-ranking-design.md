@@ -1,7 +1,7 @@
 # Eastmoney Provider Top-N Ranking Design
 
 **Date:** 2026-07-29
-**Status:** Gate D closure in progress; implementation, deterministic tests and same-day live evidence pass, final coverage/re-review/PR pending
+**Status:** Superseded in part by the 2026-08-01 settled-date capture amendment
 **Rules:** BR-009, BR-010, BR-011, BR-021, BR-033, BR-034
 
 ## 1. Problem
@@ -57,14 +57,16 @@ use “full-market”, “complete coverage”, or a synthetic coverage ratio.
 date and a positive limit no greater than the source's proved one-page cap of
 100.
 
-The first Eastmoney production slice is post-close only:
+The first Eastmoney production slice is post-close only. The observation-date
+rules below are amended by
+`2026-08-01-eastmoney-provider-topn-settled-capture-design.md`:
 
-- the request date must equal the current China calendar date;
+- the request date must not be later than the current China calendar date;
 - acquisition must start no earlier than 15:35 China time;
 - `observed_at` is captured only after the complete single response has been
-  read, and its explicit `+08:00` date must still equal the request date and
-  its time must still be at or after 15:35; a response crossing midnight is
-  rejected;
+  read. Same-date capture requires 15:35 or later; a later calendar-date
+  capture is allowed only when every row still identifies the requested date
+  in `f297`. Acquisition and completion must not cross capture-date midnight;
 - the source response must declare a non-zero row total for the exact filter
   and return exactly `min(limit, provider_declared_total)` rows in one page;
 - every selected row must contain the requested metric, instrument identity,
@@ -89,7 +91,7 @@ Volume-ratio and main-net-inflow capabilities live in a new independent
 `ProviderTopNRankingCapabilities` type. The existing
 `MarketRankingCapabilities` and `SignalCapabilities.market_rankings` remain
 false and are never enabled by Top-N admission. The formal trait remains
-`Unsupported` until the corresponding deterministic suites and a same-day
+`Unsupported` until the corresponding deterministic suites and a bounded
 post-close live probe pass. Diagnostic access stays explicitly named and
 cannot be mistaken for admission; a Router source is registered only for a
 metric whose Top-N capability is true.
@@ -120,18 +122,19 @@ complete-universe `MarketRankingRouter`. Its dedicated source applies Core's
 validator, which rechecks the exact request, admitted metric capability,
 provider, cardinality, batch, identity, metric/unit, descending order,
 continuous source-response ordinal, every `latest_trading_date`, and the
-post-response `observed_at`. It requires the exact `+08:00` request date and a
-time at or after 15:35, and rejects a cross-midnight completion. The contract
+post-response `observed_at`. It requires the exact `+08:00` offset and, for a
+same-date capture, a time at or after 15:35. It admits a later observation date
+and rejects a cross-midnight completion. The contract
 has no intraday `source_at` and must not be passed through the generic realtime
 freshness policy.
 
-The composition route also owns an independent Asia/Shanghai current-date gate.
+The composition route also owns an independent Asia/Shanghai future-date gate.
 Production construction installs a China-date clock which `route` evaluates
 for every request; the private deterministic constructor injects a clock only
-for unit tests. `route` rejects a stale or future request before any provider
-call even when the request, returned rows and observation timestamp are
-mutually self-consistent. Re-evaluation on every call means a long-lived route
-changes authority at midnight instead of retaining its construction date.
+for unit tests. `route` rejects a future request before any provider call. A
+past request may reach the current snapshot source, but succeeds only when
+every returned `f297` proves that exact requested date. Re-evaluation on every
+call means a long-lived route cannot retain authority for a future date.
 Request and clock failures use a new composition-specific error type that wraps
 the unchanged generic `RouterError`, preserving the existing public enum API.
 
@@ -170,21 +173,21 @@ I/O. The live run remains a separate, explicitly invoked Gate D action.
 
 | Failure | Result |
 | --- | --- |
-| before 15:35 or request date mismatch | invalid request, no network |
+| same-date capture before 15:35 or future request date | invalid request |
 | capability not admitted | explicit `Unsupported` |
 | transport/protocol failure | whole request fails |
 | selected metric/name/code/time missing | whole request fails |
 | source order, duplicate identity or cardinality mismatch | whole request fails |
 | mixed selected latest-trading dates or future date | whole request fails |
-| response completion before 15:35 or on another China date | whole request fails |
+| capture predates request or crosses capture-date midnight | whole request fails |
 | mixed/missing selected `f297` dates | whole request fails |
 
 `f124` is a per-security quote/update field and is not promoted to the ranking
 metric's source time. The public page proves `f297` only as each selected
 security's latest trading date. Neither field becomes batch `source_at`;
-post-close admission is a same-date observation contract based on the
-post-response `observed_at`, not a realtime freshness claim. Intraday/realtime
-Top-N remains unadmitted.
+post-close admission is a requested-trading-date contract based on exact
+`f297` evidence and the post-response `observed_at`, not a realtime freshness
+claim. Intraday/realtime Top-N remains unadmitted.
 
 No result is converted to an empty batch and no alternative ranking family is
 used as a substitute.
@@ -231,8 +234,8 @@ The deterministic suites must additionally prove:
   mixed/missing `latest_trading_date` responses;
 - an unadmitted metric returns `Unsupported`;
 - Provider/composition failures never become empty success;
-- stale and future self-consistent requests are rejected by the Router before
-  provider I/O;
+- future self-consistent requests are rejected by the Router before provider
+  I/O; older requests succeed only when current source `f297` still matches;
 - provider/source/capability ownership cannot be supplied by a downstream
   caller;
 - the same observation time cannot collide across metrics or distinct
@@ -242,9 +245,9 @@ The deterministic suites must additionally prove:
   a coverage or atomic-snapshot claim.
 
 The live evidence must show both metrics separately. One passing metric never
-admits the other. The operator supplies the current China date at run time and
-records that exact date in the evidence document; the reusable command must
-not hard-code an expired date.
+admits the other. The operator supplies the requested settled trading date at
+run time and records that exact date in the evidence document; the reusable
+command must not hard-code an expired date.
 
 ## 7. Rollback
 

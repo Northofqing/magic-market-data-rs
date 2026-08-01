@@ -47,16 +47,6 @@ fn dedicated_policy_does_not_claim_realtime_source_time() {
 }
 
 #[test]
-fn stale_self_consistent_request_is_rejected_before_provider_io() {
-    let router = router();
-    let error = router.route(&request("2000-01-04")).unwrap_err();
-    assert!(matches!(
-        error,
-        EastmoneyProviderTopNRouterError::RejectedRequest(_)
-    ));
-}
-
-#[test]
 fn future_self_consistent_request_is_rejected_before_provider_io() {
     let router = router();
     let error = router.route(&request("2099-12-31")).unwrap_err();
