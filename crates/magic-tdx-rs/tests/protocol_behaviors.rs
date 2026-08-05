@@ -449,6 +449,30 @@ fn assert_all_strict_prefixes_fail<T>(
 }
 
 #[test]
+fn quote_parser_preserves_negative_reversed_bytes1_from_live_server_capture() {
+    // 2026-08-05 从生产 TDX 服务器 60.12.136.250:7709 抓取的真实响应体 (000813 德展健康).
+    // TDX 协议中 reversed_bytes1 承载 `-price` (pytdx get_security_quotes.py 注释:
+    // "应该是 -price"), 正常行情下恒为负. 曾因对该字段施加非负约束,
+    // 导致所有非停牌标的实时行情解析失败 (E3005), Quote 能力永远无法建立.
+    let body: Vec<u8> = vec![
+        0x01, 0x06, 0x01, 0x00, 0x00, 0x30, 0x30, 0x30, 0x38, 0x31, 0x33, 0xce, 0x0a, 0x8e, 0x05,
+        0x07, 0x07, 0x08, 0x43, 0x93, 0xd1, 0xcb, 0x0e, 0xce, 0x05, 0x8b, 0x89, 0x21, 0x92, 0x28,
+        0xa4, 0x78, 0xad, 0x4c, 0xb5, 0x9e, 0x15, 0x96, 0xea, 0x0b, 0x00, 0xaf, 0x2a, 0x00, 0x01,
+        0x83, 0x35, 0xbc, 0x19, 0x41, 0x02, 0x8c, 0x50, 0x87, 0x27, 0x42, 0x03, 0x95, 0x15, 0x8c,
+        0x18, 0x43, 0x04, 0xbc, 0x57, 0xab, 0x23, 0x44, 0x05, 0xb4, 0x58, 0x89, 0x23, 0x16, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0xe3, 0xff, 0xce, 0x0a,
+    ];
+
+    let quotes = parse_security_quotes(&body).expect("live capture must parse");
+    assert_eq!(quotes.len(), 1);
+    assert_eq!(quotes[0].market, 0);
+    assert_eq!(quotes[0].code, "000813");
+    assert_eq!(quotes[0].price, 3.34);
+    // 协议不变量: reversed_bytes1 == -price(分).
+    assert_eq!(quotes[0].reversed_bytes1, -334);
+}
+
+#[test]
 fn quote_parser_decodes_complete_depth_and_rejects_a_truncated_tail() {
     let body = quote_packet();
     let quotes = parse_security_quotes(&body).unwrap();
@@ -468,28 +492,33 @@ fn quote_parser_decodes_complete_depth_and_rejects_a_truncated_tail() {
 }
 
 #[test]
-fn quote_parser_rejects_negative_prices_volumes_and_unsigned_raw_fields() {
+fn quote_parser_rejects_negative_prices_and_volumes_but_preserves_signed_reserved_fields() {
+    // 价格与成交量在业务上必须非负, 保留拒绝语义.
     for (offset, expected) in [
         (13, "base price is negative"),
-        (19, "reversed_bytes1 is negative"),
         (20, "volume is negative"),
         (21, "current volume is negative"),
         (26, "sell volume is negative"),
         (27, "buy volume is negative"),
-        (28, "reversed_bytes2 is negative"),
-        (29, "reversed_bytes3 is negative"),
         (32, "bid level 1 volume is negative"),
         (33, "ask level 1 volume is negative"),
-        (52, "reversed_bytes5 is negative"),
-        (53, "reversed_bytes6 is negative"),
-        (54, "reversed_bytes7 is negative"),
-        (55, "reversed_bytes8 is negative"),
-        (18, "reversed_bytes0 is negative"),
     ] {
         let mut body = quote_packet();
         body[offset] = 0x41;
         let error = parse_security_quotes(&body).unwrap_err().to_string();
         assert!(error.contains(expected), "{error}");
+    }
+
+    // reversed_bytesN 走 get_price 有符号编码, 语义未公开且真实服务器确实返回负值
+    // (reversed_bytes1 == -price). 对其施加非负约束会让正常行情整体解析失败,
+    // 因此必须原样保留负值而不是报错.
+    for offset in [18, 28, 29, 52, 53, 54, 55] {
+        let mut body = quote_packet();
+        body[offset] = 0x41;
+        assert!(
+            parse_security_quotes(&body).is_ok(),
+            "negative reserved field at offset {offset} must be preserved, not rejected"
+        );
     }
 
     let mut negative_last_close = quote_packet();

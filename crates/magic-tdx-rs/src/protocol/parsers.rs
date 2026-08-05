@@ -33,6 +33,15 @@ fn checked_unsigned_32(value: i64, context: &str) -> Result<u32> {
     })
 }
 
+/// 有符号 32 位收窄, 保留负值语义.
+/// 用于 TDX 协议中定义为 `-price` 的保留字段, 这类字段在正常行情下恒为负,
+/// 施加非负约束会让所有非停牌标的解析失败.
+fn checked_signed_32(value: i64, context: &str) -> Result<i32> {
+    i32::try_from(value).map_err(|_| {
+        ErrorCode::TYPE_MISMATCH.err(format!("{context} is outside the signed 32-bit domain"))
+    })
+}
+
 // ============================================================
 // 解析证券数量
 // ============================================================
@@ -804,14 +813,14 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 
         // reversed_bytes0 (get_price as i64, used for servertime)
         let (reversed_bytes0, new_pos) = get_price(body, pos)?;
-        let reversed_bytes0 = checked_unsigned_32(
+        let reversed_bytes0 = checked_signed_32(
             reversed_bytes0,
             &format!("quote row {row_index} reversed_bytes0"),
         )?;
         pos = new_pos;
 
         let (reversed_bytes1, new_pos) = get_price(body, pos)?;
-        let reversed_bytes1 = checked_unsigned_32(
+        let reversed_bytes1 = checked_signed_32(
             reversed_bytes1,
             &format!("quote row {row_index} reversed_bytes1"),
         )?;
@@ -845,13 +854,13 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 
         // reversed_bytes2, reversed_bytes3
         let (reversed_bytes2, new_pos) = get_price(body, pos)?;
-        let reversed_bytes2 = checked_unsigned_32(
+        let reversed_bytes2 = checked_signed_32(
             reversed_bytes2,
             &format!("quote row {row_index} reversed_bytes2"),
         )?;
         pos = new_pos;
         let (reversed_bytes3, new_pos) = get_price(body, pos)?;
-        let reversed_bytes3 = checked_unsigned_32(
+        let reversed_bytes3 = checked_signed_32(
             reversed_bytes3,
             &format!("quote row {row_index} reversed_bytes3"),
         )?;
@@ -903,25 +912,25 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
 
         // reversed_bytes5, reversed_bytes6, reversed_bytes7, reversed_bytes8
         let (reversed_bytes5, new_pos) = get_price(body, pos)?;
-        let reversed_bytes5 = checked_unsigned_32(
+        let reversed_bytes5 = checked_signed_32(
             reversed_bytes5,
             &format!("quote row {row_index} reversed_bytes5"),
         )?;
         pos = new_pos;
         let (reversed_bytes6, new_pos) = get_price(body, pos)?;
-        let reversed_bytes6 = checked_unsigned_32(
+        let reversed_bytes6 = checked_signed_32(
             reversed_bytes6,
             &format!("quote row {row_index} reversed_bytes6"),
         )?;
         pos = new_pos;
         let (reversed_bytes7, new_pos) = get_price(body, pos)?;
-        let reversed_bytes7 = checked_unsigned_32(
+        let reversed_bytes7 = checked_signed_32(
             reversed_bytes7,
             &format!("quote row {row_index} reversed_bytes7"),
         )?;
         pos = new_pos;
         let (reversed_bytes8, new_pos) = get_price(body, pos)?;
-        let reversed_bytes8 = checked_unsigned_32(
+        let reversed_bytes8 = checked_signed_32(
             reversed_bytes8,
             &format!("quote row {row_index} reversed_bytes8"),
         )?;

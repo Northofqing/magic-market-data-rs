@@ -78,15 +78,20 @@ pub struct SecurityQuote {
     pub ask_vol4: f64,
     pub ask5: f64,
     pub ask_vol5: f64,
-    pub reversed_bytes0: u32,
-    pub reversed_bytes1: u32,
-    pub reversed_bytes2: u32,
-    pub reversed_bytes3: u32,
+    /// TDX 保留字段, 与服务器时间相关但 wire 格式未验证; 按 `get_price` 有符号编码原样保留.
+    pub reversed_bytes0: i32,
+    /// TDX 协议中该字段承载 `-price`, 正常行情下恒为负 (停牌/无行情时为 0).
+    /// 因此必须按有符号解析, 不能施加非负约束.
+    pub reversed_bytes1: i32,
+    /// 以下保留字段同样走 `get_price` 有符号编码, 语义未公开, 原样保留不作取值约束.
+    pub reversed_bytes2: i32,
+    pub reversed_bytes3: i32,
+    /// `reversed_bytes4` / `reversed_bytes9` 来自定长 u16 wire 字段, 天然无符号.
     pub reversed_bytes4: u32,
-    pub reversed_bytes5: u32,
-    pub reversed_bytes6: u32,
-    pub reversed_bytes7: u32,
-    pub reversed_bytes8: u32,
+    pub reversed_bytes5: i32,
+    pub reversed_bytes6: i32,
+    pub reversed_bytes7: i32,
+    pub reversed_bytes8: i32,
     pub reversed_bytes9: u32,
     pub active2: u16,
 }
