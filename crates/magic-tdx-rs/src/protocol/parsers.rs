@@ -42,6 +42,54 @@ fn checked_signed_32(value: i64, context: &str) -> Result<i32> {
     })
 }
 
+/// 解码 TDX 401 quote 行的服务端时间字段 (`reversed_bytes0`).
+///
+/// 字段是交易时段内的时刻, 以十进制位编码: `HH MM (SS.fff × 1000/6)`
+/// (pytdx `_format_time` 语义, 来源 rainx/pytdx issue #187)。例如
+/// `11293635` → 11:29:21.810。历史样本中分钟位可能越过 60
+/// (`14999269` → 14:59:57.368), 此时后 6 位按 10^6/60 每分钟的尺度编码
+/// 分钟(含小数), 两种分支都保留以贴合 pytdx 参考实现。
+///
+/// 输出 `"HH:MM:SS"`(整秒四舍五入)——下游按 `%H:%M:%S` 解析, 且 TDX
+/// quote 约 3 秒才刷新一次, 毫秒无业务意义。非正或非法值返回空串:
+/// 不伪造时间证据, 由调用方按缺时间处理。
+fn format_servertime(value: i32) -> String {
+    if value <= 0 {
+        return String::new();
+    }
+    // 补齐前导 0 (如 09:15:00 → 9150000 → "09150000") 后再切位。
+    let digits = format!("{value:08}");
+    let digits = digits.as_bytes();
+    let parse2 = |bytes: &[u8]| -> i32 {
+        bytes
+            .iter()
+            .fold(0i32, |acc, b| acc * 10 + i32::from(b.wrapping_sub(b'0')))
+    };
+    let hour = parse2(&digits[0..2]);
+    let mm_part = parse2(&digits[2..4]);
+    let (minute, seconds) = if mm_part < 60 {
+        // 常规形态: 分钟两位, 后 4 位按 10000/60 每秒编码秒(含毫秒小数)。
+        let seconds_fff = parse2(&digits[4..8]) as f64 * 60.0 / 10_000.0;
+        (f64::from(mm_part), seconds_fff)
+    } else {
+        // 历史样本形态: 后 6 位按 10^6/60 每分钟编码分钟(含小数), 小时在最高位。
+        let mm_fff = parse2(&digits[2..8]) as f64 * 60.0 / 1_000_000.0;
+        let minute = mm_fff.floor();
+        (minute, (mm_fff - minute) * 60.0)
+    };
+    if !(0..=23).contains(&hour) || !(0.0..60.0).contains(&minute) || !(0.0..60.0).contains(&seconds)
+    {
+        return String::new();
+    }
+    // 向下取整: last4 = 9999 → 59.994 s, 四舍五入会产生非法的 ":60"。
+    // 整秒误差 <1 s, TDX quote 约 3 秒刷新, 无业务影响。
+    format!(
+        "{hour:02}:{:02}:{:02}",
+        minute as u8,
+        seconds.floor() as u8
+    )
+}
+
 // ============================================================
 // 解析证券数量
 // ============================================================
@@ -945,9 +993,9 @@ pub fn parse_security_quotes(body: &[u8]) -> Result<Vec<SecurityQuote>> {
         let active2 = read_u16(body, pos)?;
         pos += 2;
 
-        // `reversed_bytes0` is correlated with server time, but its wire format is not
-        // verified. Preserve the raw value below and do not fabricate source evidence.
-        let servertime = String::new();
+        // `reversed_bytes0` 编码服务端时间 (见 `format_servertime`), 解码失败
+        // (非法值) 时为空串: 不伪造时间证据, 由调用方按缺时间处理。
+        let servertime = format_servertime(reversed_bytes0);
 
         let price = (price_raw as f64) * coefficient;
         let last_close = checked_nonnegative_cumulative_value(

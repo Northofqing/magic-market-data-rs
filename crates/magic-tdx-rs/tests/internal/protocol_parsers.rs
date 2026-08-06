@@ -587,6 +587,85 @@ fn zero_quote_count_rejects_undeclared_trailing_bytes() {
     assert!(error.to_string().contains("trailing bytes"));
 }
 
+// --- format_servertime (reversed_bytes0 解码) ---
+// 参考: pytdx _format_time (rainx/pytdx issue #187)。
+// 样本来源: 2026-08-06 对 218.75.126.9:7709 的 live wire 抓包 (午休冻结 ~11:29)
+// + issue #187 官方样本。
+
+#[test]
+fn test_format_servertime_live_wire_captures() {
+    // 2026-08-06 live wire: 605178 → 11:29:21.810 (整秒向下取整)
+    assert_eq!(format_servertime(11293635), "11:29:21");
+    // 002415 → 11:29:37.644
+    assert_eq!(format_servertime(11296274), "11:29:37");
+    // 000001 → 11:29:53.304
+    assert_eq!(format_servertime(11298884), "11:29:53");
+}
+
+#[test]
+fn test_format_servertime_issue187_samples() {
+    // issue #187 官方样本: 14:59:57.368 (分钟位 ≥ 60 → else 分支)
+    assert_eq!(format_servertime(14999269), "14:59:57");
+    // 10:07:20.292
+    assert_eq!(format_servertime(10073382), "10:07:20");
+    // 10:05:09.378
+    assert_eq!(format_servertime(10051563), "10:05:09");
+    // 10:05:16.800
+    assert_eq!(format_servertime(10052800), "10:05:16");
+}
+
+#[test]
+fn test_format_servertime_leading_zero_hour() {
+    // 09:15:00.000 → 数字 9150000 (前导 0 丢失), 需补齐后解码
+    assert_eq!(format_servertime(9150000), "09:15:00");
+    // 09:30:00.000
+    assert_eq!(format_servertime(9300000), "09:30:00");
+}
+
+#[test]
+fn test_format_servertime_max_fraction_stays_in_second_bound() {
+    // last4 = 9999 → 59.994 s: 向下取整 → 59, 绝不产生非法的 ":60"
+    assert_eq!(format_servertime(10059999), "10:05:59");
+}
+
+#[test]
+fn test_format_servertime_invalid_returns_empty() {
+    // 非正 → 空串, 不伪造时间证据
+    assert_eq!(format_servertime(0), "");
+    assert_eq!(format_servertime(-1), "");
+    // 小时超 23
+    assert_eq!(format_servertime(24000000), "");
+}
+
+#[test]
+fn test_parse_security_quotes_servertime_from_live_wire() {
+    // 2026-08-06 live wire 抓包 (218.75.126.9:7709, 605178, market=1):
+    // body 78 字节 = [01 06] + count=1 + 完整 74 字节 quote 行。
+    // 同一份字节里, 除 servertime 外全部字段与已知成交一致
+    // (price=63.66, last_close=64.24, open=64.37, high=66.78, low=62.80)。
+    let body: Vec<u8> = vec![
+        0x01, 0x06, 0x01, 0x00, //
+        0x01, 0x36, 0x30, 0x35, 0x31, 0x37, 0x38, 0x11, 0x09, 0x9e, 0x63, 0x3a, //
+        0x87, 0x01, 0xb8, 0x04, 0xd6, 0x01, 0x83, 0xcf, 0xe2, 0x0a, 0xde, 0x63, //
+        0xbe, 0x87, 0x07, 0x0c, 0x85, 0x9c, 0xb2, 0x4d, 0xb6, 0xbf, 0x03, 0x88, //
+        0xc8, 0x03, 0x55, 0x8a, 0xae, 0x08, 0x00, 0x15, 0x01, 0x12, 0x41, 0x16, //
+        0x02, 0x01, 0x45, 0x1f, 0x0d, 0x02, 0x46, 0x22, 0xbc, 0x02, 0x02, 0x47, //
+        0x84, 0x01, 0x0a, 0x06, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc6, 0xff, //
+        0x11, 0x09,
+    ];
+    let quotes = parse_security_quotes(&body).unwrap();
+    assert_eq!(quotes.len(), 1);
+    let quote = &quotes[0];
+    assert_eq!(quote.code, "605178");
+    assert!((quote.price - 63.66).abs() < 0.01);
+    assert!((quote.last_close - 64.24).abs() < 0.01);
+    assert!((quote.open - 64.37).abs() < 0.01);
+    assert!((quote.high - 66.78).abs() < 0.01);
+    assert!((quote.low - 62.80).abs() < 0.01);
+    // reversed_bytes0 = 11293635 → 11:29:21.810 → 整秒 21
+    assert_eq!(quote.servertime, "11:29:21");
+}
+
 // --- parse_finance_info ---
 
 fn finance_record(market: u8, code: &str, ipo_date: u32) -> Vec<u8> {
