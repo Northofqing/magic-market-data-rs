@@ -37,6 +37,11 @@ struct IndicatorMetadata {
     source_id: String,
 }
 
+struct SeriesMetadata {
+    unit: String,
+    periodicity: String,
+}
+
 struct PaginationMetadata {
     page: usize,
     pages: usize,
@@ -81,6 +86,35 @@ pub fn parse_world_bank_responses(
     data_pages: &[&[u8]],
     context: &WorldBankParseContext<'_>,
 ) -> Result<DataBatch<EconomicObservation>, WorldBankError> {
+    parse_world_bank_responses_inner(indicator_body, None, data_pages, context)
+}
+
+/// Parses one World Bank series using the official per-series Metadata API as
+/// the authoritative unit/frequency source. The ordinary indicator envelope is
+/// retained as an independent identity/source check; its historically empty
+/// `unit` field is never filled from the indicator name or prose.
+pub fn parse_world_bank_responses_with_metadata(
+    indicator_body: &[u8],
+    series_metadata_body: &[u8],
+    data_pages: &[&[u8]],
+    context: &WorldBankParseContext<'_>,
+) -> Result<DataBatch<EconomicObservation>, WorldBankError> {
+    super::transport::ensure_no_duplicate_json_keys(series_metadata_body)
+        .map_err(|error| WorldBankError::Decode(error.to_string()))?;
+    parse_world_bank_responses_inner(
+        indicator_body,
+        Some(series_metadata_body),
+        data_pages,
+        context,
+    )
+}
+
+fn parse_world_bank_responses_inner(
+    indicator_body: &[u8],
+    series_metadata_body: Option<&[u8]>,
+    data_pages: &[&[u8]],
+    context: &WorldBankParseContext<'_>,
+) -> Result<DataBatch<EconomicObservation>, WorldBankError> {
     super::transport::ensure_no_duplicate_json_keys(indicator_body)
         .map_err(|error| WorldBankError::Decode(error.to_string()))?;
     if context.key.provider() != ProviderId::WorldBank
@@ -98,11 +132,34 @@ pub fn parse_world_bank_responses(
             "indicator source ID does not match namespace".into(),
         ));
     }
-    if indicator.unit.trim().is_empty() {
-        return Err(WorldBankError::Protocol(
-            "official structured indicator unit is empty; unit inference is forbidden".into(),
-        ));
-    }
+    let unit = match series_metadata_body {
+        Some(body) => {
+            let metadata = parse_series_metadata(
+                body,
+                context.key.code(),
+                namespace.source_id(),
+                &indicator.name,
+            )?;
+            if metadata.periodicity != "Annual" {
+                return Err(WorldBankError::Protocol(
+                    "World Bank series metadata frequency is not Annual".into(),
+                ));
+            }
+            if !indicator.unit.trim().is_empty() && indicator.unit != metadata.unit {
+                return Err(WorldBankError::Protocol(
+                    "World Bank indicator and series-metadata units conflict".into(),
+                ));
+            }
+            metadata.unit
+        }
+        None if !indicator.unit.trim().is_empty() => indicator.unit.clone(),
+        None => {
+            return Err(WorldBankError::Protocol(
+                "official structured indicator unit is empty; per-series metadata is required"
+                    .into(),
+            ))
+        }
+    };
     if data_pages.is_empty() {
         return Err(WorldBankError::Protocol(
             "World Bank response contains no data pages".into(),
@@ -256,7 +313,7 @@ pub fn parse_world_bank_responses(
             Some(NonEmptyText::new(country_name)?),
             EconomicPeriod::year(year)?,
             value,
-            indicator.unit.clone(),
+            unit.clone(),
             None,
             None,
             if value.is_some() {
@@ -273,6 +330,130 @@ pub fn parse_world_bank_responses(
         .with_batch_id(context.batch_id)?
         .with_source_at(stable.last_updated)?;
     Ok(DataBatch::strict(records, provenance))
+}
+
+fn parse_series_metadata(
+    body: &[u8],
+    requested: &str,
+    expected_source_id: &str,
+    expected_name: &str,
+) -> Result<SeriesMetadata, WorldBankError> {
+    let value: Value =
+        serde_json::from_slice(body).map_err(|error| WorldBankError::Decode(error.to_string()))?;
+    let root = value.as_object().ok_or_else(|| {
+        WorldBankError::Protocol("World Bank series metadata must be an object".into())
+    })?;
+    let pagination = parse_pagination_metadata(&value)?;
+    if pagination.page != 1
+        || pagination.pages != 1
+        || pagination.per_page == 0
+        || pagination.per_page > 5_000
+        || pagination.total == 0
+        || pagination.total > 128
+    {
+        return Err(WorldBankError::Protocol(format!(
+            "World Bank series metadata pagination is inconsistent: page={} pages={} per_page={} total={}",
+            pagination.page, pagination.pages, pagination.per_page, pagination.total
+        )));
+    }
+    let sources = root
+        .get("source")
+        .and_then(Value::as_array)
+        .ok_or_else(|| WorldBankError::Protocol("missing metadata source array".into()))?;
+    if sources.len() != 1 {
+        return Err(WorldBankError::Protocol(
+            "series metadata requires exactly one source".into(),
+        ));
+    }
+    let source = sources[0]
+        .as_object()
+        .ok_or_else(|| WorldBankError::Protocol("invalid metadata source object".into()))?;
+    if string_or_number_field(source, "id")? != expected_source_id
+        || string_field(source, "name")?.trim().is_empty()
+    {
+        return Err(WorldBankError::Protocol(
+            "series metadata source identity mismatch".into(),
+        ));
+    }
+    let concepts = source
+        .get("concept")
+        .and_then(Value::as_array)
+        .ok_or_else(|| WorldBankError::Protocol("missing metadata concept array".into()))?;
+    let series_concepts = concepts
+        .iter()
+        .filter_map(Value::as_object)
+        .filter(|concept| concept.get("id").and_then(Value::as_str) == Some("Series"))
+        .collect::<Vec<_>>();
+    if series_concepts.len() != 1 {
+        return Err(WorldBankError::Protocol(
+            "series metadata requires exactly one Series concept".into(),
+        ));
+    }
+    let variables = series_concepts[0]
+        .get("variable")
+        .and_then(Value::as_array)
+        .ok_or_else(|| WorldBankError::Protocol("missing metadata variable array".into()))?;
+    if variables.len() != 1 {
+        return Err(WorldBankError::Protocol(
+            "series metadata requires exactly one variable".into(),
+        ));
+    }
+    let variable = variables[0]
+        .as_object()
+        .ok_or_else(|| WorldBankError::Protocol("invalid metadata variable object".into()))?;
+    if string_field(variable, "id")? != requested {
+        return Err(WorldBankError::Protocol(
+            "series metadata variable identity mismatch".into(),
+        ));
+    }
+    let metatypes = variable
+        .get("metatype")
+        .and_then(Value::as_array)
+        .ok_or_else(|| WorldBankError::Protocol("missing metadata metatype array".into()))?;
+    if metatypes.len() > 128 {
+        return Err(WorldBankError::Protocol(
+            "series metadata exceeds 128 metatypes".into(),
+        ));
+    }
+    let mut fields = HashMap::with_capacity(metatypes.len());
+    for raw in metatypes {
+        let metatype = raw
+            .as_object()
+            .ok_or_else(|| WorldBankError::Protocol("invalid metadata metatype object".into()))?;
+        let id = string_field(metatype, "id")?;
+        let value = string_field_allow_empty(metatype, "value")?;
+        if fields.insert(id, value).is_some() {
+            return Err(WorldBankError::Protocol(
+                "duplicate series metadata metatype identity".into(),
+            ));
+        }
+    }
+    if fields.len() != pagination.total {
+        return Err(WorldBankError::Protocol(
+            "series metadata metatypes do not cover the declared total".into(),
+        ));
+    }
+    let name = required_metadata_value(&fields, "IndicatorName")?;
+    if name != expected_name {
+        return Err(WorldBankError::Protocol(
+            "series metadata indicator name mismatch".into(),
+        ));
+    }
+    Ok(SeriesMetadata {
+        unit: required_metadata_value(&fields, "Unitofmeasure")?.to_owned(),
+        periodicity: required_metadata_value(&fields, "Periodicity")?.to_owned(),
+    })
+}
+
+fn required_metadata_value<'a>(
+    fields: &'a HashMap<&str, &str>,
+    id: &str,
+) -> Result<&'a str, WorldBankError> {
+    fields
+        .get(id)
+        .copied()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| WorldBankError::Protocol(format!("missing or empty {id} metadata")))
 }
 
 fn parse_indicator(

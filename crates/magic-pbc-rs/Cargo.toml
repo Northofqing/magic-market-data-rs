@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+calamine = { workspace = true }
 encoding_rs = "0.8"
 magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
 magic-market-transport = { path = "../magic-market-transport", version = "=0.2.0" }

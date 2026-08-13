@@ -50,6 +50,8 @@ fn media_type_matching_is_closed_and_case_insensitive() {
     assert!(MediaType::Xml.matches("application/xml"));
     assert!(MediaType::Xml.matches("TEXT/XML"));
     assert!(MediaType::PlainText.matches("text/plain"));
+    assert!(MediaType::Xlsx
+        .matches("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
     assert!(!MediaType::Json.matches("application/problem+json"));
 }
 
@@ -343,6 +345,7 @@ fn response_validation_covers_status_media_and_exact_url_binding() {
         MediaType::Javascript,
         MediaType::Xml,
         MediaType::PlainText,
+        MediaType::Xlsx,
     ]);
     for content_type in [
         "application/json; charset=utf-8",
@@ -350,6 +353,7 @@ fn response_validation_covers_status_media_and_exact_url_binding() {
         "application/xml",
         "text/xml",
         "text/plain",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ] {
         let response = HttpResponse::new(
             200,

@@ -92,6 +92,9 @@ def discover_constants(
     if not crates.is_dir():
         return {}, [f"missing crates directory: {crates}"]
     for path in sorted(crates.rglob("*.rs")):
+        relative_parts = path.relative_to(crates).parts
+        if len(relative_parts) >= 2 and relative_parts[1] == "target":
+            continue
         file_errors = safe_repository_file(root, path, tracked, "Rust admission source")
         if file_errors:
             errors.extend(file_errors)

@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
-pub const ECONOMIC_SERIES_ADMITTED: bool = false;
+pub const ECONOMIC_SERIES_ADMITTED: bool = true;
 
 #[derive(Clone)]
 struct ApiKey(String);

@@ -245,7 +245,11 @@ fn parse_page(
             )));
         }
         let canonical_url = normalize_sina_url(&anchor.href)?;
-        NonEmptyText::new(anchor.title.clone())?;
+        if anchor.title.trim().is_empty() {
+            return Err(SinaError::Protocol(format!(
+                "instrument-news source title is empty for {canonical_url}"
+            )));
+        }
         records.push(RawNews {
             title: anchor.title,
             canonical_url,
@@ -290,6 +294,10 @@ fn parse_page_anchors(html: &str) -> Result<Vec<PageAnchor>, SinaError> {
     let mut datelist = None::<&str>;
     while let Some(tag) = next_html_tag(html, cursor)? {
         cursor = tag.end;
+        if !tag.closing && !tag.self_closing && matches!(tag.name.as_str(), "script" | "style") {
+            cursor = raw_text_element_end(html, cursor, &tag.name)?;
+            continue;
+        }
         if tag.closing || tag.self_closing || tag.name != "div" {
             continue;
         }
@@ -315,6 +323,27 @@ fn parse_page_anchors(html: &str) -> Result<Vec<PageAnchor>, SinaError> {
     })?;
     let ul = direct_datelist_ul(content)?;
     parse_anchor_rows(ul)
+}
+
+fn raw_text_element_end(
+    html: &str,
+    content_start: usize,
+    tag_name: &str,
+) -> Result<usize, SinaError> {
+    let closing = format!("</{tag_name}>");
+    let remainder = html.get(content_start..).ok_or_else(|| {
+        SinaError::Protocol("instrument-news raw-text boundary is invalid".into())
+    })?;
+    let lower = remainder.to_ascii_lowercase();
+    let relative = lower.find(&closing).ok_or_else(|| {
+        SinaError::Protocol(format!(
+            "instrument-news <{tag_name}> raw-text element is not closed"
+        ))
+    })?;
+    content_start
+        .checked_add(relative)
+        .and_then(|value| value.checked_add(closing.len()))
+        .ok_or_else(|| SinaError::Protocol("instrument-news raw-text boundary overflow".into()))
 }
 
 fn direct_datelist_ul(content: &str) -> Result<&str, SinaError> {
@@ -360,6 +389,11 @@ fn parse_anchor_rows(content: &str) -> Result<Vec<PageAnchor>, SinaError> {
                 .and_then(|value| decode_html_entities(value))?;
             let (title_end, close_end) = matching_close(content, &tag, "a")?;
             let title = visible_text(&content[tag.end..title_end])?;
+            if title.trim().is_empty() {
+                cursor = close_end;
+                text_start = close_end;
+                continue;
+            }
             records.push(PageAnchor {
                 published_text,
                 href,
@@ -370,6 +404,23 @@ fn parse_anchor_rows(content: &str) -> Result<Vec<PageAnchor>, SinaError> {
                     "instrument-news page exceeds {MAX_PAGE_ROWS} rows"
                 )));
             }
+            cursor = close_end;
+            text_start = close_end;
+            continue;
+        }
+        if !tag.closing
+            && !tag.self_closing
+            && !matches!(
+                tag.name.as_str(),
+                "br" | "hr" | "img" | "input" | "meta" | "link"
+            )
+        {
+            if matches!(tag.name.as_str(), "script" | "style") {
+                cursor = raw_text_element_end(content, tag.end, &tag.name)?;
+                text_start = cursor;
+                continue;
+            }
+            let (_, close_end) = matching_close(content, &tag, &tag.name)?;
             cursor = close_end;
             text_start = close_end;
             continue;
@@ -395,6 +446,10 @@ fn visible_text(content: &str) -> Result<String, SinaError> {
                 "instrument-news title contains a nested anchor".into(),
             ));
         }
+        if !tag.closing && !tag.self_closing && matches!(tag.name.as_str(), "script" | "style") {
+            cursor = raw_text_element_end(content, tag.end, &tag.name)?;
+            continue;
+        }
         cursor = tag.end;
     }
     output.push_str(&decode_html_entities(&content[cursor..])?);
@@ -410,6 +465,10 @@ fn matching_close(
     let mut cursor = open.end;
     while let Some(tag) = next_html_tag(html, cursor)? {
         cursor = tag.end;
+        if !tag.closing && !tag.self_closing && matches!(tag.name.as_str(), "script" | "style") {
+            cursor = raw_text_element_end(html, cursor, &tag.name)?;
+            continue;
+        }
         if tag.name != expected_name || tag.self_closing {
             continue;
         }

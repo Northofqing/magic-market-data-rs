@@ -24,11 +24,19 @@ fn accession_and_primary_document_are_path_safe() {
     assert!(SecAccessionNumber::new("0000320193-25-000079").is_ok());
     assert!(SecAccessionNumber::new("../000079").is_err());
     assert!(SecPrimaryDocument::new("../report.htm").is_err());
+    assert!(SecPrimaryDocument::new("xsl144X01/primary_doc.xml").is_ok());
+    assert!(SecPrimaryDocument::new("filename1.pdf").is_ok());
+    assert!(SecPrimaryDocument::new("9999999997-17-006550.paper").is_ok());
     for unsafe_name in [
         "%2e%2e%2freport.htm",
         "%2Freport.htm",
         "report%5Cevil.htm",
         "report final.htm",
+        "/report.htm",
+        "safe//report.htm",
+        "safe/../report.htm",
+        "safe/./report.htm",
+        "safe\\report.htm",
     ] {
         assert!(SecPrimaryDocument::new(unsafe_name).is_err());
     }

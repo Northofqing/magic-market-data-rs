@@ -6,7 +6,12 @@
 //! downstream wrappers cannot impersonate an admitted source.
 
 mod eastmoney_provider_top_n_rankings;
+mod local_terminal_monitor;
 
 pub use eastmoney_provider_top_n_rankings::{
     EastmoneyProviderTopNRankingRouter, EastmoneyProviderTopNRouterError,
+};
+pub use local_terminal_monitor::{
+    DiagnosticLocalTerminalMonitorComposition, LocalMonitorCapability,
+    LocalTerminalMonitorComposition, LocalTerminalMonitorCompositionError,
 };

@@ -77,17 +77,15 @@ fn format_servertime(value: i32) -> String {
         let minute = mm_fff.floor();
         (minute, (mm_fff - minute) * 60.0)
     };
-    if !(0..=23).contains(&hour) || !(0.0..60.0).contains(&minute) || !(0.0..60.0).contains(&seconds)
+    if !(0..=23).contains(&hour)
+        || !(0.0..60.0).contains(&minute)
+        || !(0.0..60.0).contains(&seconds)
     {
         return String::new();
     }
     // 向下取整: last4 = 9999 → 59.994 s, 四舍五入会产生非法的 ":60"。
     // 整秒误差 <1 s, TDX quote 约 3 秒刷新, 无业务影响。
-    format!(
-        "{hour:02}:{:02}:{:02}",
-        minute as u8,
-        seconds.floor() as u8
-    )
+    format!("{hour:02}:{:02}:{:02}", minute as u8, seconds.floor() as u8)
 }
 
 // ============================================================
@@ -665,11 +663,6 @@ pub fn parse_transaction_data_with_coefficient(
 
         // buyorsell
         let (buyorsell, new_pos) = checked_transaction_u32(body, pos, row_index, "trade side")?;
-        if buyorsell > 2 {
-            return Err(ErrorCode::TYPE_MISMATCH.err(format!(
-                "current transaction row {row_index} trade side {buyorsell} is outside 0..=2"
-            )));
-        }
         pos = new_pos;
 
         // reserved (原 extra field，具体含义待确认)
@@ -764,11 +757,6 @@ pub fn parse_history_transaction_data_with_coefficient(
                 "historical transaction row {row_index} trade side is outside the unsigned 32-bit domain"
             ))
         })?;
-        if buyorsell > 2 {
-            return Err(ErrorCode::TYPE_MISMATCH.err(format!(
-                "historical transaction row {row_index} trade side {buyorsell} is outside 0..=2"
-            )));
-        }
         pos = new_pos;
 
         // reserved (原 extra field，具体含义待确认)

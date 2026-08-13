@@ -95,12 +95,11 @@ fn finance_field_catalog_preserves_labels_indices_and_missing_values() {
     let mut fields = vec![0.0; 320];
     fields[0] = 1.25;
     fields[319] = 42.0;
-    let labeled = extract_with_labels(&fields);
+    let labeled = extract_with_labels(&fields).unwrap();
     assert!(labeled.contains(&("eps", "基本每股收益", 1.25)));
     assert!(labeled.contains(&("employees", "员工总数", 42.0)));
 
-    let short = extract_with_labels(&[]);
-    assert!(short.iter().all(|(_, _, value)| *value == 0.0));
+    assert!(extract_with_labels(&[]).is_err());
 }
 
 #[test]

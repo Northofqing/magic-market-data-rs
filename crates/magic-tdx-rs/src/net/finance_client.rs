@@ -685,9 +685,7 @@ impl TdxFinanceClient {
         let records = self.get_financial_data(filename, filesize)?;
         for r in &records {
             if r.code == code {
-                return Ok(crate::protocol::finance_fields::extract_indicators(
-                    &r.fields,
-                ));
+                return crate::protocol::finance_fields::extract_indicators(&r.fields);
             }
         }
         logw!("finance", "stock {} not found in {}", code, filename);
@@ -705,9 +703,7 @@ impl TdxFinanceClient {
         let records = self.get_financial_data(filename, filesize)?;
         for r in &records {
             if r.code == code {
-                return Ok(crate::protocol::finance_fields::extract_with_labels(
-                    &r.fields,
-                ));
+                return crate::protocol::finance_fields::extract_with_labels(&r.fields);
             }
         }
         logw!("finance", "stock {} not found in {}", code, filename);

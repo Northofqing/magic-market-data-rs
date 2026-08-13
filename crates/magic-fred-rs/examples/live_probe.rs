@@ -1,6 +1,7 @@
 use magic_fred_rs::FredClient;
 use magic_market_core::{
-    EconomicPeriod, EconomicSeriesKey, EconomicSeriesRequest, PositiveU32, ProviderId,
+    EconomicPeriod, EconomicSeriesKey, EconomicSeriesProvider, EconomicSeriesRequest, PositiveU32,
+    ProviderId,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,9 +13,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         EconomicPeriod::quarter(2025, 4)?,
         PositiveU32::new(4)?,
     )?;
-    let batch = client.probe_economic_series(&request)?;
+    let batch = client.economic_series(&request)?;
     println!(
-        "FRED diagnostic records={}; live admission remains false",
+        "FRED live records={}; admission=admitted",
         batch.records().len()
     );
     Ok(())

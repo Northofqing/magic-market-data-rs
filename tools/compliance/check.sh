@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd); cd "$repo_root"
+cd -- "${BASH_SOURCE[0]%/*}/../.."
+repo_root=$PWD
 required=(
   AGENTS.md
   Cargo.toml
@@ -17,6 +18,8 @@ required=(
   docs/integrations/admissions.tsv
   docs/integrations/async-blocking.md
   docs/integrations/http-transports.tsv
+  docs/integrations/tdx-local-terminal.md
+  docs/integrations/tdx-local-terminal-compatibility.tsv
   docs/integrations/sina-web.md
   docs/integrations/eastmoney-web.md
   docs/integrations/cninfo-web.md
@@ -66,6 +69,14 @@ required=(
   crates/magic-thepaper-rs/Cargo.toml
   crates/magic-yonhap-rs/Cargo.toml
   crates/magic-wallstreetcn-rs/Cargo.toml
+  crates/magic-tdx-local-rs/Cargo.toml
+  crates/magic-tdx-native-bridge/Cargo.toml
+  crates/magic-market-monitor/Cargo.toml
+  crates/magic-market-monitor-server/Cargo.toml
+  crates/magic-market-grpc-contracts/Cargo.toml
+  crates/magic-market-service/Cargo.toml
+  crates/magic-market-grpc-server/Cargo.toml
+  crates/magic-market-tdx-agent/Cargo.toml
   crates/magic-baidu-rs/Cargo.toml
   crates/magic-iwencai-rs/Cargo.toml
   crates/magic-exchange-rs/Cargo.toml
@@ -77,8 +88,15 @@ for required_file in "${required[@]}"; do
     exit 1
   }
 done
-python3 tools/compliance/check_admissions.py
-python3 tools/compliance/check_http_transports.py
+python_cmd=(python3)
+if [[ "${OS:-}" == Windows_NT ]] && command -v py >/dev/null 2>&1; then
+  python_cmd=(py -3)
+fi
+"${python_cmd[@]}" tools/compliance/check_admissions.py
+"${python_cmd[@]}" tools/compliance/check_http_transports.py
+"${python_cmd[@]}" tools/compliance/check_tdx_local_compatibility.py
+"${python_cmd[@]}" tools/compliance/check_tdx_native_boundary.py
+"${python_cmd[@]}" tools/compliance/check_grpc_services.py
 
 for toolchain_file in rust-toolchain rust-toolchain.toml; do
   if [[ -e "$toolchain_file" ]]; then
@@ -123,6 +141,14 @@ workspace_members=(
   crates/magic-gov-rs
   crates/magic-yonhap-rs
   crates/magic-wallstreetcn-rs
+  crates/magic-tdx-local-rs
+  crates/magic-tdx-native-bridge
+  crates/magic-market-monitor
+  crates/magic-market-monitor-server
+  crates/magic-market-grpc-contracts
+  crates/magic-market-service
+  crates/magic-market-grpc-server
+  crates/magic-market-tdx-agent
   crates/magic-market-transport
   crates/magic-nbs-rs
   crates/magic-pbc-rs
@@ -135,42 +161,48 @@ workspace_members=(
   crates/magic-yicai-rs
   crates/magic-stcn-rs
 )
-workspace_manifest_members=$(sed -n '/^members = \[/,/^\]/p' Cargo.toml)
 for member in "${workspace_members[@]}"; do
-  rg -Fq "\"$member\"" <<<"$workspace_manifest_members" || {
+  sed -n '/^members = \[/,/^\]/p' Cargo.toml | rg -Fq "\"$member\"" || {
     echo "missing workspace member: $member" >&2
     exit 1
   }
 done
 expected_workspace_crate_version=0.2.0
 while IFS= read -r manifest; do
-  package_version=$(
-    awk '
-      /^\[package\]$/ { in_package=1; next }
-      /^\[/ && in_package { exit }
-      in_package && /^version = "/ {
-        gsub(/^version = "|".*$/, "")
-        print
-        exit
+  if ! awk -v expected="$expected_workspace_crate_version" -v manifest="$manifest" '
+    /^\[package\]$/ { in_package=1; next }
+    /^\[/ && in_package { exit }
+    in_package && /^version = "/ {
+      version=$0
+      gsub(/^version = "|".*$/, "", version)
+      found=1
+      if (version != expected) {
+        printf "workspace crate version mismatch: %s expected=%s actual=%s\n", \
+          manifest, expected, version > "/dev/stderr"
+        exit 1
       }
-    ' "$manifest"
-  )
-  if [[ "$package_version" != "$expected_workspace_crate_version" ]]; then
-    printf 'workspace crate version mismatch: %s expected=%s actual=%s\n' \
-      "$manifest" "$expected_workspace_crate_version" "$package_version" >&2
+      exit
+    }
+    END {
+      if (!found) {
+        printf "workspace crate version missing: %s\n", manifest > "/dev/stderr"
+        exit 1
+      }
+    }
+  ' "$manifest"; then
     exit 1
   fi
 done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml -print | LC_ALL=C sort)
 
 if rg -n 'stock_analysis' crates/*/Cargo.toml; then exit 1; fi
-router_dependencies=$(sed -n '/^\[dependencies\]/,/^\[/p' crates/magic-market-router/Cargo.toml)
-if rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepaper|yonhap|wallstreetcn|baidu|iwencai|exchange|nbs|pbc|cfets|fred|imf|worldbank|sec|xinhua|yicai|stcn)-rs' <<<"$router_dependencies"; then
+if sed -n '/^\[dependencies\]/,/^\[/p' crates/magic-market-router/Cargo.toml | \
+  rg -q 'magic-(tdx|tencent|sina|emquant|eastmoney|cninfo|ths|cls|jin10|thepaper|yonhap|wallstreetcn|baidu|iwencai|exchange|nbs|pbc|cfets|fred|imf|worldbank|sec|xinhua|yicai|stcn)-rs'; then
   echo "router production dependencies must remain provider-neutral" >&2
   exit 1
 fi
 # Imported upstream modules retain documented/test-only unwrap examples; runtime
 # hardening is tracked separately from this structural compliance gate.
-for number in $(seq 1 42); do
+for number in {1..44}; do
   printf -v rule_id 'BR-%03d' "$number"
   rg -q "^## $rule_id " docs/business_rules.md || {
     echo "missing registered business rule: $rule_id" >&2

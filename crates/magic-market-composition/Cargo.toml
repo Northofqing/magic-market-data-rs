@@ -9,7 +9,9 @@ description = "Concrete, non-forgeable provider bindings for magic market-data r
 [dependencies]
 magic-eastmoney-rs = { path = "../magic-eastmoney-rs", version = "=0.2.0" }
 magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
+magic-market-monitor = { path = "../magic-market-monitor", version = "=0.2.0" }
 magic-market-router = { path = "../magic-market-router", version = "=0.2.0" }
+magic-tdx-local-rs = { path = "../magic-tdx-local-rs", version = "=0.2.0" }
 thiserror.workspace = true
 time = { version = "=0.3.54", default-features = false, features = ["std"] }
 

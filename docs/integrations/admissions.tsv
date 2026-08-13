@@ -1,18 +1,25 @@
 crate	provider	constant	admitted	evidence	status	last_live_date	live_probe_count	serial_load_count	blocker
 magic-cfets-rs	Cfets	SHIBOR_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-
 magic-cfets-rs	Cfets	LPR_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-
-magic-cfets-rs	Cfets	DR007_ADMITTED	false	docs/integrations/cfets-official.md	blocked	2026-07-29	0	0	No equivalent proven public DR007 history contract
+magic-cfets-rs	Cfets	DR007_ADMITTED	false	docs/integrations/cfets-official.md	blocked	2026-08-13	0	0	Written CFETS CMDS or information-product authorization, endpoint/schema and entitlement evidence are required; the public display feed is not an authorized machine contract
 magic-cfets-rs	Cfets	OFFICIAL_FX_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-
-magic-fred-rs	Fred	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/fred-api.md	blocked		0	0	No configured secret-bearing live admission has been recorded
-magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-07-29	0	0	Official diagnostic remains HTTP 403 without a proven series contract
-magic-nbs-rs	Nbs	NATIONAL_SERIES_ADMITTED	false	docs/integrations/nbs-official.md	blocked	2026-07-29	0	0	No supported machine-readable national series contract was proved
-magic-nbs-rs	Nbs	REGIONAL_SERIES_ADMITTED	false	docs/integrations/nbs-official.md	blocked	2026-07-29	0	0	No supported machine-readable regional series contract was proved
+magic-fred-rs	Fred	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/fred-api.md	admitted	2026-08-13	2	3	-
+magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-08-13	0	0	DataMapper returns HTTP 403; replacement SDMX Swagger requires beta portal login and a documented API contract
+magic-nbs-rs	Nbs	NATIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-
+magic-nbs-rs	Nbs	REGIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-
 magic-pbc-rs	Pbc	MONEY_SUPPLY_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-07-29	2	3	-
-magic-pbc-rs	Pbc	SOCIAL_FINANCING_ADMITTED	false	docs/integrations/pbc-official.md	blocked	2026-07-29	0	0	No cataloged audited social-financing table contract
-magic-pbc-rs	Pbc	REGIONAL_SERIES_ADMITTED	false	docs/integrations/pbc-official.md	blocked	2026-07-29	0	0	Regional series are outside the exact 2024 money-supply catalog
-magic-sec-rs	SecEdgar	FILING_METADATA_ADMITTED	false	docs/integrations/sec-edgar.md	blocked		0	0	No operator-identified live and serial-load admission has been recorded
+magic-pbc-rs	Pbc	SOCIAL_FINANCING_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-
+magic-pbc-rs	Pbc	REGIONAL_SERIES_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-
+magic-sec-rs	SecEdgar	FILING_METADATA_ADMITTED	true	docs/integrations/sec-edgar.md	admitted	2026-08-13	2	3	-
 magic-stcn-rs	SecuritiesTimes	GLOBAL_NEWS_ADMITTED	true	docs/integrations/securities-times.md	admitted	2026-07-29	2	3	-
 magic-wallstreetcn-rs	WallstreetCn	GLOBAL_NEWS_ADMITTED	true	docs/integrations/wallstreetcn-rss.md	admitted	2026-07-29	2	3	-
-magic-worldbank-rs	WorldBank	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/worldbank-indicators.md	blocked	2026-07-29	1	0	Official indicator metadata exposes an empty structured unit
+magic-worldbank-rs	WorldBank	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/worldbank-indicators.md	admitted	2026-08-13	2	3	-
 magic-xinhua-rs	XinhuaFinance	GLOBAL_NEWS_ADMITTED	true	docs/integrations/xinhua-finance.md	admitted	2026-07-29	2	3	-
 magic-yicai-rs	Yicai	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yicai-news.md	admitted	2026-07-29	2	3	-
+magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_PRICE_ADMITTED	false	docs/integrations/tdx-local-terminal.md	blocked	2026-08-13	12	0	Now schema observed through official TQ-Local; source time, calendar, reset and sustained shadow evidence remain unproved
+magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED	false	docs/integrations/tdx-local-terminal.md	blocked	2026-08-13	1	0	Snapshot Amount ten-thousand-CNY unit and exact CNY conversion observed; independent pacing, reset behavior and sustained shadow evidence remain unproved
+magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED	false	docs/integrations/tdx-local-terminal.md	blocked	2026-08-13	12	0	Volume in lots observed through official TQ-Local; reset behavior, session boundaries and sustained shadow evidence remain unproved
+magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_SOURCE_RECORD_COUNT_ADMITTED	false	docs/integrations/tdx-local-terminal.md	blocked	-	0	0	Source record count semantics and bounded official loopback polling evidence unproved
+magic-market-monitor	LocalAnalysis	LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED	false	docs/integrations/tdx-local-terminal.md	blocked	-	0	0	Input source and shadow anomaly evidence are unadmitted
+magic-market-monitor	LocalAnalysis	LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED	false	docs/integrations/tdx-local-terminal.md	blocked	-	0	0	Cumulative amount input and shadow anomaly evidence are unadmitted
+magic-market-monitor	LocalAnalysis	LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED	false	docs/integrations/tdx-local-terminal.md	blocked	-	0	0	Cumulative volume input and shadow anomaly evidence are unadmitted

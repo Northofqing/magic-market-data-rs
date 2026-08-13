@@ -1,0 +1,26 @@
+[package]
+name = "magic-market-monitor-server"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Fail-closed local TDX monitor lifecycle service"
+publish = false
+
+[dependencies]
+magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
+magic-market-monitor = { path = "../magic-market-monitor", version = "=0.2.0" }
+magic-tdx-local-rs = { path = "../magic-tdx-local-rs", version = "=0.2.0" }
+serde = { workspace = true }
+serde_json = "1"
+thiserror = { workspace = true }
+time = { version = "=0.3.54", default-features = false, features = ["formatting", "parsing", "std"] }
+
+[[bin]]
+name = "magic-market-monitor-server"
+path = "src/main.rs"
+test = true
+bench = false
+
+[lints]
+workspace = true

@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod api;
 mod parser;
 mod transport;
 
@@ -16,8 +17,8 @@ use thiserror::Error;
 
 pub use parser::parse_national_monthly_payload;
 
-pub const NATIONAL_SERIES_ADMITTED: bool = false;
-pub const REGIONAL_SERIES_ADMITTED: bool = false;
+pub const NATIONAL_SERIES_ADMITTED: bool = true;
+pub const REGIONAL_SERIES_ADMITTED: bool = true;
 
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
@@ -64,13 +65,14 @@ pub enum NbsError {
 
 #[derive(Clone)]
 pub struct NbsClient {
-    transport: Arc<dyn HttpTransport>,
+    landing_transport: Arc<dyn HttpTransport>,
+    api_transport: Arc<dyn HttpTransport>,
     gate: Arc<RequestGate>,
 }
 
 impl NbsClient {
     pub fn new(timeout: Duration) -> Result<Self, NbsError> {
-        let policy = EndpointPolicy::new(
+        let landing_policy = EndpointPolicy::new(
             "www.stats.gov.cn",
             vec!["/".into()],
             vec![],
@@ -78,12 +80,45 @@ impl NbsClient {
             512 * 1024,
             timeout,
         )?;
-        Self::with_transport(Arc::new(ReqwestTransport::new(policy)?))
+        let api_policy = EndpointPolicy::new(
+            "data.stats.gov.cn",
+            vec![
+                "/dg/website/publicrelease/web/external/new/queryIndexTreeAsync".into(),
+                "/dg/website/publicrelease/web/external/new/queryIndicatorsByCid".into(),
+                "/dg/website/publicrelease/web/external/getDaCatalogTreeByIndicatorCid".into(),
+                "/dg/website/publicrelease/web/external/getDasByDaCatalogId".into(),
+                "/dg/website/publicrelease/web/external/stream/esData".into(),
+            ],
+            vec![
+                "cid".into(),
+                "code".into(),
+                "dt".into(),
+                "daCid".into(),
+                "indicatorCid".into(),
+                "name".into(),
+                "pid".into(),
+            ],
+            vec![MediaType::Json],
+            MAX_RESPONSE_BYTES,
+            timeout,
+        )?;
+        Self::with_transports(
+            Arc::new(ReqwestTransport::new(landing_policy)?),
+            Arc::new(ReqwestTransport::new(api_policy)?),
+        )
     }
 
     pub fn with_transport(transport: Arc<dyn HttpTransport>) -> Result<Self, NbsError> {
+        Self::with_transports(transport.clone(), transport)
+    }
+
+    pub fn with_transports(
+        landing_transport: Arc<dyn HttpTransport>,
+        api_transport: Arc<dyn HttpTransport>,
+    ) -> Result<Self, NbsError> {
         Ok(Self {
-            transport,
+            landing_transport,
+            api_transport,
             gate: Arc::new(RequestGate::new(Duration::from_secs(1))?),
         })
     }
@@ -114,7 +149,7 @@ impl NbsClient {
     }
 
     pub fn probe_public_landing_page(&self) -> Result<usize, NbsError> {
-        transport::probe_landing_page(self.transport.as_ref(), self.gate.as_ref())
+        transport::probe_landing_page(self.landing_transport.as_ref(), self.gate.as_ref())
     }
 }
 
@@ -123,12 +158,18 @@ impl EconomicSeriesProvider for NbsClient {
 
     fn economic_series(
         &self,
-        _request: &EconomicSeriesRequest,
+        request: &EconomicSeriesRequest,
     ) -> Result<DataBatch<EconomicObservation>, Self::Error> {
-        Err(NbsError::Unsupported(
-            "NBS production access is not admitted: the official site exposes no supported machine contract and rejected the audited minimal client"
-                .into(),
-        ))
+        api::validate_admitted_request(request)?;
+        let observed_at = time::OffsetDateTime::now_utc()
+            .format(&time::format_description::well_known::Rfc3339)
+            .map_err(|error| NbsError::Decode(error.to_string()))?;
+        api::fetch_cpi(
+            self.api_transport.as_ref(),
+            self.gate.as_ref(),
+            request,
+            &observed_at,
+        )
     }
 }
 

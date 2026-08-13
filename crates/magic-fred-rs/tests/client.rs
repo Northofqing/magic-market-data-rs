@@ -69,11 +69,8 @@ fn every_key_is_preflighted_before_first_io() {
 }
 
 #[test]
-fn unadmitted_formal_provider_fails_before_io() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let client =
-        FredClient::with_transport("fixture-key", Arc::new(CountingTransport(calls.clone())))
-            .unwrap();
+fn admitted_formal_provider_runs_the_bounded_path() {
+    let client = FredClient::with_transport("fixture-key", Arc::new(FixtureTransport)).unwrap();
     let request = EconomicSeriesRequest::new(
         vec![EconomicSeriesKey::new(ProviderId::Fred, "fred", "GDP").unwrap()],
         EconomicPeriod::quarter(2025, 1).unwrap(),
@@ -81,6 +78,5 @@ fn unadmitted_formal_provider_fails_before_io() {
         PositiveU32::new(4).unwrap(),
     )
     .unwrap();
-    assert!(client.economic_series(&request).is_err());
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(client.economic_series(&request).unwrap().records().len(), 4);
 }

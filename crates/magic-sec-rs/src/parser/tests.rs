@@ -258,18 +258,23 @@ fn empty_older_file_and_malformed_envelopes_fail_explicitly() {
 }
 
 #[test]
-fn filing_accession_must_echo_the_response_company_cik() {
+fn filing_accession_may_bind_a_distinct_login_or_agent_cik() {
     let mut value: Value =
         serde_json::from_slice(include_bytes!("../../tests/fixtures/submissions.json")).unwrap();
     value["filings"]["recent"]["accessionNumber"][0] = Value::String("0000789019-25-000057".into());
-    assert!(parse_parent(
+    let parsed = parse_parent(
         &serde_json::to_vec(&value).unwrap(),
         &company(Some("AAPL")),
         &request(Some("AAPL"), &[], None),
         OBSERVED_AT,
         BATCH_ID,
     )
-    .is_err());
+    .unwrap();
+    assert_eq!(parsed.records[0].company().cik(), "0000320193");
+    assert!(parsed
+        .records
+        .iter()
+        .any(|record| record.accession().as_str() == "0000789019-25-000057"));
 }
 
 #[test]

@@ -1,4 +1,6 @@
-use magic_market_core::{CompanyFilingRequest, PositiveU32, SecCompanyIdentity};
+use magic_market_core::{
+    CompanyFilingRequest, CompanyFilingsProvider, PositiveU32, SecCompanyIdentity,
+};
 use magic_market_transport::{
     EndpointPolicy, HttpRequest, HttpResponse, HttpTransport, MediaType, ReqwestTransport,
     TransportError,
@@ -57,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         PositiveU32::new(1)?,
     )?;
     for _ in 0..3 {
-        client.probe_company_filings(&request)?;
+        client.company_filings(&request)?;
     }
 
     let starts = measured.starts.lock().map_err(|_| "starts lock poisoned")?;

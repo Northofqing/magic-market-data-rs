@@ -2,7 +2,8 @@
 
 ## Capability state
 
-Economic-series admission is false pending configured live evidence.
+Economic-series admission is true for the exact credentialed series contract
+described below.
 
 ## Official host and paths
 
@@ -33,10 +34,12 @@ missing/zero, duplicate keys, non-finite values and all-key preflight.
 
 ## Live and load admission evidence
 
-No secret-bearing live run has been recorded as of 2026-07-29; capability
-remains false. The formal `EconomicSeriesProvider` method therefore returns
-typed `Unsupported` before transport; only the explicitly named
-`probe_economic_series` diagnostic performs bounded I/O.
+On 2026-08-13, two independent credentialed live runs each returned the four
+requested 2025 quarterly `GDP` observations, followed by a three-call serial
+load probe. All metadata/observation, unit, frequency, period, completeness,
+pacing and redaction checks passed. The API key was injected only from a
+Git-ignored local environment file and was not recorded in output or evidence.
+The formal `EconomicSeriesProvider` path is admitted under the same bounds.
 
 ## Explicit unsupported operations
 

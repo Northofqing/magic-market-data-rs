@@ -161,6 +161,77 @@ fn instrument_news_uses_exact_symbol_url_and_complete_evidence() {
 }
 
 #[test]
+fn outer_script_comparisons_are_not_parsed_as_html_tags() {
+    let canonical = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";
+    let mut body = page(
+        "sh600396",
+        1,
+        &[row("2026-07-24 22:35", canonical, "来源标题")],
+        false,
+    );
+    let (needle, _, _) = GB18030.encode("<script>var page_symbol");
+    let position = body
+        .windows(needle.len())
+        .position(|window| window == needle.as_ref())
+        .unwrap();
+    let (replacement, _, had_errors) =
+        GB18030.encode("<script>if (width < wrapWidth) { width += 1; } var page_symbol");
+    assert!(!had_errors);
+    body.splice(
+        position..position + needle.len(),
+        replacement.iter().copied(),
+    );
+    let client = SinaClient::with_transport(FixtureTransport::new(HashMap::from([(
+        url(1),
+        response(body),
+    )])));
+
+    let batch = client.instrument_news(&request(1)).unwrap();
+    assert_eq!(batch.records().len(), 1);
+    assert_eq!(batch.records()[0].canonical_url.as_str(), canonical);
+}
+
+#[test]
+fn script_between_news_rows_does_not_create_an_empty_source_title() {
+    let one = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";
+    let two = "https://finance.sina.com.cn/roll/2026-07-24/doc-two.shtml";
+    let rows = vec![
+        row("2026-07-24 22:35", one, "一"),
+        "<script>if (width < wrapWidth) { width += 1; }</script>".into(),
+        row("2026-07-24 22:34", two, "二"),
+    ];
+    let client = SinaClient::with_transport(FixtureTransport::new(HashMap::from([(
+        url(1),
+        response(page("sh600396", 1, &rows, false)),
+    )])));
+
+    let batch = client.instrument_news(&request(2)).unwrap();
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.records()[0].title.as_str(), "一");
+    assert_eq!(batch.records()[1].title.as_str(), "二");
+}
+
+#[test]
+fn unrelated_link_with_nested_markup_between_rows_is_not_a_news_record() {
+    let one = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";
+    let two = "https://finance.sina.com.cn/roll/2026-07-24/doc-two.shtml";
+    let rows = vec![
+        row("2026-07-24 22:35", one, "一"),
+        "<span><a href='https://cj.sina.cn/articles/view/1/2'><img src='x'></a></span>".into(),
+        row("2026-07-24 22:34", two, "二"),
+    ];
+    let client = SinaClient::with_transport(FixtureTransport::new(HashMap::from([(
+        url(1),
+        response(page("sh600396", 1, &rows, false)),
+    )])));
+
+    let batch = client.instrument_news(&request(2)).unwrap();
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.records()[0].title.as_str(), "一");
+    assert_eq!(batch.records()[1].title.as_str(), "二");
+}
+
+#[test]
 fn shenzhen_request_uses_exact_sz_symbol_identity() {
     let request = InstrumentDateRangeRequest::new(sz(), PositiveU32::new(1).unwrap()).unwrap();
     let expected_url = url_for("sz000001", 1);

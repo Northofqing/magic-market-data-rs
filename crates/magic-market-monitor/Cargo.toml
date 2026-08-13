@@ -1,0 +1,13 @@
+[package]
+name = "magic-market-monitor"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deterministic provider-neutral monitoring kernel for magic market data"
+
+[dependencies]
+magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
+
+[lints]
+workspace = true

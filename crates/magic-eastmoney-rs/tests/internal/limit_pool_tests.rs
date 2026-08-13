@@ -115,9 +115,13 @@ fn br019_source_total_controls_complete_truncated_and_verified_empty_states() {
         br#"{"rc":0,"data":{"tc":0,"qdate":20260723,"pool":[]}}"#,
         &request(LimitPoolKind::Upper),
     )
-    .expect("source-proven empty");
-    assert!(empty.records().is_empty());
-    assert!(empty.quality().is_complete());
+    .expect_err("source-proven empty must use the typed empty contract");
+    let EastmoneyError::VerifiedEmpty(empty) = empty else {
+        panic!("expected typed verified empty")
+    };
+    assert_eq!(empty.family(), "limit_pool");
+    assert_eq!(empty.request_identity(), "Upper:2026-07-23:limit=10");
+    assert_eq!(empty.evidence().source_at(), Some("2026-07-23"));
     assert_eq!(empty.provenance().source_at(), Some("2026-07-23"));
 }
 

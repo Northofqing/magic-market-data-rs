@@ -1,6 +1,7 @@
 use magic_fred_rs::FredClient;
 use magic_market_core::{
-    EconomicPeriod, EconomicSeriesKey, EconomicSeriesRequest, PositiveU32, ProviderId,
+    EconomicPeriod, EconomicSeriesKey, EconomicSeriesProvider, EconomicSeriesRequest, PositiveU32,
+    ProviderId,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         PositiveU32::new(4)?,
     )?;
     for _ in 0..3 {
-        client.probe_economic_series(&request)?;
+        client.economic_series(&request)?;
     }
     println!("FRED serial load probe completed three calls; no credentials printed");
     Ok(())

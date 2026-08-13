@@ -28,13 +28,12 @@ automatic retry occurs.
 
 ## Admission state
 
-`FILING_METADATA_ADMITTED` remains `false`. Normal
-`CompanyFilingsProvider::company_filings` calls therefore return
-`Unsupported`. `probe_company_filings` and the examples exist only for
-deterministic verification and the documented live admission procedure.
+`FILING_METADATA_ADMITTED` is `true` for the bounded metadata-only contract.
+`CompanyFilingsProvider::company_filings` and `probe_company_filings` share the
+same strict implementation.
 
-The live probe must pass twice and the serial load probe must pass before the
-flag may be changed:
+The admission evidence was produced by two live probes and one three-call
+serial load probe:
 
 ```bash
 cargo run -p magic-sec-rs --example live_probe --offline
@@ -42,4 +41,5 @@ cargo run -p magic-sec-rs --example live_probe --offline
 cargo run -p magic-sec-rs --example load_probe --offline
 ```
 
-No live probe was run while implementing this crate.
+The successful identified evidence was recorded on 2026-08-13 without storing
+the operator-supplied User-Agent value.

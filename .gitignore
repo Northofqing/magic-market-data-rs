@@ -1,3 +1,7 @@
 /target
 .worktrees/
 __pycache__/
+/.env.local
+/.DS_Store
+/.claude/
+/.playwright-cli/

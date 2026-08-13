@@ -7,10 +7,9 @@ struct CompleteFixture;
 impl HttpTransport for CompleteFixture {
     fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, TransportError> {
         let mut body = if request.url().contains("/v2/indicator/") {
-            String::from_utf8(include_bytes!("../../tests/fixtures/indicator.json").to_vec())
-                .unwrap()
-                .replace(r#""unit":"""#, r#""unit":"current US$""#)
-                .into_bytes()
+            include_bytes!("../../tests/fixtures/indicator.json").to_vec()
+        } else if request.url().contains("/v2/sources/") {
+            include_bytes!("../../tests/fixtures/series-metadata.json").to_vec()
         } else if request.url().contains("page=2") {
             include_bytes!("../../tests/fixtures/data-page-2.json").to_vec()
         } else {
@@ -47,10 +46,9 @@ struct ExcessivePageFixture;
 impl HttpTransport for ExcessivePageFixture {
     fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, TransportError> {
         let body = if request.url().contains("/v2/indicator/") {
-            String::from_utf8(include_bytes!("../../tests/fixtures/indicator.json").to_vec())
-                .unwrap()
-                .replace(r#""unit":"""#, r#""unit":"current US$""#)
-                .into_bytes()
+            include_bytes!("../../tests/fixtures/indicator.json").to_vec()
+        } else if request.url().contains("/v2/sources/") {
+            include_bytes!("../../tests/fixtures/series-metadata.json").to_vec()
         } else {
             br#"[{"page":1,"pages":101,"per_page":1000,"total":0,"sourceid":"2","lastupdated":"2026-07-01"},[]]"#.to_vec()
         };
@@ -115,6 +113,23 @@ fn transport_preflight_rejects_provider_frequency_and_indicator_count() {
     .unwrap();
     assert!(matches!(
         fetch_series(&NoIo, &gate, &monthly),
+        Err(WorldBankError::Unsupported(_))
+    ));
+
+    let unaudited_source = EconomicSeriesRequest::new(
+        vec![EconomicSeriesKey::new(
+            ProviderId::WorldBank,
+            "source:11/country:USA",
+            "NY.GDP.MKTP.CD",
+        )
+        .unwrap()],
+        EconomicPeriod::year(2024).unwrap(),
+        EconomicPeriod::year(2024).unwrap(),
+        PositiveU32::new(1).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        fetch_series(&NoIo, &gate, &unaudited_source),
         Err(WorldBankError::Unsupported(_))
     ));
 

@@ -1,0 +1,2 @@
+profile_id	status	tdx_exe_version	tdx_exe_sha256	pe_arch	transport	endpoint	method_set	schema_revision	last_live_date	live_probe_count	signature_status	evidence	blocker
+tdx-local-http-20260813	runtime-compatible	1.0.0.1	58bd2117ec86e8c063639f7adae4218011bb93998e3d93dcd286672d1978736b	x86_64	official-tq-local-http	http://127.0.0.1:17709/	get_stock_list,get_pricevol,get_market_snapshot	1	2026-08-13	19	unverified	docs/integrations/tdx-local-terminal.md	-

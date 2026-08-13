@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
-pub const FILING_METADATA_ADMITTED: bool = false;
+pub const FILING_METADATA_ADMITTED: bool = true;
 const REQUEST_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 

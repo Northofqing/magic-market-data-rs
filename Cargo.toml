@@ -31,6 +31,14 @@ members = [
     "crates/magic-gov-rs",
     "crates/magic-yonhap-rs",
     "crates/magic-wallstreetcn-rs",
+    "crates/magic-tdx-local-rs",
+    "crates/magic-tdx-native-bridge",
+    "crates/magic-market-monitor",
+    "crates/magic-market-monitor-server",
+    "crates/magic-market-grpc-contracts",
+    "crates/magic-market-service",
+    "crates/magic-market-grpc-server",
+    "crates/magic-market-tdx-agent",
 ]
 resolver = "2"
 [workspace.package]
@@ -38,6 +46,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Northofqing/magic-market-data-rs"
 [workspace.dependencies]
+calamine = { version = "0.36.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 [workspace.lints.rust]

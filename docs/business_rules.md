@@ -484,3 +484,79 @@ Xinhua Finance, Yicai and Securities Times records retain only first-party
 title, ID, link, publisher, publication-time and topic metadata. Bodies,
 descriptions, images, login state, cookies and inferred instruments are
 prohibited.
+
+## BR-043 TDX local-terminal observation admission
+
+The optional local-terminal source is a separately authorized read-only path
+and uses the existing `ProviderId::LocalTerminal`. It never impersonates
+`ProviderId::Tdx`, changes an existing Router route, or starts from a library
+constructor/default feature. Production discovery accepts exactly one running
+TDX executable in the current Windows user/session. Its executable identity is
+recorded as provenance; a bounded request to the fixed official loopback origin
+then validates the implemented response schema. Missing, ambiguous,
+architecture-incompatible, endpoint-unavailable or schema-incompatible clients
+start no poller and expose no event listener. An updated executable hash is not
+by itself a configuration error when the same fixed read schema still passes.
+
+Every terminal data family is false by default. Admission independently proves
+instrument identity, fields, units, source time where present, local observation
+time, sequence semantics, entitlement, bounded resource behavior and reconnect
+or reset rules. Local time never becomes provider source time; poll sequence
+never becomes provider completeness. Rust obtains TQ data only through the
+vendor-documented loopback HTTP endpoint at exact origin
+`http://127.0.0.1:17709/`. The client disables proxies and redirects, accepts
+no alternate host, port or path, sends only an explicit read-only method
+allowlist, and enforces injected positive connect/read/write timeouts plus
+request/response bounds. It neither loads nor calls vendor DLLs and never falls
+back to Python. Endpoint availability alone does not admit a data family:
+response schema, field identity, units, source time, latency, resource cost,
+terminal-exit behavior and bounded live evidence must pass independently. The
+source tree must not send account, cash, position, order, cancel or execution
+methods, preserving BR-035.
+
+For the explicit `EQUITY` monitoring watchlist, a six-digit code and exchange
+label are request data, not source identity evidence. Before a new terminal
+generation emits any market observation, the fixed loopback client reads the
+vendor all-A-share universe with the exact read-only `get_stock_list` request
+and validates a non-empty, bounded, duplicate-free canonical identity list.
+Every watchlist member must be an exact member; a missing/malformed identity or
+universe failure prevents polling. This validation is repeated after terminal
+replacement and cannot promote a data-family admission.
+
+## BR-044 Local anomaly evidence and continuity
+
+Local anomaly events use `ProviderId::LocalAnalysis` and bind the exact admitted
+`LocalTerminal` inputs, rule identity/version, time basis, instrument, stream
+generation and checked sequence used to derive them. Reconnect, terminal exit,
+rollback, overrun, date/session reset, rule revision or unproved ordering resets
+affected windows and reports an explicit continuity state; none becomes a
+successful empty observation. Replay is bounded, same-generation and
+best-effort. Unavailable replay and slow-consumer loss are explicit. Replay
+delivery time does not change event identity and replay must not be described as
+at-least-once. Replay sizes, restart policy, watchlist bounds and throughput
+defaults are selected only from shadow evidence, never from proposal values.
+
+## BR-045 Versioned external gRPC boundary
+
+The primary external protocol is versioned gRPC over HTTP/2 in a binary-only
+leaf service. Core, Router and Provider crates remain transport-neutral and do
+not depend on Protobuf or gRPC. Every read family has a closed operation identity
+and a bounded request/response contract; callers cannot inject provider clients,
+URLs, proxies, TLS policy, executable paths or arbitrary methods. Repository
+admission and runtime availability are evaluated independently before Provider
+I/O, and an RPC can never promote an unadmitted capability.
+
+Blocking Providers execute behind an explicitly bounded blocking-worker gate,
+not on a gRPC/Tokio worker. Every successful response preserves provider, batch,
+completeness, source evidence, units, source time when supplied and local
+observation time. Failures retain a typed safe reason and never become a
+successful empty response. Non-loopback bind requires explicit remote enablement,
+TLS and authentication; secrets are absent from payloads, errors and logs.
+
+TDX observations are read only on the TDX host from the fixed official loopback
+origin. A same-user Windows agent connects outward to the gRPC service and never
+exposes port 17709. Price/amount/volume anomaly delivery is an ordered,
+generation-bound server stream with bounded best-effort replay. Gap, rollback,
+slow consumer, reconnect and unavailable replay are explicit; transport success
+does not change the LocalTerminal or LocalAnalysis admission rows. The schema has
+no account, cash, position, order, cancel or execution service.

@@ -38,7 +38,8 @@ fn provider_fetches_only_submissions_metadata_and_never_archive_documents() {
         PositiveU32::new(2).unwrap(),
     )
     .unwrap();
-    let batch = client.probe_company_filings(&request).unwrap();
+    let batch =
+        magic_market_core::CompanyFilingsProvider::company_filings(&client, &request).unwrap();
     let requests = transport.requests.lock().unwrap();
     assert!(!requests.is_empty());
     assert!(requests

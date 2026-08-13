@@ -128,7 +128,7 @@ impl<'de> Deserialize<'de> for SecAccessionNumber {
     }
 }
 
-/// One path-safe SEC primary-document filename.
+/// One path-safe SEC primary-document relative path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct SecPrimaryDocument(String);
@@ -136,23 +136,21 @@ pub struct SecPrimaryDocument(String);
 impl SecPrimaryDocument {
     pub fn new(value: impl Into<String>) -> Result<Self, CoreError> {
         let value = value.into();
-        let lower = value.to_ascii_lowercase();
-        let has_allowed_extension = [".htm", ".html", ".txt", ".xml"]
-            .iter()
-            .any(|extension| lower.ends_with(extension));
         let has_only_safe_ascii = value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'));
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'));
+        let has_only_safe_segments = value.split('/').all(|segment| {
+            !segment.is_empty() && !matches!(segment, "." | "..") && segment.len() <= 255
+        });
         if value.is_empty()
-            || value == "."
-            || value == ".."
+            || value.len() > 1_024
             || !has_only_safe_ascii
-            || !has_allowed_extension
+            || !has_only_safe_segments
         {
             return Err(CoreError::InvalidValue {
                 field: "sec_primary_document",
                 value,
-                reason: "must be one safe SEC document path segment",
+                reason: "must be a bounded safe SEC relative document path",
             });
         }
         Ok(Self(value))

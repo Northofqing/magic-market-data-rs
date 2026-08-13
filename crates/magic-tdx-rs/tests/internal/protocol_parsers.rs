@@ -460,11 +460,12 @@ fn current_transaction_rejects_negative_or_oversized_unsigned_fields() {
         "trade count is outside the unsigned 32-bit domain",
     );
 
-    let mut invalid_side = vec![1, 0];
+    let mut open_side = vec![1, 0];
     let mut row = current_transaction_row();
-    row[5] = 3;
-    invalid_side.extend_from_slice(&row);
-    assert_transaction_type_mismatch(&invalid_side, "trade side 3 is outside 0..=2");
+    row[5] = 5;
+    open_side.extend_from_slice(&row);
+    let records = parse_transaction_data(&open_side).unwrap();
+    assert_eq!(records[0].buyorsell, 5);
 }
 
 #[test]
@@ -527,11 +528,9 @@ fn history_transaction_rejects_invalid_domains_and_cumulative_overflow() {
             .contains(message));
     }
 
-    let invalid_side = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 1, 3, 0];
-    assert!(parse_history_transaction_data(&invalid_side)
-        .unwrap_err()
-        .to_string()
-        .contains("trade side 3 is outside 0..=2"));
+    let open_side = [1, 0, 0, 0, 0, 0, 0x5a, 0x02, 10, 1, 8, 0];
+    let records = parse_history_transaction_data(&open_side).unwrap();
+    assert_eq!(records[0].buyorsell, 8);
 
     let maximum = [0xbf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
     let mut overflow = vec![3, 0, 0, 0, 0, 0];

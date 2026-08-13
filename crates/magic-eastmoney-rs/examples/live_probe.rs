@@ -355,7 +355,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         LimitPoolKind::PreviousUpper,
     ] {
         let request = complete_limit_pool_request(kind, pool_date.clone())?;
-        probe_batch(
+        probe_limit_pool(
             &format!("limit_pool.{kind:?}"),
             client.limit_pool(&request),
             &source_policy,
@@ -394,6 +394,32 @@ fn main() -> Result<(), Box<dyn Error>> {
         client.instrument_news(&news_request),
     );
     print_summary(&failures)
+}
+
+fn probe_limit_pool(
+    label: &str,
+    result: Result<DataBatch<magic_market_core::LimitPoolEntry>, EastmoneyError>,
+    policy: &ProbeAdmissionPolicy,
+    evidence_of: impl Fn(&magic_market_core::LimitPoolEntry) -> &SourceEvidence,
+    identity_of: impl Fn(&magic_market_core::LimitPoolEntry) -> String,
+    failures: &mut Vec<String>,
+) {
+    match result {
+        Err(EastmoneyError::VerifiedEmpty(empty)) => match verify_verified_empty(&empty, policy) {
+            Ok(status) => {
+                println!("family={label} status={status}");
+                println!("request_identity={}", empty.request_identity());
+                println!("reason={}", empty.reason());
+            }
+            Err(error) => {
+                let failure = format!("{label}: verified-empty admission rejected: {error}");
+                println!("family={label} status={}", ProbeStatus::Failed);
+                println!("error={error}");
+                failures.push(failure);
+            }
+        },
+        other => probe_batch(label, other, policy, evidence_of, identity_of, failures),
+    }
 }
 
 fn print_summary(failures: &[String]) -> Result<(), Box<dyn Error>> {

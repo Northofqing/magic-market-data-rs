@@ -19,7 +19,11 @@ const BASE_URL: &str = "https://api.worldbank.org/v2";
 pub(crate) fn policy() -> Result<EndpointPolicy, magic_market_transport::TransportError> {
     EndpointPolicy::new(
         "api.worldbank.org",
-        vec!["/v2/indicator".into(), "/v2/country".into()],
+        vec![
+            "/v2/indicator".into(),
+            "/v2/country".into(),
+            "/v2/sources/2/series".into(),
+        ],
         vec![
             "format".into(),
             "date".into(),
@@ -52,6 +56,14 @@ pub(crate) fn fetch_series(
         }
         namespaces.push(crate::parse_world_bank_namespace(key.namespace())?);
     }
+    if namespaces
+        .iter()
+        .any(|namespace| namespace.source_id() != "2")
+    {
+        return Err(WorldBankError::Unsupported(
+            "only World Development Indicators source 2 has an audited metadata contract".into(),
+        ));
+    }
     if request.start().frequency() != EconomicFrequency::Annual {
         return Err(WorldBankError::Unsupported(
             "World Bank production path supports annual periods".into(),
@@ -80,11 +92,17 @@ pub(crate) fn fetch_series(
             namespace.source_id()
         );
         let indicator = execute(transport, gate, &indicator_url)?;
-        // The strict parser checks the structured unit before consuming pages.
-        // Use an empty page list to surface the audited missing-unit error
-        // without issuing unnecessary data requests.
-        match crate::parse_world_bank_responses(
+        let metadata_url = format!(
+            "{BASE_URL}/sources/{}/series/{}/metadata?format=json",
+            namespace.source_id(),
+            key.code()
+        );
+        let series_metadata = execute(transport, gate, &metadata_url)?;
+        // Validate identity, official unit and annual frequency before issuing
+        // any data-page request.
+        match crate::parse_world_bank_responses_with_metadata(
             &indicator,
+            &series_metadata,
             &[],
             &WorldBankParseContext {
                 key,
@@ -94,11 +112,6 @@ pub(crate) fn fetch_series(
                 batch_id: &batch_id,
             },
         ) {
-            Err(WorldBankError::Protocol(message))
-                if message.contains("structured indicator unit is empty") =>
-            {
-                return Err(WorldBankError::Protocol(message));
-            }
             Err(WorldBankError::Protocol(message))
                 if message == "World Bank response contains no data pages" => {}
             Err(error) => return Err(error),
@@ -139,8 +152,9 @@ pub(crate) fn fetch_series(
             )?);
         }
         let refs = bodies.iter().map(Vec::as_slice).collect::<Vec<_>>();
-        let parsed = crate::parse_world_bank_responses(
+        let parsed = crate::parse_world_bank_responses_with_metadata(
             &indicator,
+            &series_metadata,
             &refs,
             &WorldBankParseContext {
                 key,

@@ -198,8 +198,12 @@ fn parse_global_news_row(row: &str) -> Result<ParsedGlobalNews, EastmoneyError> 
             "Eastmoney news timestamp contains nested markup".into(),
         ));
     }
-    let published_at = collapse_whitespace(published_markup);
-    validate_minute_timestamp(&published_at, "Eastmoney news published_at")?;
+    let source_minute = collapse_whitespace(published_markup);
+    validate_minute_timestamp(&source_minute, "Eastmoney news published_at")?;
+    // The official page reports an Asia/Shanghai wall clock to minute
+    // resolution. Normalize that source value to an unambiguous instant while
+    // preserving its actual resolution as zero seconds.
+    let published_at = format!("{}:00+08:00", source_minute.replace(' ', "T"));
 
     let article = remainder
         .trim_start()

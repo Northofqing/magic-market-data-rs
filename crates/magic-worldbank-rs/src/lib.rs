@@ -4,8 +4,8 @@ mod parser;
 mod transport;
 
 pub use parser::{
-    parse_world_bank_namespace, parse_world_bank_responses, WorldBankNamespace,
-    WorldBankParseContext,
+    parse_world_bank_namespace, parse_world_bank_responses,
+    parse_world_bank_responses_with_metadata, WorldBankNamespace, WorldBankParseContext,
 };
 
 use magic_market_core::{
@@ -18,7 +18,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
-pub const ECONOMIC_SERIES_ADMITTED: bool = false;
+/// Admission is deliberately limited to the exact contract checked by
+/// `validate_admitted_request`; it is not a catalog-wide claim.
+pub const ECONOMIC_SERIES_ADMITTED: bool = true;
 
 #[derive(Debug, Error)]
 pub enum WorldBankError {
@@ -92,12 +94,38 @@ impl EconomicSeriesProvider for WorldBankClient {
 
     fn economic_series(
         &self,
-        _request: &EconomicSeriesRequest,
+        request: &EconomicSeriesRequest,
     ) -> Result<DataBatch<EconomicObservation>, Self::Error> {
-        Err(WorldBankError::Unsupported(
-            "structured indicator units are empty under the mandatory-unit contract".into(),
-        ))
+        validate_admitted_request(request)?;
+        self.probe_economic_series(request)
     }
+}
+
+fn validate_admitted_request(request: &EconomicSeriesRequest) -> Result<(), WorldBankError> {
+    if !ECONOMIC_SERIES_ADMITTED {
+        return Err(WorldBankError::Unsupported(
+            "World Bank production access has not passed live admission".into(),
+        ));
+    }
+    if request.series().len() != 1 {
+        return Err(WorldBankError::Unsupported(
+            "admitted World Bank scope accepts exactly one series".into(),
+        ));
+    }
+    let key = &request.series()[0];
+    if key.provider() != ProviderId::WorldBank
+        || key.namespace() != "source:2/country:USA"
+        || key.code() != "NY.GDP.MKTP.CD"
+        || request.start().as_year() != Some(2024)
+        || request.end().as_year() != Some(2024)
+        || request.max_rows().get() != 1
+    {
+        return Err(WorldBankError::Unsupported(
+            "admitted World Bank scope is exactly source:2/country:USA NY.GDP.MKTP.CD annual 2024 max_rows=1"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

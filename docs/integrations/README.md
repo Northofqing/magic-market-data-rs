@@ -29,7 +29,20 @@ silently diverge.
   synchronous HTTP providers from Tokio without blocking executor workers.
 - [`http-transports.tsv`](http-transports.tsv) records the reviewed production
   HTTP dependency boundary and is checked against tracked Cargo manifests.
+- [`tdx-local-terminal.md`](tdx-local-terminal.md) records automatic TDX process
+  discovery, the fixed official TQ-Local HTTP transport and the zero-Python/DLL
+  decision.
+- [`tdx-local-terminal-compatibility.tsv`](tdx-local-terminal-compatibility.tsv)
+  is the version/schema evidence inventory; executable identity is provenance
+  and the bounded loopback health probe decides runtime compatibility.
 
 The HTTP transport registry is an architecture-control inventory. It does not
 grant provider admission; `admissions.tsv` remains the BR-009 capability
 evidence index.
+
+The local-terminal compatibility and native-boundary checks are also offline:
+
+```bash
+python3 tools/compliance/check_tdx_local_compatibility.py
+python3 tools/compliance/check_tdx_native_boundary.py
+```

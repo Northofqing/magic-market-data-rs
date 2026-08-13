@@ -1,6 +1,7 @@
 use magic_market_core::{EconomicObservationStatus, EconomicSeriesKey, ProviderId};
 use magic_worldbank_rs::{
-    parse_world_bank_namespace, parse_world_bank_responses, WorldBankError, WorldBankParseContext,
+    parse_world_bank_namespace, parse_world_bank_responses,
+    parse_world_bank_responses_with_metadata, WorldBankError, WorldBankParseContext,
 };
 
 fn context<'a>(key: &'a EconomicSeriesKey) -> WorldBankParseContext<'a> {
@@ -98,6 +99,61 @@ fn validates_all_pages_missing_zero_and_source_identity() {
     assert_eq!(batch.records()[2].region_code(), Some("USA"));
     assert_eq!(batch.records()[2].region_name(), Some("United States"));
     assert_eq!(batch.records()[2].revision(), None);
+}
+
+#[test]
+fn official_series_metadata_proves_unit_and_frequency_without_name_inference() {
+    let key = EconomicSeriesKey::new(
+        ProviderId::WorldBank,
+        "source:2/country:USA",
+        "NY.GDP.MKTP.CD",
+    )
+    .unwrap();
+    let batch = parse_world_bank_responses_with_metadata(
+        include_bytes!("fixtures/indicator.json"),
+        include_bytes!("fixtures/series-metadata.json"),
+        &[
+            include_bytes!("fixtures/data-page-1.json"),
+            include_bytes!("fixtures/data-page-2.json"),
+        ],
+        &context(&key),
+    )
+    .unwrap();
+    assert_eq!(batch.records().len(), 3);
+    assert!(batch
+        .records()
+        .iter()
+        .all(|record| record.unit() == "current US$"));
+}
+
+#[test]
+fn series_metadata_identity_unit_frequency_and_duplicates_fail_closed() {
+    let key = EconomicSeriesKey::new(
+        ProviderId::WorldBank,
+        "source:2/country:USA",
+        "NY.GDP.MKTP.CD",
+    )
+    .unwrap();
+    let fixture = include_str!("fixtures/series-metadata.json");
+    for mutated in [
+        fixture.replace("\"id\":\"2\"", "\"id\":\"3\""),
+        fixture.replace("\"value\":\"current US$\"", "\"value\":\"\""),
+        fixture.replace("\"value\":\"Annual\"", "\"value\":\"Quarterly\""),
+        fixture.replace(
+            "\"id\":\"Periodicity\",\"value\":\"Annual\"",
+            "\"id\":\"Unitofmeasure\",\"value\":\"Annual\"",
+        ),
+    ] {
+        assert!(matches!(
+            parse_world_bank_responses_with_metadata(
+                include_bytes!("fixtures/indicator.json"),
+                mutated.as_bytes(),
+                &[],
+                &context(&key),
+            ),
+            Err(WorldBankError::Protocol(_))
+        ));
+    }
 }
 
 #[test]

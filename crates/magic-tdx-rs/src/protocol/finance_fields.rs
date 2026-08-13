@@ -11,6 +11,8 @@
 
 use std::collections::HashMap;
 
+use crate::error::{Result, TdxError};
+
 /// 单个指标定义: (gpcw 1-based index, 英文名, 中文名)
 type FieldDef = (usize, &'static str, &'static str);
 
@@ -99,24 +101,23 @@ const BANK_ZERO_FIELDS: &[(&str, &str)] = &[
 /// `fields`: `FinancialRecord.fields` (584 个 f32, 0-based 索引)
 ///
 /// 返回: `HashMap<&str, f64>` — 英文名 → TDX 原始值
-pub fn extract_indicators(fields: &[f32]) -> HashMap<&'static str, f64> {
+pub fn extract_indicators(fields: &[f32]) -> Result<HashMap<&'static str, f64>> {
+    require_fields_len(fields.len())?;
     let mut map = HashMap::with_capacity(INDICATORS.len());
     for &(idx, en_name, _zh_name) in INDICATORS {
-        let val = fields.get(idx - 1).copied().unwrap_or(0.0);
+        let val = fields[idx - 1];
         map.insert(en_name, val as f64);
     }
-    map
+    Ok(map)
 }
 
 /// 提取指标并附带中文名 (适合调试/展示)
-pub fn extract_with_labels(fields: &[f32]) -> Vec<(&'static str, &'static str, f64)> {
-    INDICATORS
+pub fn extract_with_labels(fields: &[f32]) -> Result<Vec<(&'static str, &'static str, f64)>> {
+    require_fields_len(fields.len())?;
+    Ok(INDICATORS
         .iter()
-        .map(|&(idx, en, zh)| {
-            let val = fields.get(idx - 1).copied().unwrap_or(0.0);
-            (en, zh, val as f64)
-        })
-        .collect()
+        .map(|&(idx, en, zh)| (en, zh, fields[idx - 1] as f64))
+        .collect())
 }
 
 /// 返回完整字段定义表 (用于生成文档或校验)
@@ -128,6 +129,17 @@ pub fn field_definitions() -> &'static [FieldDef] {
 pub fn validate_fields_len(fields_len: usize) -> bool {
     let max_idx = INDICATORS.iter().map(|f| f.0).max().unwrap_or(0);
     fields_len >= max_idx
+}
+
+fn require_fields_len(fields_len: usize) -> Result<()> {
+    if validate_fields_len(fields_len) {
+        Ok(())
+    } else {
+        Err(TdxError::InvalidData(format!(
+            "financial indicator fields are incomplete: received {fields_len}, require at least {}",
+            INDICATORS.iter().map(|field| field.0).max().unwrap_or(0)
+        )))
+    }
 }
 
 #[cfg(test)]

@@ -17,6 +17,7 @@ mod lifecycle;
 mod limit_pool;
 mod macro_data;
 mod market_announcements;
+mod market_event;
 mod options;
 mod policy;
 mod probe;
@@ -85,6 +86,13 @@ pub use macro_data::{
     EconomicSeriesProvider, EconomicSeriesRequest,
 };
 pub use market_announcements::{MarketAnnouncementRequest, MarketAnnouncements};
+pub use market_event::{
+    AnomalyEvent, AnomalyInputDigest, AnomalyInputEvidence, AnomalyRuleDigest, AnomalyRuleIdentity,
+    AnomalyTransition, ContinuityState, LocalAnalysisEventEvidence,
+    LocalTerminalObservationEvidence, MarketEvent, MarketEventId, ObservationTimeBasis,
+    RuleInputDigest, SourceStatusEvent, SourceStatusKind, StreamContinuity, StreamCursor,
+    StreamGeneration, StreamSequence,
+};
 pub use options::{
     ContractMonth, OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind,
     OptionQuote,

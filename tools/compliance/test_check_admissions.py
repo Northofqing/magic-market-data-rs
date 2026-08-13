@@ -137,6 +137,26 @@ class AdmissionCheckerTests(unittest.TestCase):
         )
         self.assertIn("evidence document is not Git-tracked", "\n".join(self.errors(track=False)))
 
+    def test_generated_target_sources_are_outside_admission_discovery(self) -> None:
+        self.source()
+        self.write_rows(self.row())
+        generated = self.root / "crates/provider/target/debug/build/out"
+        generated.mkdir(parents=True)
+        (generated / "generated.rs").write_text(
+            "pub const GENERATED_ADMITTED: bool = true;\n", encoding="utf-8"
+        )
+        self.assertEqual(self.errors(), [])
+
+    def test_source_directory_named_target_is_still_discovered(self) -> None:
+        self.source()
+        self.write_rows(self.row())
+        nested = self.root / "crates/provider/src/target"
+        nested.mkdir(parents=True)
+        (nested / "source.rs").write_text(
+            "pub const NESTED_ADMITTED: bool = false;\n", encoding="utf-8"
+        )
+        self.assertIn("NESTED_ADMITTED", "\n".join(self.errors()))
+
     def test_symlinked_evidence_is_rejected_even_when_tracked(self) -> None:
         self.source()
         outside = self.root / "outside.md"

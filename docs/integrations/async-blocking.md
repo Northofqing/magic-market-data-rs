@@ -44,3 +44,9 @@ socket 调用仍会运行到完成或超时。必须给客户端配置有界连�
 常驻服务还应在外层用 `Semaphore`、有界工作队列或服务级并发限制约束
 `spawn_blocking` 数量；不要把 Tokio 的 blocking 线程池当作 Provider 限频器。业务
 服务继续负责熔断、缓存、持久化和指标，本仓库保留 typed failure 与 provenance。
+
+TDX 本地终端使用厂商正式记录的 `http://127.0.0.1:17709/` TQ-Local
+同步接口。采集 peer 仍是单独的受监督 Rust 进程，异步服务通过有界 stdio
+协议读取它的观察结果；不得在 Tokio worker 中直接执行同步 loopback HTTP
+请求。采集端严格单飞、禁代理和跳转，并设置有界连接/读/写超时及 body 上限。
+任何进程都不加载或调用厂商 DLL，也不回退到 Python。

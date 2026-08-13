@@ -1,0 +1,3 @@
+crate	role	protocol	default_bind	remote_bind	tls	auth	bounds	service_set	status	reason
+magic-market-grpc-server	inbound	grpc-h2	127.0.0.1	explicit-only	required-remote-mtls	required	operator-injected-positive	SystemService,MarketDataService,MarketEventService,TdxAgentService	foundation	Primary versioned external read-only API; unary provider composition remains fail-closed and TDX events remain unadmitted
+magic-market-tdx-agent	outbound	grpc-h2	-	configured-origin	required-remote-mtls	required	operator-injected-positive	TdxAgentService	diagnostic	Windows same-user TDX monitor relay; no inbound listener and no vendor loopback exposure

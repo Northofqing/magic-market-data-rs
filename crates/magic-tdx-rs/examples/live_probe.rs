@@ -1379,39 +1379,94 @@ fn main() {
                         match finance.get_financial_data(&file.filename, file.filesize) {
                             Ok(records) => {
                                 println!(
-                                    "financial_records file={} count={}",
+                                    "latest_financial_records file={} count={}",
                                     file.filename,
                                     records.len()
                                 );
-                                require_nonempty(&mut errors, "financial_records", records.len());
-                                match records.iter().find(|record| record.code == "600396") {
-                                    Some(record) => {
-                                        let indicators = magic_tdx_rs::protocol::finance_fields::extract_indicators(
-                                            &record.fields
-                                        );
-                                        println!("finance_indicators={}", indicators.len());
-                                        require_count(
-                                            &mut errors,
-                                            "finance_indicators",
-                                            indicators.len(),
-                                            45,
-                                        );
-                                    }
-                                    None => record_error(
+                                require_nonempty(
+                                    &mut errors,
+                                    "latest_financial_records",
+                                    records.len(),
+                                );
+                                if let Some(record) = records.iter().find(|record| {
+                                    !magic_tdx_rs::protocol::finance_fields::validate_fields_len(
+                                        record.fields.len(),
+                                    )
+                                }) {
+                                    record_error(
                                         &mut errors,
-                                        "finance_indicators",
-                                        "600396 missing",
-                                    ),
+                                        "latest_financial_records",
+                                        format!(
+                                            "{} has only {} financial fields",
+                                            record.code,
+                                            record.fields.len()
+                                        ),
+                                    );
                                 }
                             }
-                            Err(error) => record_error(&mut errors, "finance_indicators", error),
+                            Err(error) => {
+                                record_error(&mut errors, "latest_financial_records", error)
+                            }
                         }
                     } else {
                         record_error(
                             &mut errors,
-                            "financial_records",
-                            "no financial file met the minimum validated size",
+                            "latest_financial_records",
+                            "no financial file met the minimum diagnostic size",
                         );
+                    }
+
+                    match files
+                        .iter()
+                        .find(|file| file.filename == "gpcw20260331.zip")
+                    {
+                        Some(file) => match finance
+                            .get_financial_data(&file.filename, file.filesize)
+                        {
+                            Ok(records) => {
+                                println!(
+                                    "financial_indicator_fixture file={} count={}",
+                                    file.filename,
+                                    records.len()
+                                );
+                                match records.iter().find(|record| record.code == "600396") {
+                                    Some(record) => {
+                                        match magic_tdx_rs::protocol::finance_fields::extract_indicators(
+                                            &record.fields,
+                                        ) {
+                                            Ok(indicators) => {
+                                                println!(
+                                                    "finance_indicators={}",
+                                                    indicators.len()
+                                                );
+                                                require_count(
+                                                    &mut errors,
+                                                    "finance_indicators",
+                                                    indicators.len(),
+                                                    45,
+                                                );
+                                            }
+                                            Err(error) => record_error(
+                                                &mut errors,
+                                                "finance_indicators",
+                                                error,
+                                            ),
+                                        }
+                                    }
+                                    None => record_error(
+                                        &mut errors,
+                                        "finance_indicators",
+                                        "600396 missing from gpcw20260331.zip",
+                                    ),
+                                }
+                            }
+                            Err(error) => record_error(&mut errors, "finance_indicators", error),
+                        },
+                        None => record_error(
+                            &mut errors,
+                            "finance_indicators",
+                            "gpcw20260331.zip missing from the provider manifest",
+                        ),
                     }
                 }
                 Err(error) => record_error(&mut errors, "financial_files", error),

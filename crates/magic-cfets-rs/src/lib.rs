@@ -217,7 +217,8 @@ fn validate_rate_request(request: &ReferenceRateRequest) -> Result<RateFamily, C
             ReferenceRateKind::LoanPrimeRate(_) => RateFamily::Lpr,
             ReferenceRateKind::Dr007 => {
                 return Err(CfetsError::Unsupported(
-                    "CFETS DR007 history has no separately proven public contract".into(),
+                    "CFETS DR007 requires a separately authorized official data contract; public website files are not an authorized machine-data API"
+                        .into(),
                 ));
             }
             ReferenceRateKind::SourceDefined(_) => {

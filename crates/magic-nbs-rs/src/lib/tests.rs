@@ -47,5 +47,5 @@ fn both_diagnostic_parse_entry_points_share_the_strict_contract() {
     assert!(client
         .probe_national_diagnostic(&diagnostic, "observed")
         .is_err());
-    assert!(!NbsClient::economic_data_capabilities().economic_series);
+    assert!(NbsClient::economic_data_capabilities().economic_series);
 }

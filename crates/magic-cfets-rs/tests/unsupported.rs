@@ -26,10 +26,16 @@ fn dr007_is_explicitly_unsupported_before_io() {
     )
     .unwrap();
     let client = CfetsClient::with_transport(Arc::new(NoIo)).unwrap();
-    assert!(matches!(
+    for result in [
         client.reference_rates(&request),
-        Err(CfetsError::Unsupported(_))
-    ));
+        client.probe_reference_rates(&request),
+    ] {
+        let Err(CfetsError::Unsupported(message)) = result else {
+            panic!("DR007 must remain typed unsupported before I/O");
+        };
+        assert!(message.contains("separately authorized official data contract"));
+        assert!(message.contains("not an authorized machine-data API"));
+    }
 }
 
 fn shibor_request(provider: ProviderId) -> ReferenceRateRequest {

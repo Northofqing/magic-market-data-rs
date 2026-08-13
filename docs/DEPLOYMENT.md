@@ -2,9 +2,20 @@
 
 ## 交付物定位
 
-本仓库是 Rust 库工作区，同时提供严格的只读诊断程序；它不是常驻行情守护进程，
-也不包含数据库、HTTP 服务或下单功能。生产应用应依赖对应 crate，在自己的服务层
-实现限频、缓存、熔断、持久化和授权控制。仓库可打包的二进制用于部署前验证：
+本仓库是 library-first 的 Rust 工作区，同时提供严格的只读诊断程序。现有发布物不
+包含数据库、下单功能或默认启动的常驻行情守护进程。路线 B 已实现一个可选、
+默认关闭、由操作员单独启动的 Windows 本地终端诊断叶子服务；它不会由 library
+构造器、默认 feature 或现有 Provider/Router 路径启动，也没有入站 HTTP/WebSocket。
+Windows 发布包成对安装该 server 和 discovery helper，但这只提供诊断可用性；在
+交易日历、有界实机/shadow 证据和逐 family Gate C/D 完成前，所有 admission 仍为
+`false`。生产应用仍可依赖对应 crate，在自己的服务层实现
+限频、缓存、熔断、持久化和授权控制。仓库当前可打包的二进制用于部署前验证：
+
+`magic-tdx-native-bridge` 是 `publish=false` 的短命 Windows 发现二进制。Windows
+诊断包将它与 `magic-market-monitor-server.exe` 安装到同一目录；非 Windows 包不构建
+这两个文件。helper 只有 `--discover` 可用，`--probe`/`--serve` 均显式失败。它只
+发现当前用户/会话的 `TdxW.exe`，行情由 safe Rust 通过官方固定 TQ-Local loopback
+HTTP 获取。两个制品都属于 `diagnostic/admitted=false`，不是生产能力声明。
 
 - `magic-tdx-live-probe`：TDX 全能力真实探针；
 - `magic-emquant-live-probe`：官方 EMQuant SDK 探针；
@@ -39,6 +50,10 @@
   单响应页 Top-N 探针；同日仅可在 15:35 后运行，后续休市日仅在全部 `f297`
   严格等于所选已结算交易日时准入；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
+- `magic-market-monitor-server.exe`（仅 Windows）：显式参数的本地 TDX 诊断叶子服务；
+- `magic-tdx-native-bridge.exe`（仅 Windows）：与 server 同目录的短命发现 helper。
+- `magic-market-grpc-server[.exe]`：跨平台认证只读 gRPC 服务；远程绑定必须 mTLS；
+- `magic-market-tdx-agent.exe`（仅 Windows）：监督本地 monitor 并出站连接 gRPC。
 
 ## 可重复构建
 
@@ -56,13 +71,18 @@ bash tools/release/package.sh
 预检先打印当前工具链版本，再在每次新建的隔离 target 目录中，以离线模式运行格式、
 全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
 空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
-构建四十九个 release 探针，复制为不冲突的文件名，并生成 SHA-256 清单。这里描述
+构建 release 探针和跨平台 gRPC server；在 Windows host 上还构建并同目录安装三个
+本地 TDX 诊断二进制。所有文件使用不冲突的名称并进入 SHA-256 清单。这里描述
 可重复流程，不自动证明任意未来工作树已经通过 release gate；当前合并版本的实际
 门禁和覆盖率证据记录在根目录 README 的“当前验收状态”：
 
 ```text
 target/dist/GIT_SHA/
 ├── bin/
+│   ├── magic-market-monitor-server.exe       # 仅 Windows
+│   ├── magic-market-grpc-server[.exe]         # 跨平台认证只读服务
+│   ├── magic-market-tdx-agent.exe             # 仅 Windows、出站 Agent
+│   ├── magic-tdx-native-bridge.exe            # 仅 Windows、与 server 同目录
 │   ├── magic-baidu-live-probe[.exe]
 │   ├── magic-baidu-load-probe[.exe]
 │   ├── magic-cls-live-probe[.exe]
@@ -113,6 +133,7 @@ target/dist/GIT_SHA/
 │   ├── magic-wallstreetcn-live-probe[.exe]
 │   └── magic-wallstreetcn-load-probe[.exe]
 ├── docs/
+├── proto/magic/market/v1/market.proto
 ├── licenses/
 ├── Cargo.lock
 ├── CARGO_VERSION
@@ -131,6 +152,8 @@ target/dist/GIT_SHA/
 `RELEASE_REVISION` 与批准的 Git SHA，再在目标机执行 SHA-256 校验。POSIX 发布
 脚本需要 Bash 与常用 Unix 工具；Windows 原生制品应在 Git Bash 或 Windows CI
 中生成。WSL 只能生成 Linux 制品，不能冒充 Windows 原生构建。
+打包脚本根据 Rust host triple 决定是否构建本地 TDX pair；现有对 `bin/` 的递归哈希
+自动覆盖这两个文件。二进制进入包不改变 admission registry 或编译期常量。
 
 在目标机校验完整制品（macOS 使用 `shasum`，Linux 通常使用 `sha256sum`）：
 
@@ -145,6 +168,12 @@ shasum -a 256 -c SHA256SUMS
 | --- | --- | --- | --- | --- |
 | `magic-market-core` | 支持 | 支持 | 支持 | 纯 Rust 合同 |
 | `magic-market-router` | 支持 | 支持 | 支持 | 纯 Rust 同步路由与证据检查 |
+| `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；生产数据族仍待准入 |
+| `magic-market-monitor` | 支持 | 支持 | 支持 | 纯确定性价格窗口与有界 replay；无 I/O |
+| `magic-market-monitor-server` | typed Unsupported | typed Unsupported | 诊断叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听，生产准入仍关闭 |
+| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；Provider composition 默认 fail-closed |
+| `magic-market-tdx-agent` | typed Unsupported | typed Unsupported | 诊断出站 Agent | 固定同目录 monitor/helper；不开放入站端口，不提升 admission |
+| `magic-tdx-native-bridge --discover` | typed Unsupported | typed Unsupported | 仅发现 | Windows 同用户/会话 `TdxW.exe` 发现和版本证据；不获取行情 |
 | `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |
 | TDX | 支持 | 支持 | 支持 | 需要出站 TCP/HTTP 与可写缓存目录 |
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
@@ -167,6 +196,7 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | Provider | 必需出站访问 | 本地写入 |
 | --- | --- | --- |
 | TDX | 已配置行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` | `~/.tdxrs/server_cache.json`；调用方指定的财务缓存 |
+| TDX local diagnostic pair | 仅固定 `http://127.0.0.1:17709/`；需要当前用户/会话已运行唯一 `TdxW.exe` | 无持久缓存；stdout frame 由操作员决定是否保存 |
 | Tencent | `qt.gtimg.cn:443`、`web.ifzq.gtimg.cn:443`、`ifzq.gtimg.cn:443`、`stock.gtimg.cn:443`，HTTPS | 无持久缓存 |
 | Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`、`stock.finance.sina.com.cn:443`，HTTPS；全球指数/汇率也使用 `hq.sinajs.cn` | 无持久缓存 |
 | Eastmoney Web | 集成文档白名单中的 `eastmoney.com`/`dfcfw.com` 主机（含 `pdf.dfcfw.com`），HTTPS 443 | 无持久缓存 |
@@ -201,6 +231,81 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 运行服务账号必须有独立可写 HOME，TDX SmartClient 才能安全保存服务器健康缓存。
 不要让多个不可信账号共享该目录。容器内应挂载专用可写目录并显式设置 HOME；根
 文件系统可保持只读。
+
+## Windows 本地 TDX 诊断运行
+
+Windows 原生发布包中的以下两个文件必须保持同目录：
+
+```text
+bin/
+├── magic-market-monitor-server.exe
+└── magic-tdx-native-bridge.exe
+```
+
+server 只按自身可执行文件目录解析 discovery helper，不搜索 `PATH`。它自动发现当前
+用户/会话的唯一 `TdxW.exe`，并只连接固定
+`http://127.0.0.1:17709/`；不存在 `--tdx-path`、`--bridge-path` 或 `--endpoint`
+配置。当前 38 个 switch/value pair 全部必填，包括 watchlist、轮询、HTTP bounds、
+窗口、阈值、snapshot cadence、identity recheck、restart budget、诊断周期、输出大小、
+有界输出队列、shutdown timeout 和 slow-consumer policy。watchlist 只接受
+`EQUITY:SH:600000`、`EQUITY:SZ:000001` 或 `EQUITY:BJ:430001` 形式，不从代码前缀
+猜测资产或交易所。
+
+下列 Command Prompt 命令只展示当前 Config 的完整参数形状，并用两个 scheduler
+cycle 限定一次诊断；其中数值是 syntax/fixture 示例，不是生产默认、性能建议或准入
+阈值：
+
+```bat
+magic-market-monitor-server.exe ^
+  --watchlist EQUITY:SH:600396 --max-instruments 1 ^
+  --poll-interval-ms 100 --rediscover-interval-ms 200 ^
+  --discovery-timeout-ms 300 --discovery-max-bytes 4096 ^
+  --connect-timeout-ms 50 --read-timeout-ms 15000 --write-timeout-ms 50 ^
+  --max-request-bytes 1024 --max-response-bytes 131072 ^
+  --window-capacity 16 ^
+  --price-rule-version 1 --price-window-ms 1000 ^
+  --price-boundary-tolerance-ms 100 --price-trigger-ratio 0.05 ^
+  --price-rearm-ratio 0.01 --price-cooldown-ms 500 ^
+  --amount-rule-version 1 --amount-window-ms 1000 ^
+  --amount-boundary-tolerance-ms 100 --amount-trigger-cny 10000 ^
+  --amount-rearm-cny 1000 --amount-cooldown-ms 500 ^
+  --snapshot-cadence-poll-cycles 1 ^
+  --identity-recheck-cycles 10 ^
+  --volume-rule-version 1 --volume-window-ms 1000 ^
+  --volume-boundary-tolerance-ms 100 --volume-trigger-delta 1000 ^
+  --volume-rearm-delta 100 --volume-cooldown-ms 500 ^
+  --restart-budget 0 --diagnostic-poll-cycles 2 --max-event-bytes 8192 ^
+  --output-queue-capacity 16 --output-shutdown-timeout-ms 100 ^
+  --output-slow-consumer-policy stop ^
+  1>tdx-events.frames 2>tdx-monitor.stderr.log
+```
+
+`get_pricevol` 的 price/volume 快速轮询在主调度路径串行执行；较慢的
+`get_market_snapshot` amount 请求进入独立、容量为一的 worker，并按显式
+`--snapshot-cadence-poll-cycles` 调度，忙时产生 typed `snapshot_busy`，不会阻塞或
+重放快速 family。amount 以 checked decimal 从万元转换为 CNY，volume 保持 lot。
+
+`tdx-events.frames` 不是文本 JSON Lines：每条记录是 4-byte big-endian `u32` JSON
+字节长度，紧跟该长度的 UTF-8 JSON。`--max-event-bytes` 限制单帧 payload；
+`--output-queue-capacity` 限制 non-blocking producer 与 stdout writer 之间的有界队列。
+当前 slow-consumer 闭集策略只有 `stop`：队列满、writer 失败或显式 shutdown 未在
+`--output-shutdown-timeout-ms` 内完成时，服务 typed fail closed，而不是丢帧、阻塞
+轮询或伪称 delivery。stderr 才是人类可读诊断。
+
+`DiscoveryCandidate` frame 保留 discovery schema、PID/session/creation identity、
+architecture/SHA-256，以及可得的数字 file/product version 与 version source；读取失败
+作为结构化 version failure 保留，不用显示文本猜版本。服务每隔显式
+`--identity-recheck-cycles` 重查进程身份，替换会重置窗口并创建新 generation。所有
+输出中的 admission 字段仍来自 repository 常量并保持 `false`。没有 TDX、出现多个
+候选、helper/loopback/schema 失败都产生 typed 状态，不会启动远程 listener 或变成
+空成功。
+
+2026-08-13 的一轮有界 Windows E2E 使用 12 个显式 cycle 并退出 0，保留 PID、
+`1.0.0.1` 数字版本和已登记 executable hash。最终 fast observation 为 `17.18`
+CNY/share、`1447695` lots；snapshot amount 为 `2520326100` CNY，price/volume
+cross-check 都为 true。三个 monitor 均 `warmed_up`，但所有 admission 仍为 false，
+snapshot worker 在 shutdown 时已 join。该结果只说明当前诊断链路可运行；部署方不能
+据此选择生产 cadence/threshold、跳过交易日历或关闭 restart/slow-consumer 验收。
 
 ## EMQuant 运行时部署
 

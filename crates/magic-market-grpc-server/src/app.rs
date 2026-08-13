@@ -1,0 +1,431 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use bytes::Bytes;
+use magic_market_grpc_contracts::v1;
+use magic_market_grpc_contracts::{CANONICAL_JSON_CONTENT_TYPE, PROTOCOL_VERSION};
+use magic_market_service::{
+    BlockingQueryGateway, CanonicalPayload, Operation, QueryCommand, ServiceError,
+};
+use prost::Message;
+use tokio::sync::Semaphore;
+use tonic::{Code, Request, Response, Status};
+
+#[derive(Clone)]
+pub(crate) struct GrpcApplication<G> {
+    gateway: Arc<G>,
+    maximum_payload_bytes: usize,
+    unary: Arc<Semaphore>,
+    blocking: Arc<Semaphore>,
+    blocking_deadline: Duration,
+}
+
+impl<G> GrpcApplication<G>
+where
+    G: BlockingQueryGateway,
+{
+    pub(crate) fn new(
+        gateway: Arc<G>,
+        maximum_payload_bytes: usize,
+        unary_concurrency: usize,
+        blocking_concurrency: usize,
+        blocking_deadline: Duration,
+    ) -> Result<Self, &'static str> {
+        if maximum_payload_bytes == 0
+            || unary_concurrency == 0
+            || blocking_concurrency == 0
+            || blocking_deadline.is_zero()
+        {
+            return Err("gRPC application limits must be positive");
+        }
+        Ok(Self {
+            gateway,
+            maximum_payload_bytes,
+            unary: Arc::new(Semaphore::new(unary_concurrency)),
+            blocking: Arc::new(Semaphore::new(blocking_concurrency)),
+            blocking_deadline,
+        })
+    }
+
+    async fn query(
+        &self,
+        operation: Operation,
+        request: Request<v1::QueryRequest>,
+    ) -> Result<Response<v1::QueryResponse>, Status> {
+        let request = request.into_inner();
+        magic_market_grpc_contracts::validate_query_request(&request, self.maximum_payload_bytes)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let context = request
+            .context
+            .ok_or_else(|| Status::invalid_argument("request context is required"))?;
+        let payload = request
+            .payload
+            .ok_or_else(|| Status::invalid_argument("request payload is required"))?;
+        let payload = CanonicalPayload::new(
+            payload.schema,
+            payload.schema_version,
+            payload.data,
+            self.maximum_payload_bytes,
+        )
+        .map_err(|error| status_from_error(&context.request_id, operation, error))?;
+        let command = QueryCommand::new(
+            context.request_id.clone(),
+            operation,
+            Some(request.preferred_provider),
+            payload,
+        )
+        .map_err(|error| status_from_error(&context.request_id, operation, error))?;
+
+        let unary_permit = self
+            .unary
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("unary concurrency is exhausted"))?;
+        let blocking_permit = self
+            .blocking
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("blocking concurrency is exhausted"))?;
+        let gateway = self.gateway.clone();
+        let request_id = context.request_id;
+        let task = tokio::task::spawn_blocking(move || {
+            let _permits = (unary_permit, blocking_permit);
+            gateway.execute(command)
+        });
+        let result = tokio::time::timeout(self.blocking_deadline, task)
+            .await
+            .map_err(|_| Status::deadline_exceeded("blocking provider deadline exceeded"))?
+            .map_err(|_| Status::internal("blocking provider worker failed"))?
+            .map_err(|error| status_from_error(&request_id, operation, error))?;
+
+        Ok(Response::new(v1::QueryResponse {
+            request_id,
+            operation: grpc_operation(operation) as i32,
+            admission: v1::AdmissionState::Admitted as i32,
+            selected_provider: result.provider,
+            batch_id: result.batch_id,
+            complete: result.complete,
+            observed_at: result.observed_at,
+            source_at: result.source_at.unwrap_or_default(),
+            records: result
+                .records
+                .into_iter()
+                .map(|record| v1::CanonicalPayload {
+                    schema: record.schema().to_owned(),
+                    schema_version: record.schema_version(),
+                    content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+                    data: record.data().to_vec(),
+                })
+                .collect(),
+        }))
+    }
+}
+
+fn validate_context(context: Option<&v1::RequestContext>) -> Result<&v1::RequestContext, Status> {
+    let context = context.ok_or_else(|| Status::invalid_argument("request context is required"))?;
+    if context.protocol_version != PROTOCOL_VERSION {
+        return Err(Status::invalid_argument("unsupported protocol version"));
+    }
+    if context.request_id.trim().is_empty() {
+        return Err(Status::invalid_argument("request_id is required"));
+    }
+    Ok(context)
+}
+
+#[tonic::async_trait]
+impl<G> v1::system_service_server::SystemService for GrpcApplication<G>
+where
+    G: BlockingQueryGateway,
+{
+    async fn get_capabilities(
+        &self,
+        request: Request<v1::CapabilitiesRequest>,
+    ) -> Result<Response<v1::CapabilitiesResponse>, Status> {
+        let request = request.into_inner();
+        let context = validate_context(request.context.as_ref())?;
+        let capabilities = self
+            .gateway
+            .capabilities()
+            .into_iter()
+            .map(|capability| v1::Capability {
+                operation: grpc_operation(capability.operation) as i32,
+                repository_admission: if capability.repository_admitted {
+                    v1::AdmissionState::Admitted as i32
+                } else {
+                    v1::AdmissionState::Unadmitted as i32
+                },
+                runtime_available: capability.runtime_available,
+                provider: capability.provider,
+                exact_scope: capability.exact_scope,
+                blocker: capability.blocker.unwrap_or_default(),
+            })
+            .collect();
+        Ok(Response::new(v1::CapabilitiesResponse {
+            request_id: context.request_id.clone(),
+            capabilities,
+        }))
+    }
+
+    async fn get_health(
+        &self,
+        request: Request<v1::HealthRequest>,
+    ) -> Result<Response<v1::HealthResponse>, Status> {
+        let request = request.into_inner();
+        let context = validate_context(request.context.as_ref())?;
+        let ready = self
+            .gateway
+            .capabilities()
+            .iter()
+            .any(|capability| capability.repository_admitted && capability.runtime_available);
+        Ok(Response::new(v1::HealthResponse {
+            request_id: context.request_id.clone(),
+            live: true,
+            ready,
+            state: if ready {
+                "ready".to_owned()
+            } else {
+                "serving_fail_closed".to_owned()
+            },
+        }))
+    }
+}
+
+macro_rules! implement_query_service {
+    ($($method:ident => $operation:ident),+ $(,)?) => {
+        #[tonic::async_trait]
+        impl<G> v1::market_data_service_server::MarketDataService for GrpcApplication<G>
+        where
+            G: BlockingQueryGateway,
+        {
+            $(
+                async fn $method(
+                    &self,
+                    request: Request<v1::QueryRequest>,
+                ) -> Result<Response<v1::QueryResponse>, Status> {
+                    self.query(Operation::$operation, request).await
+                }
+            )+
+        }
+    };
+}
+
+implement_query_service! {
+        historical_bars => HistoricalBars,
+        minute_data => MinuteData,
+        realtime_quotes => RealtimeQuotes,
+        money_flows => MoneyFlows,
+        order_books => OrderBooks,
+        auctions => Auctions,
+        trades => Trades,
+        security_metadata => SecurityMetadata,
+        global_indices => GlobalIndices,
+        foreign_exchange => ForeignExchange,
+        economic_calendar => EconomicCalendar,
+        futures_delivery => FuturesDelivery,
+        reference_rates => ReferenceRates,
+        official_fx_fixings => OfficialFxFixings,
+        economic_series => EconomicSeries,
+        company_filings => CompanyFilings,
+        global_news => GlobalNews,
+        announcements => Announcements,
+        market_announcements => MarketAnnouncements,
+        investor_questions => InvestorQuestions,
+        policy_documents => PolicyDocuments,
+        security_profiles => SecurityProfiles,
+        financial_statements => FinancialStatements,
+        market_statistics => MarketStatistics,
+        technical_bars => TechnicalBars,
+        corporate_actions => CorporateActions,
+        board_directory => BoardDirectory,
+        board_constituents => BoardConstituents,
+        board_memberships => BoardMemberships,
+        research_reports => ResearchReports,
+        research_documents => ResearchDocuments,
+        consensus => Consensus,
+        target_prices => TargetPrices,
+        semantic_search => SemanticSearch,
+        fund_flow_series => FundFlowSeries,
+        board_flows => BoardFlows,
+        margin_data => MarginData,
+        block_trades => BlockTrades,
+        holder_counts => HolderCounts,
+        lockup_events => LockupEvents,
+        dividend_plans => DividendPlans,
+        post_close_flows => PostCloseFlows,
+        northbound_daily => NorthboundDaily,
+        limit_pools => LimitPools,
+        strong_stock_reasons => StrongStockReasons,
+        dragon_tiger => DragonTiger,
+        market_dragon_tiger => MarketDragonTiger,
+        dragon_tiger_discovery => DragonTigerDiscovery,
+        market_rankings => MarketRankings,
+        market_breadth => MarketBreadth,
+        popularity => Popularity,
+        concept_hits => ConceptHits,
+        option_data => OptionData,
+        provider_top_n_rankings => ProviderTopNRankings,
+}
+
+pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
+    match operation {
+        Operation::HistoricalBars => v1::Operation::HistoricalBars,
+        Operation::MinuteData => v1::Operation::MinuteData,
+        Operation::RealtimeQuotes => v1::Operation::RealtimeQuotes,
+        Operation::MoneyFlows => v1::Operation::MoneyFlows,
+        Operation::OrderBooks => v1::Operation::OrderBooks,
+        Operation::Auctions => v1::Operation::Auctions,
+        Operation::Trades => v1::Operation::Trades,
+        Operation::SecurityMetadata => v1::Operation::SecurityMetadata,
+        Operation::GlobalIndices => v1::Operation::GlobalIndices,
+        Operation::ForeignExchange => v1::Operation::ForeignExchange,
+        Operation::EconomicCalendar => v1::Operation::EconomicCalendar,
+        Operation::FuturesDelivery => v1::Operation::FuturesDelivery,
+        Operation::ReferenceRates => v1::Operation::ReferenceRates,
+        Operation::OfficialFxFixings => v1::Operation::OfficialFxFixings,
+        Operation::EconomicSeries => v1::Operation::EconomicSeries,
+        Operation::CompanyFilings => v1::Operation::CompanyFilings,
+        Operation::GlobalNews => v1::Operation::GlobalNews,
+        Operation::Announcements => v1::Operation::Announcements,
+        Operation::MarketAnnouncements => v1::Operation::MarketAnnouncements,
+        Operation::InvestorQuestions => v1::Operation::InvestorQuestions,
+        Operation::PolicyDocuments => v1::Operation::PolicyDocuments,
+        Operation::SecurityProfiles => v1::Operation::SecurityProfiles,
+        Operation::FinancialStatements => v1::Operation::FinancialStatements,
+        Operation::MarketStatistics => v1::Operation::MarketStatistics,
+        Operation::TechnicalBars => v1::Operation::TechnicalBars,
+        Operation::CorporateActions => v1::Operation::CorporateActions,
+        Operation::BoardDirectory => v1::Operation::BoardDirectory,
+        Operation::BoardConstituents => v1::Operation::BoardConstituents,
+        Operation::BoardMemberships => v1::Operation::BoardMemberships,
+        Operation::ResearchReports => v1::Operation::ResearchReports,
+        Operation::ResearchDocuments => v1::Operation::ResearchDocuments,
+        Operation::Consensus => v1::Operation::Consensus,
+        Operation::TargetPrices => v1::Operation::TargetPrices,
+        Operation::SemanticSearch => v1::Operation::SemanticSearch,
+        Operation::FundFlowSeries => v1::Operation::FundFlowSeries,
+        Operation::BoardFlows => v1::Operation::BoardFlows,
+        Operation::MarginData => v1::Operation::MarginData,
+        Operation::BlockTrades => v1::Operation::BlockTrades,
+        Operation::HolderCounts => v1::Operation::HolderCounts,
+        Operation::LockupEvents => v1::Operation::LockupEvents,
+        Operation::DividendPlans => v1::Operation::DividendPlans,
+        Operation::PostCloseFlows => v1::Operation::PostCloseFlows,
+        Operation::NorthboundDaily => v1::Operation::NorthboundDaily,
+        Operation::LimitPools => v1::Operation::LimitPools,
+        Operation::StrongStockReasons => v1::Operation::StrongStockReasons,
+        Operation::DragonTiger => v1::Operation::DragonTiger,
+        Operation::MarketDragonTiger => v1::Operation::MarketDragonTiger,
+        Operation::DragonTigerDiscovery => v1::Operation::DragonTigerDiscovery,
+        Operation::MarketRankings => v1::Operation::MarketRankings,
+        Operation::MarketBreadth => v1::Operation::MarketBreadth,
+        Operation::Popularity => v1::Operation::Popularity,
+        Operation::ConceptHits => v1::Operation::ConceptHits,
+        Operation::OptionData => v1::Operation::OptionData,
+        Operation::ProviderTopNRankings => v1::Operation::ProviderTopNRankings,
+    }
+}
+
+fn status_from_error(request_id: &str, operation: Operation, error: ServiceError) -> Status {
+    let (code, reason_code, retryable, message) = match error {
+        ServiceError::InvalidRequest(message) => {
+            (Code::InvalidArgument, "invalid_request", false, message)
+        }
+        ServiceError::Unsupported { reason, .. } => {
+            (Code::Unimplemented, "capability_unadmitted", false, reason)
+        }
+        ServiceError::Unauthenticated => (
+            Code::Unauthenticated,
+            "unauthenticated",
+            false,
+            "authentication failed".to_owned(),
+        ),
+        ServiceError::PermissionDenied(message) => {
+            (Code::PermissionDenied, "permission_denied", false, message)
+        }
+        ServiceError::ResourceExhausted(message) => {
+            (Code::ResourceExhausted, "resource_exhausted", true, message)
+        }
+        ServiceError::DeadlineExceeded(message) => {
+            (Code::DeadlineExceeded, "deadline_exceeded", true, message)
+        }
+        ServiceError::Unavailable { reason, .. } => {
+            (Code::Unavailable, "provider_unavailable", true, reason)
+        }
+        ServiceError::FailedPrecondition(message) => (
+            Code::FailedPrecondition,
+            "source_precondition_failed",
+            false,
+            message,
+        ),
+        ServiceError::Internal(_) => (
+            Code::Internal,
+            "internal",
+            false,
+            "internal service error".to_owned(),
+        ),
+    };
+    let detail = v1::ErrorDetail {
+        request_id: request_id.to_owned(),
+        operation: grpc_operation(operation) as i32,
+        provider: String::new(),
+        reason_code: reason_code.to_owned(),
+        retryable,
+    }
+    .encode_to_vec();
+    Status::with_details(code, message, Bytes::from(detail))
+}
+
+#[cfg(test)]
+mod tests {
+    use magic_market_grpc_contracts::v1::market_data_service_server::MarketDataService;
+    use magic_market_service::OperationRegistry;
+
+    use super::*;
+
+    fn request() -> Request<v1::QueryRequest> {
+        Request::new(v1::QueryRequest {
+            context: Some(v1::RequestContext {
+                protocol_version: PROTOCOL_VERSION,
+                request_id: "request-1".to_owned(),
+            }),
+            preferred_provider: String::new(),
+            payload: Some(v1::CanonicalPayload {
+                schema: "test.request".to_owned(),
+                schema_version: 1,
+                content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+                data: b"{}".to_vec(),
+            }),
+        })
+    }
+
+    #[tokio::test]
+    async fn unadmitted_rpc_fails_before_io_with_structured_details() {
+        let application = GrpcApplication::new(
+            Arc::new(OperationRegistry::all_unadmitted("evidence missing")),
+            1024,
+            1,
+            1,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        let status = application.realtime_quotes(request()).await.unwrap_err();
+        assert_eq!(status.code(), Code::Unimplemented);
+        let detail = v1::ErrorDetail::decode(status.details()).unwrap();
+        assert_eq!(detail.request_id, "request-1");
+        assert_eq!(detail.reason_code, "capability_unadmitted");
+    }
+
+    #[test]
+    fn every_service_operation_has_an_exact_grpc_mapping() {
+        let mapped = magic_market_service::ALL_OPERATIONS
+            .iter()
+            .copied()
+            .map(grpc_operation)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            mapped.len(),
+            magic_market_grpc_contracts::READ_OPERATIONS.len()
+        );
+        assert_eq!(mapped, magic_market_grpc_contracts::READ_OPERATIONS);
+    }
+}

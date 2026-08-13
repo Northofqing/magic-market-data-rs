@@ -3,6 +3,7 @@
 mod catalog;
 mod html;
 mod transport;
+mod xlsx;
 
 use magic_market_core::{
     DataBatch, EconomicDataCapabilities, EconomicObservation, EconomicSeriesProvider,
@@ -17,12 +18,18 @@ use thiserror::Error;
 
 pub use catalog::{descriptor_for_year, PbcTableDescriptor};
 pub use html::parse_money_supply_table;
+pub use xlsx::{parse_regional_social_financing_workbook, REGIONAL_SOCIAL_FINANCING_CODES};
 
 pub const MONEY_SUPPLY_ADMITTED: bool = true;
-pub const SOCIAL_FINANCING_ADMITTED: bool = false;
-pub const REGIONAL_SERIES_ADMITTED: bool = false;
+pub const SOCIAL_FINANCING_ADMITTED: bool = true;
+pub const REGIONAL_SERIES_ADMITTED: bool = true;
 
 pub(crate) const MAX_HTML_BYTES: usize = 2 * 1024 * 1024;
+pub(crate) const MAX_REGIONAL_XLSX_BYTES: usize = 256 * 1024;
+pub const REGIONAL_SOCIAL_FINANCING_URL: &str =
+    "https://www.pbc.gov.cn/diaochatongjisi/fileDir/resource/cms/2025/05/2025051514404575389.xlsx";
+const REGIONAL_SOCIAL_FINANCING_PATH: &str =
+    "/diaochatongjisi/fileDir/resource/cms/2025/05/2025051514404575389.xlsx";
 
 #[derive(Debug, Error)]
 pub enum PbcError {
@@ -42,14 +49,15 @@ pub enum PbcError {
 
 #[derive(Clone)]
 pub struct PbcClient {
-    transport: Arc<dyn HttpTransport>,
+    money_supply_transport: Arc<dyn HttpTransport>,
+    regional_transport: Arc<dyn HttpTransport>,
     gate: Arc<RequestGate>,
     request_probe: Arc<Mutex<ProbeRequestTracker>>,
 }
 
 impl PbcClient {
     pub fn new(timeout: Duration) -> Result<Self, PbcError> {
-        let policy = EndpointPolicy::new(
+        let money_supply_policy = EndpointPolicy::new(
             "www.pbc.gov.cn",
             vec!["/eportal/fileDir/diaochatongjisi/resource/cms/".into()],
             vec![],
@@ -57,12 +65,31 @@ impl PbcClient {
             MAX_HTML_BYTES,
             timeout,
         )?;
-        Self::with_transport(Arc::new(ReqwestTransport::new(policy)?))
+        let regional_policy = EndpointPolicy::new(
+            "www.pbc.gov.cn",
+            vec![REGIONAL_SOCIAL_FINANCING_PATH.into()],
+            vec![],
+            vec![MediaType::Xlsx],
+            MAX_REGIONAL_XLSX_BYTES,
+            timeout,
+        )?;
+        Self::with_transports(
+            Arc::new(ReqwestTransport::new(money_supply_policy)?),
+            Arc::new(ReqwestTransport::new(regional_policy)?),
+        )
     }
 
     pub fn with_transport(transport: Arc<dyn HttpTransport>) -> Result<Self, PbcError> {
+        Self::with_transports(Arc::clone(&transport), transport)
+    }
+
+    fn with_transports(
+        money_supply_transport: Arc<dyn HttpTransport>,
+        regional_transport: Arc<dyn HttpTransport>,
+    ) -> Result<Self, PbcError> {
         Ok(Self {
-            transport,
+            money_supply_transport,
+            regional_transport,
             gate: Arc::new(RequestGate::new(Duration::from_secs(1))?),
             request_probe: Arc::new(Mutex::new(ProbeRequestTracker::default())),
         })
@@ -91,6 +118,14 @@ impl PbcClient {
         self.fetch_money_supply(request)
     }
 
+    /// Performs the exact, bounded 2025 Q1 regional-flow workbook probe.
+    pub fn probe_regional_social_financing(
+        &self,
+        request: &EconomicSeriesRequest,
+    ) -> Result<DataBatch<EconomicObservation>, PbcError> {
+        self.fetch_regional_social_financing(request)
+    }
+
     fn fetch_money_supply(
         &self,
         request: &EconomicSeriesRequest,
@@ -115,7 +150,7 @@ impl PbcClient {
             .lock()
             .map_err(|_| PbcError::Protocol("request probe lock poisoned".into()))?
             .request_started();
-        let response = transport::fetch_table(self.transport.as_ref(), descriptor);
+        let response = transport::fetch_table(self.money_supply_transport.as_ref(), descriptor);
         self.request_probe
             .lock()
             .map_err(|_| PbcError::Protocol("request probe lock poisoned".into()))?
@@ -133,6 +168,43 @@ impl PbcClient {
             &batch_id,
         )
     }
+
+    fn fetch_regional_social_financing(
+        &self,
+        request: &EconomicSeriesRequest,
+    ) -> Result<DataBatch<EconomicObservation>, PbcError> {
+        validate_regional_request(request)?;
+        self.gate.wait_for_turn()?;
+        self.request_started()?;
+        let response = transport::fetch_regional_workbook(self.regional_transport.as_ref());
+        self.request_finished()?;
+        let response = response?;
+        let observed_at = now_timestamp();
+        let batch_id = format!("pbc-regional-social-financing:2025-q1:{observed_at}");
+        xlsx::parse_regional_social_financing_response(
+            response.body(),
+            response.content_type(),
+            request,
+            &observed_at,
+            &batch_id,
+        )
+    }
+
+    fn request_started(&self) -> Result<(), PbcError> {
+        self.request_probe
+            .lock()
+            .map_err(|_| PbcError::Protocol("request probe lock poisoned".into()))?
+            .request_started();
+        Ok(())
+    }
+
+    fn request_finished(&self) -> Result<(), PbcError> {
+        self.request_probe
+            .lock()
+            .map_err(|_| PbcError::Protocol("request probe lock poisoned".into()))?
+            .request_finished()
+            .map_err(|error| PbcError::Protocol(error.to_string()))
+    }
 }
 
 impl EconomicSeriesProvider for PbcClient {
@@ -142,13 +214,30 @@ impl EconomicSeriesProvider for PbcClient {
         &self,
         request: &EconomicSeriesRequest,
     ) -> Result<DataBatch<EconomicObservation>, Self::Error> {
-        validate_request(request)?;
-        if !MONEY_SUPPLY_ADMITTED {
-            return Err(PbcError::Unsupported(
-                "PBC money-supply production access has not passed live admission".into(),
-            ));
+        match request.series()[0].namespace() {
+            "money-supply" => {
+                validate_request(request)?;
+                if !MONEY_SUPPLY_ADMITTED {
+                    return Err(PbcError::Unsupported(
+                        "PBC money-supply production access has not passed live admission".into(),
+                    ));
+                }
+                self.fetch_money_supply(request)
+            }
+            "regional-social-financing-flow" => {
+                validate_regional_request(request)?;
+                if !SOCIAL_FINANCING_ADMITTED || !REGIONAL_SERIES_ADMITTED {
+                    return Err(PbcError::Unsupported(
+                        "PBC regional social-financing production access has not passed live admission"
+                            .into(),
+                    ));
+                }
+                self.fetch_regional_social_financing(request)
+            }
+            _ => Err(PbcError::Unsupported(
+                "PBC namespace is not cataloged".into(),
+            )),
         }
-        self.fetch_money_supply(request)
     }
 }
 
@@ -182,6 +271,46 @@ fn validate_request(request: &EconomicSeriesRequest) -> Result<(), PbcError> {
         return Err(PbcError::InvalidRequest(
             "money-supply requests must be monthly".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_regional_request(request: &EconomicSeriesRequest) -> Result<(), PbcError> {
+    if request.provider() != ProviderId::Pbc {
+        return Err(PbcError::InvalidRequest(
+            "request provider must be PBC".into(),
+        ));
+    }
+    if request
+        .series()
+        .iter()
+        .any(|series| series.namespace() != "regional-social-financing-flow")
+    {
+        return Err(PbcError::Unsupported(
+            "only the exact regional-social-financing-flow namespace is supported".into(),
+        ));
+    }
+    if request.series().len() > REGIONAL_SOCIAL_FINANCING_CODES.len()
+        || request
+            .series()
+            .iter()
+            .any(|series| !REGIONAL_SOCIAL_FINANCING_CODES.contains(&series.code()))
+    {
+        return Err(PbcError::InvalidRequest(
+            "regional social-financing request contains an uncataloged series code".into(),
+        ));
+    }
+    let audited = magic_market_core::EconomicPeriod::quarter(2025, 1)?;
+    if request.start() != &audited || request.end() != &audited {
+        return Err(PbcError::Unsupported(
+            "only the cataloged 2025 Q1 regional workbook is supported".into(),
+        ));
+    }
+    let required_rows = request.series().len() * 31;
+    if (request.max_rows().get() as usize) < required_rows {
+        return Err(PbcError::InvalidRequest(format!(
+            "regional request max_rows must be at least {required_rows} to preserve all 31 regions"
+        )));
     }
     Ok(())
 }

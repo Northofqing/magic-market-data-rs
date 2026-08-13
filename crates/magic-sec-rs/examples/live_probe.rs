@@ -1,4 +1,6 @@
-use magic_market_core::{CompanyFilingRequest, NonEmptyText, PositiveU32, SecCompanyIdentity};
+use magic_market_core::{
+    CompanyFilingRequest, CompanyFilingsProvider, NonEmptyText, PositiveU32, SecCompanyIdentity,
+};
 use magic_sec_rs::SecEdgarClient;
 use std::error::Error;
 
@@ -16,8 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         None,
         PositiveU32::new(5)?,
     )?;
-    // Admission remains false until two live runs and the load probe pass.
-    let batch = client.probe_company_filings(&request)?;
+    let batch = client.company_filings(&request)?;
     for record in batch.records() {
         println!(
             "{} {} {} {} {} {} {} {} {} {} {} {}",

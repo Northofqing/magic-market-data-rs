@@ -19,6 +19,7 @@ magic-stcn-rs	shared	-	true	target	-
 magic-tencent-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-thepaper-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-ths-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-tdx-local-rs	legacy-direct	ureq	false	reviewed-exception	official TQ-Local API is fixed to http://127.0.0.1:17709/; loopback only, no proxy, no redirects, bounded blocking requests
 magic-wallstreetcn-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-worldbank-rs	shared	-	true	target	-
 magic-xinhua-rs	shared	-	true	target	-

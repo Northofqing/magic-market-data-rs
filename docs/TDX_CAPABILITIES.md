@@ -143,3 +143,12 @@ file fragment.
 Python/PyO3 bindings are excluded. `ProviderId::LocalTerminal` remains reserved
 for a separately authorized read-only terminal adapter and must never expose
 account, position, cash or order state.
+
+The optional local-terminal monitor uses direct safe Rust polling, not a Python
+binding or vendor DLL. Its selected data path is the vendor-documented TQ-Local endpoint at
+exactly `http://127.0.0.1:17709/`: bounded, single-flight read-only HTTP
+polling with no proxy or redirect. The installed CPython-dependent callback path
+is excluded. Until exact response
+schema, compatibility and bounded live evidence pass, every LocalTerminal
+input and LocalAnalysis anomaly capability remains false and no optional
+listener may start. The source must not send any account/trading method.

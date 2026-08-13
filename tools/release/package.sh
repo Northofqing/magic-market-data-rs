@@ -54,6 +54,7 @@ case "$host_triple" in
   *) executable_suffix= ;;
 esac
 example_dir="$package_target_dir/$host_triple/release/examples"
+release_bin_dir="$package_target_dir/$host_triple/release"
 
 build_probe() {
   package_name=$1
@@ -64,6 +65,36 @@ build_probe() {
   install -m 0755 "$example_dir/$example_name$executable_suffix" \
     "$bin_dir/$installed_name$executable_suffix"
 }
+
+build_binary() {
+  package_name=$1
+  binary_name=$2
+  installed_name=$3
+  CARGO_TARGET_DIR="$package_target_dir" cargo build -p "$package_name" \
+    --bin "$binary_name" --release --locked --offline --target "$host_triple"
+  install -m 0755 "$release_bin_dir/$binary_name$executable_suffix" \
+    "$bin_dir/$installed_name$executable_suffix"
+}
+
+# The authenticated read-only gRPC server is cross-platform. Its unary provider
+# composition and TDX event admissions remain fail-closed unless separately
+# admitted by the repository registries.
+build_binary magic-market-grpc-server magic-market-grpc-server \
+  magic-market-grpc-server
+
+# These same-directory binaries are a Windows-only diagnostic product set.
+# Packaging them does not change any LocalTerminal/LocalAnalysis
+# admission constant or claim production service admission.
+case "$host_triple" in
+  *-windows-*)
+    build_binary magic-market-monitor-server magic-market-monitor-server \
+      magic-market-monitor-server
+    build_binary magic-tdx-native-bridge magic-tdx-native-bridge \
+      magic-tdx-native-bridge
+    build_binary magic-market-tdx-agent magic-market-tdx-agent \
+      magic-market-tdx-agent
+    ;;
+esac
 
 build_probe magic-tdx-rs live_probe magic-tdx-live-probe
 build_probe magic-emquant-rs live_probe magic-emquant-live-probe
@@ -124,6 +155,9 @@ mkdir -p "$dist_dir/licenses"
 install -m 0644 LICENSE-MIT LICENSE-APACHE "$dist_dir/licenses/"
 install -m 0644 LICENSES/tdxrs-MIT.txt "$dist_dir/licenses/"
 install -m 0644 README.md Cargo.lock "$dist_dir/"
+mkdir -p "$dist_dir/proto/magic/market/v1"
+install -m 0644 crates/magic-market-grpc-contracts/proto/magic/market/v1/market.proto \
+  "$dist_dir/proto/magic/market/v1/"
 printf '%s\n' "$revision" > "$dist_dir/RELEASE_REVISION"
 printf '%s\n' "$host_triple" > "$dist_dir/TARGET_TRIPLE"
 rustc -vV > "$dist_dir/RUSTC_VERSION"
@@ -133,7 +167,7 @@ if command -v shasum >/dev/null 2>&1; then
     cd "$dist_dir"
     while IFS= read -r packaged_file; do
       shasum -a 256 "$packaged_file"
-    done < <(find bin docs licenses -type f -print | LC_ALL=C sort)
+    done < <(find bin docs licenses proto -type f -print | LC_ALL=C sort)
     shasum -a 256 Cargo.lock CARGO_VERSION README.md RELEASE_REVISION \
       RUSTC_VERSION TARGET_TRIPLE
   ) > "$dist_dir/SHA256SUMS"
@@ -142,7 +176,7 @@ elif command -v sha256sum >/dev/null 2>&1; then
     cd "$dist_dir"
     while IFS= read -r packaged_file; do
       sha256sum "$packaged_file"
-    done < <(find bin docs licenses -type f -print | LC_ALL=C sort)
+    done < <(find bin docs licenses proto -type f -print | LC_ALL=C sort)
     sha256sum Cargo.lock CARGO_VERSION README.md RELEASE_REVISION \
       RUSTC_VERSION TARGET_TRIPLE
   ) > "$dist_dir/SHA256SUMS"

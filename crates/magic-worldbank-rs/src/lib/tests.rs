@@ -14,7 +14,7 @@ fn constructor_debug_capabilities_and_foreign_request_are_explicit() {
     assert!(WorldBankClient::new().is_ok());
     let client = WorldBankClient::with_transport(Arc::new(NoIo)).unwrap();
     assert!(format!("{client:?}").contains("[REDACTED]"));
-    assert!(!WorldBankClient::economic_data_capabilities().economic_series);
+    assert!(WorldBankClient::economic_data_capabilities().economic_series);
     let request = EconomicSeriesRequest::new(
         vec![EconomicSeriesKey::new(ProviderId::Fred, "fred", "GDP").unwrap()],
         EconomicPeriod::year(2024).unwrap(),

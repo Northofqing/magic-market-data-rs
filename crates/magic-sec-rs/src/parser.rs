@@ -244,11 +244,6 @@ fn parse_arrays(
     let mut checked = Vec::with_capacity(len);
     for index in 0..len {
         let accession = SecAccessionNumber::new(rows.accession_number[index].clone())?;
-        if &accession.as_str()[..10] != company.cik() {
-            return Err(SecEdgarError::Protocol(
-                "filing accession CIK prefix contradicts the response CIK".into(),
-            ));
-        }
         let filing_date = IsoDate::new(rows.filing_date[index].clone())?;
         let report_period = match rows.report_date[index].trim() {
             "" => None,

@@ -1,12 +1,10 @@
 use magic_market_core::{
-    EconomicPeriod, EconomicSeriesKey, EconomicSeriesRequest, PositiveU32, ProviderId,
+    EconomicPeriod, EconomicSeriesKey, EconomicSeriesProvider, EconomicSeriesRequest, PositiveU32,
+    ProviderId,
 };
-use magic_worldbank_rs::{WorldBankClient, WorldBankError};
+use magic_worldbank_rs::WorldBankClient;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args().nth(1).as_deref() != Some("--diagnostic") {
-        return Err("pass --diagnostic to execute the non-admission World Bank probe".into());
-    }
     let client = WorldBankClient::new()?;
     let request = EconomicSeriesRequest::new(
         vec![EconomicSeriesKey::new(
@@ -18,12 +16,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         EconomicPeriod::year(2024)?,
         PositiveU32::new(1)?,
     )?;
-    match client.probe_economic_series(&request) {
-        Err(WorldBankError::Protocol(message)) if message.contains("unit") => {
-            println!("World Bank structured-unit diagnostic confirmed; admission remains false");
-            Ok(())
-        }
-        Ok(_) => Err("World Bank diagnostic unexpectedly produced an admitted batch".into()),
-        Err(error) => Err(Box::new(error)),
+    let batch = client.economic_series(&request)?;
+    for record in batch.records() {
+        println!(
+            "worldbank_record code={} period={} value={:?} unit={} source_at={:?}",
+            record.series().code(),
+            record.period().as_year().unwrap_or_default(),
+            record.value().map(|value| value.get()),
+            record.unit(),
+            record.evidence().source_at(),
+        );
     }
+    println!(
+        "worldbank_probe_records={} admission_scope=source:2/country:USA/NY.GDP.MKTP.CD/2024",
+        batch.records().len()
+    );
+    println!("live_probe_status=passed");
+    Ok(())
 }

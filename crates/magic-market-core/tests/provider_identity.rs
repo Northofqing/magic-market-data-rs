@@ -65,3 +65,18 @@ fn official_macro_and_news_provider_identity_names_are_stable() {
         assert_eq!(serde_json::to_string(&provider).unwrap(), expected);
     }
 }
+
+#[test]
+fn local_provider_identity_names_are_stable() {
+    let cases = [
+        (ProviderId::LocalTerminal, "\"LocalTerminal\""),
+        (ProviderId::LocalAnalysis, "\"LocalAnalysis\""),
+    ];
+    for (provider, expected) in cases {
+        assert_eq!(serde_json::to_string(&provider).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_str::<ProviderId>(expected).unwrap(),
+            provider
+        );
+    }
+}

@@ -23,6 +23,7 @@ pub enum MediaType {
     Javascript,
     Xml,
     PlainText,
+    Xlsx,
 }
 
 impl MediaType {
@@ -42,6 +43,9 @@ impl MediaType {
                     || value.eq_ignore_ascii_case("text/xml")
             }
             Self::PlainText => value.eq_ignore_ascii_case("text/plain"),
+            Self::Xlsx => value.eq_ignore_ascii_case(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
         }
     }
 }

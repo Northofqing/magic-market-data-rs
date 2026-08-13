@@ -1646,11 +1646,20 @@ fn paginates_and_normalizes_historical_trades() {
 
 #[test]
 fn marks_unknown_trade_side_without_dropping_the_record() {
-    let request = TradesRequest::new(instrument("600519"), 1).unwrap();
-    let batch = normalize_trade_records("test", &request, vec![source_trade(0, 9)]).unwrap();
-    assert_eq!(batch.records()[0].side(), TradeSide::Unknown(9));
-    assert_eq!(batch.records()[0].status(), DataStatus::Unavailable);
-    assert_eq!(batch.quality().issues().len(), 1);
+    let request = TradesRequest::new(instrument("600519"), 2).unwrap();
+    let batch = normalize_trade_records(
+        "test",
+        &request,
+        vec![source_trade(0, 5), source_trade(1, 8)],
+    )
+    .unwrap();
+    assert_eq!(batch.records()[0].side(), TradeSide::Unknown(5));
+    assert_eq!(batch.records()[1].side(), TradeSide::Unknown(8));
+    assert!(batch
+        .records()
+        .iter()
+        .all(|record| record.status() == DataStatus::Unavailable));
+    assert_eq!(batch.quality().issues().len(), 2);
 }
 
 #[test]

@@ -5,6 +5,7 @@ use crate::mapping::{
 use crate::{instrument_from_market, query_url, BatchContext, EastmoneyClient, EastmoneyError};
 use magic_market_core::{
     IsoDate, LimitPoolEntry, LimitPoolKind, LimitPoolRequest, LimitPools, PositiveU32, Price,
+    VerifiedEmpty,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -89,6 +90,29 @@ fn parse_limit_pool(
     }
     let source_date = parse_qdate(&root, request.trading_date())?;
     let context = BatchContext::new("limit-pool", Some(source_date.as_str()))?;
+    if source_total == 0 {
+        let evidence = context.evidence()?;
+        let batch = context.finish_allow_empty::<LimitPoolEntry>(Vec::new())?;
+        let request_identity = format!(
+            "{:?}:{}:limit={}",
+            request.kind(),
+            request.trading_date(),
+            request.limit().get()
+        );
+        let empty = VerifiedEmpty::new(
+            "limit_pool",
+            request_identity,
+            "source returned data.tc=0 and data.pool=[] for the exact trading date",
+            evidence,
+            batch.provenance().clone(),
+        )
+        .map_err(|error| {
+            EastmoneyError::Protocol(format!(
+                "limit-pool verified-empty evidence is invalid: {error}"
+            ))
+        })?;
+        return Err(EastmoneyError::VerifiedEmpty(Box::new(empty)));
+    }
     let records = rows
         .iter()
         .map(|row| map_entry(row, request, &source_date, &context))
