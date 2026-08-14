@@ -11,7 +11,7 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 不访问公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值
 冒充实盘成功。
 
-> 当前状态（2026-07-29）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
+> 当前状态（2026-08-14）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS、Jin10、The Paper、Baidu，以及 SSE/SZSE 官方公告与龙虎榜、SZSE Quote/五档和 HKEX
 > 北向日统计已通过真实网络验收；CFFEX 官方 IF/IH/IC/IM 交割通知的确定性解析已实现，
 > 但 2026-07-27 的 Rustls 与 Native TLS 实网均在取得 HTTP 前握手失败，所以正式
@@ -439,6 +439,75 @@ cargo fetch --locked
 仓库不通过脚本安装或切换工具链。`Cargo.lock` 固定依赖解析结果；不要删除锁文件后
 直接升级，否则可能改变编译器要求和传递依赖。依赖更新应在独立提交中重新运行完整
 门禁和真实探针。
+
+### 当前 Windows gRPC/TDX 监听实例
+
+当前工作站已经启动一套供其他项目对接的本地部署：
+
+- gRPC endpoint：`https://10.211.55.3:50051`；
+- TLS server name：`magic-market.local`；
+- Windows 防火墙只允许 `10.211.55.0/24` 访问本机 `10.211.55.3:50051`；
+- 外部连接同时要求受本地 CA 签发的客户端证书和 Bearer Token；
+- TDX Agent 在通达信所在 Windows 用户会话内运行，只访问固定
+  `http://127.0.0.1:17709/`，不会向局域网暴露该端口；
+- gRPC Server、TDX Agent、monitor server 与 `TdxW.exe` 已形成真实链路。
+
+本地生成的客户端材料位于 `target/runtime/client-bundle/`：
+
+```text
+client-bundle/
+├── ca.pem
+├── client.pem
+├── client-key.pem
+├── bearer-token.txt
+├── connection.json
+├── market.proto
+└── README.md
+```
+
+该目录、服务端私钥和运行日志均在 `target/` 下，只属于本机部署，不进入 Git。
+不得提交、发送到公共渠道或打印 `client-key.pem`、`bearer-token.txt`、
+`target/runtime/tls/server-key.pem` 和 `target/runtime/tls/ca-key.pem`。向另一台受信机器
+交付时，应通过安全通道复制整个 `client-bundle`，并限制文件访问权限。
+
+在当前工作站验证服务：
+
+```powershell
+target\runtime\status.ps1
+target\runtime\probe.ps1
+```
+
+停止和重新启动：
+
+```powershell
+target\runtime\stop.ps1
+target\runtime\start.ps1
+```
+
+使用 `grpcurl` 从允许的局域网客户端访问：
+
+```powershell
+$bundle = "C:\secure\magic-market-client-bundle"
+$token = (Get-Content "$bundle\bearer-token.txt" -Raw).Trim()
+$auth = "authorization: Bearer $token"
+
+grpcurl `
+  -cacert "$bundle\ca.pem" `
+  -cert "$bundle\client.pem" `
+  -key "$bundle\client-key.pem" `
+  -authority magic-market.local `
+  -H $auth `
+  10.211.55.3:50051 list
+```
+
+生成式客户端使用随包提供的 `market.proto`，请求必须携带 `protocol_version=1`、
+非空唯一 `request_id` 和相同的认证 metadata。完整 RPC、错误模型、订阅、重放与
+TDX Agent 合同见 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)。
+
+当前运行状态是 `serving_fail_closed / agent_connected_diagnostic`。链路和事件流真实
+运行，但 LocalTerminal/LocalAnalysis 仍为 `UNADMITTED`；外部系统必须保留该标记，
+不能把诊断事件当成已准入生产行情。`10.211.55.3` 是当前工作站地址；地址或网段变化
+时必须重新签发包含新 IP 的服务端证书并同步收紧防火墙规则，禁止跳过 TLS 校验。
 
 ### 确定性验证
 
@@ -944,6 +1013,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | 文档 | 内容 |
 | --- | --- |
 | [部署手册](docs/DEPLOYMENT.md) | 可重复构建、平台、网络、EMQuant runtime、健康检查、回滚与升级 |
+| [gRPC 外部对接](docs/integrations/grpc-external-api.md) | Protobuf 版本、mTLS/Bearer 认证、查询、事件订阅/重放与 TDX Agent 合同 |
 | [TDX 能力矩阵](docs/TDX_CAPABILITIES.md) | 全数据族、北京市场、证据和显式不支持边界 |
 | [TDX 本地终端 Rust 轮询边界](docs/integrations/tdx-local-terminal.md) | 自动发现、固定 TQ-Local HTTP、版本感知、零 Python/DLL 决策与未准入条件 |
 | [TDX 生命周期实网证据](docs/evidence/2026-07-27-tdx-lifecycle.md) | 上市日期、标准化企业行动、verified-empty 与时间戳边界 |
