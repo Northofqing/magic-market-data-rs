@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytes::Bytes;
 use magic_market_grpc_contracts::v1;
 use magic_market_grpc_contracts::{CANONICAL_JSON_CONTENT_TYPE, PROTOCOL_VERSION};
 use magic_market_service::{
@@ -9,7 +8,10 @@ use magic_market_service::{
 };
 use prost::Message;
 use tokio::sync::Semaphore;
+use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::{Code, Request, Response, Status};
+
+const ERROR_DETAIL_METADATA_KEY: &str = "magic-error-detail-bin";
 
 #[derive(Clone)]
 pub(crate) struct GrpcApplication<G> {
@@ -372,7 +374,12 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
         retryable,
     }
     .encode_to_vec();
-    Status::with_details(code, message, Bytes::from(detail))
+    let mut metadata = MetadataMap::new();
+    metadata.insert_bin(
+        ERROR_DETAIL_METADATA_KEY,
+        MetadataValue::from_bytes(&detail),
+    );
+    Status::with_metadata(code, message, metadata)
 }
 
 #[cfg(test)]
@@ -410,7 +417,15 @@ mod tests {
         .unwrap();
         let status = application.realtime_quotes(request()).await.unwrap_err();
         assert_eq!(status.code(), Code::Unimplemented);
-        let detail = v1::ErrorDetail::decode(status.details()).unwrap();
+        let detail = v1::ErrorDetail::decode(
+            status
+                .metadata()
+                .get_bin(ERROR_DETAIL_METADATA_KEY)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(detail.request_id, "request-1");
         assert_eq!(detail.reason_code, "capability_unadmitted");
     }

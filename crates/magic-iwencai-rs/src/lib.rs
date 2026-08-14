@@ -20,6 +20,9 @@ const SEARCH_PATH: &str = "/v1/comprehensive/search";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_LIMIT: u32 = 50;
+
+/// Repository admission for the bounded authorized semantic-search slice.
+pub const SEMANTIC_SEARCH_ADMITTED: bool = true;
 const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 static TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -222,7 +225,7 @@ impl IwencaiClient {
             reports: false,
             consensus: false,
             target_price_consensus: false,
-            semantic_search: false,
+            semantic_search: SEMANTIC_SEARCH_ADMITTED,
             pdf_download: false,
             document_body: false,
         }

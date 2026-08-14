@@ -335,7 +335,7 @@ fn constructors_capabilities_validation_and_https_guard_are_covered() {
     let capabilities = IwencaiClient::research_capabilities();
     assert!(!capabilities.reports);
     assert!(!capabilities.consensus);
-    assert!(!capabilities.semantic_search);
+    assert!(capabilities.semantic_search);
     assert!(!capabilities.pdf_download);
 
     let invalid_request = HttpRequest {

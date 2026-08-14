@@ -171,7 +171,7 @@ shasum -a 256 -c SHA256SUMS
 | `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；生产数据族仍待准入 |
 | `magic-market-monitor` | 支持 | 支持 | 支持 | 纯确定性价格窗口与有界 replay；无 I/O |
 | `magic-market-monitor-server` | typed Unsupported | typed Unsupported | 诊断叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听，生产准入仍关闭 |
-| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；Provider composition 默认 fail-closed |
+| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；54 个查询精确登记，44 个已绑定 Provider handler、10 个证据不足的操作 fail-closed |
 | `magic-market-tdx-agent` | typed Unsupported | typed Unsupported | 诊断出站 Agent | 固定同目录 monitor/helper；不开放入站端口，不提升 admission |
 | `magic-tdx-native-bridge --discover` | typed Unsupported | typed Unsupported | 仅发现 | Windows 同用户/会话 `TdxW.exe` 发现和版本证据；不获取行情 |
 | `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |
@@ -475,8 +475,9 @@ RSS，打印标题、ACK ID、规范链接、来源时间、频道和证据，�
 probe 只读取精确 `/rss.xml`，严格解析完整 feed 后打印标题、数字 ID、规范链接、
 来源时间和证据，summary/content 恒缺失；2026-07-26 live 20 条和同一客户端串行
 load 2/2 已通过，`global_news=true`。`MAGIC_WALLSTREETCN_MATCH` 同样只是当前
-有界 feed 的本地标题匹配。iWencai 无授权 Key 时预期
-返回脱敏鉴权错误，不能把这次运行登记为语义搜索实盘通过。
+有界 feed 的本地标题匹配。iWencai 已于 2026-08-14 使用获授权 Key 完成两次 live
+和三次串行 load；部署时仍必须从秘密环境注入 Key。缺少或失效的 Key 预期返回
+脱敏鉴权错误，不能把失败运行当成空成功。
 
 上线门至少保存以下证据，但不要保存账号、令牌或原始登录包：
 

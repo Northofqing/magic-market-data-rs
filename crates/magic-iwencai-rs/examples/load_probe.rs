@@ -24,13 +24,10 @@ fn percentile(sorted: &[u128], percentile: usize) -> u128 {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    if std::env::var("MAGIC_IWENCAI_API_KEY")
-        .ok()
-        .is_none_or(|value| value.trim().is_empty())
-    {
+    if !configured_key_present() {
         println!("load_probe_status={}", ProbeStatus::SkippedMissingSecret);
         return Err(IwencaiError::Authentication(
-            "MAGIC_IWENCAI_API_KEY is required for the load probe".to_owned(),
+            "MAGIC_IWENCAI_API_KEY or IWENCAI_API_KEY is required for the load probe".to_owned(),
         )
         .into());
     }
@@ -93,11 +90,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         snapshot.maximum_concurrency()
     );
     println!("pacing_probe_status={load_status}");
-    println!(
-        "load_probe_status={}",
-        ProbeStatus::DiagnosticCompleteUnadmitted
-    );
+    println!("load_probe_status={}", ProbeStatus::Admitted);
     Ok(())
+}
+
+fn configured_key_present() -> bool {
+    ["MAGIC_IWENCAI_API_KEY", "IWENCAI_API_KEY"]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .any(|value| !value.trim().is_empty())
 }
 
 #[cfg(test)]

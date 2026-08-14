@@ -31,9 +31,10 @@ https://openapi.iwencai.com/v1/comprehensive/search
 - `observed_at` 在 POST 响应完整读取后采集，不早于响应完成时间；
 - 未经验证的动态列不会塞进固定 Core 字段。
 
-公开的 typed `semantic_search` 方法已经实现；但在获授权 Key 的真实探针验证线上
-schema 前，`capabilities().semantic_search` 保持 `false`。路由器不会因 fixture
-测试通过而把尚未完成授权实测的能力宣传为可用。
+公开的 typed `semantic_search` 方法已经实现。2026-08-14 使用获授权 Key 完成两次
+release live（每次 7 条）和同一客户端三次串行 load（3/3 成功、共 21 条、最小请求
+起始间隔 1000 ms、最大并发 1），因此精确的 `Report` 频道、非空查询、limit ≤ 50
+语义搜索范围已准入。路由器仍不会因 fixture 或仅存在 Key 而扩大准入范围。
 
 ## 探针
 
@@ -48,8 +49,8 @@ MAGIC_IWENCAI_API_KEY=... MAGIC_IWENCAI_LOAD_REQUESTS=2 \
 load probe 固定并发 1、由客户端保证请求起始至少间隔 1 秒、最多 3 次，并输出
 成功/失败、错误、RPS 和 p50/p95/p99/max。确定性 fixtures 覆盖正常映射、去重、
 缺 Key、HTTP 鉴权错误、API 鉴权错误、响应完成后观察时间、Content-Type、
-clone 共享门、响应上限和 URL 白名单；只有实际配置获授权 Key 后才会把真实 probe
-和 capability 标记为通过。
+clone 共享门、响应上限和 URL 白名单。真实 probe 不打印 Key；缺少 Key 时仍明确
+返回 `SkippedMissingSecret`，已准入不代表可以绕过运行时鉴权。
 
 ## 生产边界
 

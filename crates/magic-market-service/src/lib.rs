@@ -230,7 +230,7 @@ struct Registration {
 
 #[derive(Clone)]
 pub struct OperationRegistry {
-    registrations: BTreeMap<Operation, Registration>,
+    registrations: BTreeMap<Operation, Vec<Registration>>,
 }
 
 impl OperationRegistry {
@@ -243,7 +243,7 @@ impl OperationRegistry {
             .map(|operation| {
                 (
                     operation,
-                    Registration {
+                    vec![Registration {
                         capability: Capability {
                             operation,
                             repository_admitted: false,
@@ -253,7 +253,7 @@ impl OperationRegistry {
                             blocker: Some(blocker.clone()),
                         },
                         handler: None,
-                    },
+                    }],
                 )
             })
             .collect();
@@ -262,13 +262,10 @@ impl OperationRegistry {
 
     pub fn register_unavailable(&mut self, capability: Capability) -> Result<(), ServiceError> {
         validate_capability(&capability, false)?;
-        self.registrations.insert(
-            capability.operation,
-            Registration {
-                capability,
-                handler: None,
-            },
-        );
+        self.insert_registration(Registration {
+            capability,
+            handler: None,
+        });
         Ok(())
     }
 
@@ -281,29 +278,58 @@ impl OperationRegistry {
         F: Fn(QueryCommand) -> Result<QueryResult, ServiceError> + Send + Sync + 'static,
     {
         validate_capability(&capability, true)?;
-        self.registrations.insert(
-            capability.operation,
-            Registration {
-                capability,
-                handler: Some(Arc::new(handler)),
-            },
-        );
+        self.insert_registration(Registration {
+            capability,
+            handler: Some(Arc::new(handler)),
+        });
         Ok(())
+    }
+
+    fn insert_registration(&mut self, registration: Registration) {
+        let operation = registration.capability.operation;
+        let provider = registration.capability.provider.clone();
+        let registrations = self.registrations.entry(operation).or_default();
+        registrations.retain(|existing| {
+            !existing.capability.provider.is_empty() && existing.capability.provider != provider
+        });
+        registrations.push(registration);
     }
 
     #[must_use]
     pub fn capabilities(&self) -> Vec<Capability> {
         self.registrations
             .values()
+            .flatten()
             .map(|registration| registration.capability.clone())
             .collect()
     }
 
     pub fn execute(&self, command: QueryCommand) -> Result<QueryResult, ServiceError> {
-        let registration = self
+        let registrations = self
             .registrations
             .get(&command.operation)
             .ok_or_else(|| ServiceError::Internal("operation registry is incomplete".to_owned()))?;
+        let registration = if let Some(preferred) = command.preferred_provider() {
+            registrations
+                .iter()
+                .find(|registration| registration.capability.provider == preferred)
+                .ok_or_else(|| ServiceError::Unsupported {
+                    operation: command.operation,
+                    reason: format!("provider {preferred} is not registered for this operation"),
+                })?
+        } else {
+            registrations
+                .iter()
+                .find(|registration| {
+                    registration.capability.repository_admitted
+                        && registration.capability.runtime_available
+                        && registration.handler.is_some()
+                })
+                .or_else(|| registrations.first())
+                .ok_or_else(|| {
+                    ServiceError::Internal("operation has no registrations".to_owned())
+                })?
+        };
         let capability = &registration.capability;
         if !capability.repository_admitted {
             return Err(ServiceError::Unsupported {
@@ -322,17 +348,6 @@ impl OperationRegistry {
                     .clone()
                     .unwrap_or_else(|| "runtime capability is unavailable".to_owned()),
             });
-        }
-        if let Some(preferred) = command.preferred_provider() {
-            if preferred != capability.provider {
-                return Err(ServiceError::Unsupported {
-                    operation: command.operation,
-                    reason: format!(
-                        "provider {preferred} is not registered for exact scope {}",
-                        capability.exact_scope
-                    ),
-                });
-            }
         }
         let handler = registration.handler.as_ref().ok_or_else(|| {
             ServiceError::Internal("admitted runtime capability has no handler".to_owned())
@@ -503,5 +518,58 @@ mod tests {
             }),
             Err(ServiceError::InvalidRequest(_))
         ));
+    }
+
+    #[test]
+    fn multiple_providers_are_selectable_and_default_is_first_admitted() {
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        for provider in ["Tencent", "Sina"] {
+            let returned_provider = provider.to_owned();
+            registry
+                .register_handler(
+                    Capability {
+                        operation: Operation::RealtimeQuotes,
+                        repository_admitted: true,
+                        runtime_available: true,
+                        provider: provider.to_owned(),
+                        exact_scope: "A-share quote".to_owned(),
+                        blocker: None,
+                    },
+                    move |_| {
+                        Ok(QueryResult {
+                            provider: returned_provider.clone(),
+                            batch_id: "batch-1".to_owned(),
+                            complete: true,
+                            observed_at: "2026-08-14T00:00:00Z".to_owned(),
+                            source_at: None,
+                            records: vec![payload()],
+                        })
+                    },
+                )
+                .unwrap();
+        }
+
+        assert_eq!(
+            registry
+                .execute(command(Operation::RealtimeQuotes, None))
+                .unwrap()
+                .provider,
+            "Tencent"
+        );
+        assert_eq!(
+            registry
+                .execute(command(Operation::RealtimeQuotes, Some("Sina")))
+                .unwrap()
+                .provider,
+            "Sina"
+        );
+        assert_eq!(
+            registry
+                .capabilities()
+                .iter()
+                .filter(|capability| capability.operation == Operation::RealtimeQuotes)
+                .count(),
+            2
+        );
     }
 }

@@ -8,11 +8,12 @@
 | 54 个只读数据族 RPC | 已进入 v1 Proto |
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 异动订阅、重放、Agent 流 | 已进入 v1 Proto |
-| gRPC Server | 开发中，尚未提供生产地址 |
+| gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
+| Unary Provider composition | 54 个操作精确登记；44 个已绑定真实 handler，10 个显式阻断 |
 | TDX 数据/异动正式准入 | `false`，当前只能作为诊断/影子事件 |
 
-另一个项目现在可以根据 Proto 生成客户端、完成接口封装和假服务测试，但在服务端
-发布地址、TLS 证书和认证令牌交付前，不应把联调状态标记为生产可用。
+另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
+Token 仍属于部署材料而不是稳定公共地址；迁移主机、IP 或证书后必须重新交付连接包。
 
 ## 2. 合同源文件
 
@@ -44,6 +45,10 @@ https://<server-name>:<operator-port>
 - 默认只允许 loopback。
 - 非 loopback 必须启用双向 TLS（mTLS）和 Bearer 认证。
 - 客户端不得直接访问 TDX 的 `127.0.0.1:17709`。
+
+当前工作站联调实例为 `https://10.211.55.3:50051`，TLS server name 是
+`magic-market.local`；仅允许配置的局域网网段并强制 mTLS + Bearer。客户端材料在
+服务端本机 `target/runtime/client-bundle/`，不得提交到 Git 或通过公开渠道传输。
 
 ## 4. 认证
 
@@ -249,9 +254,19 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流和 Windows 固定 sibling monitor 转发已实现；TDX 事件保持影子模式；
-- 当前 gRPC server 的 unary Provider registry 仍使用全量 fail-closed composition，因此
-  方法存在但会返回 `UNIMPLEMENTED/capability_unadmitted`，不能把接口存在写成数据可用；
-- 后续逐数据族绑定正式 Provider handler 时，必须继续满足 admissions.tsv 的精确范围。
+- unary registry 对 54 个操作逐项精确登记：44 个操作绑定 admissions.tsv 范围内的
+  Tencent、Sina、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
+  HKEX、THS、State Council、iWencai 或 TDX 公共协议 handler；
+- `MoneyFlows`、`Auctions`、`SecurityMetadata`、`FuturesDelivery`、`SecurityProfiles`、
+  `TechnicalBars`、`FundFlowSeries`、`PostCloseFlows`、`MarketRankings`、`MarketBreadth`
+  仍为精确 `UNIMPLEMENTED`；
+- `preferred_provider` 非空时必须精确选择已登记来源；空值选择该操作第一个可用登记。
+  当前不会在一次请求内部隐藏切源，上游失败会原样形成 typed gRPC error，调用方可根据
+  capabilities 和业务路由策略发起有界重试；
+- FRED、SEC EDGAR、iWencai 还要求对应运行时环境身份；缺失时 capability 保留
+  repository admission、但 `runtime_available=false`，请求会在 I/O 前失败。
+- 2026-08-14 当前实例通过 `SemanticSearch` + `preferred_provider=Iwencai` 实测返回
+  10 条 `Report` 记录；Key 只从服务进程环境加载，不进入请求、日志或证据。
 
 ## 11. gRPC 错误处理
 
@@ -267,8 +282,10 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 | `FAILED_PRECONDITION` | 数据完整性/连续性失败，不能当空成功 |
 | `INTERNAL` | 记录 request_id，停止无界重试 |
 
-服务端可能把安全的 `ErrorDetail` 编码在 Status details 中：request ID、operation、
-Provider、reason code 和 retryable；不得依赖自然语言 message 做程序分支。
+服务端把安全的 Protobuf `ErrorDetail` 编码在 trailing metadata
+`magic-error-detail-bin` 中：request ID、operation、Provider、reason code 和 retryable。
+该自定义 detail 不占用标准 `grpc-status-details-bin`，因此 grpcurl 等标准客户端不会把
+它误解为 `google.rpc.Status`。调用方不得依赖自然语言 message 做程序分支。
 
 ## 12. 客户端代码生成
 

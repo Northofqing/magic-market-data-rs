@@ -1005,11 +1005,27 @@ dependencies = [
 name = "magic-market-composition"
 version = "0.2.0"
 dependencies = [
+ "magic-cfets-rs",
+ "magic-cninfo-rs",
  "magic-eastmoney-rs",
+ "magic-exchange-rs",
+ "magic-fred-rs",
+ "magic-gov-rs",
+ "magic-iwencai-rs",
+ "magic-jin10-rs",
  "magic-market-core",
  "magic-market-monitor",
  "magic-market-router",
+ "magic-market-service",
+ "magic-sec-rs",
+ "magic-sina-rs",
  "magic-tdx-local-rs",
+ "magic-tdx-rs",
+ "magic-tencent-rs",
+ "magic-ths-rs",
+ "magic-wallstreetcn-rs",
+ "serde",
+ "serde_json",
  "thiserror",
  "time",
 ]
@@ -1039,6 +1055,7 @@ name = "magic-market-grpc-server"
 version = "0.2.0"
 dependencies = [
  "bytes",
+ "magic-market-composition",
  "magic-market-grpc-contracts",
  "magic-market-service",
  "prost",

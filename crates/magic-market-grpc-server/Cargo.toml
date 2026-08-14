@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 bytes = "1"
+magic-market-composition = { path = "../magic-market-composition", version = "=0.2.0" }
 magic-market-grpc-contracts = { path = "../magic-market-grpc-contracts", version = "=0.2.0" }
 magic-market-service = { path = "../magic-market-service", version = "=0.2.0" }
 prost = "=0.14.3"

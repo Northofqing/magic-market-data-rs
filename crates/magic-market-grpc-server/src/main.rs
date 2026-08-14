@@ -11,17 +11,18 @@ use app::GrpcApplication;
 use auth::BearerAuth;
 use config::ServerConfig;
 use events::EventHub;
+use magic_market_composition::production_operation_registry;
 use magic_market_grpc_contracts::v1;
-use magic_market_service::OperationRegistry;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ServerConfig::parse(std::env::args())?;
     let authentication = BearerAuth::new(&config.auth_token)?;
-    let gateway = Arc::new(OperationRegistry::all_unadmitted(
-        "production provider composition is not registered",
-    ));
+    let gateway = Arc::new(production_operation_registry(
+        config.blocking_deadline,
+        config.max_payload_bytes,
+    )?);
     let application = GrpcApplication::new(
         gateway,
         config.max_payload_bytes,

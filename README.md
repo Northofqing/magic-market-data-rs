@@ -28,8 +28,8 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 > 证据，不读取或输出 description/正文，也不从标题推断证券身份。
 > Choice/EMQuant 已完成设备激活和 API 登录，日线与日级资金流已取得
 > 真实记录，Quote、盘口和分钟线仍因 `10001012/EQERR_ACCESS_INSUFFICIENCE` 待补
-> 权限。iWencai 已实现正式 API Key 鉴权，当前没有授权 Key，因此真实 401 会按设计
-> 非零退出，不会伪报成功。
+> 权限。iWencai 已实现正式 API Key 鉴权；2026-08-14 使用获授权 Key 完成两次
+> live 与三次串行 load，精确语义搜索范围已准入。Key 缺失或失效仍会明确失败。
 > NBS、PBC、CFETS、FRED、IMF、World Bank、SEC EDGAR，以及新华财经、第一财经、
 > 证券时报人民财讯的 Provider、严格离线解析、共享有界 HTTPS transport 和探针已实现。
 > 2026-07-29，PBC 精确编目的 2024 货币供应量、CFETS Shibor/LPR/官方中间价，以及
@@ -81,7 +81,7 @@ HTTP 栈由 [transport registry](docs/integrations/http-transports.tsv) 机械�
 | `magic-market-monitor-server` | 自动发现 TDX、固定 TQ-Local 快慢双路径轮询、监控组合与 4-byte big-endian 长度前缀 JSON 输出的可选 Windows 叶子服务 | amount 使用独立有界 worker；stdout 有界队列慢消费者即停；无入站监听；参数显式；生产数据族仍待准入 |
 | `magic-market-grpc-contracts` | `magic.market.v1` Protobuf、descriptor set 与有界 wire 校验 | 54 个只读查询、事件订阅/重放和 TDX Agent 双向流；不含 Provider I/O |
 | `magic-market-service` | transport-neutral 查询命令、能力注册和 admission-before-I/O 门 | 不依赖 gRPC；未登记 handler 明确失败 |
-| `magic-market-grpc-server` | 认证 gRPC/HTTP2 服务、blocking Provider 隔离、有界事件 hub | 远程绑定强制 mTLS；当前 Provider 组合 fail-closed，TDX 仅影子事件 |
+| `magic-market-grpc-server` | 认证 gRPC/HTTP2 服务、blocking Provider 隔离、多 Provider 精确选择与有界事件 hub | 远程绑定强制 mTLS；54 个查询均有精确登记，其中 44 个已绑定正式 Provider handler、10 个保持显式阻断；TDX 本地事件仍为影子模式 |
 | `magic-market-tdx-agent` | Windows 出站 Agent，监督固定同目录 monitor 并转发有界帧 | 不开放入站端口；不加载 DLL；强制 `admitted=false` |
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
 | `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖基础行情、沪深财务三表和沪市 ETF 期权 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
@@ -190,7 +190,7 @@ Router 适配器已经通过确定性测试。
 | 领域 | 主要记录 | 当前状态 |
 | --- | --- | --- |
 | 行情增强 | `MarketStatistics`、`TechnicalBar` | Tencent 股票/指数/ETF 统计与 Baidu 未复权日 K/MA 实盘 |
-| 研报与一致预期 | `ResearchReport`、`ConsensusSnapshot`、`SemanticSearchDocument` | Eastmoney 研报、THS 一致预期实盘；iWencai 已实现/待授权 Key |
+| 研报与一致预期 | `ResearchReport`、`ConsensusSnapshot`、`SemanticSearchDocument` | Eastmoney 研报、THS 一致预期实盘；iWencai 获授权语义搜索已通过 live/load |
 | 信号与板块 | `BoardMembership`、`StrongStockReason`、龙虎榜/人气/概念记录 | Eastmoney 与 SSE/SZSE 龙虎榜、TDX 行业/概念目录和成员、Eastmoney/THS 人气、THS 强势原因实盘 |
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
 | 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Core/Router 严格合同和 Eastmoney 诊断实现完成；实网存在缺失指标与混合 `f124`，production capability 为 false、正式 trait 返回 `Unsupported` |
@@ -256,7 +256,7 @@ Router 适配器已经通过确定性测试。
 | Yicai | 官方 `firstlist` 首屏严格 metadata 解析；两次 live 和三次 load 已通过 | `global_news=true`；不保留 NewsNotes、图片、视频或分享字段，转载保留原发布方 |
 | Securities Times | 官方人民财讯 XHR 首屏严格 metadata 解析；两次 live 和三次 load 已通过 | `global_news=true`；校验双时间/双 URL/游标，不保留 content/share |
 | Baidu | 华电辽能未复权日 K、MA5/10/20 | 不提供实时 Quote、分钟线或 Level-2 |
-| iWencai | 正式 X-Claw 鉴权和语义结果解析 | 真实数据待合法 API Key；不读取 Cookie/桌面登录态 |
+| iWencai | 正式 X-Claw 鉴权和语义结果解析 | 2026-08-14 两次 live 与三次串行 load 通过；不读取 Cookie/桌面登录态，运行时仍必须注入 Key |
 | SSE/SZSE/HKEX official | SSE/SZSE 公告与龙虎榜、SZSE Quote/五档、HKEX 沪深北向日统计及 Top10 | 不提供 SSE Quote、集合竞价、逐笔委托或 Level-2；公共端点无 SLA |
 | CFFEX official diagnostic | IF/IH/IC/IM 交割通知确定性解析已通过；2026-07-27 Rustls/Native TLS 均在取得 HTTP 前失败；明文官方页只用于诊断 | 尚未生产准入：capability 为 false，生产 trait 返回 `Unsupported`；不自动降级到 HTTP |
 | State Council | 国务院政策库 `gongwen`/`bumenfile` 官方文件 | 仅规范 `www.gov.cn` 文件；不是新闻或行情源 |
@@ -504,10 +504,14 @@ grpcurl `
 非空唯一 `request_id` 和相同的认证 metadata。完整 RPC、错误模型、订阅、重放与
 TDX Agent 合同见 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)。
 
-当前运行状态是 `serving_fail_closed / agent_connected_diagnostic`。链路和事件流真实
-运行，但 LocalTerminal/LocalAnalysis 仍为 `UNADMITTED`；外部系统必须保留该标记，
-不能把诊断事件当成已准入生产行情。`10.211.55.3` 是当前工作站地址；地址或网段变化
-时必须重新签发包含新 IP 的服务端证书并同步收紧防火墙规则，禁止跳过 TLS 校验。
+当前运行状态是 `ready / agent_connected_diagnostic`。54 个 unary 查询都有精确能力项；
+44 个操作已绑定 admissions.tsv 支持的真实 Provider handler，10 个未有完整证据的操作会
+精确返回 `UNIMPLEMENTED`，不会做网络 I/O。已通过当前 gRPC 实例实测的代表性调用包括
+Tencent 六类行情、Sina 全球指数和 USD/CNY、FRED GDP、SEC EDGAR、WallstreetCN 新闻及
+TDX 公共协议板块目录。LocalTerminal/LocalAnalysis 事件仍为 `UNADMITTED`，外部系统
+必须保留该标记，不能把诊断事件当成已准入生产行情。`10.211.55.3` 是当前工作站地址；
+地址或网段变化时必须重新签发包含新 IP 的服务端证书并同步收紧防火墙规则，禁止跳过
+TLS 校验。
 
 ### 确定性验证
 
@@ -994,6 +998,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | IMF diagnostics | 未准入 | 两次 live 与三次 load 尝试均为 typed HTTP 403，新版 Swagger 需要 beta portal 登录 |
 | World Bank exact USA GDP 2024 live/load | 通过 | 官方 per-series metadata 证明 `current US$`/Annual；两次 formal live 各返回 `29298013000000`，三次串行 load 通过；仅精确范围为 true |
 | FRED/SEC identified live/load | 通过 | 2026-08-13：FRED 两次各返回 4 个 GDP 季度记录，SEC 两次各返回 5 条 Apple 申报；两者三次串行 load 均通过，运行身份未进入证据；正式能力已开启 |
+| gRPC Provider composition | 部分实网通过、精确失败保留 | 2026-08-14：54 个操作全部精确登记，44 个绑定 handler、10 个显式 `UNIMPLEMENTED`；当前实例实测 Tencent 六类、Sina 全球指数/汇率、FRED GDP、SEC EDGAR、CFETS Shibor、CNInfo 全市场公告、HKEX 北向、THS 热榜、WallstreetCN/Eastmoney 新闻、iWencai 语义搜索及 TDX 板块目录通过；Jin10 日历与 State Council 当前协议失败 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 2026-07-27 当前树 live 覆盖 SSE 公告/龙虎榜、SZSE 公告/Quote/五档/龙虎榜及 HKEX 两条北向日统计；load 8/8、零失败，最小请求起始间隔 1001 ms |
 | Router strict 5-second quote | 通过 | 2026-07-27 13:01 连续竞价：TDX 因缺可信源时间被拒绝，Tencent 600519.SH 被选中，源龄 3613 ms |
@@ -1002,7 +1007,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Eastmoney strict 15:35 post-close flow | 诊断实现通过；生产未准入 | 正式 trait 返回 typed `Unsupported` 且 capability=false；当前日全量诊断因证券间源时间不一致返回 `diagnostic_probe_status=unadmitted`，不输出生产成功标记 |
 | Eastmoney Provider Top-N | 通过 | 2026-07-29 22:25 +08:00 正式 trait 分别返回量比/主力净流入 20 行；请求开始和响应后 observation 均在 15:35 后，源总数 5,542，`source_at=None` |
 | CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602；2026-07-27 双 TLS 均未取得 HTTP。官方明文页诊断确认 2026-07-17 及 IF/IH/IC/IM 结算价，但明文不进入 Provider，capability 仍为 false |
-| iWencai live | 待授权 | 无 Key 的真实 HTTP 401 正确映射为脱敏鉴权错误；未伪造数据 |
+| iWencai live/load | 通过 | 2026-08-14：两次 live 各 7 条；三次串行 load 3/3、共 21 条、最小请求起始间隔 1000 ms、最大并发 1；Key 不进入日志或证据 |
 | Release package | 每个提交独立构建 | 四十九个独立 probe；Windows 另成对安装两个 admitted=false 的 TDX 本地诊断二进制；跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 
 任何 Provider 字段、授权、服务器或网页协议发生变化后，都必须重新运行对应的
