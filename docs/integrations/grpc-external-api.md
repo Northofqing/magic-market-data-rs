@@ -9,7 +9,7 @@
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 54 个操作精确登记；44 个已绑定真实 handler，10 个显式阻断 |
+| Unary Provider composition | 54 个操作精确登记；46 个已绑定真实 handler，8 个显式阻断 |
 | TDX 数据/异动正式准入 | `false`，当前只能作为诊断/影子事件 |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
@@ -230,6 +230,26 @@ best-effort：
 服务端还会再次强制该边界：TDX Agent 若发送 `ADMITTED`，流会以
 `FAILED_PRECONDITION` 停止，不能由传输层自行提升 repository admission。
 
+### 已接入的证券资料请求
+
+`SecurityMetadata` 使用以下 canonical schema：
+
+```text
+schema = magic.market.security_metadata.request
+data   = {"instruments":[{"exchange":"Shanghai","code":"600396","asset_class":"Equity"}]}
+```
+
+腾讯来源覆盖 1..=50 个唯一沪深京股票。名称和 ST 标记来自源快照，板块为显式派生；
+来源未证明的上市日期、涨跌停规则及规则版本保持 unavailable，因此该调用可能返回
+`admission=ADMITTED` 且 `complete=false`。调用方必须保留字段级质量，不能把空字段补成
+默认值。
+
+`SecurityProfiles` 使用相同 instruments JSON，schema 为
+`magic.market.security_profiles.request`。TDX 公共协议只覆盖 1..=8 个唯一沪深股票，返回
+精确名称、可选财务包上市日和唯一 `公司概况` F10 原始行事实；不推断行业、总股本或
+流通股本。F10 没有可信源时间，因此 `source_at` 为空。精确范围与实测证据见
+[TDX 公共公司资料准入](tdx-public-security-profile.md)。
+
 ## 9. TDX Agent 接口
 
 `TdxAgentService.OpenStream` 只供同仓库 Windows Agent 使用，普通业务系统不要调用。
@@ -254,11 +274,11 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流和 Windows 固定 sibling monitor 转发已实现；TDX 事件保持影子模式；
-- unary registry 对 54 个操作逐项精确登记：44 个操作绑定 admissions.tsv 范围内的
+- unary registry 对 54 个操作逐项精确登记：46 个操作绑定 admissions.tsv 范围内的
   Tencent、Sina、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council、iWencai 或 TDX 公共协议 handler；
-- `MoneyFlows`、`Auctions`、`SecurityMetadata`、`FuturesDelivery`、`SecurityProfiles`、
-  `TechnicalBars`、`FundFlowSeries`、`PostCloseFlows`、`MarketRankings`、`MarketBreadth`
+- `MoneyFlows`、`Auctions`、`FuturesDelivery`、`TechnicalBars`、`FundFlowSeries`、
+  `PostCloseFlows`、`MarketRankings`、`MarketBreadth`
   仍为精确 `UNIMPLEMENTED`；
 - `preferred_provider` 非空时必须精确选择已登记来源；空值选择该操作第一个可用登记。
   当前不会在一次请求内部隐藏切源，上游失败会原样形成 typed gRPC error，调用方可根据
@@ -267,6 +287,19 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   repository admission、但 `runtime_available=false`，请求会在 I/O 前失败。
 - 2026-08-14 当前实例通过 `SemanticSearch` + `preferred_provider=Iwencai` 实测返回
   10 条 `Report` 记录；Key 只从服务进程环境加载，不进入请求、日志或证据。
+
+剩余 8 项不是缺少 gRPC 方法，而是数据合同尚未满足：
+
+| 操作 | 当前阻塞原因 |
+| --- | --- |
+| `MoneyFlows` | 公共 TDX 成交额不是分单资金流；当前 Windows 部署没有已准入的 EMQuant SDK runtime |
+| `Auctions` | 缺少满足 BR-035 的授权 Level-2/券商竞价源 |
+| `FuturesDelivery` | CFFEX 当前 TLS 实测仍在 HTTP 前异常结束，正式能力保持 false |
+| `TechnicalBars` | Baidu 技术 K 线尚缺交易日历和公司行动连续性证据 |
+| `FundFlowSeries` | 东财单次诊断取得记录，但三次串行稳定性验证发生 TLS EOF，未通过 load gate |
+| `PostCloseFlows` | 全市场证券的源时间不一致，不能构成同一盘后快照 |
+| `MarketRankings` | 完整分页在传输失败时原子丢弃，且完整市场源时间原子性未证明 |
+| `MarketBreadth` | 派生依赖已准入的完整市场快照，当前前置能力不存在 |
 
 ## 11. gRPC 错误处理
 

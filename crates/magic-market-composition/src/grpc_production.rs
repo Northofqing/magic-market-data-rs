@@ -25,8 +25,9 @@ use magic_market_core::{
     OrderBooks, PolicyDocuments, PolicyRequest, PopularityData, PositiveU32,
     ProviderTopNRankingRequest, ProviderTopNRankings, RealtimeQuotes, ReferenceRateProvider,
     ReferenceRateRequest, ResearchDocumentRequest, ResearchDocuments, ResearchReports,
-    ResearchRequest, SemanticSearch, SemanticSearchRequest, StatementKind, StrongStockReasons,
-    TargetPriceData, TargetPriceRequest, Trades, TradesRequest,
+    ResearchRequest, SecurityMetadataProvider, SecurityProfiles, SemanticSearch,
+    SemanticSearchRequest, StatementKind, StrongStockReasons, TargetPriceData, TargetPriceRequest,
+    Trades, TradesRequest,
 };
 use magic_market_service::{
     CanonicalPayload, Capability, Operation, OperationRegistry, QueryCommand, QueryResult,
@@ -34,7 +35,9 @@ use magic_market_service::{
 };
 use magic_sec_rs::{SecEdgarClient, SecEdgarError};
 use magic_sina_rs::{SinaClient, SinaError};
-use magic_tdx_rs::{BlockService, TdxBoardProvider, TdxError, TdxSmartClient};
+use magic_tdx_rs::{
+    BlockService, TdxBoardProvider, TdxError, TdxSecurityProfileProvider, TdxSmartClient,
+};
 use magic_tencent_rs::{TencentClient, TencentError};
 use magic_ths_rs::{ThsClient, ThsError};
 use magic_wallstreetcn_rs::{WallstreetCnClient, WallstreetCnError};
@@ -52,6 +55,8 @@ pub const ORDER_BOOKS_REQUEST_SCHEMA: &str = "magic.market.order_books.request";
 pub const ORDER_BOOKS_RECORD_SCHEMA: &str = "magic.market.order_book";
 pub const TRADES_REQUEST_SCHEMA: &str = "magic.market.trades.request";
 pub const TRADES_RECORD_SCHEMA: &str = "magic.market.trade";
+pub const SECURITY_METADATA_REQUEST_SCHEMA: &str = "magic.market.security_metadata.request";
+pub const SECURITY_METADATA_RECORD_SCHEMA: &str = "magic.market.security_metadata";
 pub const MARKET_STATISTICS_REQUEST_SCHEMA: &str = "magic.market.market_statistics.request";
 pub const MARKET_STATISTICS_RECORD_SCHEMA: &str = "magic.market.market_statistics";
 pub const GLOBAL_INDICES_REQUEST_SCHEMA: &str = "magic.market.global_indices.request";
@@ -75,6 +80,8 @@ pub const INVESTOR_QUESTIONS_REQUEST_SCHEMA: &str = "magic.market.investor_quest
 pub const INVESTOR_QUESTIONS_RECORD_SCHEMA: &str = "magic.market.investor_question";
 pub const POLICY_DOCUMENTS_REQUEST_SCHEMA: &str = "magic.market.policy_documents.request";
 pub const POLICY_DOCUMENTS_RECORD_SCHEMA: &str = "magic.market.policy_document";
+pub const SECURITY_PROFILES_REQUEST_SCHEMA: &str = "magic.market.security_profiles.request";
+pub const SECURITY_PROFILES_RECORD_SCHEMA: &str = "magic.market.security_profile";
 pub const FINANCIAL_STATEMENTS_REQUEST_SCHEMA: &str = "magic.market.financial_statements.request";
 pub const FINANCIAL_STATEMENTS_RECORD_SCHEMA: &str = "magic.market.financial_statement";
 pub const RESEARCH_REPORTS_REQUEST_SCHEMA: &str = "magic.market.research_reports.request";
@@ -173,6 +180,8 @@ pub enum ProductionRegistryError {
     Ths(#[from] ThsError),
     #[error("iWencai production client initialization failed: {0}")]
     Iwencai(#[from] IwencaiError),
+    #[error("TDX production client initialization failed: {0}")]
+    Tdx(#[from] TdxError),
     #[error("production operation registration failed: {0}")]
     Service(#[from] ServiceError),
 }
@@ -290,17 +299,26 @@ fn registry_with_tencent(
         capability(Operation::Trades, TENCENT_TRADES_SCOPE),
         move |command| execute_tencent_trades(&trades, command, maximum_payload_bytes),
     )?;
-    registry.register_unavailable(Capability {
-        operation: Operation::SecurityMetadata,
-        repository_admitted: false,
-        runtime_available: false,
-        provider: TENCENT_PROVIDER.to_owned(),
-        exact_scope: TENCENT_QUOTE_SCOPE.to_owned(),
-        blocker: Some(
-            "Tencent metadata lacks source-backed listing date and price-limit rule/version; normalized batch is incomplete"
-                .to_owned(),
+    let metadata = client.clone();
+    registry.register_handler(
+        capability(
+            Operation::SecurityMetadata,
+            "1..=50 unique Shanghai/Shenzhen/Beijing equities; source name/ST flag and explicitly derived board, with unproved listing date and price-limit fields retained as unavailable",
         ),
-    })?;
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, SECURITY_METADATA_REQUEST_SCHEMA)?;
+            let batch = metadata
+                .security_metadata(&request.instruments)
+                .map_err(|error| map_tencent_error(Operation::SecurityMetadata, error))?;
+            provider_query_result(
+                batch,
+                TENCENT_PROVIDER,
+                SECURITY_METADATA_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
     registry.register_handler(
         capability(Operation::MarketStatistics, TENCENT_STATISTICS_SCOPE),
         move |command| execute_tencent_statistics(&client, command, maximum_payload_bytes),
@@ -533,12 +551,6 @@ fn register_exact_blockers(registry: &mut OperationRegistry) -> Result<(), Servi
             "Cffex",
             "official CFFEX delivery calendar",
             "CFFEX remains diagnostic-only because the admitted TLS transport has not completed live evidence",
-        ),
-        blocked(
-            Operation::SecurityProfiles,
-            "Tdx",
-            "normalized company security profiles",
-            "no production provider implements the complete SecurityProfiles contract",
         ),
         blocked(
             Operation::TechnicalBars,
@@ -848,6 +860,32 @@ fn register_tdx_public(
                 batch,
                 "Tdx",
                 CONCEPT_HITS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let profiles = Arc::new(TdxSecurityProfileProvider::new(
+        "180.153.18.170",
+        7709,
+        timeout_seconds,
+    )?);
+    registry.register_handler(
+        admitted(
+            Operation::SecurityProfiles,
+            "Tdx",
+            "1..=8 unique Shanghai/Shenzhen equities; exact TDX name, optional finance-backed listing date and complete company-overview F10 source-line facts",
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, SECURITY_PROFILES_REQUEST_SCHEMA)?;
+            let batch = profiles
+                .security_profiles(&request.instruments)
+                .map_err(|error| provider_error(Operation::SecurityProfiles, error))?;
+            provider_query_result(
+                batch,
+                "Tdx",
+                SECURITY_PROFILES_RECORD_SCHEMA,
                 maximum_payload_bytes,
             )
         },
@@ -1699,7 +1737,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use magic_market_core::Quote;
+    use magic_market_core::{Quote, SecurityMetadata};
     use magic_market_service::QueryCommand;
     use magic_tencent_rs::SnapshotTransport;
 
@@ -1720,6 +1758,10 @@ mod tests {
     }
 
     fn command(schema: &str, provider: Option<&str>) -> QueryCommand {
+        command_for(Operation::RealtimeQuotes, schema, provider)
+    }
+
+    fn command_for(operation: Operation, schema: &str, provider: Option<&str>) -> QueryCommand {
         let data = serde_json::to_vec(&serde_json::json!({
             "instruments": [{
                 "exchange": "Shanghai",
@@ -1730,7 +1772,7 @@ mod tests {
         .unwrap();
         QueryCommand::new(
             "quote-1",
-            Operation::RealtimeQuotes,
+            operation,
             provider.map(str::to_owned),
             CanonicalPayload::new(schema, SCHEMA_VERSION, data, 4096).unwrap(),
         )
@@ -1763,7 +1805,7 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 44);
+        assert_eq!(admitted.len(), 46);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
@@ -1774,9 +1816,7 @@ mod tests {
             vec![
                 Operation::MoneyFlows,
                 Operation::Auctions,
-                Operation::SecurityMetadata,
                 Operation::FuturesDelivery,
-                Operation::SecurityProfiles,
                 Operation::TechnicalBars,
                 Operation::FundFlowSeries,
                 Operation::PostCloseFlows,
@@ -1803,6 +1843,42 @@ mod tests {
         let quote: Quote = serde_json::from_slice(result.records[0].data()).unwrap();
         assert_eq!(quote.instrument().code(), "600396");
         assert_eq!(quote.provider(), magic_market_core::ProviderId::Tencent);
+    }
+
+    #[test]
+    fn metadata_handler_preserves_explicit_incomplete_fields() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = TencentClient::with_transport(StaticTransport {
+            calls: calls.clone(),
+        });
+        let registry = registry_with_tencent(client, Duration::from_secs(1), 4096).unwrap();
+        let result = registry
+            .execute(command_for(
+                Operation::SecurityMetadata,
+                SECURITY_METADATA_REQUEST_SCHEMA,
+                Some("Tencent"),
+            ))
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!result.complete);
+        assert_eq!(result.records.len(), 1);
+        let metadata: SecurityMetadata = serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(metadata.name(), Some("ABC"));
+        assert!(metadata.listed_on().is_none());
+        assert!(metadata.price_limit().version().is_none());
+    }
+
+    #[test]
+    fn security_profile_schema_rejects_before_tdx_io() {
+        let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
+        assert!(matches!(
+            registry.execute(command_for(
+                Operation::SecurityProfiles,
+                "wrong.schema",
+                Some("Tdx"),
+            )),
+            Err(ServiceError::InvalidRequest(_))
+        ));
     }
 
     #[test]

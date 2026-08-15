@@ -12,6 +12,7 @@ magic-pbc-rs	Pbc	MONEY_SUPPLY_ADMITTED	true	docs/integrations/pbc-official.md	ad
 magic-pbc-rs	Pbc	SOCIAL_FINANCING_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-
 magic-pbc-rs	Pbc	REGIONAL_SERIES_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-
 magic-sec-rs	SecEdgar	FILING_METADATA_ADMITTED	true	docs/integrations/sec-edgar.md	admitted	2026-08-13	2	3	-
+magic-tdx-rs	Tdx	SECURITY_PROFILES_ADMITTED	true	docs/integrations/tdx-public-security-profile.md	admitted	2026-08-14	2	3	-
 magic-stcn-rs	SecuritiesTimes	GLOBAL_NEWS_ADMITTED	true	docs/integrations/securities-times.md	admitted	2026-07-29	2	3	-
 magic-wallstreetcn-rs	WallstreetCn	GLOBAL_NEWS_ADMITTED	true	docs/integrations/wallstreetcn-rss.md	admitted	2026-07-29	2	3	-
 magic-worldbank-rs	WorldBank	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/worldbank-indicators.md	admitted	2026-08-13	2	3	-

@@ -5,9 +5,24 @@ use crate::profile::types::{F10Category, F10Content, F10Data};
 use crate::{ProfileClient, TdxError};
 use std::sync::Mutex;
 
+fn validate_identity(market: u8, code: &str) -> Result<(), TdxError> {
+    if !matches!(market, 0 | 1) {
+        return Err(TdxError::InvalidData(format!(
+            "invalid profile market {market}; expected 0=SZ or 1=SH"
+        )));
+    }
+    if code.len() != 6 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(TdxError::InvalidData(format!(
+            "invalid profile security code {code:?}; expected six digits"
+        )));
+    }
+    Ok(())
+}
+
 /// Thread-safe facade for F10 categories and content.
 pub struct ProfileService {
     client: Mutex<TdxHqClient>,
+    timeout: f64,
 }
 impl ProfileService {
     /// Creates a profile service using the supplied endpoint.
@@ -17,22 +32,29 @@ impl ProfileService {
         client.set_connect_timeout(timeout);
         Self {
             client: Mutex::new(client),
+            timeout,
         }
     }
-    /// Returns F10 categories for a market/code pair.
-    pub fn categories(&self, market: u8, code: &str) -> Result<Vec<F10Category>, TdxError> {
-        let mut client = self
+
+    fn connected_client(&self) -> Result<std::sync::MutexGuard<'_, TdxHqClient>, TdxError> {
+        let client = self
             .client
             .lock()
             .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
+        client.connect_to_any(Some(self.timeout))?;
+        Ok(client)
+    }
+    /// Returns F10 categories for a market/code pair.
+    pub fn categories(&self, market: u8, code: &str) -> Result<Vec<F10Category>, TdxError> {
+        validate_identity(market, code)?;
+        let mut client = self.connected_client()?;
         ProfileClient::new(&mut client).get_category(market, code)
     }
     /// Returns F10 categories with market inferred from the code prefix.
     pub fn categories_auto(&self, code: &str) -> Result<Vec<F10Category>, TdxError> {
-        let mut client = self
-            .client
-            .lock()
-            .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
+        let market = crate::net::utils::auto_market(code)?;
+        validate_identity(market, code)?;
+        let mut client = self.connected_client()?;
         ProfileClient::new(&mut client).get_category_auto(code)
     }
     /// Fetches content for a previously returned category descriptor.
@@ -42,10 +64,8 @@ impl ProfileService {
         code: &str,
         category: &F10Category,
     ) -> Result<F10Content, TdxError> {
-        let mut client = self
-            .client
-            .lock()
-            .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
+        validate_identity(market, code)?;
+        let mut client = self.connected_client()?;
         ProfileClient::new(&mut client).get_content(market, code, category)
     }
     /// Returns a named F10 section.
@@ -55,26 +75,25 @@ impl ProfileService {
         code: &str,
         name: &str,
     ) -> Result<F10Content, TdxError> {
-        let mut client = self
-            .client
-            .lock()
-            .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
+        validate_identity(market, code)?;
+        if name.trim().is_empty() {
+            return Err(TdxError::InvalidData(
+                "profile category name must not be empty".into(),
+            ));
+        }
+        let mut client = self.connected_client()?;
         ProfileClient::new(&mut client).get_content_by_name(market, code, name)
     }
     /// Returns all F10 sections.
     pub fn all_contents(&self, market: u8, code: &str) -> Result<Vec<F10Content>, TdxError> {
-        let mut client = self
-            .client
-            .lock()
-            .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
+        validate_identity(market, code)?;
+        let mut client = self.connected_client()?;
         ProfileClient::new(&mut client).get_all_contents(market, code)
     }
     /// Returns the complete decoded F10 payload.
     pub fn all_data(&self, market: u8, code: &str) -> Result<F10Data, TdxError> {
-        let mut client = self
-            .client
-            .lock()
-            .map_err(|_| TdxError::InvalidData("profile client lock poisoned".into()))?;
+        validate_identity(market, code)?;
+        let mut client = self.connected_client()?;
         ProfileClient::new(&mut client).get_all_data(market, code)
     }
 }

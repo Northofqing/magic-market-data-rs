@@ -47,6 +47,14 @@ metadata, a Beijing `SecurityMetadataProvider` request returns an immediate
 `Unsupported` explaining this endpoint boundary. It is not retried as a fake
 Shanghai/Shenzhen request. Shanghai/Shenzhen metadata remains available.
 
+The admitted normalized `TdxSecurityProfileProvider` combines that exact
+Shanghai/Shenzhen identity and optional finance-backed listing date with the
+unique public F10 `公司概况` section. It preserves up to 256 ordered non-empty
+source lines as facts and deliberately leaves unproved industry and share-count
+fields unavailable. The exact 1..=8 equity scope and 2026-08-14 live/load
+evidence are recorded in
+[`integrations/tdx-public-security-profile.md`](integrations/tdx-public-security-profile.md).
+
 ## Provenance and partial records
 
 TDX Quote and order-book packets contain a raw quote-time area whose format is

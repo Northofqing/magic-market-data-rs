@@ -97,6 +97,7 @@ case "$host_triple" in
 esac
 
 build_probe magic-tdx-rs live_probe magic-tdx-live-probe
+build_probe magic-tdx-rs security_profile_probe magic-tdx-security-profile-probe
 build_probe magic-emquant-rs live_probe magic-emquant-live-probe
 build_probe magic-tencent-rs live_probe magic-tencent-live-probe
 build_probe magic-tencent-rs load_probe magic-tencent-load-probe

@@ -6,6 +6,7 @@ pub mod error;
 pub use error::TdxError;
 mod adapter;
 mod board_provider;
+mod company;
 pub mod error_codes;
 pub mod fund;
 pub mod helpers;
@@ -20,6 +21,9 @@ pub mod source;
 mod sync;
 pub use block::TdxBlockClient;
 pub use board_provider::{TdxBoardProvider, TdxBoardSource};
+pub use company::{
+    TdxSecurityProfileProvider, MAX_SECURITY_PROFILE_INSTRUMENTS, SECURITY_PROFILES_ADMITTED,
+};
 pub use fund::client::TdxHqFundClient;
 pub use fund::types::{FundBar, FundInfo, FundQuote};
 pub use net::async_client::AsyncTdxHqClient;

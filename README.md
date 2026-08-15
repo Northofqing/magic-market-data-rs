@@ -81,7 +81,7 @@ HTTP 栈由 [transport registry](docs/integrations/http-transports.tsv) 机械�
 | `magic-market-monitor-server` | 自动发现 TDX、固定 TQ-Local 快慢双路径轮询、监控组合与 4-byte big-endian 长度前缀 JSON 输出的可选 Windows 叶子服务 | amount 使用独立有界 worker；stdout 有界队列慢消费者即停；无入站监听；参数显式；生产数据族仍待准入 |
 | `magic-market-grpc-contracts` | `magic.market.v1` Protobuf、descriptor set 与有界 wire 校验 | 54 个只读查询、事件订阅/重放和 TDX Agent 双向流；不含 Provider I/O |
 | `magic-market-service` | transport-neutral 查询命令、能力注册和 admission-before-I/O 门 | 不依赖 gRPC；未登记 handler 明确失败 |
-| `magic-market-grpc-server` | 认证 gRPC/HTTP2 服务、blocking Provider 隔离、多 Provider 精确选择与有界事件 hub | 远程绑定强制 mTLS；54 个查询均有精确登记，其中 44 个已绑定正式 Provider handler、10 个保持显式阻断；TDX 本地事件仍为影子模式 |
+| `magic-market-grpc-server` | 认证 gRPC/HTTP2 服务、blocking Provider 隔离、多 Provider 精确选择与有界事件 hub | 远程绑定强制 mTLS；54 个查询均有精确登记，其中 46 个已绑定正式 Provider handler、8 个保持显式阻断；TDX 本地事件仍为影子模式 |
 | `magic-market-tdx-agent` | Windows 出站 Agent，监督固定同目录 monitor 并转发有界帧 | 不开放入站端口；不加载 DLL；强制 `admitted=false` |
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
 | `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖基础行情、沪深财务三表和沪市 ETF 期权 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
@@ -505,10 +505,10 @@ grpcurl `
 TDX Agent 合同见 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)。
 
 当前运行状态是 `ready / agent_connected_diagnostic`。54 个 unary 查询都有精确能力项；
-44 个操作已绑定 admissions.tsv 支持的真实 Provider handler，10 个未有完整证据的操作会
+46 个操作已绑定 admissions.tsv 支持的真实 Provider handler，8 个未有完整证据的操作会
 精确返回 `UNIMPLEMENTED`，不会做网络 I/O。已通过当前 gRPC 实例实测的代表性调用包括
-Tencent 六类行情、Sina 全球指数和 USD/CNY、FRED GDP、SEC EDGAR、WallstreetCN 新闻及
-TDX 公共协议板块目录。LocalTerminal/LocalAnalysis 事件仍为 `UNADMITTED`，外部系统
+Tencent 行情与字段级不完整证券元数据、Sina 全球指数和 USD/CNY、FRED GDP、SEC EDGAR、
+WallstreetCN 新闻以及 TDX 公共协议板块目录和公司概况。LocalTerminal/LocalAnalysis 事件仍为 `UNADMITTED`，外部系统
 必须保留该标记，不能把诊断事件当成已准入生产行情。`10.211.55.3` 是当前工作站地址；
 地址或网段变化时必须重新签发包含新 IP 的服务端证书并同步收紧防火墙规则，禁止跳过
 TLS 校验。
@@ -998,7 +998,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | IMF diagnostics | 未准入 | 两次 live 与三次 load 尝试均为 typed HTTP 403，新版 Swagger 需要 beta portal 登录 |
 | World Bank exact USA GDP 2024 live/load | 通过 | 官方 per-series metadata 证明 `current US$`/Annual；两次 formal live 各返回 `29298013000000`，三次串行 load 通过；仅精确范围为 true |
 | FRED/SEC identified live/load | 通过 | 2026-08-13：FRED 两次各返回 4 个 GDP 季度记录，SEC 两次各返回 5 条 Apple 申报；两者三次串行 load 均通过，运行身份未进入证据；正式能力已开启 |
-| gRPC Provider composition | 部分实网通过、精确失败保留 | 2026-08-14：54 个操作全部精确登记，44 个绑定 handler、10 个显式 `UNIMPLEMENTED`；当前实例实测 Tencent 六类、Sina 全球指数/汇率、FRED GDP、SEC EDGAR、CFETS Shibor、CNInfo 全市场公告、HKEX 北向、THS 热榜、WallstreetCN/Eastmoney 新闻、iWencai 语义搜索及 TDX 板块目录通过；Jin10 日历与 State Council 当前协议失败 |
+| gRPC Provider composition | 部分实网通过、精确失败保留 | 2026-08-14：54 个操作全部精确登记，46 个绑定 handler、8 个显式 `UNIMPLEMENTED`；新增 Tencent 字段级不完整证券元数据与 TDX 公共 F10 公司概况。当前实例实测 Tencent 行情、Sina 全球指数/汇率、FRED GDP、SEC EDGAR、CFETS Shibor、CNInfo 全市场公告、HKEX 北向、THS 热榜、WallstreetCN/Eastmoney 新闻、iWencai 语义搜索及 TDX 板块/公司概况通过；Jin10 日历与 State Council 当前协议失败 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 2026-07-27 当前树 live 覆盖 SSE 公告/龙虎榜、SZSE 公告/Quote/五档/龙虎榜及 HKEX 两条北向日统计；load 8/8、零失败，最小请求起始间隔 1001 ms |
 | Router strict 5-second quote | 通过 | 2026-07-27 13:01 连续竞价：TDX 因缺可信源时间被拒绝，Tencent 600519.SH 被选中，源龄 3613 ms |

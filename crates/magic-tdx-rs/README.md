@@ -24,6 +24,19 @@ protocol families, run:
 cargo run -p magic-tdx-rs --example live_probe --release
 ```
 
+The admitted `TdxSecurityProfileProvider` combines exact Shanghai/Shenzhen
+security metadata with the unique public F10 `公司概况` section. It accepts one
+to eight unique equities, preserves each non-empty source line as an ordered
+fact and does not infer industry or share counts. F10 has no trustworthy source
+timestamp, so `source_at` remains absent. Run the bounded formal probe with:
+
+```text
+cargo run -p magic-tdx-rs --example security_profile_probe --release --locked --offline
+```
+
+The exact scope and live/load evidence are documented in
+[`../../docs/integrations/tdx-public-security-profile.md`](../../docs/integrations/tdx-public-security-profile.md).
+
 The probe prints source-backed security name/ST/board evidence and also prints
 unavailable listing-date, price-limit-rule, and source-time fields explicitly.
 It verifies Beijing market `2` Quote, bars, books, normalized minute data and

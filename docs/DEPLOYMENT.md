@@ -171,7 +171,7 @@ shasum -a 256 -c SHA256SUMS
 | `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；生产数据族仍待准入 |
 | `magic-market-monitor` | 支持 | 支持 | 支持 | 纯确定性价格窗口与有界 replay；无 I/O |
 | `magic-market-monitor-server` | typed Unsupported | typed Unsupported | 诊断叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听，生产准入仍关闭 |
-| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；54 个查询精确登记，44 个已绑定 Provider handler、10 个证据不足的操作 fail-closed |
+| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；54 个查询精确登记，46 个已绑定 Provider handler、8 个证据不足的操作 fail-closed |
 | `magic-market-tdx-agent` | typed Unsupported | typed Unsupported | 诊断出站 Agent | 固定同目录 monitor/helper；不开放入站端口，不提升 admission |
 | `magic-tdx-native-bridge --discover` | typed Unsupported | typed Unsupported | 仅发现 | Windows 同用户/会话 `TdxW.exe` 发现和版本证据；不获取行情 |
 | `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |

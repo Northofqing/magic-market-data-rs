@@ -1,6 +1,6 @@
 # gRPC External API and TDX Listener Implementation Plan
 
-**Status:** transport foundation implemented; production provider bindings remain pending
+**Status:** transport complete; 46 production provider bindings registered and 8 exact fail-before-I/O blockers retained
 **Design:** `docs/superpowers/specs/2026-08-13-grpc-external-api-design.md`
 
 ## Objective
