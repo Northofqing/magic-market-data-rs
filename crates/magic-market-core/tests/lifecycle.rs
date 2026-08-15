@@ -800,21 +800,12 @@ fn response_rejects_missing_or_disagreeing_batch_provenance() {
         .with_source_at(source_at)
         .unwrap();
 
-    assert!(CorporateActionResponse::new(
-        request.clone(),
-        admission_as_of(),
-        response_evidence.clone(),
-        DataBatch::strict(
-            Vec::new(),
-            serde_json::from_value::<Provenance>(serde_json::json!({
-                "source": "tdx",
-                "source_at": source_at,
-                "fetched_at": observed_at,
-                "batch_id": null
-            }))
-            .unwrap(),
-        ),
-    )
+    assert!(serde_json::from_value::<Provenance>(serde_json::json!({
+        "source": "tdx",
+        "source_at": source_at,
+        "fetched_at": observed_at,
+        "batch_id": null
+    }))
     .is_err());
     assert!(CorporateActionResponse::new(
         request.clone(),

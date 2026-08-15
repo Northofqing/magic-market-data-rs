@@ -2,8 +2,9 @@ use crate::{now, valid_date, valid_time, SinaClient, SinaError};
 use encoding_rs::GB18030;
 use magic_market_core::{
     AssetClass, ContractMonth, DataBatch, Exchange, FiniteNumber, InstrumentId, Money,
-    NonEmptyText, OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind,
-    OptionQuote, Price, ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
+    NonEmptyText, OptionCapabilities, OptionContract, OptionContractInput, OptionData,
+    OptionGreeks, OptionGreeksInput, OptionKind, OptionQuote, OptionQuoteInput, Price, ProviderId,
+    Quantity, Ratio, RatioUnit, SourceEvidence,
 };
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -448,7 +449,7 @@ fn parse_quote(
             "option field amplitude must be non-negative".into(),
         ));
     }
-    Ok(OptionQuote {
+    Ok(OptionQuote::new(OptionQuoteInput {
         contract_code: NonEmptyText::new(contract_code)?,
         name: optional_text(&fields[37])?,
         bid,
@@ -470,7 +471,7 @@ fn parse_quote(
         amplitude,
         quote_at,
         evidence,
-    })
+    })?)
 }
 
 fn parse_greeks(
@@ -499,7 +500,7 @@ fn parse_greeks(
             )));
         }
     }
-    Ok(OptionGreeks {
+    Ok(OptionGreeks::new(OptionGreeksInput {
         contract_code: NonEmptyText::new(contract_code)?,
         name: optional_text(&fields[0])?,
         volume: optional_quantity(&fields[4], "volume")?,
@@ -516,7 +517,7 @@ fn parse_greeks(
         last: optional_price(&fields[14], "last")?,
         theoretical_price: optional_price(&fields[15], "theoretical_price")?,
         evidence: SourceEvidence::new(ProviderId::Sina, observed_at, batch_id.to_owned())?,
-    })
+    })?)
 }
 
 fn parse_requested_records<T>(
@@ -595,7 +596,7 @@ impl OptionData for SinaClient {
                             "option discovery repeats contract {contract_code}"
                         )));
                     }
-                    records.push(OptionContract {
+                    records.push(OptionContract::new(OptionContractInput {
                         contract_code: NonEmptyText::new(contract_code)?,
                         underlying: underlying.clone(),
                         expiry_month: month.clone(),
@@ -607,7 +608,7 @@ impl OptionData for SinaClient {
                             &observed_at,
                             batch_id.clone(),
                         )?,
-                    });
+                    })?);
                     if records.len() > MAX_DISCOVERED_CONTRACTS {
                         return Err(SinaError::Protocol(format!(
                             "option discovery exceeds {MAX_DISCOVERED_CONTRACTS} contracts"
@@ -795,17 +796,17 @@ mod tests {
             .unwrap();
 
         assert_eq!(batch.records().len(), 4);
-        assert_eq!(batch.records()[0].kind, OptionKind::Call);
-        assert_eq!(batch.records()[2].kind, OptionKind::Put);
-        assert_eq!(batch.records()[0].evidence.provider(), ProviderId::Sina);
+        assert_eq!(batch.records()[0].kind(), OptionKind::Call);
+        assert_eq!(batch.records()[2].kind(), OptionKind::Put);
+        assert_eq!(batch.records()[0].evidence().provider(), ProviderId::Sina);
         assert_eq!(
-            batch.records()[0].evidence.batch_id(),
+            batch.records()[0].evidence().batch_id(),
             batch.provenance().batch_id().unwrap()
         );
         assert!(batch
             .records()
             .iter()
-            .all(|record| record.expiry.is_none() && record.strike.is_none()));
+            .all(|record| record.expiry().is_none() && record.strike().is_none()));
         assert!(transport
             .requests
             .lock()
@@ -823,21 +824,21 @@ mod tests {
         let batch = client.option_quotes(&[contract("10012127")]).unwrap();
         let quote = &batch.records()[0];
 
-        assert_eq!(quote.bid_quantity.unwrap().get(), 1.0);
-        assert_eq!(quote.ask_quantity.unwrap().get(), 2.0);
-        assert_eq!(quote.last.unwrap().get(), 0.3268);
-        assert_eq!(quote.strike.unwrap().get(), 2.75);
-        assert_eq!(quote.open_interest.unwrap().get(), 396.0);
-        assert_eq!(quote.amount.unwrap().get(), 289_374.0);
-        assert_eq!(quote.change.unwrap().get(), -2.74);
-        assert_eq!(quote.change.unwrap().unit(), RatioUnit::Percent);
-        assert_eq!(quote.amplitude.unwrap().get(), 6.77);
+        assert_eq!(quote.bid_quantity().unwrap().get(), 1.0);
+        assert_eq!(quote.ask_quantity().unwrap().get(), 2.0);
+        assert_eq!(quote.last().unwrap().get(), 0.3268);
+        assert_eq!(quote.strike().unwrap().get(), 2.75);
+        assert_eq!(quote.open_interest().unwrap().get(), 396.0);
+        assert_eq!(quote.amount().unwrap().get(), 289_374.0);
+        assert_eq!(quote.change().unwrap().get(), -2.74);
+        assert_eq!(quote.change().unwrap().unit(), RatioUnit::Percent);
+        assert_eq!(quote.amplitude().unwrap().get(), 6.77);
         assert_eq!(
-            quote.quote_at.as_ref().unwrap().as_str(),
+            quote.quote_at().unwrap().as_str(),
             "2026-07-23T14:48:38+08:00"
         );
         assert_eq!(
-            quote.evidence.source_at(),
+            quote.evidence().source_at(),
             Some("2026-07-23T14:48:38+08:00")
         );
     }
@@ -851,18 +852,15 @@ mod tests {
         let batch = client.option_greeks(&[contract("10012127")]).unwrap();
         let greeks = &batch.records()[0];
 
-        assert_eq!(greeks.volume.unwrap().get(), 89.0);
-        assert_eq!(greeks.delta.unwrap().get(), 0.9718);
-        assert_eq!(greeks.gamma.unwrap().get(), 0.332);
-        assert_eq!(greeks.theta.unwrap().get(), -0.1734);
-        assert_eq!(greeks.vega.unwrap().get(), 0.0608);
-        assert_eq!(greeks.implied_volatility.unwrap().get(), 0.0008);
-        assert_eq!(
-            greeks.trade_code.as_ref().unwrap().as_str(),
-            "510050C2608M02750"
-        );
-        assert_eq!(greeks.theoretical_price.unwrap().get(), 0.3464);
-        assert!(greeks.rho.is_none());
+        assert_eq!(greeks.volume().unwrap().get(), 89.0);
+        assert_eq!(greeks.delta().unwrap().get(), 0.9718);
+        assert_eq!(greeks.gamma().unwrap().get(), 0.332);
+        assert_eq!(greeks.theta().unwrap().get(), -0.1734);
+        assert_eq!(greeks.vega().unwrap().get(), 0.0608);
+        assert_eq!(greeks.implied_volatility().unwrap().get(), 0.0008);
+        assert_eq!(greeks.trade_code().unwrap().as_str(), "510050C2608M02750");
+        assert_eq!(greeks.theoretical_price().unwrap().get(), 0.3464);
+        assert!(greeks.rho().is_none());
     }
 
     #[test]
@@ -1024,8 +1022,8 @@ mod tests {
         let zero_bid = QUOTE_FIXTURE.replacen("1,0.3241", "0,0", 1);
         let fields = one_hq_record(&gb18030(&zero_bid), "CON_OP_10012127").unwrap();
         let quote = parse_quote("10012127", &fields, "observed", "batch").unwrap();
-        assert!(quote.bid.is_none());
-        assert!(quote.bid_quantity.is_none());
+        assert!(quote.bid().is_none());
+        assert!(quote.bid_quantity().is_none());
         let encoded = serde_json::to_string(&quote).unwrap();
         assert!(serde_json::from_str::<OptionQuote>(&encoded).is_ok());
 

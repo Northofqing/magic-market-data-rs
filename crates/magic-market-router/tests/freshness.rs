@@ -1,6 +1,6 @@
 use magic_market_core::{
-    AssetClass, DataBatch, Exchange, InstrumentId, Money, Price, Provenance, ProviderId, Quantity,
-    Quote,
+    Adjustment, AssetClass, Bar, BarInterval, DataBatch, Exchange, InstrumentId, Money, Price,
+    Provenance, ProviderId, Quantity, Quote,
 };
 use magic_market_router::{
     AcceptancePolicy, AttemptStatus, FailoverChain, FailureKind, RouterError, SourceFn,
@@ -453,4 +453,46 @@ fn maximum_age_source_requirement_cannot_be_disabled_by_setter_order() {
         "fresh:ordered-policy",
     );
     assert!(route(candidate, policy).is_err());
+}
+
+#[test]
+fn non_quote_records_expose_source_and_observation_evidence_to_freshness() {
+    let observed_at = "2026-07-27T10:00:05+08:00";
+    let source_at = "2026-07-27T10:00:00+08:00";
+    let batch_id = "fresh:bar";
+    let bar = Bar::new(
+        instrument("600396"),
+        BarInterval::Day,
+        "2026-07-27",
+        "2026-07-27",
+        Price::new(15.0).unwrap(),
+        Price::new(16.0).unwrap(),
+        Price::new(14.5).unwrap(),
+        Price::new(15.5).unwrap(),
+        Quantity::new(100.0).unwrap(),
+        Some(Money::new(1_550.0).unwrap()),
+        Adjustment::Unadjusted,
+        ProviderId::Tdx,
+        batch_id,
+    )
+    .unwrap()
+    .with_source_at(source_at)
+    .unwrap()
+    .with_observed_at(observed_at)
+    .unwrap();
+    let provenance = Provenance::new("tdx-fixture", observed_at)
+        .unwrap()
+        .with_source_at(source_at)
+        .unwrap()
+        .with_batch_id(batch_id)
+        .unwrap();
+    let candidate = DataBatch::strict(vec![bar], provenance);
+    let mut chain = FailoverChain::new(strict_policy());
+    chain
+        .register(SourceFn::new(
+            ProviderId::Tdx,
+            move |_: &[InstrumentId]| Ok(candidate.clone()),
+        ))
+        .unwrap();
+    chain.route(&[instrument("600396")]).unwrap();
 }

@@ -544,20 +544,20 @@ fn records_reject_negative_turnover_but_money_flow_allows_negative_net_values() 
 }
 
 #[test]
-fn provenance_deserialization_does_not_fabricate_a_missing_batch_id() {
+fn provenance_deserialization_rejects_a_missing_batch_id() {
     let json = r#"{
         "source": "fixture",
         "source_at": null,
         "fetched_at": "2026-07-22T10:00:00+08:00",
         "batch_id": null
     }"#;
-    let provenance: Provenance = serde_json::from_str(json).unwrap();
-
-    assert_eq!(provenance.batch_id(), None);
-    assert_eq!(
-        serde_json::to_value(provenance).unwrap()["batch_id"],
-        serde_json::Value::Null
-    );
+    assert!(serde_json::from_str::<Provenance>(json).is_err());
+    let missing = r#"{
+        "source": "fixture",
+        "source_at": null,
+        "fetched_at": "2026-07-22T10:00:00+08:00"
+    }"#;
+    assert!(serde_json::from_str::<Provenance>(missing).is_err());
 }
 
 #[test]

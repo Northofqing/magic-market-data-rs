@@ -4,6 +4,8 @@
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const CANONICAL_JSON_CONTENT_TYPE: &str = "application/json; charset=utf-8";
 
+use std::collections::HashSet;
+
 pub mod v1 {
     tonic::include_proto!("magic.market.v1");
     pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("magic.market.v1");
@@ -80,6 +82,39 @@ pub enum ContractError {
     PayloadTooLarge { actual: usize, maximum: usize },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WatchlistError {
+    InvalidMaximum,
+    Empty,
+    TooMany { actual: usize, maximum: usize },
+    InvalidInstrument { value: String },
+    DuplicateInstrument { value: String },
+}
+
+impl std::fmt::Display for WatchlistError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidMaximum => formatter.write_str("watchlist maximum must be positive"),
+            Self::Empty => formatter.write_str("watchlist must not be empty"),
+            Self::TooMany { actual, maximum } => {
+                write!(
+                    formatter,
+                    "watchlist has {actual} entries; maximum is {maximum}"
+                )
+            }
+            Self::InvalidInstrument { value } => write!(
+                formatter,
+                "invalid watchlist instrument {value}; expected EQUITY:SH|SZ|BJ:NNNNNN"
+            ),
+            Self::DuplicateInstrument { value } => {
+                write!(formatter, "duplicate watchlist instrument {value}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for WatchlistError {}
+
 impl std::fmt::Display for ContractError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -154,6 +189,48 @@ pub fn validate_payload(
     Ok(())
 }
 
+pub fn validate_monitor_watchlist(
+    instruments: &[String],
+    maximum: usize,
+) -> Result<(), WatchlistError> {
+    if maximum == 0 {
+        return Err(WatchlistError::InvalidMaximum);
+    }
+    if instruments.is_empty() {
+        return Err(WatchlistError::Empty);
+    }
+    if instruments.len() > maximum {
+        return Err(WatchlistError::TooMany {
+            actual: instruments.len(),
+            maximum,
+        });
+    }
+    let mut seen = HashSet::with_capacity(instruments.len());
+    for instrument in instruments {
+        let mut parts = instrument.split(':');
+        let asset = parts.next();
+        let exchange = parts.next();
+        let code = parts.next();
+        let valid = parts.next().is_none()
+            && asset == Some("EQUITY")
+            && matches!(exchange, Some("SH" | "SZ" | "BJ"))
+            && code.is_some_and(|value| {
+                value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_digit())
+            });
+        if !valid || instrument.trim() != instrument {
+            return Err(WatchlistError::InvalidInstrument {
+                value: instrument.clone(),
+            });
+        }
+        if !seen.insert(instrument.as_str()) {
+            return Err(WatchlistError::DuplicateInstrument {
+                value: instrument.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use prost::Message;
@@ -173,6 +250,7 @@ mod tests {
                 content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
                 data: br#"{"symbol":"600000.SH"}"#.to_vec(),
             }),
+            allow_unadmitted: false,
         }
     }
 
@@ -203,5 +281,29 @@ mod tests {
     #[test]
     fn descriptor_set_is_present() {
         assert!(!v1::FILE_DESCRIPTOR_SET.is_empty());
+    }
+
+    #[test]
+    fn monitor_watchlist_is_typed_bounded_and_duplicate_free() {
+        let valid = vec!["EQUITY:SH:600396".to_owned(), "EQUITY:SZ:000001".to_owned()];
+        validate_monitor_watchlist(&valid, 2).unwrap();
+        assert!(matches!(
+            validate_monitor_watchlist(&valid, 1),
+            Err(WatchlistError::TooMany { .. })
+        ));
+        assert!(matches!(
+            validate_monitor_watchlist(&[], 1),
+            Err(WatchlistError::Empty)
+        ));
+        assert!(matches!(
+            validate_monitor_watchlist(&[valid[0].clone(), valid[0].clone()], 2),
+            Err(WatchlistError::DuplicateInstrument { .. })
+        ));
+        for invalid in ["600396.SH", "INDEX:SH:000001", "EQUITY:HK:000001"] {
+            assert!(matches!(
+                validate_monitor_watchlist(&[invalid.to_owned()], 1),
+                Err(WatchlistError::InvalidInstrument { .. })
+            ));
+        }
     }
 }

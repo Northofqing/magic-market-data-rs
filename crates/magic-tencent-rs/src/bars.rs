@@ -197,7 +197,8 @@ pub(crate) fn parse_bars_response(
             ProviderId::Tencent,
             batch_id.clone(),
         )?
-        .with_source_at(source_at)?;
+        .with_source_at(source_at)?
+        .with_observed_at(observed_at)?;
         previous = Some(bar_time);
         records.push(bar);
     }

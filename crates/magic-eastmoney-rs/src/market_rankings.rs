@@ -1,10 +1,11 @@
-use crate::mapping::{optional_f64, optional_u32, required_string};
+use crate::mapping::{optional_f64, optional_string, optional_u32, required_string};
 use crate::{instrument_from_market, query_url, BatchContext, EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    unix_seconds_to_china_rfc3339, validate_market_ranking_batch, Exchange, FiniteNumber, IsoDate,
-    MarketRankingEntry, MarketRankingKind, MarketRankingUnit, MarketRankings, MarketSession,
-    NonEmptyText, PositiveU32, ProviderId,
+    unix_seconds_to_china_rfc3339, validate_market_ranking_batch, Exchange, FiniteNumber,
+    InstrumentId, IsoDate, MarketRankingEntry, MarketRankingKind, MarketRankingUnit,
+    MarketRankings, MarketSession, NonEmptyText, PositiveU32, ProviderId, SourceEvidence,
 };
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -23,6 +24,22 @@ const MAX_UNIVERSE_SIZE: u32 = 20_000;
 const MAX_RETURNED_RANKS: u32 = 200;
 const MAX_PAGE_ATTEMPTS: usize = 3;
 const UNIVERSE: &str = "Eastmoney A-share equities";
+
+/// One source-ranked diagnostic row. Optional source fields remain `null` and
+/// never become zero, an empty label, or a fabricated security identity.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DiagnosticMarketRankingEntry {
+    kind: MarketRankingKind,
+    source_rank: PositiveU32,
+    instrument: Option<InstrumentId>,
+    label: Option<String>,
+    value: Option<FiniteNumber>,
+    unit: MarketRankingUnit,
+    source_at: Option<String>,
+    reported_universe_size: PositiveU32,
+    fetched_count: PositiveU32,
+    evidence: SourceEvidence,
+}
 
 impl MarketRankings for EastmoneyClient {
     type Error = EastmoneyError;
@@ -56,6 +73,36 @@ impl MarketRankings for EastmoneyClient {
 }
 
 impl EastmoneyClient {
+    /// Fetches only the first bounded source ranking page for explicit
+    /// diagnostic use. This method never claims complete-market coverage.
+    pub fn diagnose_partial_market_rankings(
+        &self,
+        kind: &MarketRankingKind,
+        limit: PositiveU32,
+    ) -> Result<magic_market_core::DataBatch<DiagnosticMarketRankingEntry>, EastmoneyError> {
+        if limit.get() > PAGE_SIZE {
+            return Err(EastmoneyError::InvalidRequest(format!(
+                "Eastmoney partial diagnostic ranking limit must be at most {PAGE_SIZE}"
+            )));
+        }
+        let field = ranking_field(kind)?;
+        let mut last_transport_error = None;
+        for endpoint in ENDPOINTS {
+            let url = ranking_url_for(endpoint, kind, field, 1, PAGE_SIZE)?;
+            match self.fetch_ranking_page(&url) {
+                Ok(bytes) => return parse_diagnostic_market_ranking_page(&bytes, kind, limit),
+                Err(EastmoneyError::Transport(message)) => {
+                    last_transport_error = Some(format!("{endpoint}: {message}"));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(EastmoneyError::Transport(format!(
+            "all Eastmoney diagnostic ranking HTTPS endpoints failed: {}",
+            last_transport_error.unwrap_or_else(|| "no endpoint attempted".into())
+        )))
+    }
+
     fn fetch_ranking_operation(
         &self,
         endpoint: &str,
@@ -94,26 +141,27 @@ impl EastmoneyClient {
             let received = u32::try_from(envelope.rows.len()).map_err(|_| {
                 EastmoneyError::Protocol("Eastmoney ranking page length overflow".into())
             })?;
-            pages.push(bytes);
+            let page_total = envelope.total;
             let consumed = page
                 .checked_sub(1)
                 .and_then(|value| value.checked_mul(PAGE_SIZE))
                 .and_then(|value| value.checked_add(received))
                 .ok_or_else(|| EastmoneyError::Protocol("ranking pagination overflow".into()))?;
-            if consumed >= envelope.total {
+            pages.push(envelope);
+            if consumed >= page_total {
                 break;
             }
             if received != PAGE_SIZE {
                 return Err(EastmoneyError::Protocol(format!(
                     "Eastmoney ranking page {page} returned {received} rows before total {}",
-                    envelope.total
+                    page_total
                 )));
             }
             page = page
                 .checked_add(1)
                 .ok_or_else(|| EastmoneyError::Protocol("ranking page overflow".into()))?;
         }
-        parse_market_ranking_pages(&pages, kind, limit, PAGE_SIZE)
+        parse_market_ranking_envelopes(pages, kind, limit, PAGE_SIZE)
     }
 
     fn fetch_ranking_page(&self, url: &str) -> Result<Vec<u8>, EastmoneyError> {
@@ -228,8 +276,121 @@ fn parse_page(bytes: &[u8]) -> Result<PageEnvelope, EastmoneyError> {
     Ok(PageEnvelope { total, rows })
 }
 
+fn parse_diagnostic_market_ranking_page(
+    bytes: &[u8],
+    kind: &MarketRankingKind,
+    limit: PositiveU32,
+) -> Result<magic_market_core::DataBatch<DiagnosticMarketRankingEntry>, EastmoneyError> {
+    if limit.get() > PAGE_SIZE {
+        return Err(EastmoneyError::InvalidRequest(format!(
+            "Eastmoney partial diagnostic ranking limit must be at most {PAGE_SIZE}"
+        )));
+    }
+    let envelope = parse_page(bytes)?;
+    if envelope.total == 0 || envelope.total > MAX_UNIVERSE_SIZE {
+        return Err(EastmoneyError::Protocol(format!(
+            "Eastmoney diagnostic ranking universe {} is outside 1..={MAX_UNIVERSE_SIZE}",
+            envelope.total
+        )));
+    }
+    let expected_page_count = envelope.total.min(PAGE_SIZE);
+    let fetched_count = u32::try_from(envelope.rows.len())
+        .map_err(|_| EastmoneyError::Protocol("ranking page length overflow".into()))?;
+    if fetched_count != expected_page_count {
+        return Err(EastmoneyError::Protocol(format!(
+            "Eastmoney diagnostic ranking first page returned {fetched_count} rows; expected {expected_page_count}"
+        )));
+    }
+
+    let field = ranking_field(kind)?;
+    let unit = ranking_unit(kind)?;
+    let context = BatchContext::new("market-ranking-diagnostic", None)?;
+    let returned = usize::try_from(limit.get().min(fetched_count))
+        .map_err(|_| EastmoneyError::Protocol("ranking limit overflow".into()))?;
+    let mut missing_fields = 0_u32;
+    let mut records = Vec::with_capacity(returned);
+    for (index, row) in envelope.rows.into_iter().take(returned).enumerate() {
+        let code = optional_string(row.get("f12"))?;
+        let market = optional_u32(row.get("f13"))?;
+        let instrument = match (code.as_deref(), market) {
+            (Some(code), Some(market)) => Some(instrument_from_market(code, i64::from(market))?),
+            _ => {
+                missing_fields = missing_fields.saturating_add(1);
+                None
+            }
+        };
+        let label = optional_string(row.get("f14"))?;
+        if label.is_none() {
+            missing_fields = missing_fields.saturating_add(1);
+        }
+        let value = optional_f64(row.get(field))?
+            .map(FiniteNumber::new)
+            .transpose()?;
+        if value.is_none() {
+            missing_fields = missing_fields.saturating_add(1);
+        }
+        if matches!(kind, MarketRankingKind::VolumeRatio)
+            && value.is_some_and(|value| value.get().is_sign_negative())
+        {
+            return Err(EastmoneyError::Protocol(
+                "market ranking volume ratio must be non-negative".into(),
+            ));
+        }
+        let source_at = optional_u32(row.get("f124"))?
+            .filter(|epoch| *epoch > 0)
+            .map(|epoch| {
+                unix_seconds_to_china_rfc3339(i64::from(epoch)).map_err(|_| {
+                    EastmoneyError::Protocol("market ranking f124 is out of range".into())
+                })
+            })
+            .transpose()?;
+        if source_at.is_none() {
+            missing_fields = missing_fields.saturating_add(1);
+        }
+        records.push(DiagnosticMarketRankingEntry {
+            kind: kind.clone(),
+            source_rank: PositiveU32::new(
+                u32::try_from(index + 1)
+                    .map_err(|_| EastmoneyError::Protocol("ranking rank overflow".into()))?,
+            )?,
+            instrument,
+            label,
+            value,
+            unit: unit.clone(),
+            source_at: source_at.clone(),
+            reported_universe_size: PositiveU32::new(envelope.total)?,
+            fetched_count: PositiveU32::new(fetched_count)?,
+            evidence: context.evidence_at(source_at.as_deref())?,
+        });
+    }
+    let mut issues = vec![format!(
+        "diagnostic fetched the first {fetched_count} of {} source-ranked rows; complete-market coverage is not claimed",
+        envelope.total
+    )];
+    if missing_fields > 0 {
+        issues.push(format!(
+            "{missing_fields} optional fields were absent in returned rows and remain null"
+        ));
+    }
+    context.finish_with_issues(records, issues)
+}
+
+#[cfg(test)]
 fn parse_market_ranking_pages(
     pages: &[Vec<u8>],
+    kind: &MarketRankingKind,
+    limit: PositiveU32,
+    page_size: u32,
+) -> Result<magic_market_core::DataBatch<MarketRankingEntry>, EastmoneyError> {
+    let pages = pages
+        .iter()
+        .map(|bytes| parse_page(bytes))
+        .collect::<Result<Vec<_>, _>>()?;
+    parse_market_ranking_envelopes(pages, kind, limit, page_size)
+}
+
+fn parse_market_ranking_envelopes(
+    pages: Vec<PageEnvelope>,
     kind: &MarketRankingKind,
     limit: PositiveU32,
     page_size: u32,
@@ -243,8 +404,7 @@ fn parse_market_ranking_pages(
     let unit = ranking_unit(kind)?;
     let mut total = None;
     let mut rows = Vec::<Value>::new();
-    for (index, bytes) in pages.iter().enumerate() {
-        let envelope = parse_page(bytes)?;
+    for (index, envelope) in pages.into_iter().enumerate() {
         match total {
             Some(expected) if expected != envelope.total => {
                 return Err(EastmoneyError::Protocol(format!(

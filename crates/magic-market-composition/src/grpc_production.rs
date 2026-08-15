@@ -1,9 +1,10 @@
 use std::{env, error::Error, sync::Arc, time::Duration};
 
+use magic_baidu_rs::{BaiduClient, BaiduError};
 use magic_cfets_rs::{CfetsClient, CfetsError};
 use magic_cninfo_rs::{CninfoClient, CninfoError};
-use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
-use magic_exchange_rs::{ExchangeError, HkexClient};
+use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError, EastmoneyMxClient};
+use magic_exchange_rs::{CffexClient, CffexConfig, ExchangeError, HkexClient};
 use magic_fred_rs::{FredClient, FredError};
 use magic_gov_rs::{GovClient, GovError};
 use magic_iwencai_rs::{IwencaiClient, IwencaiError, SEMANTIC_SEARCH_ADMITTED};
@@ -12,21 +13,23 @@ use magic_market_core::{
     Announcements, BarsRequest, BlockTrades, BoardCategory, BoardConstituentProvider,
     BoardConstituentRequest, BoardDirectoryProvider, BoardDirectoryRequest, BoardFlows,
     BoardMembershipProvider, CompanyFilingRequest, CompanyFilingsProvider, ConceptHits,
-    ConsensusData, ContractMonth, CorporateActionRequest, CorporateActions, DataBatch,
+    ConsensusData, ContractMonth, CorporateActionRequest, CorporateActions, DataBatch, DataStatus,
     DividendPlans, DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest,
     EconomicCalendarProvider, EconomicCalendarRequest, EconomicSeriesProvider,
-    EconomicSeriesRequest, FinancialStatements, FlowInterval, ForeignExchangeProvider, FxRequest,
+    EconomicSeriesRequest, FinancialStatements, FlowInterval, FlowScope, ForeignExchangeProvider,
+    FundFlowPoint, FundFlowRequest, FundFlowSeries, FuturesDeliveryRequest, FxRequest,
     GlobalIndexProvider, GlobalIndexRequest, HistoricalBars, HolderCounts,
-    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, InvestorQuestions,
+    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, InvestorQuestions, IsoDate,
     LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketAnnouncementRequest,
-    MarketAnnouncements, MarketDragonTigerData, MarketDragonTigerRequest, MarketStatisticsProvider,
-    MinuteData, MinuteDataRequest, NewsProvider, NonEmptyText, NorthboundDailyRequest,
-    NorthboundDailyStatistics, OfficialFxFixingProvider, OfficialFxFixingRequest, OptionData,
-    OrderBooks, PolicyDocuments, PolicyRequest, PopularityData, PositiveU32,
-    ProviderTopNRankingRequest, ProviderTopNRankings, RealtimeQuotes, ReferenceRateProvider,
-    ReferenceRateRequest, ResearchDocumentRequest, ResearchDocuments, ResearchReports,
-    ResearchRequest, SecurityMetadataProvider, SecurityProfiles, SemanticSearch,
-    SemanticSearchRequest, StatementKind, StrongStockReasons, TargetPriceData, TargetPriceRequest,
+    MarketAnnouncements, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind,
+    MarketStatisticsProvider, MinuteData, MinuteDataRequest, MoneyFlow, NewsProvider, NonEmptyText,
+    NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
+    OfficialFxFixingRequest, OptionData, OrderBooks, PolicyDocuments, PolicyRequest,
+    PopularityData, PositiveU32, PostCloseFlowRequest, ProviderTopNRankingRequest,
+    ProviderTopNRankings, RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest,
+    ResearchDocumentRequest, ResearchDocuments, ResearchReports, ResearchRequest,
+    SecurityMetadataProvider, SecurityProfiles, SemanticSearch, SemanticSearchRequest,
+    StatementKind, StrongStockReasons, TargetPriceData, TargetPriceRequest, TechnicalBarsProvider,
     Trades, TradesRequest,
 };
 use magic_market_service::{
@@ -138,6 +141,22 @@ pub const BOARD_MEMBERSHIPS_REQUEST_SCHEMA: &str = "magic.market.board_membershi
 pub const BOARD_MEMBERSHIP_RECORD_SCHEMA: &str = "magic.market.board_membership";
 pub const CONCEPT_HITS_REQUEST_SCHEMA: &str = "magic.market.concept_hits.request";
 pub const CONCEPT_HITS_RECORD_SCHEMA: &str = "magic.market.concept_hit";
+pub const MONEY_FLOWS_REQUEST_SCHEMA: &str = "magic.market.money_flows.request";
+pub const MONEY_FLOWS_RECORD_SCHEMA: &str = "magic.market.money_flow";
+pub const FUTURES_DELIVERY_REQUEST_SCHEMA: &str = "magic.market.futures_delivery.request";
+pub const FUTURES_DELIVERY_RECORD_SCHEMA: &str = "magic.market.futures_delivery_event";
+pub const TECHNICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.technical_bars.request";
+pub const TECHNICAL_BARS_RECORD_SCHEMA: &str = "magic.market.technical_bar";
+pub const FUND_FLOW_SERIES_REQUEST_SCHEMA: &str = "magic.market.fund_flow_series.request";
+pub const FUND_FLOW_SERIES_RECORD_SCHEMA: &str = "magic.market.fund_flow_point";
+pub const POST_CLOSE_FLOWS_REQUEST_SCHEMA: &str = "magic.market.post_close_flows.request";
+pub const POST_CLOSE_FLOWS_RECORD_SCHEMA: &str = "magic.market.post_close_flow_diagnostic";
+pub const MARKET_RANKINGS_REQUEST_SCHEMA: &str = "magic.market.market_rankings.request";
+pub const MARKET_RANKINGS_RECORD_SCHEMA: &str = "magic.market.market_ranking_diagnostic_entry";
+pub const AUCTIONS_REQUEST_SCHEMA: &str = "magic.market.auctions.request";
+pub const AUCTIONS_RECORD_SCHEMA: &str = "magic.market.opening_auction_diagnostic";
+pub const MARKET_BREADTH_REQUEST_SCHEMA: &str = "magic.market.market_breadth.request";
+pub const MARKET_BREADTH_RECORD_SCHEMA: &str = "magic.market.market_breadth_diagnostic";
 const TENCENT_PROVIDER: &str = "Tencent";
 const TENCENT_QUOTE_SCOPE: &str =
     "1..=50 unique Shanghai/Shenzhen/Beijing six-digit A-share equities";
@@ -152,6 +171,8 @@ const TENCENT_STATISTICS_SCOPE: &str =
 
 #[derive(Debug, Error)]
 pub enum ProductionRegistryError {
+    #[error("Baidu production client initialization failed: {0}")]
+    Baidu(#[from] BaiduError),
     #[error("invalid production registry limit: {0}")]
     InvalidLimit(&'static str),
     #[error("Tencent production client initialization failed: {0}")]
@@ -220,6 +241,26 @@ struct BoardFlowsRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MarketRankingsRequest {
+    kind: MarketRankingKind,
+    limit: PositiveU32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuctionDiagnosticRequest {
+    instrument: InstrumentId,
+    trading_date: IsoDate,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MarketBreadthDiagnosticRequest {
+    source_date: IsoDate,
+}
+
+#[derive(Deserialize)]
 #[serde(tag = "kind", content = "request", rename_all = "snake_case")]
 enum DragonTigerRequest {
     Entries(InstrumentSignalRequest),
@@ -276,6 +317,7 @@ fn registry_with_tencent(
             provider: TENCENT_PROVIDER.to_owned(),
             exact_scope: TENCENT_QUOTE_SCOPE.to_owned(),
             blocker: None,
+            diagnostic_available: false,
         },
         move |command| execute_tencent_quotes(&quotes, command, maximum_payload_bytes),
     )?;
@@ -528,6 +570,7 @@ fn register_extended_providers(
         },
     )?;
     register_additional_providers(registry, provider_timeout, maximum_payload_bytes)?;
+    register_diagnostic_handlers(registry, provider_timeout, maximum_payload_bytes)?;
     register_exact_blockers(registry)?;
     Ok(())
 }
@@ -535,46 +578,10 @@ fn register_extended_providers(
 fn register_exact_blockers(registry: &mut OperationRegistry) -> Result<(), ServiceError> {
     for capability in [
         blocked(
-            Operation::MoneyFlows,
-            "Tdx",
-            "normalized instrument money-flow records",
-            "TDX public capability is false; LocalTerminal cumulative amount is not a money-flow contract and remains unadmitted",
-        ),
-        blocked(
             Operation::Auctions,
             "Tdx",
             "normalized call-auction records",
             "TDX public auction capability is false and no admitted production auction provider is configured",
-        ),
-        blocked(
-            Operation::FuturesDelivery,
-            "Cffex",
-            "official CFFEX delivery calendar",
-            "CFFEX remains diagnostic-only because the admitted TLS transport has not completed live evidence",
-        ),
-        blocked(
-            Operation::TechnicalBars,
-            "Baidu",
-            "technical bars with calendar and corporate-action continuity",
-            "Baidu technical bars remain diagnostic and repository-unadmitted",
-        ),
-        blocked(
-            Operation::FundFlowSeries,
-            "Eastmoney",
-            "bounded instrument fund-flow time series",
-            "Eastmoney fund-flow series capability is explicitly false after incomplete live evidence",
-        ),
-        blocked(
-            Operation::PostCloseFlows,
-            "Eastmoney",
-            "strict same-snapshot post-close whole-market flows",
-            "source timestamps were inconsistent across the fetched market, so production admission is false",
-        ),
-        blocked(
-            Operation::MarketRankings,
-            "Eastmoney",
-            "complete-market volume-ratio or main-net-inflow rankings",
-            "full-market coverage and source-time atomicity have not passed admission",
         ),
         blocked(
             Operation::MarketBreadth,
@@ -586,6 +593,341 @@ fn register_exact_blockers(registry: &mut OperationRegistry) -> Result<(), Servi
         registry.register_unavailable(capability)?;
     }
     Ok(())
+}
+
+fn register_diagnostic_handlers(
+    registry: &mut OperationRegistry,
+    provider_timeout: Duration,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    let baidu = BaiduClient::with_timeout(provider_timeout)?;
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::TechnicalBars,
+            "Baidu",
+            "one A-share equity; bounded unadjusted daily OHLCV/amount and optional source MA5/10/20",
+            "trading-calendar, adjacent-session and corporate-action continuity evidence remain unproved",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                TECHNICAL_BARS_REQUEST_SCHEMA,
+                TECHNICAL_BARS_RECORD_SCHEMA,
+                "Baidu",
+                maximum_payload_bytes,
+                |request: &BarsRequest| baidu.technical_bars(request),
+            )
+        },
+    )?;
+
+    let eastmoney = EastmoneyClient::with_timeout(provider_timeout)?;
+    let mx = if eastmoney_mx_key_is_configured() {
+        Some(EastmoneyMxClient::from_env_with_client(&eastmoney)?)
+    } else {
+        None
+    };
+    if let Some(mx) = mx.as_ref() {
+        let flow_series = mx.clone();
+        registry.register_default_diagnostic_handler(
+            blocked(
+                Operation::FundFlowSeries,
+                "EastmoneyMiaoxiang",
+                "one Shanghai/Shenzhen equity; bounded daily main/super-large/large/medium/small net flow in CNY",
+                "natural-language result cardinality and serial live stability remain repository-unadmitted",
+            ),
+            move |command| {
+                execute_typed(
+                    command,
+                    FUND_FLOW_SERIES_REQUEST_SCHEMA,
+                    FUND_FLOW_SERIES_RECORD_SCHEMA,
+                    "EastmoneyMiaoxiang",
+                    maximum_payload_bytes,
+                    |request: &FundFlowRequest| flow_series.diagnose_daily_fund_flow(request),
+                )
+            },
+        )?;
+
+        let money_flows = mx.clone();
+        registry.register_default_diagnostic_handler(
+            blocked(
+                Operation::MoneyFlows,
+                "EastmoneyMiaoxiang",
+                "one Shanghai/Shenzhen equity; latest bounded daily main/super-large/large/medium/small net flow in CNY",
+                "source methodology and serial live stability remain repository-unadmitted",
+            ),
+            move |command| execute_mx_money_flow(&money_flows, command, maximum_payload_bytes),
+        )?;
+
+        let auctions = mx.clone();
+        registry.register_default_diagnostic_handler(
+            blocked(
+                Operation::Auctions,
+                "EastmoneyMiaoxiang",
+                "one equity and exact source date; opening-auction matched volume in shares and amount in CNY",
+                "matched price, previous close, unmatched bid/ask, volume ratio and provider time remain unavailable",
+            ),
+            move |command| {
+                let request: AuctionDiagnosticRequest =
+                    decode_request(&command, AUCTIONS_REQUEST_SCHEMA)?;
+                let batch = auctions
+                    .diagnose_opening_auction(&request.instrument, &request.trading_date)
+                    .map_err(|error| map_eastmoney_error(Operation::Auctions, &error))?;
+                provider_query_result(
+                    batch,
+                    "EastmoneyMiaoxiang",
+                    AUCTIONS_RECORD_SCHEMA,
+                    maximum_payload_bytes,
+                )
+            },
+        )?;
+
+        let breadth = mx.clone();
+        registry.register_default_diagnostic_handler(
+            blocked(
+                Operation::MarketBreadth,
+                "EastmoneyMiaoxiang",
+                "exact source date; all-A up/down/flat and limit-up/limit-down counts",
+                "listed universe total, coverage and source-time skew remain unavailable",
+            ),
+            move |command| {
+                let request: MarketBreadthDiagnosticRequest =
+                    decode_request(&command, MARKET_BREADTH_REQUEST_SCHEMA)?;
+                let batch = breadth
+                    .diagnose_market_breadth(&request.source_date)
+                    .map_err(|error| map_eastmoney_error(Operation::MarketBreadth, &error))?;
+                provider_query_result(
+                    batch,
+                    "EastmoneyMiaoxiang",
+                    MARKET_BREADTH_RECORD_SCHEMA,
+                    maximum_payload_bytes,
+                )
+            },
+        )?;
+    } else {
+        let flow_series = eastmoney.clone();
+        registry.register_diagnostic_handler(
+            blocked(
+                Operation::FundFlowSeries,
+                "Eastmoney",
+                "one Shanghai/Shenzhen equity; bounded one-minute or daily source fund-flow series with absent values retained as null",
+                "serial live stability admission remains incomplete",
+            ),
+            move |command| {
+                execute_typed(
+                    command,
+                    FUND_FLOW_SERIES_REQUEST_SCHEMA,
+                    FUND_FLOW_SERIES_RECORD_SCHEMA,
+                    "Eastmoney",
+                    maximum_payload_bytes,
+                    |request: &FundFlowRequest| flow_series.fund_flow_series(request),
+                )
+            },
+        )?;
+
+        let money_flows = eastmoney.clone();
+        registry.register_diagnostic_handler(
+            blocked(
+                Operation::MoneyFlows,
+                "Eastmoney",
+                "one Shanghai/Shenzhen equity; latest bounded daily source fund-flow point mapped without using TDX turnover",
+                "source methodology and serial live stability remain repository-unadmitted",
+            ),
+            move |command| {
+                execute_eastmoney_money_flow(&money_flows, command, maximum_payload_bytes)
+            },
+        )?;
+    }
+
+    let post_close = eastmoney.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::PostCloseFlows,
+            "Eastmoney",
+            "bounded current-day post-close source ranking with per-record source evidence",
+            "mixed source timestamps remain non-atomic and production admission is false",
+        ),
+        move |command| {
+            let request: PostCloseFlowRequest =
+                decode_request(&command, POST_CLOSE_FLOWS_REQUEST_SCHEMA)?;
+            let batch = post_close
+                .diagnose_partial_post_close_flows(&request)
+                .map_err(|error| map_eastmoney_error(Operation::PostCloseFlows, &error))?;
+            provider_query_result(
+                batch,
+                "Eastmoney",
+                POST_CLOSE_FLOWS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::MarketRankings,
+            "Eastmoney",
+            "first bounded A-share source ranking page; available fields are returned and missing fields remain null",
+            "complete-market coverage and source-time atomicity are not claimed",
+        ),
+        move |command| {
+            let request: MarketRankingsRequest =
+                decode_request(&command, MARKET_RANKINGS_REQUEST_SCHEMA)?;
+            let batch = eastmoney
+                .diagnose_partial_market_rankings(&request.kind, request.limit)
+                .map_err(|error| map_eastmoney_error(Operation::MarketRankings, &error))?;
+            provider_query_result(
+                batch,
+                "Eastmoney",
+                MARKET_RANKINGS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let cffex_config = CffexConfig {
+        timeout: provider_timeout,
+        ..CffexConfig::default()
+    };
+    let cffex = CffexClient::with_config(cffex_config)?;
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::FuturesDelivery,
+            "Cffex",
+            "official CFFEX equity-index futures delivery notice diagnostic",
+            "official TLS/live evidence remains incomplete and delivery method can be NotProvided",
+        ),
+        move |command| {
+            let request: FuturesDeliveryRequest =
+                decode_request(&command, FUTURES_DELIVERY_REQUEST_SCHEMA)?;
+            let batch = cffex
+                .probe_futures_delivery_calendar(&request)
+                .map_err(|error| provider_error(Operation::FuturesDelivery, error))?;
+            provider_query_result(
+                batch,
+                "Cffex",
+                FUTURES_DELIVERY_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn eastmoney_mx_key_is_configured() -> bool {
+    ["EASTMONEY_API_KEY", "MX_APIKEY"]
+        .iter()
+        .any(|name| env::var_os(name).is_some_and(|value| !value.is_empty()))
+}
+
+fn execute_eastmoney_money_flow(
+    client: &EastmoneyClient,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: InstrumentsRequest = decode_request(&command, MONEY_FLOWS_REQUEST_SCHEMA)?;
+    let [instrument] = request.instruments.as_slice() else {
+        return Err(ServiceError::InvalidRequest(
+            "diagnostic money flow requires exactly one instrument".to_owned(),
+        ));
+    };
+    let request = FundFlowRequest::new(
+        FlowScope::Instrument(instrument.clone()),
+        FlowInterval::Day1,
+        PositiveU32::new(1).map_err(precondition)?,
+    )
+    .map_err(precondition)?;
+    let batch = client
+        .fund_flow_series(&request)
+        .map_err(|error| map_eastmoney_error(Operation::MoneyFlows, &error))?;
+    money_flow_query_result(batch, instrument, "Eastmoney", maximum_payload_bytes)
+}
+
+fn execute_mx_money_flow(
+    client: &EastmoneyMxClient,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: InstrumentsRequest = decode_request(&command, MONEY_FLOWS_REQUEST_SCHEMA)?;
+    let [instrument] = request.instruments.as_slice() else {
+        return Err(ServiceError::InvalidRequest(
+            "diagnostic money flow requires exactly one instrument".to_owned(),
+        ));
+    };
+    let request = FundFlowRequest::new(
+        FlowScope::Instrument(instrument.clone()),
+        FlowInterval::Day1,
+        PositiveU32::new(1).map_err(precondition)?,
+    )
+    .map_err(precondition)?;
+    let batch = client
+        .diagnose_daily_fund_flow(&request)
+        .map_err(|error| map_eastmoney_error(Operation::MoneyFlows, &error))?;
+    money_flow_query_result(
+        batch,
+        instrument,
+        "EastmoneyMiaoxiang",
+        maximum_payload_bytes,
+    )
+}
+
+fn money_flow_query_result(
+    batch: DataBatch<FundFlowPoint>,
+    instrument: &InstrumentId,
+    provider: &str,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let point = batch.records().last().ok_or_else(|| {
+        ServiceError::FailedPrecondition(
+            "Eastmoney fund-flow diagnostic returned no latest point".to_owned(),
+        )
+    })?;
+    let evidence = &point.evidence;
+    let complete = point.main_net.is_some()
+        && point.super_large_net.is_some()
+        && point.large_net.is_some()
+        && point.medium_net.is_some()
+        && point.small_net.is_some()
+        && evidence.source_at().is_some();
+    let record = MoneyFlow::new(
+        instrument.clone(),
+        point.main_net,
+        point.super_large_net,
+        point.large_net,
+        point.medium_net,
+        point.small_net,
+        if complete {
+            DataStatus::Available
+        } else {
+            DataStatus::Unavailable
+        },
+        evidence.source_at().map(str::to_owned),
+        evidence.observed_at().to_owned(),
+        evidence.provider(),
+        evidence.batch_id().to_owned(),
+    )
+    .map_err(precondition)?;
+    let data = serde_json::to_vec(&record).map_err(|error| {
+        ServiceError::Internal(format!("money-flow serialization failed: {error}"))
+    })?;
+    let payload = CanonicalPayload::new(
+        MONEY_FLOWS_RECORD_SCHEMA,
+        SCHEMA_VERSION,
+        data,
+        maximum_payload_bytes,
+    )?;
+    let provenance = batch.provenance();
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        ServiceError::FailedPrecondition("Eastmoney money-flow batch has no batch_id".to_owned())
+    })?;
+    Ok(QueryResult {
+        provider: provider.to_owned(),
+        batch_id: batch_id.to_owned(),
+        complete,
+        observed_at: provenance.fetched_at().to_owned(),
+        source_at: provenance.source_at().map(str::to_owned),
+        records: vec![payload],
+        repository_admitted: false,
+        diagnostic_blocker: None,
+    })
 }
 
 fn register_additional_providers(
@@ -1298,6 +1640,7 @@ fn admitted(operation: Operation, provider: &str, exact_scope: &str) -> Capabili
         provider: provider.to_owned(),
         exact_scope: exact_scope.to_owned(),
         blocker: None,
+        diagnostic_available: false,
     }
 }
 
@@ -1314,6 +1657,7 @@ fn runtime_unavailable(
         provider: provider.to_owned(),
         exact_scope: exact_scope.to_owned(),
         blocker: Some(blocker.to_owned()),
+        diagnostic_available: false,
     }
 }
 
@@ -1325,6 +1669,7 @@ fn blocked(operation: Operation, provider: &str, exact_scope: &str, blocker: &st
         provider: provider.to_owned(),
         exact_scope: exact_scope.to_owned(),
         blocker: Some(blocker.to_owned()),
+        diagnostic_available: false,
     }
 }
 
@@ -1495,6 +1840,8 @@ fn provider_query_result<T: Serialize>(
         observed_at: provenance.fetched_at().to_owned(),
         source_at: provenance.source_at().map(str::to_owned),
         records,
+        repository_admitted: true,
+        diagnostic_blocker: None,
     })
 }
 
@@ -1507,6 +1854,7 @@ fn provider_error(operation: Operation, error: impl Error + 'static) -> ServiceE
             }
         };
     }
+    map_known!(BaiduError, map_baidu_error);
     map_known!(SinaError, map_sina_error);
     map_known!(CfetsError, map_cfets_error);
     map_known!(CninfoError, map_cninfo_error);
@@ -1524,6 +1872,17 @@ fn provider_error(operation: Operation, error: impl Error + 'static) -> ServiceE
         "{} provider request failed: {error}",
         operation.as_str()
     ))
+}
+
+fn map_baidu_error(operation: Operation, error: &BaiduError) -> ServiceError {
+    match error {
+        BaiduError::InvalidRequest(message) => invalid(message),
+        BaiduError::Transport(_) => unavailable(operation, error),
+        BaiduError::Unsupported(reason) => unsupported(operation, reason),
+        BaiduError::Decode(_) | BaiduError::Protocol(_) | BaiduError::Core(_) => {
+            precondition(error)
+        }
+    }
 }
 
 fn map_sina_error(operation: Operation, error: &SinaError) -> ServiceError {
@@ -1596,6 +1955,7 @@ fn map_cninfo_error(operation: Operation, error: &CninfoError) -> ServiceError {
 fn map_eastmoney_error(operation: Operation, error: &EastmoneyError) -> ServiceError {
     match error {
         EastmoneyError::InvalidRequest(message) => invalid(message),
+        EastmoneyError::Authentication(_) => ServiceError::PermissionDenied(error.to_string()),
         EastmoneyError::Transport(_) => unavailable(operation, error),
         EastmoneyError::Unsupported(reason) => unsupported(operation, reason),
         EastmoneyError::ResponseTooLarge { .. }
@@ -1801,7 +2161,7 @@ mod tests {
             .as_deref()
             .is_none_or(|blocker| !blocker.contains("no evidence-backed production handler"))));
         let admitted = capabilities
-            .into_iter()
+            .iter()
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
@@ -1824,6 +2184,31 @@ mod tests {
                 Operation::MarketBreadth,
             ]
         );
+        let diagnostic = capabilities
+            .iter()
+            .filter(|capability| capability.diagnostic_available)
+            .map(|capability| capability.operation)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            diagnostic,
+            BTreeSet::from([
+                Operation::MoneyFlows,
+                Operation::FuturesDelivery,
+                Operation::TechnicalBars,
+                Operation::FundFlowSeries,
+                Operation::PostCloseFlows,
+                Operation::MarketRankings,
+            ])
+        );
+        assert!(capabilities
+            .iter()
+            .filter(|capability| {
+                matches!(
+                    capability.operation,
+                    Operation::Auctions | Operation::MarketBreadth
+                )
+            })
+            .all(|capability| !capability.diagnostic_available));
     }
 
     #[test]
@@ -1878,6 +2263,27 @@ mod tests {
                 Some("Tdx"),
             )),
             Err(ServiceError::InvalidRequest(_))
+        ));
+    }
+
+    #[test]
+    fn diagnostics_require_opt_in_and_exact_schema_while_absent_families_stay_blocked() {
+        let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
+        let technical = command_for(Operation::TechnicalBars, "wrong.schema", Some("Baidu"));
+        assert!(matches!(
+            registry.execute(technical.clone()),
+            Err(ServiceError::Unsupported { .. })
+        ));
+        assert!(matches!(
+            registry.execute(technical.with_unadmitted_access(true)),
+            Err(ServiceError::InvalidRequest(_))
+        ));
+
+        let auction = command_for(Operation::Auctions, "wrong.schema", Some("Tdx"))
+            .with_unadmitted_access(true);
+        assert!(matches!(
+            registry.execute(auction),
+            Err(ServiceError::Unsupported { .. })
         ));
     }
 

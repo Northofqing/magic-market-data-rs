@@ -6,9 +6,9 @@ mod monitor;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use client::AgentClient;
+use client::{AgentClient, ForwardOutcome};
 use config::AgentConfig;
-use monitor::{read_frames, MonitorProcess};
+use monitor::{read_frames, MonitorTemplate};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -16,21 +16,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("magic-market-tdx-agent is supported only on Windows".into());
     }
     let config = AgentConfig::parse(std::env::args())?;
-    let generation = new_generation()?;
-    let mut monitor = MonitorProcess::spawn_sibling()?;
-    let stdout = monitor.take_stdout()?;
-    let (frames, receiver) = tokio::sync::mpsc::channel(config.queue_capacity);
-    let reader = tokio::spawn(read_frames(stdout, config.max_frame_bytes, frames));
-    let client = AgentClient::new(&config, generation)?;
-    let outcome: Result<(), Box<dyn std::error::Error>> = tokio::select! {
-        result = client.forward(receiver) => result.map_err(|error| Box::new(error) as Box<dyn std::error::Error>),
-        signal = tokio::signal::ctrl_c() => signal.map_err(|error| Box::new(error) as Box<dyn std::error::Error>),
-    };
-    reader.abort();
-    let shutdown = monitor.terminate(config.shutdown_timeout).await;
-    outcome?;
-    shutdown?;
-    Ok(())
+    let template = MonitorTemplate::load_sibling()?;
+    let maximum_watchlist_instruments = template.maximum_watchlist_instruments();
+    let mut watchlist_revision = 0_u64;
+    let mut watchlist = template.initial_watchlist();
+    loop {
+        let generation = new_generation()?;
+        let mut monitor = template.spawn(&watchlist)?;
+        let stdout = monitor.take_stdout()?;
+        let (frames, receiver) = tokio::sync::mpsc::channel(config.queue_capacity);
+        let reader = tokio::spawn(read_frames(stdout, config.max_frame_bytes, frames));
+        let client = AgentClient::new(
+            &config,
+            generation,
+            watchlist_revision,
+            watchlist.clone(),
+            maximum_watchlist_instruments,
+        )?;
+        let outcome = tokio::select! {
+            result = client.forward(receiver) => Some(result),
+            signal = tokio::signal::ctrl_c() => {
+                signal?;
+                None
+            },
+        };
+        reader.abort();
+        monitor.terminate(config.shutdown_timeout).await?;
+        match outcome {
+            None | Some(Ok(ForwardOutcome::FramesComplete)) => return Ok(()),
+            Some(Ok(ForwardOutcome::Reconfigure(configuration))) => {
+                watchlist_revision = configuration.revision;
+                watchlist = configuration.instruments;
+            }
+            Some(Err(error)) => {
+                return Err(Box::new(error) as Box<dyn std::error::Error>);
+            }
+        }
+    }
 }
 
 fn new_generation() -> Result<String, std::time::SystemTimeError> {

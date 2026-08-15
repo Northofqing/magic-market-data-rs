@@ -258,10 +258,12 @@ impl TdxSmartClient {
     /// 仅验证 TCP + 握手，不做 K 线健康检查。
     /// 优先使用缓存的成功服务器。
     pub fn connect_to_any(&self, timeout: Option<f64>) -> Result<bool> {
-        let cache = sync::lock(&self.cache, "smart client cache")?;
+        let cached_server = sync::lock(&self.cache, "smart client cache")?
+            .last_success
+            .clone();
 
         // 1. 尝试缓存的成功服务器
-        if let Some(ref last) = cache.last_success {
+        if let Some(ref last) = cached_server {
             logi!(
                 "smart",
                 "trying cached server: {} ({}:{})",
@@ -285,8 +287,6 @@ impl TdxSmartClient {
                 }
             }
         }
-
-        drop(cache);
 
         // 2. 遍历 PRIMARY_SERVERS (跳过黑名单)
         for &(name, ip, port) in PRIMARY_SERVERS {

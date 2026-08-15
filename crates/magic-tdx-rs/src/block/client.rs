@@ -121,12 +121,12 @@ impl TdxBlockClient {
 
     /// 更新服务器地址
     pub fn set_server(&self, ip: &str, port: u16) {
-        self.client.lock().unwrap().set_server(ip, port);
+        crate::sync::lock_recover(&self.client, "block client").set_server(ip, port);
     }
 
     /// 更新超时
     pub fn set_timeout(&self, timeout: f64) {
-        self.client.lock().unwrap().set_timeout(timeout);
+        crate::sync::lock_recover(&self.client, "block client").set_timeout(timeout);
     }
 
     /// 获取 K 级别限制配置
@@ -213,10 +213,14 @@ impl TdxBlockClient {
             count.min(limit.max_count)
         };
 
-        self.client
-            .lock()
-            .unwrap()
-            .get_index_bars_inner(category, 1, code, start, actual_count, 0)
+        crate::sync::lock(&self.client, "block client")?.get_index_bars_inner(
+            category,
+            1,
+            code,
+            start,
+            actual_count,
+            0,
+        )
     }
 
     /// 获取板块 K 线 (使用默认条数)
@@ -233,10 +237,7 @@ impl TdxBlockClient {
     /// `codes`: 板块代码列表 (88xxxx)
     pub fn get_block_quotes(&self, codes: &[&str]) -> Result<Vec<SecurityQuote>> {
         let pairs: Vec<(u8, &str)> = codes.iter().map(|&c| (1u8, c)).collect();
-        self.client
-            .lock()
-            .unwrap()
-            .get_security_quotes_inner(&pairs)
+        crate::sync::lock(&self.client, "block client")?.get_security_quotes_inner(&pairs)
     }
 
     // ================================================================
@@ -250,10 +251,7 @@ impl TdxBlockClient {
     /// 返回板块成分股级别的记录。同一板块名称会出现多次（每个成分股一条）。
     /// 使用 `BlockQuery::list_blocks()` 可按板块名称去重聚合。
     pub fn get_block_list(&self, block_file: &str) -> Result<Vec<BlockRecord>> {
-        self.client
-            .lock()
-            .unwrap()
-            .get_and_parse_block_info(block_file)
+        crate::sync::lock(&self.client, "block client")?.get_and_parse_block_info(block_file)
     }
 
     /// Downloads one complete block file and proves its source version stayed stable.
@@ -263,10 +261,7 @@ impl TdxBlockClient {
                 "unsupported TDX block file {block_file:?}"
             )));
         }
-        let client = self
-            .client
-            .lock()
-            .map_err(|_| TdxError::Connection("TDX block client lock is poisoned".into()))?;
+        let client = crate::sync::lock(&self.client, "block client")?;
         let (before, bytes, after) = client.download_stable_block_file(
             block_file,
             BLOCK_DOWNLOAD_CHUNK_SIZE,

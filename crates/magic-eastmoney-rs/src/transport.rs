@@ -8,10 +8,10 @@ pub(crate) const DEFAULT_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) const MAX_HTML_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 pub(crate) const MAX_PDF_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
-const MAX_REDIRECT_LOCATION_CHARS: usize = 512;
 const ALLOWED_HOSTS: &[&str] = &[
     "datacenter-web.eastmoney.com",
     "emappdata.eastmoney.com",
+    "mkapi2.dfcfs.com",
     "push2.eastmoney.com",
     "push2delay.eastmoney.com",
     "push2ex.eastmoney.com",
@@ -273,14 +273,7 @@ fn map_ureq_error(error: ureq::Error) -> EastmoneyError {
             let mut message = format!("unexpected HTTP status {status}");
             if (300..400).contains(&status) {
                 match response.header("Location") {
-                    Some(location) => {
-                        let bounded = location
-                            .chars()
-                            .take(MAX_REDIRECT_LOCATION_CHARS)
-                            .collect::<String>();
-                        message
-                            .push_str(&format!("; redirects are disabled; Location={bounded:?}"));
-                    }
+                    Some(_) => message.push_str("; redirects are disabled; Location present"),
                     None => message.push_str("; redirects are disabled; Location missing"),
                 }
             }
@@ -457,7 +450,7 @@ pub(crate) fn validate_endpoint(url: &str) -> Result<(), EastmoneyError> {
     };
     if !ALLOWED_HOSTS.contains(&host) {
         return Err(EastmoneyError::InvalidRequest(format!(
-            "host {host} is not an allowed Eastmoney public host"
+            "host {host} is not an allowed registered Eastmoney host"
         )));
     }
     Ok(())

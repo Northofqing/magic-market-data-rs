@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use magic_market_grpc_contracts::v1;
 use magic_market_grpc_contracts::PROTOCOL_VERSION;
@@ -24,6 +25,7 @@ pub(crate) struct EventHub {
     replay_max_bytes: usize,
     maximum_payload_bytes: usize,
     agent_command_capacity: usize,
+    agent_heartbeat_timeout: Duration,
 }
 
 struct HubState {
@@ -32,6 +34,12 @@ struct HubState {
     replay_bytes: usize,
     replay: VecDeque<v1::MarketEventEnvelope>,
     agent_session: Option<u64>,
+    agent_commands: Option<mpsc::Sender<Result<v1::AgentCommand, Status>>>,
+    maximum_watchlist_instruments: u32,
+    desired_watchlist_revision: u64,
+    desired_instruments: Vec<String>,
+    applied_watchlist_revision: u64,
+    applied_instruments: Vec<String>,
     next_session: u64,
 }
 
@@ -118,6 +126,7 @@ impl EventHub {
         replay_max_bytes: usize,
         maximum_payload_bytes: usize,
         agent_command_capacity: usize,
+        agent_heartbeat_timeout: Duration,
     ) -> Result<Self, &'static str> {
         if max_subscribers == 0
             || subscriber_queue_capacity == 0
@@ -125,6 +134,7 @@ impl EventHub {
             || replay_max_bytes == 0
             || maximum_payload_bytes == 0
             || agent_command_capacity == 0
+            || agent_heartbeat_timeout.is_zero()
         {
             return Err("event hub limits must be positive");
         }
@@ -136,6 +146,12 @@ impl EventHub {
                 replay_bytes: 0,
                 replay: VecDeque::new(),
                 agent_session: None,
+                agent_commands: None,
+                maximum_watchlist_instruments: 0,
+                desired_watchlist_revision: 0,
+                desired_instruments: Vec::new(),
+                applied_watchlist_revision: 0,
+                applied_instruments: Vec::new(),
                 next_session: 1,
             })),
             live,
@@ -144,16 +160,36 @@ impl EventHub {
             replay_max_bytes,
             maximum_payload_bytes,
             agent_command_capacity,
+            agent_heartbeat_timeout,
         })
     }
 
-    async fn connect_agent(&self, hello: &v1::AgentHello) -> Result<(u64, u64), Status> {
+    async fn connect_agent(
+        &self,
+        hello: &v1::AgentHello,
+        commands: mpsc::Sender<Result<v1::AgentCommand, Status>>,
+    ) -> Result<(u64, u64, Option<v1::AgentConfigureWatchlist>), Status> {
         validate_hello(hello, self.maximum_payload_bytes)?;
         let mut state = self.inner.lock().await;
         if state.agent_session.is_some() {
             return Err(Status::already_exists(
                 "a TDX agent stream is already active",
             ));
+        }
+        let adopts_agent_watchlist = state.desired_instruments.is_empty();
+        if !adopts_agent_watchlist {
+            if hello.watchlist_revision > state.desired_watchlist_revision {
+                return Err(Status::failed_precondition(
+                    "agent watchlist revision is ahead of the server revision",
+                ));
+            }
+            if hello.watchlist_revision == state.desired_watchlist_revision
+                && hello.watchlist_instruments != state.desired_instruments
+            {
+                return Err(Status::failed_precondition(
+                    "agent watchlist contradicts the server revision",
+                ));
+            }
         }
         if state.generation.as_deref() != Some(&hello.terminal_generation) {
             state.generation = Some(hello.terminal_generation.clone());
@@ -167,14 +203,79 @@ impl EventHub {
             .checked_add(1)
             .ok_or_else(|| Status::resource_exhausted("agent session identifier exhausted"))?;
         state.agent_session = Some(session);
-        Ok((session, state.latest_sequence))
+        state.agent_commands = Some(commands);
+        state.maximum_watchlist_instruments = hello.maximum_watchlist_instruments;
+        if adopts_agent_watchlist {
+            state.desired_watchlist_revision = hello.watchlist_revision;
+            state.desired_instruments = hello.watchlist_instruments.clone();
+        }
+        state.applied_watchlist_revision = hello.watchlist_revision;
+        state.applied_instruments = hello.watchlist_instruments.clone();
+        let configure = (state.applied_watchlist_revision != state.desired_watchlist_revision
+            || state.applied_instruments != state.desired_instruments)
+            .then(|| v1::AgentConfigureWatchlist {
+                revision: state.desired_watchlist_revision,
+                instruments: state.desired_instruments.clone(),
+            });
+        Ok((session, state.latest_sequence, configure))
     }
 
     async fn disconnect_agent(&self, session: u64) {
         let mut state = self.inner.lock().await;
         if state.agent_session == Some(session) {
             state.agent_session = None;
+            state.agent_commands = None;
+            state.maximum_watchlist_instruments = 0;
         }
+    }
+
+    async fn set_watchlist(
+        &self,
+        request_id: String,
+        instruments: Vec<String>,
+    ) -> Result<v1::SetWatchlistResponse, Status> {
+        let mut state = self.inner.lock().await;
+        if state.agent_session.is_none() || state.maximum_watchlist_instruments == 0 {
+            return Err(Status::unavailable("no TDX agent is active"));
+        }
+        let maximum = usize::try_from(state.maximum_watchlist_instruments)
+            .map_err(|_| Status::internal("agent watchlist maximum is not representable"))?;
+        magic_market_grpc_contracts::validate_monitor_watchlist(&instruments, maximum)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        if instruments == state.desired_instruments {
+            return Ok(v1::SetWatchlistResponse {
+                request_id,
+                desired_revision: state.desired_watchlist_revision,
+                state: "unchanged".to_owned(),
+                instruments,
+            });
+        }
+        let revision = state
+            .desired_watchlist_revision
+            .checked_add(1)
+            .ok_or_else(|| Status::resource_exhausted("watchlist revision exhausted"))?;
+        let command = v1::AgentCommand {
+            body: Some(v1::agent_command::Body::ConfigureWatchlist(
+                v1::AgentConfigureWatchlist {
+                    revision,
+                    instruments: instruments.clone(),
+                },
+            )),
+        };
+        state
+            .agent_commands
+            .as_ref()
+            .ok_or_else(|| Status::unavailable("TDX agent command stream is unavailable"))?
+            .try_send(Ok(command))
+            .map_err(|_| Status::resource_exhausted("TDX agent command queue is unavailable"))?;
+        state.desired_watchlist_revision = revision;
+        state.desired_instruments = instruments.clone();
+        Ok(v1::SetWatchlistResponse {
+            request_id,
+            desired_revision: revision,
+            state: "restarting".to_owned(),
+            instruments,
+        })
     }
 
     async fn heartbeat(
@@ -327,7 +428,7 @@ impl EventHub {
         v1::ListenerStatusResponse {
             request_id,
             state: if state.agent_session.is_some() {
-                "agent_connected_diagnostic".to_owned()
+                "agent_connected_production".to_owned()
             } else if state.generation.is_some() {
                 "agent_disconnected".to_owned()
             } else {
@@ -336,6 +437,16 @@ impl EventHub {
             terminal_generation: generation,
             latest,
             capabilities: Vec::new(),
+            desired_watchlist_revision: state.desired_watchlist_revision,
+            desired_instruments: state.desired_instruments.clone(),
+            applied_watchlist_revision: state.applied_watchlist_revision,
+            applied_instruments: state.applied_instruments.clone(),
+            maximum_watchlist_instruments: state.maximum_watchlist_instruments,
+            admitted_event_families: vec![
+                "local_terminal_price".to_owned(),
+                "local_terminal_cumulative_volume".to_owned(),
+                "local_terminal_cumulative_amount".to_owned(),
+            ],
         }
     }
 }
@@ -377,6 +488,10 @@ fn validate_hello(hello: &v1::AgentHello, maximum_payload_bytes: usize) -> Resul
         .as_ref()
         .ok_or_else(|| Status::invalid_argument("terminal evidence is required"))?;
     magic_market_grpc_contracts::validate_payload(evidence, maximum_payload_bytes)
+        .map_err(|error| Status::invalid_argument(error.to_string()))?;
+    let maximum = usize::try_from(hello.maximum_watchlist_instruments)
+        .map_err(|_| Status::invalid_argument("agent watchlist maximum is not representable"))?;
+    magic_market_grpc_contracts::validate_monitor_watchlist(&hello.watchlist_instruments, maximum)
         .map_err(|error| Status::invalid_argument(error.to_string()))
 }
 
@@ -399,11 +514,6 @@ fn validate_event(
             "TDX agent provider is outside its boundary",
         ));
     }
-    if event.admission != v1::AdmissionState::Unadmitted as i32 {
-        return Err(Status::failed_precondition(
-            "TDX event families remain repository-unadmitted",
-        ));
-    }
     let cursor = event
         .cursor
         .as_ref()
@@ -416,7 +526,72 @@ fn validate_event(
         .as_ref()
         .ok_or_else(|| Status::invalid_argument("event payload is required"))?;
     magic_market_grpc_contracts::validate_payload(payload, maximum_payload_bytes)
-        .map_err(|error| Status::invalid_argument(error.to_string()))
+        .map_err(|error| Status::invalid_argument(error.to_string()))?;
+    match v1::AdmissionState::try_from(event.admission) {
+        Ok(v1::AdmissionState::Admitted) => validate_admitted_tdx_event(event, payload),
+        Ok(v1::AdmissionState::Unadmitted) => Ok(()),
+        _ => Err(Status::invalid_argument("event admission state is invalid")),
+    }
+}
+
+fn validate_admitted_tdx_event(
+    event: &v1::MarketEventEnvelope,
+    payload: &v1::CanonicalPayload,
+) -> Result<(), Status> {
+    if event.provider != "LocalTerminal" {
+        return Err(Status::failed_precondition(
+            "only admitted LocalTerminal observation families are enabled",
+        ));
+    }
+    let expected_schema = format!("magic.market.monitor.{}", event.event_kind);
+    if payload.schema != expected_schema || payload.schema_version != 1 {
+        return Err(Status::invalid_argument(
+            "admitted TDX payload schema does not match its event kind",
+        ));
+    }
+    let document: serde_json::Value = serde_json::from_slice(&payload.data)
+        .map_err(|_| Status::invalid_argument("admitted TDX payload is not JSON"))?;
+    if document.get("type").and_then(serde_json::Value::as_str) != Some(event.event_kind.as_str())
+        || document
+            .get("instrument")
+            .and_then(serde_json::Value::as_str)
+            != Some(event.instrument.as_str())
+    {
+        return Err(Status::invalid_argument(
+            "admitted TDX payload identity does not match the envelope",
+        ));
+    }
+    let admitted = match event.event_kind.as_str() {
+        "observation" => {
+            admitted_json_field(&document, "price_admitted", "price")
+                || admitted_json_field(&document, "volume_admitted", "cumulative_volume")
+        }
+        "snapshot_observation" => {
+            admitted_json_field(&document, "amount_admitted", "cumulative_amount")
+        }
+        _ => false,
+    };
+    if !admitted {
+        return Err(Status::failed_precondition(
+            "TDX event kind or family is not repository-admitted",
+        ));
+    }
+    Ok(())
+}
+
+fn admitted_json_field(
+    document: &serde_json::Value,
+    admission_field: &str,
+    value_field: &str,
+) -> bool {
+    document
+        .get(admission_field)
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+        && document
+            .get(value_field)
+            .and_then(serde_json::Value::as_str)
+            .is_some()
 }
 
 fn validate_context(context: Option<&v1::RequestContext>) -> Result<&v1::RequestContext, Status> {
@@ -466,6 +641,18 @@ impl v1::market_event_service_server::MarketEventService for EventHub {
             self.listener_status(context.request_id.clone()).await,
         ))
     }
+
+    async fn set_watchlist(
+        &self,
+        request: Request<v1::SetWatchlistRequest>,
+    ) -> Result<Response<v1::SetWatchlistResponse>, Status> {
+        let request = request.into_inner();
+        let context = validate_context(request.context.as_ref())?;
+        Ok(Response::new(
+            self.set_watchlist(context.request_id.clone(), request.instruments)
+                .await?,
+        ))
+    }
 }
 
 #[tonic::async_trait]
@@ -477,9 +664,9 @@ impl v1::tdx_agent_service_server::TdxAgentService for EventHub {
         request: Request<Streaming<v1::AgentMessage>>,
     ) -> Result<Response<Self::OpenStreamStream>, Status> {
         let mut incoming = request.into_inner();
-        let first = incoming
-            .message()
-            .await?
+        let first = tokio::time::timeout(self.agent_heartbeat_timeout, incoming.message())
+            .await
+            .map_err(|_| Status::deadline_exceeded("agent hello deadline exceeded"))??
             .ok_or_else(|| Status::invalid_argument("agent hello is required"))?;
         let hello = match first.body {
             Some(v1::agent_message::Body::Hello(hello)) => hello,
@@ -489,9 +676,10 @@ impl v1::tdx_agent_service_server::TdxAgentService for EventHub {
                 ))
             }
         };
-        let (session, accepted_sequence) = self.connect_agent(&hello).await?;
-        let generation = hello.terminal_generation;
         let (commands, receiver) = mpsc::channel(self.agent_command_capacity);
+        let (session, accepted_sequence, pending_configuration) =
+            self.connect_agent(&hello, commands.clone()).await?;
+        let generation = hello.terminal_generation;
         commands
             .try_send(Ok(v1::AgentCommand {
                 body: Some(v1::agent_command::Body::Ack(v1::AgentAck {
@@ -500,9 +688,22 @@ impl v1::tdx_agent_service_server::TdxAgentService for EventHub {
                 })),
             }))
             .map_err(|_| Status::resource_exhausted("agent command queue is unavailable"))?;
+        if let Some(configuration) = pending_configuration {
+            commands
+                .try_send(Ok(v1::AgentCommand {
+                    body: Some(v1::agent_command::Body::ConfigureWatchlist(configuration)),
+                }))
+                .map_err(|_| Status::resource_exhausted("agent command queue is unavailable"))?;
+        }
         let hub = self.clone();
+        let agent_heartbeat_timeout = self.agent_heartbeat_timeout;
         tokio::spawn(async move {
-            while let Ok(Some(message)) = incoming.message().await {
+            loop {
+                let message =
+                    match tokio::time::timeout(agent_heartbeat_timeout, incoming.message()).await {
+                        Ok(Ok(Some(message))) => message,
+                        Ok(Ok(None)) | Ok(Err(_)) | Err(_) => break,
+                    };
                 let outcome = match message.body {
                     Some(v1::agent_message::Body::Event(event)) => hub
                         .publish(session, event)
@@ -558,7 +759,16 @@ mod tests {
     use tokio_stream::StreamExt;
 
     fn hub(queue: usize, replay_events: usize) -> EventHub {
-        EventHub::new(2, queue, replay_events, 32_768, 4096, 4).unwrap()
+        EventHub::new(
+            2,
+            queue,
+            replay_events,
+            32_768,
+            4096,
+            4,
+            Duration::from_secs(2),
+        )
+        .unwrap()
     }
 
     fn payload(schema: &str) -> v1::CanonicalPayload {
@@ -576,7 +786,18 @@ mod tests {
             agent_id: "agent-1".to_owned(),
             terminal_generation: generation.to_owned(),
             terminal_evidence: Some(payload("magic.tdx.terminal_evidence")),
+            watchlist_revision: 0,
+            watchlist_instruments: vec!["EQUITY:SH:600396".to_owned()],
+            maximum_watchlist_instruments: 2,
         }
+    }
+
+    async fn connect(hub: &EventHub, generation: &str) -> u64 {
+        let (commands, _receiver) = mpsc::channel(4);
+        hub.connect_agent(&hello(generation), commands)
+            .await
+            .unwrap()
+            .0
     }
 
     fn event(generation: &str, sequence: u64) -> v1::MarketEventEnvelope {
@@ -600,7 +821,7 @@ mod tests {
     #[tokio::test]
     async fn sequence_gap_is_rejected_without_advancing_replay() {
         let hub = hub(2, 4);
-        let (session, _) = hub.connect_agent(&hello("generation-a")).await.unwrap();
+        let session = connect(&hub, "generation-a").await;
         assert_eq!(
             hub.publish(session, event("generation-a", 1))
                 .await
@@ -622,7 +843,7 @@ mod tests {
     #[tokio::test]
     async fn replay_reports_an_expired_cursor() {
         let hub = hub(2, 2);
-        let (session, _) = hub.connect_agent(&hello("generation-a")).await.unwrap();
+        let session = connect(&hub, "generation-a").await;
         for sequence in 1..=3 {
             hub.publish(session, event("generation-a", sequence))
                 .await
@@ -644,7 +865,7 @@ mod tests {
     #[tokio::test]
     async fn slow_subscriber_gets_resource_exhausted_and_terminates() {
         let hub = hub(1, 4);
-        let (session, _) = hub.connect_agent(&hello("generation-a")).await.unwrap();
+        let session = connect(&hub, "generation-a").await;
         let mut stream = hub
             .subscribe_from(None, EventFilter::from_wire(None).unwrap())
             .await
@@ -661,13 +882,91 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn admitted_tdx_event_is_rejected() {
+    async fn admitted_tdx_event_requires_an_enabled_raw_family_contract() {
         let hub = hub(2, 4);
-        let (session, _) = hub.connect_agent(&hello("generation-a")).await.unwrap();
+        let session = connect(&hub, "generation-a").await;
         let mut value = event("generation-a", 1);
         value.admission = v1::AdmissionState::Admitted as i32;
         let status = hub.publish(session, value).await.unwrap_err();
-        assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+
+        let value = v1::MarketEventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            event_id: "event-1".to_owned(),
+            cursor: Some(v1::EventCursor {
+                generation: "generation-a".to_owned(),
+                sequence: 1,
+            }),
+            event_kind: "observation".to_owned(),
+            provider: "LocalTerminal".to_owned(),
+            instrument: "EQUITY:SH:600396".to_owned(),
+            observed_at: "2026-08-15T00:00:00Z".to_owned(),
+            source_at: String::new(),
+            admission: v1::AdmissionState::Admitted as i32,
+            payload: Some(v1::CanonicalPayload {
+                schema: "magic.market.monitor.observation".to_owned(),
+                schema_version: 1,
+                content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+                data: br#"{"type":"observation","instrument":"EQUITY:SH:600396","price":"17.18","cumulative_volume":"100","price_admitted":true,"volume_admitted":true}"#.to_vec(),
+            }),
+        };
+        assert_eq!(hub.publish(session, value).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn watchlist_replacement_is_bounded_idempotent_and_dispatched() {
+        let hub = hub(4, 4);
+        let (commands, mut receiver) = mpsc::channel(4);
+        let (_, _, pending) = hub
+            .connect_agent(&hello("generation-a"), commands)
+            .await
+            .unwrap();
+        assert!(pending.is_none());
+
+        let unchanged = hub
+            .set_watchlist(
+                "watchlist-1".to_owned(),
+                vec!["EQUITY:SH:600396".to_owned()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(unchanged.state, "unchanged");
+        assert!(receiver.try_recv().is_err());
+
+        let desired = vec!["EQUITY:SH:600519".to_owned(), "EQUITY:SZ:000001".to_owned()];
+        let restarting = hub
+            .set_watchlist("watchlist-2".to_owned(), desired.clone())
+            .await
+            .unwrap();
+        assert_eq!(restarting.state, "restarting");
+        assert_eq!(restarting.desired_revision, 1);
+        let command = receiver.recv().await.unwrap().unwrap();
+        assert_eq!(
+            command.body,
+            Some(v1::agent_command::Body::ConfigureWatchlist(
+                v1::AgentConfigureWatchlist {
+                    revision: 1,
+                    instruments: desired.clone(),
+                }
+            ))
+        );
+        let status = hub.listener_status("status-1".to_owned()).await;
+        assert_eq!(status.desired_watchlist_revision, 1);
+        assert_eq!(status.desired_instruments, desired);
+        assert_eq!(status.applied_watchlist_revision, 0);
+
+        let error = hub
+            .set_watchlist(
+                "watchlist-3".to_owned(),
+                vec![
+                    "EQUITY:SH:600396".to_owned(),
+                    "EQUITY:SZ:000001".to_owned(),
+                    "EQUITY:BJ:430001".to_owned(),
+                ],
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
     }
 
     #[tokio::test]
@@ -748,6 +1047,29 @@ mod tests {
                 ..
             }))
         ));
+        let replacement = vec!["EQUITY:SH:600519".to_owned(), "EQUITY:SZ:000001".to_owned()];
+        let response = subscriber
+            .set_watchlist(v1::SetWatchlistRequest {
+                context: Some(v1::RequestContext {
+                    protocol_version: PROTOCOL_VERSION,
+                    request_id: "watchlist-grpc-1".to_owned(),
+                }),
+                instruments: replacement.clone(),
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.state, "restarting");
+        assert_eq!(response.instruments, replacement.clone());
+        assert_eq!(
+            commands.message().await.unwrap().unwrap().body,
+            Some(v1::agent_command::Body::ConfigureWatchlist(
+                v1::AgentConfigureWatchlist {
+                    revision: 1,
+                    instruments: replacement,
+                }
+            ))
+        );
         drop(messages);
         drop(events);
         drop(commands);
@@ -755,6 +1077,65 @@ mod tests {
         drop(agent);
         let _ = shutdown.send(());
         tokio::time::timeout(std::time::Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn idle_agent_is_disconnected_after_the_heartbeat_deadline() {
+        let hub = EventHub::new(2, 4, 4, 32_768, 4096, 4, Duration::from_millis(40)).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown, shutdown_receiver) = tokio::sync::oneshot::channel();
+        let server_hub = hub.clone();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(v1::tdx_agent_service_server::TdxAgentServiceServer::new(
+                    server_hub,
+                ))
+                .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
+                    let _ = shutdown_receiver.await;
+                })
+                .await
+                .unwrap();
+        });
+        let endpoint = format!("http://{address}");
+        let mut agent = v1::tdx_agent_service_client::TdxAgentServiceClient::connect(endpoint)
+            .await
+            .unwrap();
+        let (messages, receiver) = mpsc::channel(2);
+        messages
+            .send(v1::AgentMessage {
+                body: Some(v1::agent_message::Body::Hello(hello("generation-idle"))),
+            })
+            .await
+            .unwrap();
+        let mut commands = agent
+            .open_stream(ReceiverStream::new(receiver))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(matches!(
+            commands.message().await.unwrap().unwrap().body,
+            Some(v1::agent_command::Body::Ack(_))
+        ));
+        assert_eq!(
+            hub.listener_status("before-timeout".to_owned()).await.state,
+            "agent_connected_production"
+        );
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            hub.listener_status("after-timeout".to_owned()).await.state,
+            "agent_disconnected"
+        );
+
+        drop(messages);
+        drop(commands);
+        drop(agent);
+        let _ = shutdown.send(());
+        tokio::time::timeout(Duration::from_secs(2), server)
             .await
             .unwrap()
             .unwrap();

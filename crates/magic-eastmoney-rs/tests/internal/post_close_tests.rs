@@ -65,6 +65,25 @@ fn maps_strict_post_close_ranking_after_the_capture_gate() {
 }
 
 #[test]
+fn available_post_close_diagnostic_keeps_missing_fields_null_for_a_past_date() {
+    let mut value: Value = serde_json::from_slice(&fixture()).unwrap();
+    value["data"]["diff"][0]["f14"] = Value::Null;
+    value["data"]["diff"][0]["f2"] = Value::Null;
+    value["data"]["diff"][0]["f124"] = Value::Null;
+    let bytes = serde_json::to_vec(&value).unwrap();
+    let batch =
+        parse_available_post_close(&bytes, &request(), "2026-07-25T12:00:00+08:00").unwrap();
+    assert!(!batch.quality().is_complete());
+    let record = serde_json::to_value(&batch.records()[0]).unwrap();
+    assert!(record["name"].is_null());
+    assert!(record["close"].is_null());
+    assert!(record["source_at"].is_null());
+    assert!(record["super_large_net"].is_null());
+    assert!(record["large_net"].is_null());
+    assert!(record["evidence"]["source_at"].is_null());
+}
+
+#[test]
 fn rejects_pre_window_stale_and_unsorted_rankings() {
     assert!(parse_post_close(&fixture(), &request(), "2026-07-24T15:34:59+08:00").is_err());
     assert!(parse_post_close(&fixture(), &request(), "2026-07-25T15:35:00+08:00").is_err());
@@ -84,6 +103,20 @@ fn rejects_mixed_source_snapshots_and_market_identity_mismatch() {
         1,
     );
     assert!(parse_post_close(mixed.as_bytes(), &request(), "2026-07-24T15:35:00+08:00").is_err());
+    let partial = parse_post_close_mode(
+        mixed.as_bytes(),
+        &request(),
+        "2026-07-24T15:35:00+08:00",
+        true,
+    )
+    .unwrap();
+    assert_eq!(partial.records().len(), 2);
+    assert!(!partial.quality().is_complete());
+    assert!(partial.provenance().source_at().is_none());
+    assert_ne!(
+        partial.records()[0].evidence().source_at(),
+        partial.records()[1].evidence().source_at()
+    );
     let wrong_market = String::from_utf8(fixture()).unwrap().replace(
         "\"f12\":\"600396\",\"f13\":1",
         "\"f12\":\"600396\",\"f13\":0",
@@ -145,6 +178,12 @@ fn post_close_schema_and_cardinality_failures_are_atomic() {
 #[test]
 fn post_close_helpers_preserve_missingness_and_time_boundaries() {
     assert!(validate_capture_window(&request(), "2026-07-24T15:35:00+08:00").is_ok());
+    assert!(validate_partial_capture_window(&request(), "2026-07-25T12:00:00+08:00").is_ok());
+    let historical =
+        parse_available_post_close(&fixture(), &request(), "2026-07-25T12:00:00+08:00").unwrap();
+    assert_eq!(historical.records().len(), 2);
+    assert!(!historical.quality().is_complete());
+    assert!(validate_partial_capture_window(&request(), "2026-07-23T16:00:00+08:00").is_err());
     for observed_at in [
         "2026-07-24 15:35:00+08:00",
         "2026-07-24T15:35+08:00",
@@ -183,6 +222,16 @@ fn public_post_close_provider_is_explicitly_unadmitted() {
         Err(EastmoneyError::Unsupported(message))
             if message.contains("production admission")
     ));
+}
+
+#[test]
+fn public_partial_diagnostic_accepts_an_explicit_past_source_date() {
+    let client = EastmoneyClient::with_transport(StaticTransport(fixture()));
+    let batch = client
+        .diagnose_partial_post_close_flows(&request())
+        .unwrap();
+    assert_eq!(batch.records().len(), 2);
+    assert!(!batch.quality().is_complete());
 }
 
 #[test]

@@ -22,9 +22,6 @@ fn production_constructor_fails_closed_with_every_missing_capability() {
         error,
         LocalTerminalMonitorCompositionError::CapabilityUnadmitted {
             capabilities: vec![
-                LocalMonitorCapability::LocalTerminalPrice,
-                LocalMonitorCapability::LocalTerminalCumulativeAmount,
-                LocalMonitorCapability::LocalTerminalCumulativeVolume,
                 LocalMonitorCapability::LocalTerminalSourceRecordCount,
                 LocalMonitorCapability::LocalPriceChangeAnomaly,
                 LocalMonitorCapability::LocalAmountChangeAnomaly,

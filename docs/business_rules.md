@@ -546,6 +546,16 @@ URLs, proxies, TLS policy, executable paths or arbitrary methods. Repository
 admission and runtime availability are evaluated independently before Provider
 I/O, and an RPC can never promote an unadmitted capability.
 
+An external query may explicitly opt in to a repository-registered diagnostic
+handler. Opt-in is false by default and cannot select URLs or arbitrary methods.
+A Gate-A-reviewed fixed-template diagnostic may instead be registered as
+default-readable when its response schema preserves every missing field and the
+unadmitted state; this affects access convenience only. Every diagnostic response
+remains `UNADMITTED`, is forced incomplete, and carries the repository blocker. A
+missing diagnostic handler still fails before Provider I/O. Transport success,
+returned records, and optional-field presence never promote repository admission
+or runtime availability.
+
 Blocking Providers execute behind an explicitly bounded blocking-worker gate,
 not on a gRPC/Tokio worker. Every successful response preserves provider, batch,
 completeness, source evidence, units, source time when supplied and local
@@ -560,3 +570,96 @@ generation-bound server stream with bounded best-effort replay. Gap, rollback,
 slow consumer, reconnect and unavailable replay are explicit; transport success
 does not change the LocalTerminal or LocalAnalysis admission rows. The schema has
 no account, cash, position, order, cancel or execution service.
+
+## BR-046 Eastmoney Miaoxiang authenticated diagnostic boundary
+
+The Eastmoney Miaoxiang Skills API is a separately authenticated, natural-language
+query source. It is not a retry alias for the public `push2` family and its API key
+is read only from the server process environment, redacted from `Debug`, errors,
+logs, evidence and payloads. Calls use only the exact registered HTTPS origin and
+path, a bounded JSON body, disabled redirects, bounded response bytes, positive
+timeouts and shared one-request-per-second pacing.
+
+Only exact, repository-owned query templates may be sent. External callers cannot
+provide natural-language text, URLs, headers or indicator identifiers. A successful
+HTTP/API response does not promote admission. Response identity, protocol type,
+security or universe identity, source date, indicator labels, raw scalar
+cardinality and observed unit metadata must match the requested diagnostic family.
+
+Opening-auction diagnostics may expose only source-returned opening-auction volume
+in shares and amount in CNY. Matched price, previous close, unmatched queues,
+volume ratio and provider time remain null unless independently proved. Market
+breadth diagnostics may expose the source-returned up/down/flat and limit-up/down
+counts, but listed-universe total, coverage and source-time skew remain null. These
+separately named diagnostic records remain incomplete and `UNADMITTED`; they never
+satisfy the complete `Auctions` or `MarketBreadth` Core contracts. Empty tables,
+extra dates, identity mismatch, unit mismatch, malformed decimals or missing
+required diagnostic fields fail explicitly rather than becoming a successful
+empty or zero-filled record.
+
+When the server process has a valid Key, the four fixed-template Miaoxiang
+diagnostics (`MoneyFlows`, `FundFlowSeries`, `Auctions`, `MarketBreadth`) are
+default-readable without request-level Provider selection or unadmitted opt-in.
+This exception does not apply to arbitrary diagnostic providers or queries and
+does not change the response admission, completeness, blocker or null fields.
+
+## BR-047 TDX dynamic watchlist control
+
+An authenticated external watchlist update replaces the complete global TDX
+local-monitor watchlist; it is never an implicit append, subscriber-owned union,
+or delivery-filter side effect. Entries are non-empty, ordered, duplicate-free
+canonical `EQUITY:SH|SZ|BJ:NNNNNN` identities and must not exceed the positive
+maximum advertised by the active Windows Agent. Invalid or oversized input and
+the absence of an active Agent fail before configuration state changes.
+
+Every changed list receives a checked monotonic revision and is sent only as a
+typed command over the existing authenticated Agent stream. The Agent validates
+it again, replaces only the fixed monitor's `--watchlist` argument, restarts that
+monitor, and reconnects with a new terminal generation binding the applied
+revision and ordered list. Replay and anomaly windows never span a watchlist
+replacement. Desired and applied state remain distinct and externally visible;
+an accepted/restarting response does not claim loopback health or source
+availability. An identical list is idempotent. This control cannot change URLs,
+methods, paths, thresholds, admission, or the BR-035 account/trading exclusion.
+
+## BR-048 TDX production observation families
+
+The exact official TQ-Local `Now`, `Volume` and `Amount` fields are independently
+admitted only as observation-time price in CNY/share, cumulative volume in lots,
+and cumulative amount in CNY. Admission requires the validated A-share universe,
+fixed loopback origin and method allowlist, exact decimal/unit conversion,
+bounded serial live evidence, process-generation resets, schema health and
+bounded output behavior defined by BR-043.
+
+The source provides neither a source timestamp nor source-record-count semantics.
+Both remain absent; local `observed_at` is never copied into `source_at`, and a
+poll sequence is never called source completeness. Strict source freshness,
+OHLC/previous-close output and source-record count remain unadmitted. LocalAnalysis
+price/amount/volume anomaly events also remain unadmitted until production rule
+thresholds and trading-calendar/session policy are separately approved. An Agent
+may mark only a raw `observation` or `snapshot_observation` admitted, and the gRPC
+server independently validates its exact payload schema, family marker and value.
+
+## BR-049 Transport and normalized-contract hardening
+
+TDX compressed responses must be rejected before unbounded allocation, must not
+exceed the repository ceiling, and, when the wire header declares an
+uncompressed size, must decode to that exact size. Async connect, read, write and
+response waits are bounded; the connection-pool mutex is never held while
+waiting for a response. A transport failure may rebuild the configured pool,
+but it may not reorder historical bars or bypass board-code preflight checks.
+TDX financial archives use the bounded report protocol and never fall back to
+unauthenticated HTTP.
+
+Normalized option records are constructor-sealed. Routable records expose their
+actual source and observation evidence plus any record status. Router selection
+rejects `Stale`, `Conflicted` and `Unsupported` records, and an explicit strict
+policy may additionally require `Available`. Provenance always contains a
+non-empty batch ID; malformed serialized evidence is rejected before routing.
+An eight-digit calendar date is never accepted as epoch seconds.
+
+An active TDX Agent sends bounded idle heartbeats. The server expires a stream
+that sends neither an event nor a heartbeat within its configured deadline and
+removes the command channel before reporting it connected. Eastmoney public and
+authenticated diagnostic calls share one production pacing lane. None of these
+hardening changes promotes a Provider, data family or diagnostic admission.

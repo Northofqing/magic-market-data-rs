@@ -964,10 +964,23 @@ where
             let group = groups
                 .entry(record.entry_id().as_str())
                 .or_insert(([false; 5], [false; 5]));
-            match record.side() {
-                magic_market_core::DragonTigerSide::Buy => group.0[rank - 1] = true,
-                magic_market_core::DragonTigerSide::Sell => group.1[rank - 1] = true,
-            }
+            let index = rank.checked_sub(1).ok_or_else(|| {
+                SourceError::try_next(
+                    FailureKind::Quality,
+                    "dragon-tiger seat rank is outside the supported buy-five/sell-five range",
+                )
+            })?;
+            let ranks = match record.side() {
+                magic_market_core::DragonTigerSide::Buy => &mut group.0,
+                magic_market_core::DragonTigerSide::Sell => &mut group.1,
+            };
+            let present = ranks.get_mut(index).ok_or_else(|| {
+                SourceError::try_next(
+                    FailureKind::Quality,
+                    "dragon-tiger seat rank is outside the supported buy-five/sell-five range",
+                )
+            })?;
+            *present = true;
         }
         if groups.is_empty()
             || groups.values().any(|(buy, sell)| {

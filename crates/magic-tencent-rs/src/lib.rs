@@ -74,9 +74,9 @@ impl HttpsTransport {
 
 impl SnapshotTransport for HttpsTransport {
     fn get(&self, url: &str) -> Result<Vec<u8>, TencentError> {
-        if !url.starts_with("https://") {
+        if !url.starts_with(DEFAULT_ENDPOINT) {
             return Err(TencentError::InvalidRequest(
-                "Tencent endpoint must use HTTPS".into(),
+                "Tencent request is outside the fixed HTTPS quote endpoint".into(),
             ));
         }
         let response = self

@@ -314,22 +314,13 @@ fn source_rejects_incomplete_wrong_identity_and_provenance_timestamp_drift() {
 #[test]
 fn source_rejects_missing_batch_and_malformed_or_future_timestamps() {
     let request = request("2026-01-01", "2026-07-27");
-    let valid = consensus(&request, ProviderId::Eastmoney, "batch");
-    let missing_batch: Provenance = serde_json::from_value(serde_json::json!({
+    let missing_batch = serde_json::from_value::<Provenance>(serde_json::json!({
         "source": "fixture",
         "source_at": "2026-07-20T08:00:00+08:00",
         "fetched_at": "2026-07-27T10:00:00+08:00",
         "batch_id": null
-    }))
-    .unwrap();
-    let error = source(
-        ProviderId::Eastmoney,
-        Ok(DataBatch::strict(vec![valid], missing_batch)),
-    )
-    .fetch(&request)
-    .unwrap_err();
-    assert_eq!(error.kind(), FailureKind::Evidence);
-    assert!(error.message().contains("no batch ID"));
+    }));
+    assert!(missing_batch.is_err());
 
     for (observed_at, source_at, expected) in [
         (

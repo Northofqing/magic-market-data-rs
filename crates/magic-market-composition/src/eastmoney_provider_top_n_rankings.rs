@@ -123,6 +123,9 @@ fn classify_eastmoney_error(error: EastmoneyError) -> SourceError {
         EastmoneyError::InvalidRequest(message) => {
             SourceError::stop(FailureKind::InvalidRequest, message)
         }
+        EastmoneyError::Authentication(message) => {
+            SourceError::stop(FailureKind::InvalidRequest, message)
+        }
         EastmoneyError::Unsupported(message) => {
             SourceError::try_next(FailureKind::Unsupported, message)
         }

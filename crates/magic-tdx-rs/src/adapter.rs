@@ -243,7 +243,7 @@ pub(crate) fn normalize_bars(
         .last()
         .map(|(source_at, _)| source_at.clone())
         .ok_or_else(|| TdxError::InvalidData("TDX bar batch has no source time".into()))?;
-    let provenance = magic_market_core::Provenance::new(source, observed_at)?
+    let provenance = magic_market_core::Provenance::new(source, observed_at.clone())?
         .with_source_at(latest_source_at)?;
     let batch_id = provenance
         .batch_id()
@@ -266,7 +266,8 @@ pub(crate) fn normalize_bars(
             ProviderId::Tdx,
             batch_id.clone(),
         )?
-        .with_source_at(source_at)?;
+        .with_source_at(source_at)?
+        .with_observed_at(&observed_at)?;
         normalized.push(bar);
     }
     Ok(DataBatch::strict(normalized, provenance))

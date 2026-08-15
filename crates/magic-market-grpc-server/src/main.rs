@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ServerConfig::parse(std::env::args())?;
     let authentication = BearerAuth::new(&config.auth_token)?;
     let gateway = Arc::new(production_operation_registry(
-        config.blocking_deadline,
+        config.provider_timeout,
         config.max_payload_bytes,
     )?);
     let application = GrpcApplication::new(
@@ -37,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.replay_max_bytes,
         config.max_payload_bytes,
         config.agent_command_capacity,
+        config.agent_heartbeat_timeout,
     )?;
 
     let system = v1::system_service_server::SystemServiceServer::new(application.clone())
@@ -76,13 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut builder = Server::builder();
     if let Some(tls) = config.tls {
-        let certificate = std::fs::read(tls.certificate)?;
-        let private_key = std::fs::read(tls.private_key)?;
+        let certificate = read_tls_file(&tls.certificate)?;
+        let private_key = read_tls_file(&tls.private_key)?;
         let mut tls_config =
             ServerTlsConfig::new().identity(Identity::from_pem(certificate, private_key));
         if let Some(client_ca) = tls.client_ca {
             tls_config =
-                tls_config.client_ca_root(Certificate::from_pem(std::fs::read(client_ca)?));
+                tls_config.client_ca_root(Certificate::from_pem(read_tls_file(&client_ca)?));
         }
         builder = builder.tls_config(tls_config)?;
     }
@@ -114,4 +115,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn read_tls_file(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    const MAX_TLS_FILE_BYTES: u64 = 1_048_576;
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() == 0 || metadata.len() > MAX_TLS_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "TLS file {} must contain between 1 and {MAX_TLS_FILE_BYTES} bytes",
+                path.display()
+            ),
+        ));
+    }
+    std::fs::read(path)
 }

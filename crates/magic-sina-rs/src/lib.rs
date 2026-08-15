@@ -127,14 +127,13 @@ impl HttpsTransport {
     }
 
     fn request_document(&self, url: &str, referer: &str) -> Result<DocumentResponse, SinaError> {
-        if !url.starts_with("https://") {
+        validate_sina_endpoint(url)?;
+        if !matches!(
+            referer,
+            "https://finance.sina.com.cn/" | "https://stock.finance.sina.com.cn/"
+        ) {
             return Err(SinaError::InvalidRequest(
-                "Sina endpoint must use HTTPS".into(),
-            ));
-        }
-        if !referer.starts_with("https://") {
-            return Err(SinaError::InvalidRequest(
-                "Sina Referer must use HTTPS".into(),
+                "Sina request uses an unregistered Referer".into(),
             ));
         }
         let response = self
@@ -183,6 +182,22 @@ impl HttpsTransport {
     fn request(&self, url: &str, referer: &str) -> Result<Vec<u8>, SinaError> {
         Ok(self.request_document(url, referer)?.body)
     }
+}
+
+fn validate_sina_endpoint(url: &str) -> Result<(), SinaError> {
+    let remainder = url
+        .strip_prefix("https://")
+        .ok_or_else(|| SinaError::InvalidRequest("Sina endpoint must use HTTPS".into()))?;
+    let authority = remainder.split(['/', '?', '#']).next().unwrap_or_default();
+    if !matches!(
+        authority,
+        "hq.sinajs.cn" | "stock.finance.sina.com.cn" | "vip.stock.finance.sina.com.cn"
+    ) {
+        return Err(SinaError::InvalidRequest(
+            "Sina endpoint host is not registered".into(),
+        ));
+    }
+    Ok(())
 }
 
 impl SnapshotTransport for HttpsTransport {

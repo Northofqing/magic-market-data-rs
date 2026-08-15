@@ -1,5 +1,13 @@
 use super::*;
+use flate2::{write::ZlibEncoder, Compression};
 use std::cell::Cell;
+use std::io::Write;
+
+fn zlib(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(bytes).unwrap();
+    encoder.finish().unwrap()
+}
 
 fn context_bar(year: u32, month: u32, day: u32) -> SecurityBar {
     SecurityBar {
@@ -97,16 +105,32 @@ fn test_build_index_bars_packet() {
 
 #[test]
 fn test_decompress_zlib_no_data() {
-    // Empty data should fail decompression
-    let result = decompress_zlib(&[]);
-    assert!(result.is_err() || result.is_ok());
-    // zlib needs a proper header; empty input may error or produce empty
+    assert!(decompress_zlib(&[]).is_err());
 }
 
 #[test]
 fn test_decompress_zlib_invalid() {
     let result = decompress_zlib(&[0xFF, 0xFF, 0xFF, 0xFF]);
     assert!(result.is_err());
+}
+
+#[test]
+fn exact_decompression_rejects_declared_length_mismatch_and_oversize() {
+    let compressed = zlib(b"abc");
+    assert_eq!(decompress_zlib_exact(&compressed, 3).unwrap(), b"abc");
+    assert!(decompress_zlib_exact(&compressed, 2).is_err());
+    assert!(decompress_zlib_exact(&compressed, 4).is_err());
+    assert!(decompress_zlib_exact(
+        &compressed,
+        u32::try_from(MAX_TDX_DECOMPRESSED_RESPONSE_BYTES + 1).unwrap()
+    )
+    .is_err());
+}
+
+#[test]
+fn exact_decompression_stops_when_output_exceeds_the_declared_bound() {
+    let compressed = zlib(&vec![0_u8; 64 * 1024]);
+    assert!(decompress_zlib_exact(&compressed, 1024).is_err());
 }
 
 #[test]

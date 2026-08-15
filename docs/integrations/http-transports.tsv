@@ -3,7 +3,7 @@ magic-baidu-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stac
 magic-cfets-rs	shared	-	true	target	-
 magic-cls-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-cninfo-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
-magic-eastmoney-rs	legacy-direct	ring,ureq	false	legacy	existing provider-local ureq and ring stack; migrate behind shared transport
+magic-eastmoney-rs	legacy-direct	ring,ureq	false	reviewed-exception	existing provider-local ureq and ring stack; exact authenticated Miaoxiang POST host/path approved by BR-046; migrate behind shared transport
 magic-exchange-rs	hybrid	ureq	true	legacy	official exchange paths are split between shared transport and legacy ureq
 magic-fred-rs	shared	-	true	target	-
 magic-gov-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport

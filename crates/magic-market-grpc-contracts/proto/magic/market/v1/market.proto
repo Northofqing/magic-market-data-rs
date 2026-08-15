@@ -82,6 +82,9 @@ message QueryRequest {
   RequestContext context = 1;
   string preferred_provider = 2;
   CanonicalPayload payload = 3;
+  // Explicitly permits a repository-registered diagnostic handler. It never
+  // changes repository admission and defaults to false for old clients.
+  bool allow_unadmitted = 4;
 }
 
 message QueryResponse {
@@ -94,6 +97,7 @@ message QueryResponse {
   string observed_at = 7;
   string source_at = 8;
   repeated CanonicalPayload records = 9;
+  string diagnostic_blocker = 10;
 }
 
 message Capability {
@@ -103,6 +107,7 @@ message Capability {
   string provider = 4;
   string exact_scope = 5;
   string blocker = 6;
+  bool diagnostic_available = 7;
 }
 
 message CapabilitiesRequest {
@@ -178,6 +183,24 @@ message ListenerStatusResponse {
   string terminal_generation = 3;
   EventCursor latest = 4;
   repeated Capability capabilities = 5;
+  uint64 desired_watchlist_revision = 6;
+  repeated string desired_instruments = 7;
+  uint64 applied_watchlist_revision = 8;
+  repeated string applied_instruments = 9;
+  uint32 maximum_watchlist_instruments = 10;
+  repeated string admitted_event_families = 11;
+}
+
+message SetWatchlistRequest {
+  RequestContext context = 1;
+  repeated string instruments = 2;
+}
+
+message SetWatchlistResponse {
+  string request_id = 1;
+  uint64 desired_revision = 2;
+  string state = 3;
+  repeated string instruments = 4;
 }
 
 message AgentHello {
@@ -185,6 +208,9 @@ message AgentHello {
   string agent_id = 2;
   string terminal_generation = 3;
   CanonicalPayload terminal_evidence = 4;
+  uint64 watchlist_revision = 5;
+  repeated string watchlist_instruments = 6;
+  uint32 maximum_watchlist_instruments = 7;
 }
 
 message AgentHeartbeat {
@@ -209,10 +235,16 @@ message AgentStop {
   string reason_code = 1;
 }
 
+message AgentConfigureWatchlist {
+  uint64 revision = 1;
+  repeated string instruments = 2;
+}
+
 message AgentCommand {
   oneof body {
     AgentAck ack = 1;
     AgentStop stop = 2;
+    AgentConfigureWatchlist configure_watchlist = 3;
   }
 }
 
@@ -282,6 +314,7 @@ service MarketEventService {
   rpc Subscribe(SubscribeRequest) returns (stream MarketEventEnvelope);
   rpc Replay(ReplayRequest) returns (stream MarketEventEnvelope);
   rpc GetListenerStatus(ListenerStatusRequest) returns (ListenerStatusResponse);
+  rpc SetWatchlist(SetWatchlistRequest) returns (SetWatchlistResponse);
 }
 
 service TdxAgentService {

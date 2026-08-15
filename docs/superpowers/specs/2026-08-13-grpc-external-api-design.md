@@ -105,6 +105,8 @@ the current Rust serialization contract.
 - `Subscribe`: server streaming from a requested current generation/cursor.
 - `Replay`: bounded same-generation best-effort replay.
 - `GetListenerStatus`: TDX discovery, health, generation and admissions.
+- `SetWatchlist`: authenticated full replacement of the global canonical equity
+  monitoring set; desired/applied revisions remain distinct until Agent restart.
 
 Each event binds generation, checked sequence, event kind, provider, instrument,
 rule identity/version where applicable, observation/source continuity, source
@@ -116,8 +118,9 @@ events are never silently dropped or described as at-least-once.
 
 - `OpenStream`: authenticated bidirectional stream. The first message is a bounded
   agent hello; subsequent messages carry ordered status/observation/anomaly
-  events. Server messages contain only lifecycle acknowledgement and an explicit
-  stop/reconnect instruction, never account or trading commands.
+  events. Server messages contain lifecycle acknowledgement, an explicit
+  stop/reconnect instruction, or a versioned bounded watchlist replacement,
+  never URLs, thresholds, account or trading commands.
 
 The agent connects outward. The central server never connects to TQ-Local and
 never exposes port 17709. Agent identity changes, terminal generation changes,

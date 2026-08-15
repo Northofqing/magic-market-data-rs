@@ -3,6 +3,8 @@ use thiserror::Error;
 /// Explicit failures raised by the Eastmoney public-web adapter.
 #[derive(Debug, Error)]
 pub enum EastmoneyError {
+    #[error("authentication unavailable: {0}")]
+    Authentication(String),
     #[error("invalid request: {0}")]
     InvalidRequest(String),
     #[error("HTTPS transport error: {0}")]
@@ -25,6 +27,7 @@ impl EastmoneyError {
     /// Stable diagnostic category for probes and operational metrics.
     pub const fn category(&self) -> &'static str {
         match self {
+            Self::Authentication(_) => "authentication",
             Self::InvalidRequest(_) => "invalid_request",
             Self::Transport(_) => "transport",
             Self::ResponseTooLarge { .. } => "response_too_large",

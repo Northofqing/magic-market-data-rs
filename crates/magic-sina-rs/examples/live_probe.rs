@@ -355,16 +355,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     for contract in contracts.records() {
         println!(
             "  option_contract code={} underlying={} month={} expiry={:?} kind={:?} strike={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
-            contract.contract_code.as_str(),
-            contract.underlying.code(),
-            contract.expiry_month.as_str(),
-            contract.expiry.as_ref().map(|date| date.as_str()),
-            contract.kind,
-            contract.strike.map(|value| value.get()),
-            contract.evidence.source_at(),
-            contract.evidence.observed_at(),
-            contract.evidence.provider(),
-            contract.evidence.batch_id()
+            contract.contract_code().as_str(),
+            contract.underlying().code(),
+            contract.expiry_month().as_str(),
+            contract.expiry().map(|date| date.as_str()),
+            contract.kind(),
+            contract.strike().map(|value| value.get()),
+            contract.evidence().source_at(),
+            contract.evidence().observed_at(),
+            contract.evidence().provider(),
+            contract.evidence().batch_id()
         );
     }
     let option_sample_count = std::env::var("MAGIC_SINA_OPTION_SAMPLE_CONTRACTS")
@@ -379,7 +379,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .records()
         .iter()
         .take(option_sample_count)
-        .map(|contract| NonEmptyText::new(contract.contract_code.as_str()))
+        .map(|contract| NonEmptyText::new(contract.contract_code().as_str()))
         .collect::<Result<Vec<_>, _>>()?;
     let option_quotes = client.option_quotes(&option_codes)?;
     println!(
@@ -391,30 +391,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     for quote in option_quotes.records() {
         println!(
             "  option_quote code={} name={:?} bid={:?} bid_quantity={:?} ask={:?} ask_quantity={:?} last={:?} previous_close={:?} open={:?} high={:?} low={:?} upper_limit={:?} lower_limit={:?} strike={:?} volume={:?} open_interest={:?} amount={:?} change_percent={:?} amplitude_percent={:?} quote_at={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
-            quote.contract_code.as_str(),
-            quote.name.as_ref().map(|value| value.as_str()),
-            quote.bid.map(|value| value.get()),
-            quote.bid_quantity.map(|value| value.get()),
-            quote.ask.map(|value| value.get()),
-            quote.ask_quantity.map(|value| value.get()),
-            quote.last.map(|value| value.get()),
-            quote.previous_close.map(|value| value.get()),
-            quote.open.map(|value| value.get()),
-            quote.high.map(|value| value.get()),
-            quote.low.map(|value| value.get()),
-            quote.upper_limit.map(|value| value.get()),
-            quote.lower_limit.map(|value| value.get()),
-            quote.strike.map(|value| value.get()),
-            quote.volume.map(|value| value.get()),
-            quote.open_interest.map(|value| value.get()),
-            quote.amount.map(|value| value.get()),
-            quote.change.map(|value| value.get()),
-            quote.amplitude.map(|value| value.get()),
-            quote.quote_at.as_ref().map(|value| value.as_str()),
-            quote.evidence.source_at(),
-            quote.evidence.observed_at(),
-            quote.evidence.provider(),
-            quote.evidence.batch_id()
+            quote.contract_code().as_str(),
+            quote.name().map(|value| value.as_str()),
+            quote.bid().map(|value| value.get()),
+            quote.bid_quantity().map(|value| value.get()),
+            quote.ask().map(|value| value.get()),
+            quote.ask_quantity().map(|value| value.get()),
+            quote.last().map(|value| value.get()),
+            quote.previous_close().map(|value| value.get()),
+            quote.open().map(|value| value.get()),
+            quote.high().map(|value| value.get()),
+            quote.low().map(|value| value.get()),
+            quote.upper_limit().map(|value| value.get()),
+            quote.lower_limit().map(|value| value.get()),
+            quote.strike().map(|value| value.get()),
+            quote.volume().map(|value| value.get()),
+            quote.open_interest().map(|value| value.get()),
+            quote.amount().map(|value| value.get()),
+            quote.change().map(|value| value.get()),
+            quote.amplitude().map(|value| value.get()),
+            quote.quote_at().map(|value| value.as_str()),
+            quote.evidence().source_at(),
+            quote.evidence().observed_at(),
+            quote.evidence().provider(),
+            quote.evidence().batch_id()
         );
     }
     let option_greeks = client.option_greeks(&option_codes)?;
@@ -427,25 +427,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     for greeks in option_greeks.records() {
         println!(
             "  option_greek code={} name={:?} volume={:?} delta={:?} gamma={:?} theta={:?} vega={:?} rho={:?} implied_volatility={:?} high={:?} low={:?} trade_code={:?} strike={:?} last={:?} theoretical_price={:?} source_at={:?} observed_at={} provider={:?} batch_id={}",
-            greeks.contract_code.as_str(),
-            greeks.name.as_ref().map(|value| value.as_str()),
-            greeks.volume.map(|value| value.get()),
-            greeks.delta.map(|value| value.get()),
-            greeks.gamma.map(|value| value.get()),
-            greeks.theta.map(|value| value.get()),
-            greeks.vega.map(|value| value.get()),
-            greeks.rho.map(|value| value.get()),
-            greeks.implied_volatility.map(|value| value.get()),
-            greeks.high.map(|value| value.get()),
-            greeks.low.map(|value| value.get()),
-            greeks.trade_code.as_ref().map(|value| value.as_str()),
-            greeks.strike.map(|value| value.get()),
-            greeks.last.map(|value| value.get()),
-            greeks.theoretical_price.map(|value| value.get()),
-            greeks.evidence.source_at(),
-            greeks.evidence.observed_at(),
-            greeks.evidence.provider(),
-            greeks.evidence.batch_id()
+            greeks.contract_code().as_str(),
+            greeks.name().map(|value| value.as_str()),
+            greeks.volume().map(|value| value.get()),
+            greeks.delta().map(|value| value.get()),
+            greeks.gamma().map(|value| value.get()),
+            greeks.theta().map(|value| value.get()),
+            greeks.vega().map(|value| value.get()),
+            greeks.rho().map(|value| value.get()),
+            greeks.implied_volatility().map(|value| value.get()),
+            greeks.high().map(|value| value.get()),
+            greeks.low().map(|value| value.get()),
+            greeks.trade_code().map(|value| value.as_str()),
+            greeks.strike().map(|value| value.get()),
+            greeks.last().map(|value| value.get()),
+            greeks.theoretical_price().map(|value| value.get()),
+            greeks.evidence().source_at(),
+            greeks.evidence().observed_at(),
+            greeks.evidence().provider(),
+            greeks.evidence().batch_id()
         );
     }
 

@@ -1,6 +1,6 @@
 use super::{
-    parse_market_ranking_pages, parse_page, ranking_unit, ranking_url, ranking_url_for,
-    session_for_source_at,
+    parse_diagnostic_market_ranking_page, parse_market_ranking_pages, parse_page, ranking_unit,
+    ranking_url, ranking_url_for, session_for_source_at,
 };
 use crate::test_support::ScriptedTransport;
 use magic_market_core::{
@@ -22,6 +22,74 @@ fn row(
     format!(
         r#"{{"f10":{volume_ratio},"f12":"{code}","f13":{market},"f14":"{name}","f62":{main_net},"f124":{epoch}}}"#
     )
+}
+
+#[test]
+fn partial_diagnostic_keeps_absent_source_fields_null_and_reports_partial_coverage() {
+    let rows = [
+        row("600001", 1, "A", "3", "30", 1_784_872_800),
+        r#"{"f13":0,"f62":20,"f124":0}"#.to_owned(),
+    ]
+    .join(",");
+    let batch = parse_diagnostic_market_ranking_page(
+        &page(2, &rows),
+        &MarketRankingKind::VolumeRatio,
+        PositiveU32::new(2).unwrap(),
+    )
+    .unwrap();
+
+    assert!(!batch.quality().is_complete());
+    assert_eq!(batch.records().len(), 2);
+    let first = serde_json::to_value(&batch.records()[0]).unwrap();
+    assert_eq!(first["reported_universe_size"], 2);
+    assert_eq!(first["fetched_count"], 2);
+    assert_eq!(first["value"], 3.0);
+    let missing = serde_json::to_value(&batch.records()[1]).unwrap();
+    assert!(missing["instrument"].is_null());
+    assert!(missing["label"].is_null());
+    assert!(missing["value"].is_null());
+    assert!(missing["source_at"].is_null());
+    assert!(missing["evidence"]["source_at"].is_null());
+}
+
+#[test]
+fn partial_diagnostic_fetches_one_bounded_page_and_rejects_unbounded_limits_before_io() {
+    let rows = (0..100)
+        .map(|index| {
+            row(
+                &format!("600{index:03}"),
+                1,
+                "A",
+                &(200 - index).to_string(),
+                &(2_000 - index * 10).to_string(),
+                1_784_872_800,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let transport = ScriptedTransport::from_results([Ok(page(5_000, &rows))]);
+    let requests = transport.requests();
+    let client = crate::EastmoneyClient::with_transport(transport);
+    let batch = client
+        .diagnose_partial_market_rankings(
+            &MarketRankingKind::VolumeRatio,
+            PositiveU32::new(2).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(requests.lock().unwrap().len(), 1);
+
+    let transport = ScriptedTransport::from_bodies([]);
+    let requests = transport.requests();
+    let client = crate::EastmoneyClient::with_transport(transport);
+    assert!(matches!(
+        client.diagnose_partial_market_rankings(
+            &MarketRankingKind::VolumeRatio,
+            PositiveU32::new(101).unwrap(),
+        ),
+        Err(crate::EastmoneyError::InvalidRequest(_))
+    ));
+    assert!(requests.lock().unwrap().is_empty());
 }
 
 #[test]

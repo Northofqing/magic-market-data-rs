@@ -153,6 +153,24 @@ were `600050.SH` `4.33 -> 4.35`, `600396.SH` `17.51 -> 17.76`, and
 exercise lifecycle transitions; they are not defaults or production advice.
 Every admission marker remained false.
 
+On 2026-08-15 the production admission decision was made for the three exact raw
+observation families after the bounded shadow runs above. Three new serial
+`get_pricevol` reads all returned `Now="16.99"` and `Volume="2835626"` with
+approximately 19--30 ms call latency. Three serial `get_market_snapshot` reads
+all returned the same price/volume plus cumulative amount `4962294700` CNY with
+approximately 16--22 ms call latency. These are observation-time values; the
+responses still contain no source timestamp or source record count. The admitted
+scope is therefore current price in CNY/share, cumulative volume in lots and
+cumulative amount in CNY only. Strict source freshness is not claimed.
+
+The rebuilt Windows Server/Agent/monitor pair was then exercised through the
+authenticated gRPC endpoint with `EQUITY:SH:600396` and `EQUITY:SZ:000001`.
+Listener state was `agent_connected_production` and advertised exactly the three
+families above. A bounded replay contained 846 admitted fast observations and 84
+admitted snapshots in generation
+`00003ebc-0000-4000-818c-f369f1e24f04:1`; the server-side tests separately reject
+an admitted LocalAnalysis payload.
+
 The earlier unchanged samples and an ineffective immediate `refresh_cache`
 call still establish that this is an interval batch source, not a
 source-timestamped tick stream. The wrapper excludes `tick` in its market-data
@@ -179,7 +197,7 @@ framing, not JSON Lines. The versioned frame codec in `magic-tdx-local-rs`
 remains a protocol/test primitive and is not a claim that production market
 data flows through the discovery helper.
 
-## Diagnostic server and package boundary
+## Monitor server and package boundary
 
 `magic-market-monitor-server` serializes fast `get_pricevol` calls through the
 main scheduler. The slower independently paced `get_market_snapshot` amount
@@ -196,29 +214,29 @@ identity replacement resets affected windows and starts a new generation.
 
 Stdout uses a bounded producer queue and a dedicated writer. The only accepted
 slow-consumer policy is `stop`: a full queue, writer failure or explicit
-shutdown timeout stops the diagnostic. Frames are not dropped and the polling
+shutdown timeout stops the service. Frames are not dropped and the polling
 loop is not blocked to manufacture a delivery guarantee.
 
 On a Windows host, `tools/release/package.sh` builds and installs
 `magic-market-monitor-server.exe` and `magic-tdx-native-bridge.exe` into the same
 `bin/` directory. Non-Windows hosts build neither. The recursive `bin/` hash
-manifest covers both. Packaging is diagnostic availability only: neither
-binary auto-starts, neither opens an inbound listener, and every LocalTerminal
-and LocalAnalysis admission constant remains `false`.
+manifest covers both. Neither binary auto-starts or opens an inbound listener.
+The price, cumulative-volume and cumulative-amount fields are production-admitted;
+source-record count and every LocalAnalysis event remain unadmitted.
 
 ## Blocked capabilities
 
-LocalTerminal price/OHLC/previous-close, cumulative volume/amount and
-source-record-count capabilities remain false until their individual schema,
-unit, source-time, reset, entitlement, latency and terminal-exit probes pass.
-LocalAnalysis anomaly families remain false until deterministic contracts plus
-shadow evidence pass. Strict source freshness, Level-2/order/queue data,
+LocalTerminal OHLC/previous-close and source-record-count capabilities remain
+false. The source does not provide source timestamp or record-count semantics,
+so strict source freshness remains unavailable. LocalAnalysis anomaly families
+remain false until production thresholds and an authoritative trading-calendar
+session policy are approved. Level-2/order/queue data,
 full-market production monitoring, remote binding, raw retention, Webhook,
 durable broker and production replay/restart defaults are also false or absent.
 
 The compatibility matrix records executable provenance and observed TQ-Local
-schema evidence; it does not admit a market-data family. An unknown or updated
-executable hash is recorded and subjected to the same fixed-origin bounded
-health/schema probe. Compatible responses may run diagnostically without user
-path/version configuration; schema or unit drift fails closed. Production data
-admission still requires the per-family evidence above.
+schema evidence; it does not independently promote a market-data family. An
+unknown or updated executable hash is recorded and subjected to the same
+fixed-origin bounded health/schema probe. Compatible responses may run without
+user path/version configuration; schema or unit drift fails closed. Admission
+remains limited to the three raw families recorded above.

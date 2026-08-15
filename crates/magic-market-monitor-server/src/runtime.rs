@@ -1472,8 +1472,8 @@ mod tests {
             event,
             ServiceEvent::Observation {
                 amount: FieldAvailability::Unavailable,
-                price_admitted: false,
-                volume_admitted: false,
+                price_admitted: true,
+                volume_admitted: true,
                 ..
             }
         )));

@@ -74,7 +74,7 @@ impl ConnectionPool {
 
     /// 将一个已握手的连接放入池中
     pub fn push(&self, conn: TcpConnection, server: (String, u16)) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::sync::lock_recover(&self.inner, "connection pool");
         inner.total += 1;
         let generation = Arc::clone(&inner.generation);
         inner.idle.push_back(PooledConnection {
@@ -90,7 +90,7 @@ impl ConnectionPool {
     /// 如果未达上限，创建新连接；
     /// 如果已满，返回错误。
     pub fn borrow(&self, server: &(String, u16)) -> Result<PooledConnGuard<'_>> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::sync::lock(&self.inner, "connection pool")?;
 
         // 尝试从空闲队列获取
         if let Some(conn) = inner.idle.pop_front() {
@@ -159,7 +159,7 @@ impl ConnectionPool {
 
     /// 尝试借出连接 (非阻塞)
     pub fn try_borrow(&self, server: &(String, u16)) -> Result<Option<PooledConnGuard<'_>>> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::sync::lock(&self.inner, "connection pool")?;
 
         if let Some(conn) = inner.idle.pop_front() {
             inner.active += 1;
@@ -214,7 +214,7 @@ impl ConnectionPool {
 
     /// 归还连接到池中
     fn release_reservation(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::sync::lock_recover(&self.inner, "connection pool");
         if inner.active == 0 || inner.total == 0 {
             loge!(
                 "pool",
@@ -230,7 +230,7 @@ impl ConnectionPool {
 
     /// 归还连接到池中
     fn return_connection(&self, mut pooled: PooledConnection) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::sync::lock_recover(&self.inner, "connection pool");
         let reusable = Self::settle_return_state(
             &mut inner,
             &pooled.generation,
@@ -274,7 +274,7 @@ impl ConnectionPool {
 
     /// 关闭所有连接
     pub fn close_all(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::sync::lock_recover(&self.inner, "connection pool");
         inner.generation = Arc::new(());
         while let Some(mut conn) = inner.idle.pop_front() {
             conn.conn.close();
@@ -284,7 +284,7 @@ impl ConnectionPool {
 
     /// 获取池状态
     pub fn stats(&self) -> PoolStats {
-        let inner = self.inner.lock().unwrap();
+        let inner = crate::sync::lock_recover(&self.inner, "connection pool");
         PoolStats {
             idle: inner.idle.len(),
             active: inner.active,

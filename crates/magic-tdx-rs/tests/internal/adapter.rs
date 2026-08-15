@@ -1533,25 +1533,14 @@ fn corporate_action_provider_response_echoes_exact_empty_request_coverage() {
 }
 
 #[test]
-fn corporate_action_response_rejects_missing_provenance_batch_id() {
-    let request = CorporateActionRequest::new(instrument("600001"));
-    let provenance: magic_market_core::Provenance = serde_json::from_value(serde_json::json!({
+fn corporate_action_provenance_deserialization_rejects_missing_batch_id() {
+    let provenance = serde_json::from_value::<magic_market_core::Provenance>(serde_json::json!({
         "source": "test",
         "source_at": null,
         "fetched_at": "2026-07-27T10:00:00+08:00",
         "batch_id": null
-    }))
-    .unwrap();
-    let batch = DataBatch::<CorporateAction>::strict(Vec::new(), provenance);
-
-    let error = corporate_action_response(&request, batch, IsoDate::new("2026-07-27").unwrap())
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        TdxError::InvalidData(message)
-            if message == "TDX corporate-action batch omitted its batch ID"
-    ));
+    }));
+    assert!(provenance.is_err());
 }
 
 #[test]

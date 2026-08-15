@@ -577,6 +577,17 @@ fn aggregate_group(
         .first()
         .ok_or_else(|| EmQuantError::InvalidResponse("empty minute aggregation".into()))?;
     let last = group.last().expect("non-empty group");
+    let observed_at = first.observed_at().ok_or_else(|| {
+        EmQuantError::InvalidResponse("minute aggregation is missing observation time".into())
+    })?;
+    if group
+        .iter()
+        .any(|bar| bar.observed_at() != Some(observed_at))
+    {
+        return Err(EmQuantError::InvalidResponse(
+            "minute aggregation mixes observation times".into(),
+        ));
+    }
     let high = group
         .iter()
         .map(|bar| bar.high().get())
@@ -613,6 +624,7 @@ fn aggregate_group(
     if let Some(source_at) = last.source_at() {
         bar = bar.with_source_at(source_at)?;
     }
+    bar = bar.with_observed_at(observed_at)?;
     Ok(bar)
 }
 
@@ -885,7 +897,8 @@ impl HistoricalBars for EmQuantClient {
                 batch_id.clone(),
             )
             .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))?
-            .with_source_at(bar_at)?;
+            .with_source_at(bar_at)?
+            .with_observed_at(&observed_at)?;
             bars.push(bar);
         }
         if let Some(width) = minute {

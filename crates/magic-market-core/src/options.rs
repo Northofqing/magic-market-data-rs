@@ -50,18 +50,54 @@ pub enum OptionKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "OptionContractWire")]
+#[serde(try_from = "OptionContractInput")]
+#[non_exhaustive]
 pub struct OptionContract {
-    pub contract_code: NonEmptyText,
-    pub underlying: InstrumentId,
-    pub expiry_month: ContractMonth,
-    pub expiry: Option<IsoDate>,
-    pub kind: OptionKind,
-    pub strike: Option<Price>,
-    pub evidence: SourceEvidence,
+    contract_code: NonEmptyText,
+    underlying: InstrumentId,
+    expiry_month: ContractMonth,
+    expiry: Option<IsoDate>,
+    kind: OptionKind,
+    strike: Option<Price>,
+    evidence: SourceEvidence,
 }
 
 impl OptionContract {
+    pub fn new(input: OptionContractInput) -> Result<Self, crate::CoreError> {
+        Self {
+            contract_code: input.contract_code,
+            underlying: input.underlying,
+            expiry_month: input.expiry_month,
+            expiry: input.expiry,
+            kind: input.kind,
+            strike: input.strike,
+            evidence: input.evidence,
+        }
+        .validate()
+    }
+
+    pub fn contract_code(&self) -> &NonEmptyText {
+        &self.contract_code
+    }
+    pub fn underlying(&self) -> &InstrumentId {
+        &self.underlying
+    }
+    pub fn expiry_month(&self) -> &ContractMonth {
+        &self.expiry_month
+    }
+    pub fn expiry(&self) -> Option<&IsoDate> {
+        self.expiry.as_ref()
+    }
+    pub fn kind(&self) -> OptionKind {
+        self.kind
+    }
+    pub fn strike(&self) -> Option<Price> {
+        self.strike
+    }
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+
     fn validate(self) -> Result<Self, crate::CoreError> {
         if let Some(expiry) = self.expiry.as_ref() {
             if &expiry.as_str()[..7] != self.expiry_month.as_str() {
@@ -76,58 +112,50 @@ impl OptionContract {
     }
 }
 
-#[derive(Deserialize)]
-struct OptionContractWire {
-    contract_code: NonEmptyText,
-    underlying: InstrumentId,
-    expiry_month: ContractMonth,
-    expiry: Option<IsoDate>,
-    kind: OptionKind,
-    strike: Option<Price>,
-    evidence: SourceEvidence,
+#[derive(Debug, Clone, Deserialize)]
+pub struct OptionContractInput {
+    pub contract_code: NonEmptyText,
+    pub underlying: InstrumentId,
+    pub expiry_month: ContractMonth,
+    pub expiry: Option<IsoDate>,
+    pub kind: OptionKind,
+    pub strike: Option<Price>,
+    pub evidence: SourceEvidence,
 }
 
-impl TryFrom<OptionContractWire> for OptionContract {
+impl TryFrom<OptionContractInput> for OptionContract {
     type Error = crate::CoreError;
 
-    fn try_from(value: OptionContractWire) -> Result<Self, Self::Error> {
-        Self {
-            contract_code: value.contract_code,
-            underlying: value.underlying,
-            expiry_month: value.expiry_month,
-            expiry: value.expiry,
-            kind: value.kind,
-            strike: value.strike,
-            evidence: value.evidence,
-        }
-        .validate()
+    fn try_from(value: OptionContractInput) -> Result<Self, Self::Error> {
+        Self::new(value)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "OptionQuoteWire")]
+#[serde(try_from = "OptionQuoteInput")]
+#[non_exhaustive]
 pub struct OptionQuote {
-    pub contract_code: NonEmptyText,
-    pub name: Option<NonEmptyText>,
-    pub bid: Option<Price>,
-    pub bid_quantity: Option<Quantity>,
-    pub ask: Option<Price>,
-    pub ask_quantity: Option<Quantity>,
-    pub last: Option<Price>,
-    pub previous_close: Option<Price>,
-    pub open: Option<Price>,
-    pub high: Option<Price>,
-    pub low: Option<Price>,
-    pub upper_limit: Option<Price>,
-    pub lower_limit: Option<Price>,
-    pub strike: Option<Price>,
-    pub volume: Option<Quantity>,
-    pub open_interest: Option<Quantity>,
-    pub amount: Option<Money>,
-    pub change: Option<Ratio>,
-    pub amplitude: Option<Ratio>,
-    pub quote_at: Option<NonEmptyText>,
-    pub evidence: SourceEvidence,
+    contract_code: NonEmptyText,
+    name: Option<NonEmptyText>,
+    bid: Option<Price>,
+    bid_quantity: Option<Quantity>,
+    ask: Option<Price>,
+    ask_quantity: Option<Quantity>,
+    last: Option<Price>,
+    previous_close: Option<Price>,
+    open: Option<Price>,
+    high: Option<Price>,
+    low: Option<Price>,
+    upper_limit: Option<Price>,
+    lower_limit: Option<Price>,
+    strike: Option<Price>,
+    volume: Option<Quantity>,
+    open_interest: Option<Quantity>,
+    amount: Option<Money>,
+    change: Option<Ratio>,
+    amplitude: Option<Ratio>,
+    quote_at: Option<NonEmptyText>,
+    evidence: SourceEvidence,
 }
 
 fn validate_level(
@@ -175,6 +203,97 @@ fn valid_quote_timestamp(value: &str) -> bool {
 }
 
 impl OptionQuote {
+    pub fn new(input: OptionQuoteInput) -> Result<Self, crate::CoreError> {
+        Self {
+            contract_code: input.contract_code,
+            name: input.name,
+            bid: input.bid,
+            bid_quantity: input.bid_quantity,
+            ask: input.ask,
+            ask_quantity: input.ask_quantity,
+            last: input.last,
+            previous_close: input.previous_close,
+            open: input.open,
+            high: input.high,
+            low: input.low,
+            upper_limit: input.upper_limit,
+            lower_limit: input.lower_limit,
+            strike: input.strike,
+            volume: input.volume,
+            open_interest: input.open_interest,
+            amount: input.amount,
+            change: input.change,
+            amplitude: input.amplitude,
+            quote_at: input.quote_at,
+            evidence: input.evidence,
+        }
+        .validate()
+    }
+
+    pub fn contract_code(&self) -> &NonEmptyText {
+        &self.contract_code
+    }
+    pub fn name(&self) -> Option<&NonEmptyText> {
+        self.name.as_ref()
+    }
+    pub fn bid(&self) -> Option<Price> {
+        self.bid
+    }
+    pub fn bid_quantity(&self) -> Option<Quantity> {
+        self.bid_quantity
+    }
+    pub fn ask(&self) -> Option<Price> {
+        self.ask
+    }
+    pub fn ask_quantity(&self) -> Option<Quantity> {
+        self.ask_quantity
+    }
+    pub fn last(&self) -> Option<Price> {
+        self.last
+    }
+    pub fn previous_close(&self) -> Option<Price> {
+        self.previous_close
+    }
+    pub fn open(&self) -> Option<Price> {
+        self.open
+    }
+    pub fn high(&self) -> Option<Price> {
+        self.high
+    }
+    pub fn low(&self) -> Option<Price> {
+        self.low
+    }
+    pub fn upper_limit(&self) -> Option<Price> {
+        self.upper_limit
+    }
+    pub fn lower_limit(&self) -> Option<Price> {
+        self.lower_limit
+    }
+    pub fn strike(&self) -> Option<Price> {
+        self.strike
+    }
+    pub fn volume(&self) -> Option<Quantity> {
+        self.volume
+    }
+    pub fn open_interest(&self) -> Option<Quantity> {
+        self.open_interest
+    }
+    pub fn amount(&self) -> Option<Money> {
+        self.amount
+    }
+    pub fn change(&self) -> Option<Ratio> {
+        self.change
+    }
+    pub fn amplitude(&self) -> Option<Ratio> {
+        self.amplitude
+    }
+    pub fn quote_at(&self) -> Option<&NonEmptyText> {
+        self.quote_at.as_ref()
+    }
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+
     fn validate(self) -> Result<Self, crate::CoreError> {
         validate_level("bid", self.bid, self.bid_quantity)?;
         validate_level("ask", self.ask, self.ask_quantity)?;
@@ -222,84 +341,133 @@ impl OptionQuote {
     }
 }
 
-#[derive(Deserialize)]
-struct OptionQuoteWire {
-    contract_code: NonEmptyText,
-    name: Option<NonEmptyText>,
-    bid: Option<Price>,
-    bid_quantity: Option<Quantity>,
-    ask: Option<Price>,
-    ask_quantity: Option<Quantity>,
-    last: Option<Price>,
-    previous_close: Option<Price>,
-    open: Option<Price>,
-    high: Option<Price>,
-    low: Option<Price>,
-    upper_limit: Option<Price>,
-    lower_limit: Option<Price>,
-    strike: Option<Price>,
-    volume: Option<Quantity>,
-    open_interest: Option<Quantity>,
-    amount: Option<Money>,
-    change: Option<Ratio>,
-    amplitude: Option<Ratio>,
-    quote_at: Option<NonEmptyText>,
-    evidence: SourceEvidence,
+#[derive(Debug, Clone, Deserialize)]
+pub struct OptionQuoteInput {
+    pub contract_code: NonEmptyText,
+    pub name: Option<NonEmptyText>,
+    pub bid: Option<Price>,
+    pub bid_quantity: Option<Quantity>,
+    pub ask: Option<Price>,
+    pub ask_quantity: Option<Quantity>,
+    pub last: Option<Price>,
+    pub previous_close: Option<Price>,
+    pub open: Option<Price>,
+    pub high: Option<Price>,
+    pub low: Option<Price>,
+    pub upper_limit: Option<Price>,
+    pub lower_limit: Option<Price>,
+    pub strike: Option<Price>,
+    pub volume: Option<Quantity>,
+    pub open_interest: Option<Quantity>,
+    pub amount: Option<Money>,
+    pub change: Option<Ratio>,
+    pub amplitude: Option<Ratio>,
+    pub quote_at: Option<NonEmptyText>,
+    pub evidence: SourceEvidence,
 }
 
-impl TryFrom<OptionQuoteWire> for OptionQuote {
+impl TryFrom<OptionQuoteInput> for OptionQuote {
     type Error = crate::CoreError;
 
-    fn try_from(value: OptionQuoteWire) -> Result<Self, Self::Error> {
-        Self {
-            contract_code: value.contract_code,
-            name: value.name,
-            bid: value.bid,
-            bid_quantity: value.bid_quantity,
-            ask: value.ask,
-            ask_quantity: value.ask_quantity,
-            last: value.last,
-            previous_close: value.previous_close,
-            open: value.open,
-            high: value.high,
-            low: value.low,
-            upper_limit: value.upper_limit,
-            lower_limit: value.lower_limit,
-            strike: value.strike,
-            volume: value.volume,
-            open_interest: value.open_interest,
-            amount: value.amount,
-            change: value.change,
-            amplitude: value.amplitude,
-            quote_at: value.quote_at,
-            evidence: value.evidence,
-        }
-        .validate()
+    fn try_from(value: OptionQuoteInput) -> Result<Self, Self::Error> {
+        Self::new(value)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "OptionGreeksWire")]
+#[serde(try_from = "OptionGreeksInput")]
+#[non_exhaustive]
 pub struct OptionGreeks {
-    pub contract_code: NonEmptyText,
-    pub name: Option<NonEmptyText>,
-    pub volume: Option<Quantity>,
-    pub delta: Option<FiniteNumber>,
-    pub gamma: Option<FiniteNumber>,
-    pub theta: Option<FiniteNumber>,
-    pub vega: Option<FiniteNumber>,
-    pub rho: Option<FiniteNumber>,
-    pub implied_volatility: Option<FiniteNumber>,
-    pub high: Option<Price>,
-    pub low: Option<Price>,
-    pub trade_code: Option<NonEmptyText>,
-    pub strike: Option<Price>,
-    pub last: Option<Price>,
-    pub theoretical_price: Option<Price>,
-    pub evidence: SourceEvidence,
+    contract_code: NonEmptyText,
+    name: Option<NonEmptyText>,
+    volume: Option<Quantity>,
+    delta: Option<FiniteNumber>,
+    gamma: Option<FiniteNumber>,
+    theta: Option<FiniteNumber>,
+    vega: Option<FiniteNumber>,
+    rho: Option<FiniteNumber>,
+    implied_volatility: Option<FiniteNumber>,
+    high: Option<Price>,
+    low: Option<Price>,
+    trade_code: Option<NonEmptyText>,
+    strike: Option<Price>,
+    last: Option<Price>,
+    theoretical_price: Option<Price>,
+    evidence: SourceEvidence,
 }
 
 impl OptionGreeks {
+    pub fn new(input: OptionGreeksInput) -> Result<Self, crate::CoreError> {
+        Self {
+            contract_code: input.contract_code,
+            name: input.name,
+            volume: input.volume,
+            delta: input.delta,
+            gamma: input.gamma,
+            theta: input.theta,
+            vega: input.vega,
+            rho: input.rho,
+            implied_volatility: input.implied_volatility,
+            high: input.high,
+            low: input.low,
+            trade_code: input.trade_code,
+            strike: input.strike,
+            last: input.last,
+            theoretical_price: input.theoretical_price,
+            evidence: input.evidence,
+        }
+        .validate()
+    }
+
+    pub fn contract_code(&self) -> &NonEmptyText {
+        &self.contract_code
+    }
+    pub fn name(&self) -> Option<&NonEmptyText> {
+        self.name.as_ref()
+    }
+    pub fn volume(&self) -> Option<Quantity> {
+        self.volume
+    }
+    pub fn delta(&self) -> Option<FiniteNumber> {
+        self.delta
+    }
+    pub fn gamma(&self) -> Option<FiniteNumber> {
+        self.gamma
+    }
+    pub fn theta(&self) -> Option<FiniteNumber> {
+        self.theta
+    }
+    pub fn vega(&self) -> Option<FiniteNumber> {
+        self.vega
+    }
+    pub fn rho(&self) -> Option<FiniteNumber> {
+        self.rho
+    }
+    pub fn implied_volatility(&self) -> Option<FiniteNumber> {
+        self.implied_volatility
+    }
+    pub fn high(&self) -> Option<Price> {
+        self.high
+    }
+    pub fn low(&self) -> Option<Price> {
+        self.low
+    }
+    pub fn trade_code(&self) -> Option<&NonEmptyText> {
+        self.trade_code.as_ref()
+    }
+    pub fn strike(&self) -> Option<Price> {
+        self.strike
+    }
+    pub fn last(&self) -> Option<Price> {
+        self.last
+    }
+    pub fn theoretical_price(&self) -> Option<Price> {
+        self.theoretical_price
+    }
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+
     fn validate(self) -> Result<Self, crate::CoreError> {
         if self
             .delta
@@ -331,49 +499,31 @@ impl OptionGreeks {
     }
 }
 
-#[derive(Deserialize)]
-struct OptionGreeksWire {
-    contract_code: NonEmptyText,
-    name: Option<NonEmptyText>,
-    volume: Option<Quantity>,
-    delta: Option<FiniteNumber>,
-    gamma: Option<FiniteNumber>,
-    theta: Option<FiniteNumber>,
-    vega: Option<FiniteNumber>,
-    rho: Option<FiniteNumber>,
-    implied_volatility: Option<FiniteNumber>,
-    high: Option<Price>,
-    low: Option<Price>,
-    trade_code: Option<NonEmptyText>,
-    strike: Option<Price>,
-    last: Option<Price>,
-    theoretical_price: Option<Price>,
-    evidence: SourceEvidence,
+#[derive(Debug, Clone, Deserialize)]
+pub struct OptionGreeksInput {
+    pub contract_code: NonEmptyText,
+    pub name: Option<NonEmptyText>,
+    pub volume: Option<Quantity>,
+    pub delta: Option<FiniteNumber>,
+    pub gamma: Option<FiniteNumber>,
+    pub theta: Option<FiniteNumber>,
+    pub vega: Option<FiniteNumber>,
+    pub rho: Option<FiniteNumber>,
+    pub implied_volatility: Option<FiniteNumber>,
+    pub high: Option<Price>,
+    pub low: Option<Price>,
+    pub trade_code: Option<NonEmptyText>,
+    pub strike: Option<Price>,
+    pub last: Option<Price>,
+    pub theoretical_price: Option<Price>,
+    pub evidence: SourceEvidence,
 }
 
-impl TryFrom<OptionGreeksWire> for OptionGreeks {
+impl TryFrom<OptionGreeksInput> for OptionGreeks {
     type Error = crate::CoreError;
 
-    fn try_from(value: OptionGreeksWire) -> Result<Self, Self::Error> {
-        Self {
-            contract_code: value.contract_code,
-            name: value.name,
-            volume: value.volume,
-            delta: value.delta,
-            gamma: value.gamma,
-            theta: value.theta,
-            vega: value.vega,
-            rho: value.rho,
-            implied_volatility: value.implied_volatility,
-            high: value.high,
-            low: value.low,
-            trade_code: value.trade_code,
-            strike: value.strike,
-            last: value.last,
-            theoretical_price: value.theoretical_price,
-            evidence: value.evidence,
-        }
-        .validate()
+    fn try_from(value: OptionGreeksInput) -> Result<Self, Self::Error> {
+        Self::new(value)
     }
 }
 

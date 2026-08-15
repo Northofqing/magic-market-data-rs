@@ -1,7 +1,7 @@
 use magic_market_core::{
     AssetClass, ContractMonth, Exchange, FiniteNumber, InstrumentId, IsoDate, Money, NonEmptyText,
-    OptionContract, OptionGreeks, OptionKind, OptionQuote, Price, ProviderId, Quantity, Ratio,
-    RatioUnit, SourceEvidence, SourcedRecord,
+    OptionContract, OptionContractInput, OptionGreeks, OptionGreeksInput, OptionKind, OptionQuote,
+    OptionQuoteInput, Price, ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence, SourcedRecord,
 };
 
 fn underlying() -> InstrumentId {
@@ -13,7 +13,7 @@ fn evidence() -> SourceEvidence {
 }
 
 fn contract() -> OptionContract {
-    OptionContract {
+    OptionContract::new(OptionContractInput {
         contract_code: NonEmptyText::new("10000001").unwrap(),
         underlying: underlying(),
         expiry_month: ContractMonth::new("2026-08").unwrap(),
@@ -21,13 +21,14 @@ fn contract() -> OptionContract {
         kind: OptionKind::Call,
         strike: Some(Price::new(3.0).unwrap()),
         evidence: evidence(),
-    }
+    })
+    .unwrap()
 }
 
 #[test]
 fn option_contract_quote_and_greeks_are_distinct_records() {
-    let quote = OptionQuote {
-        contract_code: contract().contract_code.clone(),
+    let quote = OptionQuote::new(OptionQuoteInput {
+        contract_code: contract().contract_code().clone(),
         name: Some(NonEmptyText::new("50ETF购8月3000").unwrap()),
         bid: Some(Price::new(0.1).unwrap()),
         bid_quantity: Some(Quantity::new(10.0).unwrap()),
@@ -48,9 +49,10 @@ fn option_contract_quote_and_greeks_are_distinct_records() {
         amplitude: Some(Ratio::new(4.5, RatioUnit::Percent).unwrap()),
         quote_at: None,
         evidence: evidence(),
-    };
-    let greeks = OptionGreeks {
-        contract_code: contract().contract_code.clone(),
+    })
+    .unwrap();
+    let greeks = OptionGreeks::new(OptionGreeksInput {
+        contract_code: contract().contract_code().clone(),
         name: Some(NonEmptyText::new("50ETF购8月3000").unwrap()),
         volume: Some(Quantity::new(20.0).unwrap()),
         delta: Some(FiniteNumber::new(0.5).unwrap()),
@@ -66,11 +68,12 @@ fn option_contract_quote_and_greeks_are_distinct_records() {
         last: Some(Price::new(0.1).unwrap()),
         theoretical_price: Some(Price::new(0.105).unwrap()),
         evidence: evidence(),
-    };
+    })
+    .unwrap();
 
     assert_eq!(quote.provider_id(), ProviderId::Sina);
-    assert_eq!(quote.bid_quantity.unwrap().get(), 10.0);
-    assert_eq!(greeks.delta.unwrap().get(), 0.5);
+    assert_eq!(quote.bid_quantity().unwrap().get(), 10.0);
+    assert_eq!(greeks.delta().unwrap().get(), 0.5);
     assert_eq!(
         serde_json::from_str::<OptionGreeks>(&serde_json::to_string(&greeks).unwrap()).unwrap(),
         greeks
@@ -81,12 +84,12 @@ fn option_contract_quote_and_greeks_are_distinct_records() {
 fn option_asset_identity_is_available_without_weakening_underlying() {
     let option_id = InstrumentId::new(Exchange::Shanghai, "10000001", AssetClass::Option).unwrap();
     assert_eq!(option_id.asset_class(), AssetClass::Option);
-    assert_eq!(contract().underlying.asset_class(), AssetClass::Fund);
+    assert_eq!(contract().underlying().asset_class(), AssetClass::Fund);
 }
 
 #[test]
 fn contract_month_is_checked_and_exact_expiry_and_strike_can_be_absent() {
-    let contract = OptionContract {
+    let contract = OptionContract::new(OptionContractInput {
         contract_code: NonEmptyText::new("10000002").unwrap(),
         underlying: underlying(),
         expiry_month: ContractMonth::new("2026-09").unwrap(),
@@ -94,10 +97,11 @@ fn contract_month_is_checked_and_exact_expiry_and_strike_can_be_absent() {
         kind: OptionKind::Put,
         strike: None,
         evidence: evidence(),
-    };
-    assert_eq!(contract.expiry_month.as_str(), "2026-09");
-    assert!(contract.expiry.is_none());
-    assert!(contract.strike.is_none());
+    })
+    .unwrap();
+    assert_eq!(contract.expiry_month().as_str(), "2026-09");
+    assert!(contract.expiry().is_none());
+    assert!(contract.strike().is_none());
     assert!(ContractMonth::new("202608").is_err());
     assert!(ContractMonth::new("2026/08").is_err());
     assert!(ContractMonth::new("202X-08").is_err());
@@ -118,8 +122,8 @@ fn option_contract_deserialization_rejects_expiry_outside_contract_month() {
 
 #[test]
 fn option_quote_deserialization_rechecks_cross_field_invariants() {
-    let quote = OptionQuote {
-        contract_code: contract().contract_code.clone(),
+    let quote = OptionQuote::new(OptionQuoteInput {
+        contract_code: contract().contract_code().clone(),
         name: None,
         bid: Some(Price::new(0.1).unwrap()),
         bid_quantity: Some(Quantity::new(10.0).unwrap()),
@@ -140,7 +144,8 @@ fn option_quote_deserialization_rechecks_cross_field_invariants() {
         amplitude: Some(Ratio::new(2.0, RatioUnit::Percent).unwrap()),
         quote_at: Some(NonEmptyText::new("2026-08-03T14:30:00+08:00").unwrap()),
         evidence: evidence(),
-    };
+    })
+    .unwrap();
     let valid = serde_json::to_value(&quote).unwrap();
     assert_eq!(
         serde_json::from_value::<OptionQuote>(valid.clone()).unwrap(),
@@ -175,8 +180,8 @@ fn option_quote_deserialization_rechecks_cross_field_invariants() {
 
 #[test]
 fn option_greeks_deserialization_rechecks_source_domains() {
-    let greeks = OptionGreeks {
-        contract_code: contract().contract_code.clone(),
+    let greeks = OptionGreeks::new(OptionGreeksInput {
+        contract_code: contract().contract_code().clone(),
         name: None,
         volume: Some(Quantity::new(20.0).unwrap()),
         delta: Some(FiniteNumber::new(0.5).unwrap()),
@@ -192,7 +197,8 @@ fn option_greeks_deserialization_rechecks_source_domains() {
         last: Some(Price::new(0.1).unwrap()),
         theoretical_price: Some(Price::new(0.105).unwrap()),
         evidence: evidence(),
-    };
+    })
+    .unwrap();
     let valid = serde_json::to_value(&greeks).unwrap();
     assert_eq!(
         serde_json::from_value::<OptionGreeks>(valid.clone()).unwrap(),

@@ -19,10 +19,9 @@
 //! | `get_report_file(filename, offset)` | ≤30KB | 分片下载 gpcw 文件 |
 //! | `get_financial_list()` | ~2KB | 可用报告期列表 (gpcw.txt) |
 
-use flate2::read::{DeflateDecoder, ZlibDecoder};
+use flate2::read::DeflateDecoder;
 use std::fs;
-use std::io::{Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -43,9 +42,6 @@ const CHUNK_SIZE: u32 = 0x7530;
 const CACHE_TTL: Duration = Duration::from_secs(24 * 3600);
 /// Upper bound for one uncompressed market-wide financial report.
 const MAX_REPORT_SIZE: usize = 256 * 1024 * 1024;
-/// Official TDX after-hours financial-data distribution endpoint.
-const FINANCIAL_HTTP_HOST: &str = "data.tdx.com.cn";
-const MAX_HTTP_HEADER_SIZE: usize = 64 * 1024;
 
 fn zip_u16(data: &[u8], offset: usize) -> Result<u16> {
     let bytes = data
@@ -209,89 +205,6 @@ fn decode_financial_payload(filename: &str, data: &[u8]) -> Result<Vec<u8>> {
     }
 }
 
-fn decode_http_response(response: &[u8], expected_size: u32) -> Result<Vec<u8>> {
-    let header_end = response
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|position| position + 4)
-        .ok_or_else(|| {
-            crate::error::TdxError::InvalidData(
-                "financial HTTP response has no complete header".into(),
-            )
-        })?;
-    if header_end > MAX_HTTP_HEADER_SIZE {
-        return Err(crate::error::TdxError::InvalidData(
-            "financial HTTP response header is too large".into(),
-        ));
-    }
-    let headers = std::str::from_utf8(&response[..header_end]).map_err(|_| {
-        crate::error::TdxError::InvalidData("financial HTTP header is not ASCII".into())
-    })?;
-    let mut lines = headers.split("\r\n");
-    let status = lines.next().unwrap_or_default();
-    let status_code = status
-        .split_ascii_whitespace()
-        .nth(1)
-        .and_then(|value| value.parse::<u16>().ok())
-        .ok_or_else(|| {
-            crate::error::TdxError::InvalidData("financial HTTP status is invalid".into())
-        })?;
-    if status_code != 200 {
-        return Err(crate::error::TdxError::InvalidData(format!(
-            "financial HTTP server returned status {status_code}"
-        )));
-    }
-
-    let mut content_length = None;
-    for line in lines {
-        if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("transfer-encoding")
-                && value.trim().eq_ignore_ascii_case("chunked")
-            {
-                return Err(crate::error::TdxError::InvalidData(
-                    "chunked financial HTTP responses are unsupported".into(),
-                ));
-            }
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = Some(value.trim().parse::<usize>().map_err(|_| {
-                    crate::error::TdxError::InvalidData(
-                        "financial HTTP content length is invalid".into(),
-                    )
-                })?);
-            }
-        }
-    }
-
-    let body = response.get(header_end..).ok_or_else(|| {
-        crate::error::TdxError::InvalidData("financial HTTP body is missing".into())
-    })?;
-    if body.len() > MAX_REPORT_SIZE {
-        return Err(crate::error::TdxError::InvalidData(format!(
-            "financial HTTP body exceeds {MAX_REPORT_SIZE} bytes"
-        )));
-    }
-    if let Some(length) = content_length {
-        if body.len() != length {
-            return Err(crate::error::TdxError::InvalidData(format!(
-                "financial HTTP size mismatch: header {length}, received {}",
-                body.len()
-            )));
-        }
-    }
-    if expected_size != 0 && body.len() != expected_size as usize {
-        // gpcw.txt and the HTTP object are updated independently. The list
-        // size is an allocation hint; HTTP framing followed by ZIP entry-size
-        // and CRC validation supplies the integrity gate.
-        logw!(
-            "finance",
-            "financial list size is stale: expected {}, received {}; validating ZIP metadata and CRC",
-            expected_size,
-            body.len()
-        );
-    }
-    Ok(body.to_vec())
-}
-
 fn report_file_packet(filename: &str, offset: u32) -> Vec<u8> {
     let name_bytes = filename.as_bytes();
     let mut name_buf = [0u8; 100];
@@ -309,6 +222,26 @@ fn report_file_packet(filename: &str, offset: u32) -> Vec<u8> {
     packet.extend_from_slice(&CHUNK_SIZE.to_le_bytes());
     packet.extend_from_slice(&name_buf);
     packet
+}
+
+fn validate_report_filename(filename: &str) -> Result<()> {
+    let short = filename.strip_prefix("tdxfin/").unwrap_or(filename);
+    if filename.len() > 100
+        || short.is_empty()
+        || !short
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        || short.contains(['/', '\\'])
+        || !short
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        return Err(crate::error::TdxError::InvalidData(
+            "financial report filename is outside the fixed tdxfin namespace".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn decode_report_chunk(body: &[u8]) -> Result<Vec<u8>> {
@@ -437,91 +370,10 @@ impl TdxFinanceClient {
         }
 
         if header.zip_size != header.unzip_size {
-            let mut decoder = ZlibDecoder::new(&body_buf[..]);
-            let mut decompressed = Vec::new();
-            decoder.read_to_end(&mut decompressed).map_err(|e| {
-                crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err(format!("{}", e))
-            })?;
-            Ok(decompressed)
+            utils::decompress_zlib_exact(&body_buf, header.unzip_size)
         } else {
             Ok(body_buf)
         }
-    }
-
-    fn download_financial_http(&self, filename: &str, expected_size: u32) -> Result<Vec<u8>> {
-        if filename.is_empty()
-            || !filename
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        {
-            return Err(crate::error::TdxError::InvalidData(
-                "financial filename contains unsupported characters".into(),
-            ));
-        }
-        if expected_size as usize > MAX_REPORT_SIZE {
-            return Err(crate::error::TdxError::InvalidData(format!(
-                "financial file exceeds {MAX_REPORT_SIZE} bytes"
-            )));
-        }
-
-        let timeout = Duration::from_secs_f64(self.timeout);
-        let addresses = (FINANCIAL_HTTP_HOST, 80)
-            .to_socket_addrs()
-            .map_err(|error| {
-                crate::error::TdxError::Connection(format!(
-                    "resolve {FINANCIAL_HTTP_HOST} failed: {error}"
-                ))
-            })?;
-        let mut last_error = None;
-        let mut stream = None;
-        for address in addresses {
-            match TcpStream::connect_timeout(&address, timeout) {
-                Ok(value) => {
-                    stream = Some(value);
-                    break;
-                }
-                Err(error) => last_error = Some(error),
-            }
-        }
-        let mut stream = stream.ok_or_else(|| {
-            crate::error::TdxError::Connection(format!(
-                "connect to {FINANCIAL_HTTP_HOST}:80 failed: {}",
-                last_error
-                    .map(|error| error.to_string())
-                    .unwrap_or_else(|| "no resolved address".into())
-            ))
-        })?;
-        stream.set_read_timeout(Some(timeout)).map_err(|error| {
-            crate::error::TdxError::Connection(format!("set HTTP read timeout: {error}"))
-        })?;
-        stream.set_write_timeout(Some(timeout)).map_err(|error| {
-            crate::error::TdxError::Connection(format!("set HTTP write timeout: {error}"))
-        })?;
-        let request = format!(
-            "GET /tdxfin/{filename} HTTP/1.1\r\nHost: {FINANCIAL_HTTP_HOST}\r\nUser-Agent: magic-tdx-rs/0.1\r\nAccept: application/zip,application/octet-stream\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n"
-        );
-        stream.write_all(request.as_bytes()).map_err(|error| {
-            crate::error::TdxError::Connection(format!("send financial HTTP request: {error}"))
-        })?;
-
-        let response_limit = MAX_REPORT_SIZE + MAX_HTTP_HEADER_SIZE;
-        let mut response = Vec::with_capacity(expected_size as usize + 1024);
-        let mut buffer = [0u8; 16 * 1024];
-        loop {
-            let read = stream.read(&mut buffer).map_err(|error| {
-                crate::error::TdxError::Connection(format!("read financial HTTP response: {error}"))
-            })?;
-            if read == 0 {
-                break;
-            }
-            if response.len().saturating_add(read) > response_limit {
-                return Err(crate::error::TdxError::InvalidData(
-                    "financial HTTP response exceeds the configured limit".into(),
-                ));
-            }
-            response.extend_from_slice(&buffer[..read]);
-        }
-        decode_http_response(&response, expected_size)
     }
 
     // ============================================================
@@ -556,6 +408,7 @@ impl TdxFinanceClient {
 
     /// 下载报告文件的单个分片 (不走缓存 — 分片由上层 get_report_file_by_size 管理)
     pub fn get_report_file(&self, filename: &str, offset: u32) -> Result<Vec<u8>> {
+        validate_report_filename(filename)?;
         let packet = report_file_packet(filename, offset);
         let body = self.send_and_recv(&packet)?;
         decode_report_chunk(&body)
@@ -580,6 +433,12 @@ impl TdxFinanceClient {
 
     /// 实际下载逻辑 (不分缓存)
     fn download_report_file(&self, filename: &str, filesize: u32) -> Result<Vec<u8>> {
+        validate_report_filename(filename)?;
+        if filesize as usize > MAX_REPORT_SIZE {
+            return Err(crate::error::TdxError::InvalidData(format!(
+                "financial report exceeds {MAX_REPORT_SIZE} bytes"
+            )));
+        }
         if filesize == 0 {
             // 未知大小: 下载第一片后判断总量, 最多 4 片
             let first = self.get_report_file(filename, 0)?;
@@ -610,12 +469,31 @@ impl TdxFinanceClient {
                 break;
             }
             data.extend_from_slice(&chunk);
-            offset += chunk.len() as u32;
+            if data.len() > MAX_REPORT_SIZE {
+                return Err(crate::error::TdxError::InvalidData(format!(
+                    "financial report exceeds {MAX_REPORT_SIZE} bytes"
+                )));
+            }
+            offset = offset
+                .checked_add(u32::try_from(chunk.len()).map_err(|_| {
+                    crate::error::TdxError::InvalidData(
+                        "financial report chunk length cannot be represented".into(),
+                    )
+                })?)
+                .ok_or_else(|| {
+                    crate::error::TdxError::InvalidData("financial report offset overflow".into())
+                })?;
             if chunk.len() < CHUNK_SIZE as usize {
                 break;
             }
         }
 
+        if data.len() != effective_size as usize {
+            return Err(crate::error::TdxError::InvalidData(format!(
+                "financial report size mismatch: expected {effective_size}, received {}",
+                data.len()
+            )));
+        }
         Ok(data)
     }
 
@@ -652,18 +530,10 @@ impl TdxFinanceClient {
         let data = if let Some(cached) = self.cache_get(&full) {
             cached
         } else {
-            let downloaded = match self.download_financial_http(filename, filesize) {
-                Ok(data) => data,
-                Err(http_error) => {
-                    logw!(
-                        "finance",
-                        "official HTTP download failed for {}: {}; trying quote server",
-                        filename,
-                        http_error
-                    );
-                    self.download_report_file(&full, filesize)?
-                }
-            };
+            // Do not use the vendor's unauthenticated HTTP:80 mirror. Fetch
+            // through the already configured bounded TDX report protocol so
+            // callers have one explicit transport/provenance boundary.
+            let downloaded = self.download_report_file(&full, filesize)?;
             self.cache_put(&full, &downloaded);
             downloaded
         };
@@ -824,14 +694,6 @@ mod tests {
     }
 
     #[test]
-    fn validates_complete_financial_http_response() {
-        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nPK12";
-        assert_eq!(decode_http_response(response, 4).unwrap(), b"PK12");
-        assert_eq!(decode_http_response(response, 5).unwrap(), b"PK12");
-        assert!(decode_http_response(b"HTTP/1.1 404 Not Found\r\n\r\n", 0).is_err());
-    }
-
-    #[test]
     fn rejects_financial_zip_with_bad_crc() {
         let mut zip = test_zip(b"financial report payload", true);
         let central_offset = zip_u32(&zip, zip.len() - 6).unwrap() as usize;
@@ -892,6 +754,25 @@ mod tests {
         assert!(client
             .get_finance_indicators_labeled("../bad", 1, "600001")
             .is_err());
+    }
+
+    #[test]
+    fn report_filename_is_confined_to_one_fixed_namespace_component() {
+        for valid in ["gpcw.txt", "gpcw20260630.zip", "tdxfin/gpcw.txt"] {
+            assert!(validate_report_filename(valid).is_ok(), "{valid}");
+        }
+        for invalid in [
+            "",
+            ".",
+            "..",
+            "../gpcw.zip",
+            "tdxfin/../gpcw.zip",
+            "tdxfin\\gpcw.zip",
+            "/gpcw.zip",
+            "-gpcw.zip",
+        ] {
+            assert!(validate_report_filename(invalid).is_err(), "{invalid}");
+        }
     }
 
     #[test]

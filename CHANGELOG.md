@@ -220,6 +220,44 @@ Breaking migrations:
   allowlists and typed transport failures. Production capability remains false
   because neither TLS backend completed an official HTTPS response in the
   recorded environment.
+- Added an explicit gRPC `allow_unadmitted` diagnostic path for six registered
+  read operations. Responses remain `UNADMITTED` and incomplete, retain the
+  exact blocker, and leave unavailable source fields as `null`; the default
+  path and the auction/market-breadth operations still fail before Provider
+  I/O.
+- Added bounded diagnostic records for the first Eastmoney ranking page and an
+  explicitly dated post-close page. Both report source coverage instead of
+  claiming a complete atomic market, and use schemas distinct from the strict
+  production records.
+- Added an authenticated Eastmoney Miaoxiang diagnostic client with a redacted
+  environment Key, fixed query templates and bounded responses. When configured,
+  gRPC can return daily tiered fund flow, partial opening-auction volume/amount,
+  and partial all-A breadth counts; unproved fields remain null and all three
+  admission families remain false. These four fixed-template operations are
+  default-readable without request-level Provider or unadmitted flags while the
+  response remains explicitly incomplete and `UNADMITTED`.
+- Split the per-Provider timeout from the whole blocking-worker deadline so
+  multi-request tasks keep a bounded total budget without widening any one
+  Provider HTTP request.
+- Added authenticated `MarketEventService.SetWatchlist` full-replacement control.
+- Hardened TDX TCP decoding with exact bounded decompression, async read/write
+  and response deadlines, real connection-pool concurrency, reconnect, block
+  code preflight and chronological async pagination. Removed the unauthenticated
+  port-80 financial archive fallback.
+- Sealed option invariants behind checked constructors, completed normalized
+  record evidence/status routing, rejected ambiguous numeric evidence dates and
+  null batch IDs, and moved canonical event hashing to `sha2` without changing
+  golden digests.
+- Added TDX Agent idle heartbeats and server-side liveness expiry, bounded gRPC
+  TLS identity file reads, fixed Tencent/Sina endpoint identities, and one
+  shared production pacing lane for Eastmoney public and MX traffic.
+- Admitted TDX TQ-Local current price, cumulative lot volume and cumulative CNY
+  amount as production observation families while retaining empty source time,
+  empty source-record count and UNADMITTED LocalAnalysis events.
+  The active Agent advertises its bound, applies only canonical explicit EQUITY
+  identities, restarts the fixed sibling monitor with a new generation, exposes
+  desired/applied revisions, and never lets subscriber filters or the control
+  request change endpoints, thresholds, admission, or account boundaries.
 
 Serde input now passes through the same constructors used by Rust callers, so
 invalid numeric values, identifiers, evidence, dates, OHLC ranges, order-book

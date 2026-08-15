@@ -5,9 +5,10 @@ use magic_market_core::{
     IsoDate, MarketDragonTigerData, MarketDragonTigerRequest, MarketStatistics,
     MarketStatisticsProvider, Money, NewsItem, NewsProvider, NonEmptyText, NorthboundChannel,
     NorthboundDailyRequest, NorthboundDailyStat, NorthboundDailyStatistics, NorthboundQuotaBalance,
-    NorthboundTopTurnover, OptionContract, OptionData, OptionGreeks, OptionKind, OptionQuote,
-    PositiveU32, PostCloseFlow, PostCloseFlowRequest, PostCloseFlows, Price, Provenance,
-    ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
+    NorthboundTopTurnover, OptionContract, OptionContractInput, OptionData, OptionGreeks,
+    OptionGreeksInput, OptionKind, OptionQuote, OptionQuoteInput, PositiveU32, PostCloseFlow,
+    PostCloseFlowRequest, PostCloseFlows, Price, Provenance, ProviderId, Quantity, Ratio,
+    RatioUnit, SourceEvidence,
 };
 use magic_market_router::{
     announcement_source, dragon_tiger_entry_source, dragon_tiger_seat_source, global_news_source,
@@ -2261,7 +2262,7 @@ impl OptionData for OptionFixtureProvider {
             .unwrap()
             .push(expiry.map(|month| month.as_str().to_owned()));
         Ok(DataBatch::strict(
-            vec![OptionContract {
+            vec![OptionContract::new(OptionContractInput {
                 contract_code: NonEmptyText::new("10012127").unwrap(),
                 underlying: underlying.clone(),
                 expiry_month: expiry
@@ -2271,7 +2272,8 @@ impl OptionData for OptionFixtureProvider {
                 kind: OptionKind::Call,
                 strike: None,
                 evidence: self.evidence(),
-            }],
+            })
+            .unwrap()],
             self.provenance(),
         ))
     }
@@ -2281,7 +2283,7 @@ impl OptionData for OptionFixtureProvider {
         contracts: &[NonEmptyText],
     ) -> Result<DataBatch<OptionQuote>, Self::Error> {
         Ok(DataBatch::strict(
-            vec![OptionQuote {
+            vec![OptionQuote::new(OptionQuoteInput {
                 contract_code: contracts[0].clone(),
                 name: None,
                 bid: None,
@@ -2303,7 +2305,8 @@ impl OptionData for OptionFixtureProvider {
                 amplitude: None,
                 quote_at: None,
                 evidence: self.evidence(),
-            }],
+            })
+            .unwrap()],
             self.provenance(),
         ))
     }
@@ -2313,7 +2316,7 @@ impl OptionData for OptionFixtureProvider {
         contracts: &[NonEmptyText],
     ) -> Result<DataBatch<OptionGreeks>, Self::Error> {
         Ok(DataBatch::strict(
-            vec![OptionGreeks {
+            vec![OptionGreeks::new(OptionGreeksInput {
                 contract_code: contracts[0].clone(),
                 name: None,
                 volume: None,
@@ -2330,7 +2333,8 @@ impl OptionData for OptionFixtureProvider {
                 last: None,
                 theoretical_price: None,
                 evidence: self.evidence(),
-            }],
+            })
+            .unwrap()],
             self.provenance(),
         ))
     }
@@ -2371,7 +2375,7 @@ fn option_contract_adapter_forwards_month_and_rejects_wrong_evidence() {
         .route(&(option_underlying(), Some(month.clone())))
         .unwrap();
     assert_eq!(outcome.selected_provider(), ProviderId::Sina);
-    assert_eq!(outcome.batch().records()[0].expiry_month, month);
+    assert_eq!(outcome.batch().records()[0].expiry_month(), &month);
     assert_eq!(
         valid.seen_expiry.lock().unwrap().as_slice(),
         &[Some("2026-08".to_owned())]
@@ -2409,8 +2413,8 @@ fn option_quote_and_greek_adapters_preserve_valid_batches() {
             .unwrap()
             .batch()
             .records()[0]
-            .contract_code,
-        contracts[0]
+            .contract_code(),
+        &contracts[0]
     );
 
     let mut greeks = OptionGreeksRouter::new(AcceptancePolicy::new());
@@ -2423,7 +2427,7 @@ fn option_quote_and_greek_adapters_preserve_valid_batches() {
             .unwrap()
             .batch()
             .records()[0]
-            .delta
+            .delta()
             .unwrap()
             .get(),
         0.5

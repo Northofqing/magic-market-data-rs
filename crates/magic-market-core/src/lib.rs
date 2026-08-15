@@ -94,8 +94,8 @@ pub use market_event::{
     StreamGeneration, StreamSequence,
 };
 pub use options::{
-    ContractMonth, OptionCapabilities, OptionContract, OptionData, OptionGreeks, OptionKind,
-    OptionQuote,
+    ContractMonth, OptionCapabilities, OptionContract, OptionContractInput, OptionData,
+    OptionGreeks, OptionGreeksInput, OptionKind, OptionQuote, OptionQuoteInput,
 };
 pub use policy::{PolicyCapabilities, PolicyDocument, PolicyDocuments, PolicyRequest};
 pub use probe::{

@@ -442,7 +442,8 @@ fn parse_response(
             ProviderId::Baidu,
             batch_id.clone(),
         )?
-        .with_source_at(date)?;
+        .with_source_at(date)?
+        .with_observed_at(observed_at)?;
         records.push(TechnicalBar::new(
             bar,
             optional_positive(field(&fields, &index, "ma5avgprice")?, "ma5avgprice")?

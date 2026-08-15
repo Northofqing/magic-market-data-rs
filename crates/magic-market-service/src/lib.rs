@@ -153,6 +153,7 @@ pub struct QueryCommand {
     operation: Operation,
     preferred_provider: Option<String>,
     payload: CanonicalPayload,
+    allow_unadmitted: bool,
 }
 
 impl QueryCommand {
@@ -176,7 +177,14 @@ impl QueryCommand {
             operation,
             preferred_provider,
             payload,
+            allow_unadmitted: false,
         })
+    }
+
+    #[must_use]
+    pub const fn with_unadmitted_access(mut self, allow_unadmitted: bool) -> Self {
+        self.allow_unadmitted = allow_unadmitted;
+        self
     }
 
     #[must_use]
@@ -198,6 +206,11 @@ impl QueryCommand {
     pub const fn payload(&self) -> &CanonicalPayload {
         &self.payload
     }
+
+    #[must_use]
+    pub const fn allows_unadmitted(&self) -> bool {
+        self.allow_unadmitted
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -208,6 +221,8 @@ pub struct QueryResult {
     pub observed_at: String,
     pub source_at: Option<String>,
     pub records: Vec<CanonicalPayload>,
+    pub repository_admitted: bool,
+    pub diagnostic_blocker: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -218,6 +233,7 @@ pub struct Capability {
     pub provider: String,
     pub exact_scope: String,
     pub blocker: Option<String>,
+    pub diagnostic_available: bool,
 }
 
 type Handler = Arc<dyn Fn(QueryCommand) -> Result<QueryResult, ServiceError> + Send + Sync>;
@@ -226,6 +242,7 @@ type Handler = Arc<dyn Fn(QueryCommand) -> Result<QueryResult, ServiceError> + S
 struct Registration {
     capability: Capability,
     handler: Option<Handler>,
+    diagnostic_by_default: bool,
 }
 
 #[derive(Clone)]
@@ -251,8 +268,10 @@ impl OperationRegistry {
                             provider: String::new(),
                             exact_scope: String::new(),
                             blocker: Some(blocker.clone()),
+                            diagnostic_available: false,
                         },
                         handler: None,
+                        diagnostic_by_default: false,
                     }],
                 )
             })
@@ -265,6 +284,50 @@ impl OperationRegistry {
         self.insert_registration(Registration {
             capability,
             handler: None,
+            diagnostic_by_default: false,
+        });
+        Ok(())
+    }
+
+    pub fn register_diagnostic_handler<F>(
+        &mut self,
+        capability: Capability,
+        handler: F,
+    ) -> Result<(), ServiceError>
+    where
+        F: Fn(QueryCommand) -> Result<QueryResult, ServiceError> + Send + Sync + 'static,
+    {
+        self.register_diagnostic_handler_with_default(capability, handler, false)
+    }
+
+    /// Registers a partial diagnostic that is readable without a per-request
+    /// opt-in while preserving `repository_admitted=false` and `complete=false`.
+    pub fn register_default_diagnostic_handler<F>(
+        &mut self,
+        capability: Capability,
+        handler: F,
+    ) -> Result<(), ServiceError>
+    where
+        F: Fn(QueryCommand) -> Result<QueryResult, ServiceError> + Send + Sync + 'static,
+    {
+        self.register_diagnostic_handler_with_default(capability, handler, true)
+    }
+
+    fn register_diagnostic_handler_with_default<F>(
+        &mut self,
+        mut capability: Capability,
+        handler: F,
+        diagnostic_by_default: bool,
+    ) -> Result<(), ServiceError>
+    where
+        F: Fn(QueryCommand) -> Result<QueryResult, ServiceError> + Send + Sync + 'static,
+    {
+        capability.diagnostic_available = true;
+        validate_diagnostic_capability(&capability)?;
+        self.insert_registration(Registration {
+            capability,
+            handler: Some(Arc::new(handler)),
+            diagnostic_by_default,
         });
         Ok(())
     }
@@ -281,6 +344,7 @@ impl OperationRegistry {
         self.insert_registration(Registration {
             capability,
             handler: Some(Arc::new(handler)),
+            diagnostic_by_default: false,
         });
         Ok(())
     }
@@ -331,7 +395,10 @@ impl OperationRegistry {
                 })?
         };
         let capability = &registration.capability;
-        if !capability.repository_admitted {
+        if !capability.repository_admitted
+            && !command.allows_unadmitted()
+            && !registration.diagnostic_by_default
+        {
             return Err(ServiceError::Unsupported {
                 operation: command.operation,
                 reason: capability
@@ -340,7 +407,15 @@ impl OperationRegistry {
                     .unwrap_or_else(|| "repository capability is unadmitted".to_owned()),
             });
         }
-        if !capability.runtime_available {
+        if !capability.repository_admitted && !capability.diagnostic_available {
+            return Err(ServiceError::Unsupported {
+                operation: command.operation,
+                reason: capability.blocker.clone().unwrap_or_else(|| {
+                    "repository capability has no diagnostic handler".to_owned()
+                }),
+            });
+        }
+        if capability.repository_admitted && !capability.runtime_available {
             return Err(ServiceError::Unavailable {
                 operation: command.operation,
                 reason: capability
@@ -352,7 +427,17 @@ impl OperationRegistry {
         let handler = registration.handler.as_ref().ok_or_else(|| {
             ServiceError::Internal("admitted runtime capability has no handler".to_owned())
         })?;
-        handler(command)
+        let mut result = handler(command)?;
+        result.repository_admitted = capability.repository_admitted;
+        result.diagnostic_blocker = if capability.repository_admitted {
+            None
+        } else {
+            capability.blocker.clone()
+        };
+        if !capability.repository_admitted {
+            result.complete = false;
+        }
+        Ok(result)
     }
 }
 
@@ -381,6 +466,25 @@ fn validate_capability(
     if requires_handler && !(capability.repository_admitted && capability.runtime_available) {
         return Err(ServiceError::InvalidRequest(
             "handler requires admitted and runtime-available capability".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_diagnostic_capability(capability: &Capability) -> Result<(), ServiceError> {
+    validate_capability(capability, false)?;
+    if capability.repository_admitted || capability.runtime_available {
+        return Err(ServiceError::InvalidRequest(
+            "diagnostic handler must remain repository-unadmitted and runtime-unavailable"
+                .to_owned(),
+        ));
+    }
+    if capability.provider.trim().is_empty()
+        || capability.exact_scope.trim().is_empty()
+        || capability.blocker.as_deref().is_none_or(str::is_empty)
+    {
+        return Err(ServiceError::InvalidRequest(
+            "diagnostic handler requires provider, exact scope and blocker".to_owned(),
         ));
     }
     Ok(())
@@ -473,6 +577,7 @@ mod tests {
                     provider: "Tencent".to_owned(),
                     exact_scope: "A-share equity quote".to_owned(),
                     blocker: None,
+                    diagnostic_available: false,
                 },
                 move |_| {
                     seen.fetch_add(1, Ordering::SeqCst);
@@ -483,6 +588,8 @@ mod tests {
                         observed_at: "2026-08-13T00:00:00Z".to_owned(),
                         source_at: Some("2026-08-13T00:00:00Z".to_owned()),
                         records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
                     })
                 },
             )
@@ -515,6 +622,7 @@ mod tests {
                 provider: "Tdx".to_owned(),
                 exact_scope: "trades".to_owned(),
                 blocker: Some("not admitted".to_owned()),
+                diagnostic_available: false,
             }),
             Err(ServiceError::InvalidRequest(_))
         ));
@@ -534,6 +642,7 @@ mod tests {
                         provider: provider.to_owned(),
                         exact_scope: "A-share quote".to_owned(),
                         blocker: None,
+                        diagnostic_available: false,
                     },
                     move |_| {
                         Ok(QueryResult {
@@ -543,6 +652,8 @@ mod tests {
                             observed_at: "2026-08-14T00:00:00Z".to_owned(),
                             source_at: None,
                             records: vec![payload()],
+                            repository_admitted: true,
+                            diagnostic_blocker: None,
                         })
                     },
                 )
@@ -570,6 +681,104 @@ mod tests {
                 .filter(|capability| capability.operation == Operation::RealtimeQuotes)
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn diagnostic_handler_requires_explicit_opt_in_and_never_promotes_admission() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_diagnostic_handler(
+                Capability {
+                    operation: Operation::TechnicalBars,
+                    repository_admitted: false,
+                    runtime_available: false,
+                    provider: "Baidu".to_owned(),
+                    exact_scope: "diagnostic daily technical bars".to_owned(),
+                    blocker: Some("continuity evidence missing".to_owned()),
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    seen.fetch_add(1, Ordering::SeqCst);
+                    Ok(QueryResult {
+                        provider: "Baidu".to_owned(),
+                        batch_id: "batch-diagnostic".to_owned(),
+                        complete: true,
+                        observed_at: "2026-08-15T00:00:00Z".to_owned(),
+                        source_at: Some("2026-08-14".to_owned()),
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        let command = command(Operation::TechnicalBars, Some("Baidu"));
+        assert!(matches!(
+            registry.execute(command.clone()),
+            Err(ServiceError::Unsupported { .. })
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        let result = registry
+            .execute(command.with_unadmitted_access(true))
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!result.repository_admitted);
+        assert!(!result.complete);
+        assert_eq!(
+            result.diagnostic_blocker.as_deref(),
+            Some("continuity evidence missing")
+        );
+        assert!(registry
+            .capabilities()
+            .iter()
+            .any(
+                |capability| capability.operation == Operation::TechnicalBars
+                    && capability.diagnostic_available
+            ));
+    }
+
+    #[test]
+    fn default_diagnostic_is_readable_but_never_promotes_admission_or_completeness() {
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_default_diagnostic_handler(
+                Capability {
+                    operation: Operation::Auctions,
+                    repository_admitted: false,
+                    runtime_available: false,
+                    provider: "PartialSource".to_owned(),
+                    exact_scope: "source-backed partial auction fields".to_owned(),
+                    blocker: Some("complete auction fields are unavailable".to_owned()),
+                    diagnostic_available: false,
+                },
+                |_| {
+                    Ok(QueryResult {
+                        provider: "PartialSource".to_owned(),
+                        batch_id: "batch-partial".to_owned(),
+                        complete: true,
+                        observed_at: "2026-08-15T00:00:00Z".to_owned(),
+                        source_at: Some("2026-08-14".to_owned()),
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        let result = registry
+            .execute(command(Operation::Auctions, Some("PartialSource")))
+            .unwrap();
+        assert!(!result.repository_admitted);
+        assert!(!result.complete);
+        assert_eq!(
+            result.diagnostic_blocker.as_deref(),
+            Some("complete auction fields are unavailable")
         );
     }
 }

@@ -56,12 +56,12 @@ fn is_unambiguous_instant(value: &str) -> bool {
     if let Some(millis) = value.strip_prefix("unix-ms:") {
         return !millis.is_empty() && millis.bytes().all(|byte| byte.is_ascii_digit());
     }
-    if value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return !value.is_empty();
+    if is_epoch_seconds(value) {
+        return true;
     }
     if let Some((seconds, fraction)) = value.split_once('.') {
         if !seconds.is_empty()
-            && seconds.bytes().all(|byte| byte.is_ascii_digit())
+            && is_epoch_seconds(seconds)
             && !fraction.is_empty()
             && fraction.bytes().all(|byte| byte.is_ascii_digit())
         {
@@ -85,6 +85,13 @@ fn is_unambiguous_instant(value: &str) -> bool {
         || suffix.len() == 6
             && matches!(suffix.as_bytes().first(), Some(b'+' | b'-'))
             && suffix.as_bytes().get(3) == Some(&b':')
+}
+
+fn is_epoch_seconds(value: &str) -> bool {
+    // Eight-digit YYYYMMDD values are common source dates and must never be
+    // silently reinterpreted as seconds after the Unix epoch. Current/future
+    // non-negative epoch seconds use 10 or 11 decimal digits.
+    matches!(value.len(), 10 | 11) && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// Stable machine state emitted by public-provider probes.
@@ -509,10 +516,10 @@ fn parse_evidence_time(value: &str) -> Option<i128> {
     }
     let is_digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
     match value.split_once('.') {
-        Some((seconds, fraction)) if is_digits(seconds) && is_digits(fraction) => {
+        Some((seconds, fraction)) if is_epoch_seconds(seconds) && is_digits(fraction) => {
             return epoch_with_fraction(seconds, fraction);
         }
-        None if is_digits(value) => {
+        None if is_epoch_seconds(value) => {
             return i128::from(value.parse::<i64>().ok()?).checked_mul(NANOS_PER_SECOND);
         }
         _ => {}

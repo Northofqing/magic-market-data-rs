@@ -21,8 +21,6 @@ use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use flate2::read::ZlibDecoder;
-use std::io::Read;
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::error::{Result, TdxError};
@@ -51,25 +49,23 @@ struct ConnectionHandle {
 /// 单个连接 task: 管理一条 TCP 连接，通过通道接收并处理请求
 struct ConnectionTask {
     stream: tokio::net::TcpStream,
+    io_timeout: Duration,
 }
 
 impl ConnectionTask {
     /// 连接到服务器并完成三步握手
-    async fn connect(ip: &str, port: u16, timeout_secs: f64) -> Result<Self> {
+    async fn connect(ip: &str, port: u16, io_timeout: Duration) -> Result<Self> {
         let addr = format!("{}:{}", ip, port);
-        let stream = tokio::time::timeout(
-            Duration::from_secs_f64(timeout_secs),
-            tokio::net::TcpStream::connect(&addr),
-        )
-        .await
-        .map_err(|_| crate::error_codes::ErrorCode::CONNECTION_TIMEOUT.err(&addr))?
-        .map_err(|e| TdxError::Connection(format!("connect {}: {}", addr, e)))?;
+        let stream = tokio::time::timeout(io_timeout, tokio::net::TcpStream::connect(&addr))
+            .await
+            .map_err(|_| crate::error_codes::ErrorCode::CONNECTION_TIMEOUT.err(&addr))?
+            .map_err(|e| TdxError::Connection(format!("connect {}: {}", addr, e)))?;
 
         stream
             .set_nodelay(true)
             .map_err(|e| TdxError::Connection(format!("set_nodelay: {}", e)))?;
 
-        let mut task = Self { stream };
+        let mut task = Self { stream, io_timeout };
 
         // 三步握手
         for cmd in &[SETUP_CMD1, SETUP_CMD2, SETUP_CMD3] {
@@ -83,7 +79,7 @@ impl ConnectionTask {
                 body.extend_from_slice(&chunk);
             }
             if header.zip_size != header.unzip_size {
-                let _ = decompress_zlib(&body)?;
+                let _ = utils::decompress_zlib_exact(&body, header.unzip_size)?;
             }
         }
 
@@ -93,40 +89,39 @@ impl ConnectionTask {
     /// 从已建立的流创建 (跳过握手，用于测试)
     #[allow(dead_code)]
     fn from_stream(stream: tokio::net::TcpStream) -> Self {
-        Self { stream }
+        Self {
+            stream,
+            io_timeout: Duration::from_secs_f64(CONNECT_TIMEOUT),
+        }
     }
 
     /// 运行连接 task: 循环处理请求直到通道关闭
     async fn run(mut self, mut rx: mpsc::Receiver<Request>) {
         while let Some(req) = rx.recv().await {
             let result = self.send_and_recv(&req.data).await;
+            let connection_lost = result.as_ref().is_err_and(is_transport_error);
             let _ = req.reply.send(result);
+            if connection_lost {
+                break;
+            }
         }
     }
 
     async fn send(&mut self, data: &[u8]) -> Result<()> {
         use tokio::io::AsyncWriteExt;
-        self.stream
-            .write_all(data)
+        tokio::time::timeout(self.io_timeout, self.stream.write_all(data))
             .await
+            .map_err(|_| TdxError::ConnectionTimeout)?
             .map_err(|e| TdxError::Connection(format!("send: {}", e)))
     }
 
     async fn recv(&mut self, len: usize) -> Result<Vec<u8>> {
         use tokio::io::AsyncReadExt;
         let mut buf = vec![0u8; len];
-        let mut total = 0;
-        while total < len {
-            let n = self
-                .stream
-                .read(&mut buf[total..])
-                .await
-                .map_err(|e| TdxError::Connection(format!("recv: {}", e)))?;
-            if n == 0 {
-                return Err(TdxError::Disconnected);
-            }
-            total += n;
-        }
+        tokio::time::timeout(self.io_timeout, self.stream.read_exact(&mut buf))
+            .await
+            .map_err(|_| TdxError::ConnectionTimeout)?
+            .map_err(|e| TdxError::Connection(format!("recv: {}", e)))?;
         Ok(buf)
     }
 
@@ -148,11 +143,21 @@ impl ConnectionTask {
         }
 
         if header.zip_size != header.unzip_size {
-            decompress_zlib(&body)
+            utils::decompress_zlib_exact(&body, header.unzip_size)
         } else {
             Ok(body)
         }
     }
+}
+
+fn is_transport_error(error: &TdxError) -> bool {
+    matches!(
+        error,
+        TdxError::Io(_)
+            | TdxError::Connection(_)
+            | TdxError::ConnectionTimeout
+            | TdxError::Disconnected
+    )
 }
 
 // ================================================================
@@ -174,14 +179,19 @@ impl AsyncRateLimiter {
     }
 
     async fn wait(&self) {
-        let mut last = self.last_request.lock().await;
-        if let Some(t) = *last {
-            let elapsed = t.elapsed();
-            if elapsed < self.min_interval {
-                tokio::time::sleep(self.min_interval - elapsed).await;
-            }
+        let wait = {
+            let mut last = self.last_request.lock().await;
+            let now = Instant::now();
+            let scheduled = last
+                .and_then(|previous| previous.checked_add(self.min_interval))
+                .filter(|candidate| *candidate > now)
+                .unwrap_or(now);
+            *last = Some(scheduled);
+            scheduled.saturating_duration_since(now)
+        };
+        if !wait.is_zero() {
+            tokio::time::sleep(wait).await;
         }
-        *last = Some(Instant::now());
     }
 
     fn set_rps(&mut self, rps: u32) {
@@ -201,6 +211,13 @@ impl AsyncRateLimiter {
 struct CacheEntry<T> {
     data: T,
     expires_at: Instant,
+}
+
+#[derive(Clone)]
+struct ConnectionEndpoint {
+    ip: String,
+    port: u16,
+    io_timeout: Duration,
 }
 
 // ================================================================
@@ -240,6 +257,9 @@ pub struct AsyncTdxHqClient {
     list_cache: Mutex<HashMap<u8, CacheEntry<Vec<SecurityInfo>>>>,
     cache_ttl: Duration,
     pool_size: usize,
+    endpoint: Mutex<Option<ConnectionEndpoint>>,
+    reconnect_gate: Mutex<()>,
+    request_timeout: Mutex<Duration>,
     /// 心跳停止信号: 发送 `()` 表示停止心跳 task
     heartbeat_stop: tokio::sync::Mutex<Option<oneshot::Sender<()>>>,
     /// 连接是否存活 (心跳检测)
@@ -269,6 +289,9 @@ impl AsyncTdxHqClient {
             list_cache: Mutex::new(HashMap::new()),
             cache_ttl: Duration::from_secs(30),
             pool_size: pool_size.max(1),
+            endpoint: Mutex::new(None),
+            reconnect_gate: Mutex::new(()),
+            request_timeout: Mutex::new(Duration::from_secs_f64(CONNECT_TIMEOUT)),
             heartbeat_stop: tokio::sync::Mutex::new(None),
             connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fq_context_tier: AtomicU8::new(utils::FqContextTier::default() as u8),
@@ -278,26 +301,64 @@ impl AsyncTdxHqClient {
     /// 连接到指定服务器 (建立 N 个连接)
     pub async fn connect(&self, ip: &str, port: u16, timeout: Option<f64>) -> Result<bool> {
         let timeout_secs = timeout.unwrap_or(CONNECT_TIMEOUT);
-        let mut conns = self.connections.lock().await;
-
-        // 清理旧连接
-        conns.clear();
-
-        for _ in 0..self.pool_size {
-            let task = ConnectionTask::connect(ip, port, timeout_secs).await?;
-            let (tx, rx) = mpsc::channel::<Request>(64);
-            tokio::spawn(task.run(rx));
-            conns.push(ConnectionHandle { tx });
+        if !timeout_secs.is_finite() || timeout_secs <= 0.0 {
+            return Err(TdxError::InvalidData(
+                "connection timeout must be finite and positive".into(),
+            ));
         }
+        let io_timeout = Duration::from_secs_f64(timeout_secs);
+        let new_connections = self.build_connections(ip, port, io_timeout).await?;
+        *self.connections.lock().await = new_connections;
+        *self.endpoint.lock().await = Some(ConnectionEndpoint {
+            ip: ip.to_owned(),
+            port,
+            io_timeout,
+        });
+        *self.request_timeout.lock().await = io_timeout;
 
         self.count_cache.lock().await.clear();
         self.list_cache.lock().await.clear();
-        drop(conns);
 
         // 启动心跳
         self.start_heartbeat().await;
 
         Ok(true)
+    }
+
+    async fn build_connections(
+        &self,
+        ip: &str,
+        port: u16,
+        io_timeout: Duration,
+    ) -> Result<Vec<ConnectionHandle>> {
+        let mut connections = Vec::with_capacity(self.pool_size);
+        for _ in 0..self.pool_size {
+            let task = ConnectionTask::connect(ip, port, io_timeout).await?;
+            let (tx, rx) = mpsc::channel::<Request>(64);
+            tokio::spawn(task.run(rx));
+            connections.push(ConnectionHandle { tx });
+        }
+        Ok(connections)
+    }
+
+    async fn reconnect(&self) -> Result<()> {
+        let _gate = self.reconnect_gate.lock().await;
+        if self.is_connected() && !self.connections.lock().await.is_empty() {
+            return Ok(());
+        }
+        let endpoint = self
+            .endpoint
+            .lock()
+            .await
+            .clone()
+            .ok_or(TdxError::Disconnected)?;
+        let connections = self
+            .build_connections(&endpoint.ip, endpoint.port, endpoint.io_timeout)
+            .await?;
+        *self.connections.lock().await = connections;
+        self.connected
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
     }
 
     /// 连接到任意可用服务器
@@ -385,29 +446,30 @@ impl AsyncTdxHqClient {
                 packet.extend_from_slice(&[0x75, 0xc7, 0x33, 0x01]);
 
                 // 轮转选择一个连接发送心跳
-                let alive = {
+                let sender = {
                     let conns_guard = conns.lock().await;
                     if conns_guard.is_empty() {
-                        false
+                        None
                     } else {
                         let idx = tick % conns_guard.len();
                         tick = tick.wrapping_add(1);
-                        // 使用 try_send 避免阻塞 (通道满 = 连接忙 = 跳过)
-                        let (reply_tx, reply_rx) = oneshot::channel();
-                        let req = Request {
-                            data: packet,
-                            reply: reply_tx,
-                        };
-                        if conns_guard[idx].tx.try_send(req).is_err() {
-                            false
-                        } else {
-                            // 等待响应 (带超时)
-                            matches!(
-                                tokio::time::timeout(Duration::from_secs(5), reply_rx).await,
-                                Ok(Ok(Ok(_)))
-                            )
-                        }
+                        Some(conns_guard[idx].tx.clone())
                     }
+                };
+                let alive = if let Some(sender) = sender {
+                    // 使用 try_send 避免阻塞 (通道满 = 连接忙 = 跳过)
+                    let (reply_tx, reply_rx) = oneshot::channel();
+                    let req = Request {
+                        data: packet,
+                        reply: reply_tx,
+                    };
+                    sender.try_send(req).is_ok()
+                        && matches!(
+                            tokio::time::timeout(Duration::from_secs(5), reply_rx).await,
+                            Ok(Ok(Ok(_)))
+                        )
+                } else {
+                    false
                 };
 
                 if !alive {
@@ -436,34 +498,39 @@ impl AsyncTdxHqClient {
     async fn send_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
         self.rate_limiter.wait().await;
 
-        // 第一次尝试
-        match self.try_send(packet).await {
-            Ok(body) => Ok(body),
-            Err(e) => {
-                // 重试
-                for (i, &interval) in RETRY_INTERVALS.iter().enumerate() {
-                    tokio::time::sleep(Duration::from_secs_f64(interval)).await;
-                    match self.try_send(packet).await {
-                        Ok(body) => return Ok(body),
-                        Err(_) if i + 1 == RETRY_INTERVALS.len() => return Err(e),
-                        Err(_) => continue,
-                    }
-                }
-                Err(e)
+        let mut last_error = match self.try_send(packet).await {
+            Ok(body) => return Ok(body),
+            Err(error) => error,
+        };
+        for &interval in RETRY_INTERVALS {
+            if is_transport_error(&last_error) {
+                self.connected
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                let _ = self.reconnect().await;
+            }
+            tokio::time::sleep(Duration::from_secs_f64(interval)).await;
+            match self.try_send(packet).await {
+                Ok(body) => return Ok(body),
+                Err(error) => last_error = error,
             }
         }
+        Err(last_error)
     }
 
     /// 单次尝试: 通过通道发送请求到连接 task
     async fn try_send(&self, packet: &[u8]) -> Result<Vec<u8>> {
-        let conns = self.connections.lock().await;
-        if conns.is_empty() {
-            return Err(TdxError::Disconnected);
-        }
-
-        // 轮转选择连接
-        let idx = self.next_idx.fetch_add(1, Ordering::Relaxed) % conns.len();
-        let handle = &conns[idx];
+        let (primary, secondary) = {
+            let conns = self.connections.lock().await;
+            if conns.is_empty() {
+                return Err(TdxError::Disconnected);
+            }
+            let idx = self.next_idx.fetch_add(1, Ordering::Relaxed) % conns.len();
+            let next = (idx + 1) % conns.len();
+            (
+                conns[idx].tx.clone(),
+                (next != idx).then(|| conns[next].tx.clone()),
+            )
+        };
 
         let (tx_reply, rx_reply) = oneshot::channel();
         let req = Request {
@@ -472,25 +539,30 @@ impl AsyncTdxHqClient {
         };
 
         // 发送请求 (如果通道满则尝试下一个连接)
-        if handle.tx.try_send(req).is_err() {
+        let reply = if primary.try_send(req).is_err() {
             // 通道满或已关闭，尝试下一个
-            let next = (idx + 1) % conns.len();
-            if next != idx {
+            if let Some(secondary) = secondary {
                 let (tx_reply2, rx_reply2) = oneshot::channel();
                 let req2 = Request {
                     data: packet.to_vec(),
                     reply: tx_reply2,
                 };
-                conns[next]
-                    .tx
+                secondary
                     .try_send(req2)
                     .map_err(|_| TdxError::Connection("all connections busy".into()))?;
-                return rx_reply2.await.map_err(|_| TdxError::Disconnected)?;
+                rx_reply2
+            } else {
+                return Err(TdxError::Connection("connection busy".into()));
             }
-            return Err(TdxError::Connection("connection busy".into()));
-        }
+        } else {
+            rx_reply
+        };
 
-        rx_reply.await.map_err(|_| TdxError::Disconnected)?
+        let request_timeout = *self.request_timeout.lock().await;
+        tokio::time::timeout(request_timeout, reply)
+            .await
+            .map_err(|_| TdxError::ConnectionTimeout)?
+            .map_err(|_| TdxError::Disconnected)?
     }
 
     // ================================================================
@@ -594,6 +666,16 @@ impl AsyncTdxHqClient {
     // API 方法
     // ================================================================
 
+    fn check_not_block_code(code: &str) -> Result<()> {
+        if crate::error_codes::is_block_code(code) {
+            return Err(TdxError::coded(
+                crate::error_codes::ErrorCode::BLOCK_CODE_IN_GENERAL_CLIENT,
+                format!("code={}", code),
+            ));
+        }
+        Ok(())
+    }
+
     /// 获取 K 线数据
     pub async fn get_security_bars(
         &self,
@@ -604,6 +686,7 @@ impl AsyncTdxHqClient {
         count: u16,
         fq: u8,
     ) -> Result<Vec<SecurityBar>> {
+        Self::check_not_block_code(code)?;
         let packet = utils::build_security_bars_packet(category, market, code, start, count, fq);
         let body = self.send_and_recv(&packet).await?;
         let mut bars = parse_security_bars(&body, category)?;
@@ -642,7 +725,8 @@ impl AsyncTdxHqClient {
                 break;
             }
             let fetched = bars.len() as u16;
-            all_bars.extend(bars);
+            // TDX 页偏移越大数据越早；旧页必须前插，保持最早到最新顺序。
+            all_bars.splice(0..0, bars);
             remaining = remaining.saturating_sub(fetched);
             offset += fetched as u32;
             if fetched < batch {
@@ -663,6 +747,7 @@ impl AsyncTdxHqClient {
         count: u16,
         fq: u8,
     ) -> Result<Vec<IndexBar>> {
+        Self::check_not_block_code(code)?;
         let _ = fq;
         let packet = utils::build_index_bars_packet(category, market, code, start, count, 0);
         let body = self.send_and_recv(&packet).await?;
@@ -676,6 +761,9 @@ impl AsyncTdxHqClient {
         &self,
         all_stock: &[(u8, &str)],
     ) -> Result<Vec<SecurityQuote>> {
+        for &(_, code) in all_stock {
+            Self::check_not_block_code(code)?;
+        }
         // 服务端上限截断
         let all_stock = if all_stock.len() > MAX_QUOTES_COUNT {
             logw!(
@@ -794,6 +882,7 @@ impl AsyncTdxHqClient {
         code: &str,
         date: u32,
     ) -> Result<Vec<MinuteTimePrice>> {
+        Self::check_not_block_code(code)?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(23);
         packet.extend_from_slice(&[
@@ -815,6 +904,7 @@ impl AsyncTdxHqClient {
         start: u16,
         count: u16,
     ) -> Result<Vec<TickData>> {
+        Self::check_not_block_code(code)?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(24);
         packet.extend_from_slice(&[
@@ -839,6 +929,7 @@ impl AsyncTdxHqClient {
         count: u16,
         date: u32,
     ) -> Result<Vec<TickData>> {
+        Self::check_not_block_code(code)?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(28);
         packet.extend_from_slice(&[
@@ -857,6 +948,7 @@ impl AsyncTdxHqClient {
 
     /// 获取财务信息
     pub async fn get_finance_info(&self, market: u8, code: &str) -> Result<FinanceInfo> {
+        Self::check_not_block_code(code)?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(21);
         packet.extend_from_slice(&[
@@ -871,6 +963,7 @@ impl AsyncTdxHqClient {
 
     /// 获取除权除息信息
     pub async fn get_xdxr_info(&self, market: u8, code: &str) -> Result<Vec<XdXrInfo>> {
+        Self::check_not_block_code(code)?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(21);
         packet.extend_from_slice(&[
@@ -882,15 +975,6 @@ impl AsyncTdxHqClient {
         let body = self.send_and_recv(&packet).await?;
         parse_xdxr_info_for(&body, market, code)
     }
-}
-
-fn decompress_zlib(data: &[u8]) -> Result<Vec<u8>> {
-    let mut decoder = ZlibDecoder::new(data);
-    let mut decompressed = Vec::new();
-    decoder
-        .read_to_end(&mut decompressed)
-        .map_err(|e| crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err(format!("{}", e)))?;
-    Ok(decompressed)
 }
 
 #[cfg(test)]
@@ -1191,6 +1275,42 @@ mod tests {
 
         assert_eq!(ok, 20);
         println!("20 requests via 4 mock connections: {:?}", elapsed);
+    }
+
+    #[tokio::test]
+    async fn production_try_send_releases_pool_lock_before_waiting_for_response() {
+        let client = Arc::new(AsyncTdxHqClient::new());
+        let (sender, mut requests) = mpsc::channel::<Request>(1);
+        inject_mock(&client, sender).await;
+        let request_client = Arc::clone(&client);
+        let request = tokio::spawn(async move { request_client.try_send(b"request").await });
+        let pending = requests.recv().await.unwrap();
+
+        let guard = tokio::time::timeout(Duration::from_millis(50), client.connections.lock())
+            .await
+            .expect("the pool mutex must not be held across the response wait");
+        drop(guard);
+        pending.reply.send(Ok(vec![0xA5])).unwrap();
+        assert_eq!(request.await.unwrap().unwrap(), vec![0xA5]);
+    }
+
+    #[tokio::test]
+    async fn production_try_send_has_a_bounded_response_deadline() {
+        let client = AsyncTdxHqClient::new();
+        *client.request_timeout.lock().await = Duration::from_millis(20);
+        let (sender, mut requests) = mpsc::channel::<Request>(1);
+        inject_mock(&client, sender).await;
+        let holder = tokio::spawn(async move {
+            let pending = requests.recv().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            drop(pending);
+        });
+
+        assert!(matches!(
+            client.try_send(b"request").await,
+            Err(TdxError::ConnectionTimeout)
+        ));
+        holder.await.unwrap();
     }
 
     // ================================================================

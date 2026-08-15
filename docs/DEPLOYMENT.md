@@ -12,10 +12,11 @@ Windows 发布包成对安装该 server 和 discovery helper，但这只提供�
 限频、缓存、熔断、持久化和授权控制。仓库当前可打包的二进制用于部署前验证：
 
 `magic-tdx-native-bridge` 是 `publish=false` 的短命 Windows 发现二进制。Windows
-诊断包将它与 `magic-market-monitor-server.exe` 安装到同一目录；非 Windows 包不构建
+包将它与 `magic-market-monitor-server.exe` 安装到同一目录；非 Windows 包不构建
 这两个文件。helper 只有 `--discover` 可用，`--probe`/`--serve` 均显式失败。它只
 发现当前用户/会话的 `TdxW.exe`，行情由 safe Rust 通过官方固定 TQ-Local loopback
-HTTP 获取。两个制品都属于 `diagnostic/admitted=false`，不是生产能力声明。
+HTTP 获取。当前价、累计成交量和累计成交额是已准入生产字段；异动、源时间和源记录数
+仍未准入。
 
 - `magic-tdx-live-probe`：TDX 全能力真实探针；
 - `magic-emquant-live-probe`：官方 EMQuant SDK 探针；
@@ -50,7 +51,7 @@ HTTP 获取。两个制品都属于 `diagnostic/admitted=false`，不是生产�
   单响应页 Top-N 探针；同日仅可在 15:35 后运行，后续休市日仅在全部 `f297`
   严格等于所选已结算交易日时准入；
 - `magic-router-live-probe`：TDX→Tencent 证据门与切源探针。
-- `magic-market-monitor-server.exe`（仅 Windows）：显式参数的本地 TDX 诊断叶子服务；
+- `magic-market-monitor-server.exe`（仅 Windows）：显式参数的本地 TDX 生产观察叶子服务；
 - `magic-tdx-native-bridge.exe`（仅 Windows）：与 server 同目录的短命发现 helper。
 - `magic-market-grpc-server[.exe]`：跨平台认证只读 gRPC 服务；远程绑定必须 mTLS；
 - `magic-market-tdx-agent.exe`（仅 Windows）：监督本地 monitor 并出站连接 gRPC。
@@ -72,7 +73,7 @@ bash tools/release/package.sh
 全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
 空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
 构建 release 探针和跨平台 gRPC server；在 Windows host 上还构建并同目录安装三个
-本地 TDX 诊断二进制。所有文件使用不冲突的名称并进入 SHA-256 清单。这里描述
+本地 TDX monitor 二进制。所有文件使用不冲突的名称并进入 SHA-256 清单。这里描述
 可重复流程，不自动证明任意未来工作树已经通过 release gate；当前合并版本的实际
 门禁和覆盖率证据记录在根目录 README 的“当前验收状态”：
 
@@ -171,11 +172,11 @@ shasum -a 256 -c SHA256SUMS
 | `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；生产数据族仍待准入 |
 | `magic-market-monitor` | 支持 | 支持 | 支持 | 纯确定性价格窗口与有界 replay；无 I/O |
 | `magic-market-monitor-server` | typed Unsupported | typed Unsupported | 诊断叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听，生产准入仍关闭 |
-| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；54 个查询精确登记，46 个已绑定 Provider handler、8 个证据不足的操作 fail-closed |
+| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；54 个查询精确登记，46 个正式 handler；配置东财妙想 Key 时其 4 个固定部分字段操作默认可读且始终 UNADMITTED，其他诊断仍需 opt-in |
 | `magic-market-tdx-agent` | typed Unsupported | typed Unsupported | 诊断出站 Agent | 固定同目录 monitor/helper；不开放入站端口，不提升 admission |
 | `magic-tdx-native-bridge --discover` | typed Unsupported | typed Unsupported | 仅发现 | Windows 同用户/会话 `TdxW.exe` 发现和版本证据；不获取行情 |
 | `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |
-| TDX | 支持 | 支持 | 支持 | 需要出站 TCP/HTTP 与可写缓存目录 |
+| TDX | 支持 | 支持 | 支持 | 公共行情/财务需要出站 TCP 与可写缓存目录；本地终端只访问固定 loopback HTTP |
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
 | Eastmoney/CNInfo/THS/CLS/Jin10/The Paper/Yonhap/WallstreetCN/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源；Yonhap 当前 live TLS 未准入，WallstreetCN 已准入 |
@@ -196,10 +197,10 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | Provider | 必需出站访问 | 本地写入 |
 | --- | --- | --- |
 | TDX | 已配置行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` | `~/.tdxrs/server_cache.json`；调用方指定的财务缓存 |
-| TDX local diagnostic pair | 仅固定 `http://127.0.0.1:17709/`；需要当前用户/会话已运行唯一 `TdxW.exe` | 无持久缓存；stdout frame 由操作员决定是否保存 |
+| TDX local monitor pair | 仅固定 `http://127.0.0.1:17709/`；需要当前用户/会话已运行唯一 `TdxW.exe` | 无持久缓存；stdout frame 由 Agent 转发或由操作员决定是否保存 |
 | Tencent | `qt.gtimg.cn:443`、`web.ifzq.gtimg.cn:443`、`ifzq.gtimg.cn:443`、`stock.gtimg.cn:443`，HTTPS | 无持久缓存 |
 | Sina | `hq.sinajs.cn:443`、`quotes.sina.cn:443`、`stock.finance.sina.com.cn:443`，HTTPS；全球指数/汇率也使用 `hq.sinajs.cn` | 无持久缓存 |
-| Eastmoney Web | 集成文档白名单中的 `eastmoney.com`/`dfcfw.com` 主机（含 `pdf.dfcfw.com`），HTTPS 443 | 无持久缓存 |
+| Eastmoney Web / Miaoxiang | 集成文档白名单中的 `eastmoney.com`/`dfcfw.com` 主机（含 `pdf.dfcfw.com`），以及固定 `mkapi2.dfcfs.com/finskillshub/api/claw/query`，HTTPS 443 | `EASTMONEY_API_KEY` 只由环境/secret 注入；无持久缓存 |
 | CNInfo | `www.cninfo.com.cn:443`、`irm.cninfo.com.cn:443`、`static.cninfo.com.cn:443` | 仅 24 小时进程内 org 映射缓存 |
 | THS | `basic`、`zx`、`data`、`dq.10jqka.com.cn:443` | 无持久缓存 |
 | CLS | `www.cls.cn:443` | 无持久缓存 |
@@ -224,15 +225,15 @@ SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rus
 | iWencai | `openapi.iwencai.com:443` | API Key 仅由环境/秘密挂载提供，不落盘 |
 | EMQuant | 厂商 `ServerList.json.e` 定义的目标 | bridge 同级 `runtime/` 与权限 0600 的 `userInfo` |
 
-防火墙应只开放所需出站目标。TDX 财务下载当前是厂商 HTTP 分发端点，代码通过响应
-边界、ZIP 目录、解压大小和 CRC 校验内容，但传输层不加密；对传输保密或更严格供应
-链有要求的环境应关闭该能力或经批准的完整性代理接入，不能把它描述成 HTTPS。
+防火墙应只开放所需出站目标。TDX 财务下载只使用当前有界 TDX TCP 报告会话；旧的
+厂商明文 HTTP 分发回退已删除。报告文件名、分块总长度、ZIP 目录、解压大小和 CRC
+仍必须全部通过校验。
 
 运行服务账号必须有独立可写 HOME，TDX SmartClient 才能安全保存服务器健康缓存。
 不要让多个不可信账号共享该目录。容器内应挂载专用可写目录并显式设置 HOME；根
 文件系统可保持只读。
 
-## Windows 本地 TDX 诊断运行
+## Windows 本地 TDX 生产观察运行
 
 Windows 原生发布包中的以下两个文件必须保持同目录：
 
@@ -250,6 +251,13 @@ server 只按自身可执行文件目录解析 discovery helper，不搜索 `PAT
 有界输出队列、shutdown timeout 和 slow-consumer policy。watchlist 只接受
 `EQUITY:SH:600000`、`EQUITY:SZ:000001` 或 `EQUITY:BJ:430001` 形式，不从代码前缀
 猜测资产或交易所。
+
+该文件中的 `--watchlist` 是 Agent 启动/重启后的初始列表，`--max-instruments` 是动态
+控制的硬上限。运行后，认证控制方可调用 gRPC
+`MarketEventService.SetWatchlist` 传入完整替换列表。Agent 只替换原参数模板中的
+`--watchlist` 值，停止旧 monitor 后以新 generation 启动；其余 37 个参数、固定 TDX
+origin 和 helper 路径均不受接口控制。调用方必须通过 `GetListenerStatus` 等待 desired
+与 applied revision/list 一致，再把新 generation 作为订阅 cursor 基线。
 
 下列 Command Prompt 命令只展示当前 Config 的完整参数形状，并用两个 scheduler
 cycle 限定一次诊断；其中数值是 syntax/fixture 示例，不是生产默认、性能建议或准入
@@ -296,7 +304,8 @@ magic-market-monitor-server.exe ^
 architecture/SHA-256，以及可得的数字 file/product version 与 version source；读取失败
 作为结构化 version failure 保留，不用显示文本猜版本。服务每隔显式
 `--identity-recheck-cycles` 重查进程身份，替换会重置窗口并创建新 generation。所有
-输出中的 admission 字段仍来自 repository 常量并保持 `false`。没有 TDX、出现多个
+输出中的 admission 字段仍来自 repository 常量：价格、累计量、累计额为 true，异动和
+源记录数为 false。没有 TDX、出现多个
 候选、helper/loopback/schema 失败都产生 typed 状态，不会启动远程 listener 或变成
 空成功。
 
@@ -306,6 +315,11 @@ CNY/share、`1447695` lots；snapshot amount 为 `2520326100` CNY，price/volume
 cross-check 都为 true。三个 monitor 均 `warmed_up`，但所有 admission 仍为 false，
 snapshot worker 在 shutdown 时已 join。该结果只说明当前诊断链路可运行；部署方不能
 据此选择生产 cadence/threshold、跳过交易日历或关闭 restart/slow-consumer 验收。
+
+2026-08-15 完成三轮 fast 与三轮 snapshot 串行复验并部署生产二进制。gRPC 状态为
+`agent_connected_production`，明确广告三个 admitted family；两标的 replay 中
+`observation` 与 `snapshot_observation` 均为 `ADMISSION_STATE_ADMITTED`。上述 2026-08-13
+capture 的 false 标记仅是准入前历史证据。
 
 ## EMQuant 运行时部署
 

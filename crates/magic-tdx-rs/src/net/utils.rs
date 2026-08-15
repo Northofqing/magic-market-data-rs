@@ -196,19 +196,25 @@ impl RateLimiter {
         if !self.enabled.load(Ordering::Relaxed) {
             return;
         }
-        let mut inner = self.inner.lock().unwrap();
-        if let Some(last) = inner.last_request {
-            let elapsed = last.elapsed();
-            if elapsed < inner.min_interval {
-                std::thread::sleep(inner.min_interval - elapsed);
-            }
+        let wait = {
+            let mut inner = crate::sync::lock_recover(&self.inner, "TDX rate limiter");
+            let now = Instant::now();
+            let reserved = inner
+                .last_request
+                .and_then(|last| last.checked_add(inner.min_interval))
+                .filter(|scheduled| *scheduled > now)
+                .unwrap_or(now);
+            inner.last_request = Some(reserved);
+            reserved.saturating_duration_since(now)
+        };
+        if !wait.is_zero() {
+            std::thread::sleep(wait);
         }
-        inner.last_request = Some(Instant::now());
     }
 
     /// 设置每秒请求数 (0 = 禁用, 超过 200 自动降为 200)
     pub fn set_rps(&self, rps: u32) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::sync::lock_recover(&self.inner, "TDX rate limiter");
         if rps == 0 {
             self.enabled.store(false, Ordering::Relaxed);
         } else {
@@ -232,7 +238,7 @@ impl RateLimiter {
     /// - `PrePost`: 基准限流 / 2
     /// - `Closed`:  基准限流 / 4
     pub fn set_phase(&self, phase: TradingPhase) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::sync::lock_recover(&self.inner, "TDX rate limiter");
         let mult = PHASE_MULTIPLIER[phase as usize].0;
         let adjusted_ms = (inner.base_interval.as_millis() as f64 / mult) as u64;
         inner.min_interval = Duration::from_millis(adjusted_ms.max(1));
@@ -241,7 +247,7 @@ impl RateLimiter {
 
     /// 获取当前阶段
     pub fn phase(&self) -> TradingPhase {
-        self.inner.lock().unwrap().phase
+        crate::sync::lock_recover(&self.inner, "TDX rate limiter").phase
     }
 
     /// 自动检测并设置交易阶段
@@ -365,7 +371,7 @@ pub fn perform_handshake(conn: &mut TcpConnection) -> Result<()> {
         conn.send(cmd)?;
         let (head, body) = read_response_raw(conn)?;
         if head.zip_size != head.unzip_size {
-            let _ = decompress_zlib(&body)?;
+            let _ = decompress_zlib_exact(&body, head.unzip_size)?;
         }
     }
     Ok(())
@@ -384,13 +390,84 @@ fn read_response_raw(conn: &mut TcpConnection) -> Result<(ResponseHeader, Vec<u8
     Ok((header, body))
 }
 
-/// zlib 解压
+/// 所有普通 TDX TCP 响应的最大解压长度。
+///
+/// 该值覆盖已实现的行情、F10 与板块单响应规模；大型财务归档走另一个
+/// 具备 256 MiB 独立上限和 ZIP entry 校验的下载路径。
+pub const MAX_TDX_DECOMPRESSED_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+
+/// zlib 解压，硬限制为普通 TDX TCP 响应的最大解压长度。
+///
+/// 仅供没有独立响应头的工具调用使用。生产协议路径必须使用
+/// [`decompress_zlib_exact`] 并校验头部声明长度。
 pub fn decompress_zlib(data: &[u8]) -> Result<Vec<u8>> {
-    let mut decoder = ZlibDecoder::new(data);
-    let mut decompressed = Vec::new();
-    decoder
+    decompress_zlib_bounded(data, MAX_TDX_DECOMPRESSED_RESPONSE_BYTES, None)
+}
+
+/// 按响应头声明长度有界解压，并拒绝短解压、超长解压和解压炸弹。
+pub fn decompress_zlib_exact(data: &[u8], expected_size: u32) -> Result<Vec<u8>> {
+    let expected_size = usize::try_from(expected_size).map_err(|_| {
+        crate::error_codes::ErrorCode::DECOMPRESS_FAILED
+            .err("declared decompressed response length cannot be represented")
+    })?;
+    if expected_size > MAX_TDX_DECOMPRESSED_RESPONSE_BYTES {
+        return Err(
+            crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err(format!(
+                "declared decompressed response exceeds limit: {} > {}",
+                expected_size, MAX_TDX_DECOMPRESSED_RESPONSE_BYTES
+            )),
+        );
+    }
+    decompress_zlib_bounded(data, expected_size, Some(expected_size))
+}
+
+fn decompress_zlib_bounded(
+    data: &[u8],
+    maximum_size: usize,
+    exact_size: Option<usize>,
+) -> Result<Vec<u8>> {
+    if data.is_empty() {
+        return Err(
+            crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err("compressed response is empty")
+        );
+    }
+    let decoder = ZlibDecoder::new(data);
+    let read_limit = u64::try_from(maximum_size)
+        .map_err(|_| {
+            crate::error_codes::ErrorCode::DECOMPRESS_FAILED
+                .err("decompressed response limit cannot be represented")
+        })?
+        .checked_add(1)
+        .ok_or_else(|| {
+            crate::error_codes::ErrorCode::DECOMPRESS_FAILED
+                .err("decompressed response limit overflow")
+        })?;
+    let mut limited = decoder.take(read_limit);
+    let mut decompressed = Vec::with_capacity(exact_size.unwrap_or(0));
+    limited
         .read_to_end(&mut decompressed)
         .map_err(|e| crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err(format!("{}", e)))?;
+
+    if decompressed.len() > maximum_size {
+        return Err(
+            crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err(format!(
+                "decompressed response exceeds declared limit: {} > {}",
+                decompressed.len(),
+                maximum_size
+            )),
+        );
+    }
+    if let Some(expected_size) = exact_size {
+        if decompressed.len() != expected_size {
+            return Err(
+                crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err(format!(
+                    "decompressed response length mismatch: expected {}, got {}",
+                    expected_size,
+                    decompressed.len()
+                )),
+            );
+        }
+    }
     Ok(decompressed)
 }
 

@@ -241,26 +241,13 @@ fn market_adapter_rejects_batch_shape_and_completeness_violations() {
         FailureKind::Evidence
     );
 
-    let missing_batch_provenance: Provenance = serde_json::from_value(serde_json::json!({
+    let missing_batch_provenance = serde_json::from_value::<Provenance>(serde_json::json!({
         "source": "cninfo-market",
         "source_at": "2026-07-24T08:00:00+08:00",
         "fetched_at": "observed",
         "batch_id": null
-    }))
-    .unwrap();
-    let missing_batch = market_announcement_source(
-        ProviderId::Cninfo,
-        Arc::new(FixtureProvider {
-            batch: DataBatch::strict(
-                vec![announcement("ann-1", "record-batch")],
-                missing_batch_provenance,
-            ),
-        }),
-        classify,
-    );
-    let error = missing_batch.fetch(&request(1)).unwrap_err();
-    assert_eq!(error.kind(), FailureKind::Evidence);
-    assert!(error.message().contains("no batch ID"));
+    }));
+    assert!(missing_batch_provenance.is_err());
 }
 
 #[test]

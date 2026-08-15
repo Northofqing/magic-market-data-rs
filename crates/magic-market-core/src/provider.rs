@@ -1,6 +1,8 @@
 use crate::{provenance::checked_text, DataBatch, InstrumentId};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
+use crate::validated::is_valid_iso_date as valid_iso_date;
+
 fn ensure_status_consistent(
     status: DataStatus,
     complete: bool,
@@ -80,6 +82,11 @@ pub trait SourcedRecord {
 
     /// Local observation time corresponding to this record when exposed.
     fn evidence_observed_at(&self) -> Option<&str> {
+        None
+    }
+
+    /// Record-level quality state when the normalized family exposes one.
+    fn evidence_status(&self) -> Option<DataStatus> {
         None
     }
 }
@@ -550,14 +557,18 @@ fn validate_book_total(
     levels: &[BookLevel; 5],
     total: Option<crate::Quantity>,
 ) -> Result<(), crate::CoreError> {
-    let quantities: Vec<_> = levels.iter().filter_map(|level| level.quantity).collect();
-    if quantities.is_empty() != total.is_none() {
+    let (quantity_count, sum) = levels
+        .iter()
+        .filter_map(|level| level.quantity)
+        .fold((0_usize, 0.0_f64), |(count, sum), quantity| {
+            (count + 1, sum + quantity.get())
+        });
+    if (quantity_count == 0) != total.is_none() {
         return Err(crate::CoreError::InvalidRequest(format!(
             "{field} presence contradicts order-book levels"
         )));
     }
     if let Some(total) = total {
-        let sum: f64 = quantities.iter().copied().map(crate::Quantity::get).sum();
         let tolerance = crate::NumericTolerance::new(f64::EPSILON * sum.abs().max(1.0) * 8.0, 0.0)?;
         if !tolerance.matches(sum, total.get()) {
             return Err(crate::CoreError::InvalidValue {
@@ -1157,31 +1168,6 @@ pub enum Adjustment {
     Backward,
 }
 
-fn valid_iso_date(value: &str) -> bool {
-    if value.len() != 10
-        || value.as_bytes()[4] != b'-'
-        || value.as_bytes()[7] != b'-'
-        || !value
-            .bytes()
-            .enumerate()
-            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
-    {
-        return false;
-    }
-    let year: u32 = value[0..4].parse().unwrap_or(0);
-    let month: u32 = value[5..7].parse().unwrap_or(0);
-    let day: u32 = value[8..10].parse().unwrap_or(0);
-    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
-    let max_day = match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => 0,
-    };
-    year >= 1900 && max_day != 0 && day >= 1 && day <= max_day
-}
-
 fn valid_clock_time(value: &str) -> bool {
     if value.len() != 8
         || value.as_bytes()[2] != b':'
@@ -1233,6 +1219,37 @@ fn valid_bar_time(value: &str, interval: BarInterval) -> bool {
             valid_iso_date(value)
         }
     }
+}
+
+fn valid_intraday_bar_span(start: &str, end: &str, interval: BarInterval) -> bool {
+    let maximum_seconds = match interval {
+        BarInterval::Minute1 => 60,
+        BarInterval::Minute5 => 5 * 60,
+        BarInterval::Minute15 => 15 * 60,
+        BarInterval::Minute30 => 30 * 60,
+        BarInterval::Hour1 => 60 * 60,
+        BarInterval::Day | BarInterval::Week | BarInterval::Month | BarInterval::Year => {
+            return true;
+        }
+    };
+    if start[..10] != end[..10] {
+        return false;
+    }
+    let seconds = |clock: &str| -> Option<u32> {
+        let hour = clock[0..2].parse::<u32>().ok()?;
+        let minute = clock[3..5].parse::<u32>().ok()?;
+        let second = clock[6..8].parse::<u32>().ok()?;
+        hour.checked_mul(3_600)?
+            .checked_add(minute.checked_mul(60)?)?
+            .checked_add(second)
+    };
+    let (Some(start_seconds), Some(end_seconds)) = (seconds(&start[11..]), seconds(&end[11..]))
+    else {
+        return false;
+    };
+    end_seconds
+        .checked_sub(start_seconds)
+        .is_some_and(|span| span <= maximum_seconds)
 }
 
 /// One source minute with cumulative session volume and amount.
@@ -1371,6 +1388,7 @@ pub struct Bar {
     amount: Option<crate::Money>,
     adjustment: Adjustment,
     source_at: Option<String>,
+    observed_at: Option<String>,
     provider: ProviderId,
     batch_id: String,
 }
@@ -1398,6 +1416,7 @@ impl Bar {
             || !valid_bar_time(&bar_end, interval)
             || bar_start.as_bytes().get(10) != bar_end.as_bytes().get(10)
             || bar_start > bar_end
+            || !valid_intraday_bar_span(&bar_start, &bar_end, interval)
         {
             return Err(crate::CoreError::InvalidRequest(
                 "invalid bar time range".into(),
@@ -1425,6 +1444,7 @@ impl Bar {
             amount,
             adjustment,
             source_at: None,
+            observed_at: None,
             provider,
             batch_id: checked_text("batch_id", batch_id)?,
         })
@@ -1435,6 +1455,13 @@ impl Bar {
         source_at: impl Into<String>,
     ) -> Result<Self, crate::CoreError> {
         self.source_at = Some(checked_text("source_at", source_at)?);
+        Ok(self)
+    }
+    pub fn with_observed_at(
+        mut self,
+        observed_at: impl Into<String>,
+    ) -> Result<Self, crate::CoreError> {
+        self.observed_at = Some(checked_text("observed_at", observed_at)?);
         Ok(self)
     }
     pub fn instrument(&self) -> &InstrumentId {
@@ -1473,6 +1500,9 @@ impl Bar {
     pub fn source_at(&self) -> Option<&str> {
         self.source_at.as_deref()
     }
+    pub fn observed_at(&self) -> Option<&str> {
+        self.observed_at.as_deref()
+    }
     pub fn provider(&self) -> ProviderId {
         self.provider
     }
@@ -1500,6 +1530,7 @@ impl<'de> Deserialize<'de> for Bar {
             amount: Option<crate::Money>,
             adjustment: Adjustment,
             source_at: Option<String>,
+            observed_at: Option<String>,
             provider: ProviderId,
             batch_id: String,
         }
@@ -1522,6 +1553,11 @@ impl<'de> Deserialize<'de> for Bar {
         .map_err(de::Error::custom)?;
         if let Some(source_at) = repr.source_at {
             bar = bar.with_source_at(source_at).map_err(de::Error::custom)?;
+        }
+        if let Some(observed_at) = repr.observed_at {
+            bar = bar
+                .with_observed_at(observed_at)
+                .map_err(de::Error::custom)?;
         }
         Ok(bar)
     }
@@ -1862,6 +1898,28 @@ impl SourcedRecord for Quote {
     fn evidence_observed_at(&self) -> Option<&str> {
         Some(self.observed_at())
     }
+
+    fn evidence_status(&self) -> Option<DataStatus> {
+        Some(self.status())
+    }
+}
+
+impl SourcedRecord for Bar {
+    fn provider_id(&self) -> ProviderId {
+        self.provider()
+    }
+
+    fn evidence_batch_id(&self) -> &str {
+        self.batch_id()
+    }
+
+    fn evidence_source_at(&self) -> Option<&str> {
+        self.source_at()
+    }
+
+    fn evidence_observed_at(&self) -> Option<&str> {
+        self.observed_at()
+    }
 }
 
 macro_rules! impl_sourced_record {
@@ -1875,13 +1933,25 @@ macro_rules! impl_sourced_record {
                 fn evidence_batch_id(&self) -> &str {
                     self.batch_id()
                 }
+
+                fn evidence_source_at(&self) -> Option<&str> {
+                    self.source_at()
+                }
+
+                fn evidence_observed_at(&self) -> Option<&str> {
+                    Some(self.observed_at())
+                }
+
+
+                fn evidence_status(&self) -> Option<DataStatus> {
+                    Some(self.status())
+                }
             }
         )+
     };
 }
 
 impl_sourced_record!(
-    Bar,
     MinutePoint,
     Trade,
     MoneyFlow,

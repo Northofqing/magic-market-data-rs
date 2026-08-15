@@ -126,7 +126,7 @@ fn response_reader_enforces_status_media_type_io_and_size_bounds() {
 }
 
 #[test]
-fn redirect_transport_error_exposes_bounded_location_without_following_it() {
+fn redirect_transport_error_reports_header_presence_without_echoing_target() {
     let response: ureq::Response = concat!(
         "HTTP/1.1 302 Found\r\n",
         "Location: https://push2.eastmoney.com/redirect-target\r\n",
@@ -139,8 +139,8 @@ fn redirect_transport_error_exposes_bounded_location_without_following_it() {
         error,
         super::EastmoneyError::Transport(message)
             if message.contains("302")
-                && message.contains("Location")
-                && message.contains("https://push2.eastmoney.com/redirect-target")
+                && message.contains("Location present")
+                && !message.contains("redirect-target")
     ));
 }
 

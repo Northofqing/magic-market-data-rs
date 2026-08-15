@@ -1,5 +1,8 @@
 use crate::CoreError;
 use serde::{de, Deserialize, Deserializer, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_BATCH_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) fn checked_text(
     field: &'static str,
@@ -40,8 +43,13 @@ impl Provenance {
     ) -> Result<Self, CoreError> {
         let source = checked_text("source", source)?;
         let fetched_at = checked_text("fetched_at", fetched_at)?;
+        let sequence = NEXT_BATCH_SEQUENCE
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .map_err(|_| CoreError::InvalidRequest("batch identifier sequence exhausted".into()))?;
         Ok(Self {
-            batch_id: Some(format!("{source}:{fetched_at}")),
+            batch_id: Some(format!("{source}:{fetched_at}:{sequence}")),
             source,
             source_at: None,
             fetched_at,
@@ -80,7 +88,7 @@ impl<'de> Deserialize<'de> for Provenance {
             source: String,
             source_at: Option<String>,
             fetched_at: String,
-            batch_id: Option<String>,
+            batch_id: String,
         }
 
         let repr = Repr::deserialize(deserializer)?;
@@ -88,12 +96,9 @@ impl<'de> Deserialize<'de> for Provenance {
         if let Some(source_at) = repr.source_at {
             value = value.with_source_at(source_at).map_err(de::Error::custom)?;
         }
-        match repr.batch_id {
-            Some(batch_id) => {
-                value = value.with_batch_id(batch_id).map_err(de::Error::custom)?;
-            }
-            None => value.batch_id = None,
-        }
+        value = value
+            .with_batch_id(repr.batch_id)
+            .map_err(de::Error::custom)?;
         Ok(value)
     }
 }

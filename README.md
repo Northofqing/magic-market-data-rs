@@ -51,8 +51,8 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 当前发布物刻意不提供以下能力：
 
 - 默认启动的常驻行情守护进程、任务调度器或 HTTP/gRPC 服务；路线 B 的 Windows
-  叶子服务已实现并仅在 Windows 包中作为操作员显式启动的诊断制品安装，所有
-  LocalTerminal/LocalAnalysis admission 仍为 `false`；
+  叶子服务只由操作员显式启动，当前仅 TDX 价格、累计成交量和累计成交额进入生产，
+  LocalAnalysis 异动仍未准入；
 - 数据库、历史数据仓库、跨请求缓存或陈旧数据回填；
 - 下单、撤单、持仓、资金、账户或交易登录能力；
 - 不可观察的重试、跨 Provider 拼接或模拟数据回退；
@@ -75,18 +75,18 @@ HTTP 栈由 [transport registry](docs/integrations/http-transports.tsv) 机械�
 | `magic-market-composition` | 具体 Provider 与 Router 的不可伪造组合边界；绑定 Eastmoney provider Top-N，并含显式失败的本地终端诊断组合 | 不定义通用数据合同，不接受本地 wrapper 冒充 Provider；本地生产构造保持不可用 |
 | `magic-market-transport` | 严格 HTTPS allowlist、无重定向/代理、整体超时、有界 body 与不持锁节流 | 不含数据源语义，不记录完整凭据 URL |
 | `magic-tdx-rs` | 纯 Rust TDX 协议、同步/异步/直连/Smart 客户端、服务门面和本地文件读取器 | MoneyFlow 与集合竞价显式不支持 |
-| `magic-tdx-local-rs` | TDX 本地终端监督状态机、官方 TQ-Local loopback HTTP、测试协议与准入门 | 固定 `127.0.0.1:17709`、无代理/跳转；所有生产能力仍为 false |
+| `magic-tdx-local-rs` | TDX 本地终端监督状态机、官方 TQ-Local loopback HTTP、测试协议与准入门 | 固定 `127.0.0.1:17709`、无代理/跳转；价格/累计量/累计额已准入，源时间和源记录数保持空 |
 | `magic-tdx-native-bridge` | Windows 同用户/会话 `TdxW.exe` 发现与版本证据 | crate 为 `publish=false`；Windows 诊断包与 server 同目录安装，只做短命发现 |
 | `magic-market-monitor` | 注入时间/资源策略的价格/金额/成交量确定性窗口、BR-044 事件和有界 replay | 无 I/O/系统时钟；生产阈值待 shadow evidence |
-| `magic-market-monitor-server` | 自动发现 TDX、固定 TQ-Local 快慢双路径轮询、监控组合与 4-byte big-endian 长度前缀 JSON 输出的可选 Windows 叶子服务 | amount 使用独立有界 worker；stdout 有界队列慢消费者即停；无入站监听；参数显式；生产数据族仍待准入 |
-| `magic-market-grpc-contracts` | `magic.market.v1` Protobuf、descriptor set 与有界 wire 校验 | 54 个只读查询、事件订阅/重放和 TDX Agent 双向流；不含 Provider I/O |
+| `magic-market-monitor-server` | 自动发现 TDX、固定 TQ-Local 快慢双路径轮询、监控组合与 4-byte big-endian 长度前缀 JSON 输出的可选 Windows 叶子服务 | amount 使用独立有界 worker；stdout 有界队列慢消费者即停；三类原始数据生产可用，异动规则仍为影子 |
+| `magic-market-grpc-contracts` | `magic.market.v1` Protobuf、descriptor set 与有界 wire 校验 | 54 个只读查询、TDX 动态监控列表、事件订阅/重放和 Agent 双向流；不含 Provider I/O |
 | `magic-market-service` | transport-neutral 查询命令、能力注册和 admission-before-I/O 门 | 不依赖 gRPC；未登记 handler 明确失败 |
-| `magic-market-grpc-server` | 认证 gRPC/HTTP2 服务、blocking Provider 隔离、多 Provider 精确选择与有界事件 hub | 远程绑定强制 mTLS；54 个查询均有精确登记，其中 46 个已绑定正式 Provider handler、8 个保持显式阻断；TDX 本地事件仍为影子模式 |
-| `magic-market-tdx-agent` | Windows 出站 Agent，监督固定同目录 monitor 并转发有界帧 | 不开放入站端口；不加载 DLL；强制 `admitted=false` |
+| `magic-market-grpc-server` | 认证 gRPC/HTTP2 服务、blocking Provider 隔离、多 Provider 精确选择与有界事件 hub | 远程绑定强制 mTLS；54 个查询均有精确登记，其中 46 个绑定正式 handler；TDX 三类原始数据事件为 ADMITTED，异动事件仍为 UNADMITTED |
+| `magic-market-tdx-agent` | Windows 出站 Agent，监督固定同目录 monitor、应用版本化 watchlist replacement 并转发有界帧 | 列表变化重启 monitor/新 generation；不开放入站端口；仅按仓库字段门提升原始 observation admission |
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
 | `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖基础行情、沪深财务三表和沪市 ETF 期权 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
 | `magic-emquant-rs` | 通过独立 C++ bridge 调用官方 Choice/EMQuant SDK 的只读适配层 | 厂商 SDK、授权和激活文件不进入仓库 |
-| `magic-eastmoney-rs` | 东财公开研报、最新财经资讯、资金流解析、龙虎榜、资本事件、涨跌停池和人气 | 与 Choice/EMQuant 身份分离；最新资讯不伪装成个股新闻 |
+| `magic-eastmoney-rs` | 东财公开研报、最新财经资讯、资金流解析、龙虎榜、资本事件、涨跌停池和人气；可选东财妙想鉴权诊断 | 妙想只接受仓库固定查询模板和环境 Key；已有字段按源单位返回，未证明字段保持空且不提升准入 |
 | `magic-cninfo-rs` | 巨潮公告/PDF 与互动易问答 | 只读公开信息；不读取账户或桌面登录态 |
 | `magic-ths-rs` | 同花顺一致预期、强势原因、涨停池和热榜 | 只读公开补充源；字段/频率以当前探针为准 |
 | `magic-cls-rs` | 财联社签名电报/全球新闻 | 只支持全局电报，不伪造个股过滤 |
@@ -322,7 +322,9 @@ Router 双层失败。
 标准化 Quote 的必填当前价如果为零、负数或非有限数，会连同证券身份和源字段上下文
 返回 typed error，不会用昨收或 `None` 伪装修复。关闭自动重试的未连接客户端会立即
 返回显式 disconnected error，不等待连接池超时。TDX 报文的 zlib 解压只由真实
-网络客户端路径执行；项目不再暴露无调用方的占位 codec API。
+网络客户端路径执行，并同时受报文声明长度和 16 MiB 全局上限约束；项目不再暴露
+无调用方的占位 codec API。异步客户端的连接、读、写和响应等待都有显式截止时间，
+等待响应时不会占用连接池互斥锁。
 
 完整边界见 [TDX 能力矩阵](docs/TDX_CAPABILITIES.md)。
 
@@ -335,22 +337,24 @@ Router 双层失败。
 `600396.SH` snapshot 为 `Amount="127354.65"`（万元）、`Now="17.62"`、
 `Volume="735536"`（手）、`LastClose="17.18"`；Rust 以 checked decimal 精确转换为
 `1273546500` CNY。watchlist 必须显式写成 `EQUITY:SH:600396` 等有资产/交易所类型的
-身份；TDX 路径和固定 endpoint 零配置，但轮询、资源和规则参数没有默认值。Windows
+身份；启动文件提供初始列表，外部控制方可通过 gRPC `SetWatchlist` 全量替换，并用
+`GetListenerStatus` 等待 desired/applied revision 一致。列表变化创建新 generation，不
+跨列表保留窗口或 replay。TDX 路径和固定 endpoint 零配置，但轮询、资源和规则参数没有默认值。Windows
 诊断包成对安装 server 与 discovery helper；server stdout 是有界 4-byte big-endian
 长度前缀 JSON frame，不是入站网络服务或 JSON Lines。当前 38 个 Config switch/value
 pair 全部显式；stdout queue、shutdown timeout 与唯一 `stop` slow-consumer policy 也不
 使用默认值，队列满会 fail closed 而非丢帧。发现证据保留数字 file/product version、
 version source 或结构化读取失败，并按显式周期重查进程 identity。交易日历、Windows
-完整生命周期实测和各数据族 live/shadow 准入仍未完成，因此所有
-LocalTerminal/LocalAnalysis 生产 capability 保持 `false`。详见
+完整生命周期与长跑 evidence 已用于准入价格、累计成交量和累计成交额；源时间、源记录
+数以及所有 LocalAnalysis 生产 capability 保持 `false`。详见
 [TDX 本地终端 Rust 轮询准入边界](docs/integrations/tdx-local-terminal.md)。
 
 当前一个有界 Windows E2E 已完成 12 个显式 scheduler cycle 并退出 0：发现证据保留
 PID 31472、版本 `1.0.0.1` 和已登记 SHA-256；最终观察为 `17.18` CNY/share、
 `1447695` lots，snapshot amount 为 `2520326100` CNY 且快慢 price/volume cross-check
-均为 true。三个 monitor 都达到 `warmed_up`，但全部 `admitted=false`，shutdown 已
-join snapshot worker。这只是有界诊断成功，不是交易日历、重启矩阵或 production
-admission 证据。
+均为 true。三个 monitor 都达到 `warmed_up`，当次历史 capture 的 admission 仍为 false，
+shutdown 已 join snapshot worker；后续 16 标的长跑和 2026-08-15 三轮串行复验完成后，
+三类原始数据才正式准入。
 
 ### Tencent
 
@@ -450,7 +454,12 @@ cargo fetch --locked
 - 外部连接同时要求受本地 CA 签发的客户端证书和 Bearer Token；
 - TDX Agent 在通达信所在 Windows 用户会话内运行，只访问固定
   `http://127.0.0.1:17709/`，不会向局域网暴露该端口；
-- gRPC Server、TDX Agent、monitor server 与 `TdxW.exe` 已形成真实链路。
+- gRPC Server、TDX Agent、monitor server 与 `TdxW.exe` 已形成真实链路；
+- `MarketEventService.SetWatchlist` 接收完整 `EQUITY:SH|SZ|BJ:NNNNNN` 列表，动态替换
+  实际轮询范围；`Subscribe.filter` 仍只负责消息过滤。
+- 2026-08-15 实机把监控范围从一只替换为 `EQUITY:SH:600396` 和
+  `EQUITY:SZ:000001`，desired/applied revision 均为 `1`，新 generation 下两只均
+  收到 observation；该列表是运行期状态，服务整体重启后回到部署文件的初始列表。
 
 本地生成的客户端材料位于 `target/runtime/client-bundle/`：
 
@@ -504,14 +513,21 @@ grpcurl `
 非空唯一 `request_id` 和相同的认证 metadata。完整 RPC、错误模型、订阅、重放与
 TDX Agent 合同见 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)。
 
-当前运行状态是 `ready / agent_connected_diagnostic`。54 个 unary 查询都有精确能力项；
-46 个操作已绑定 admissions.tsv 支持的真实 Provider handler，8 个未有完整证据的操作会
-精确返回 `UNIMPLEMENTED`，不会做网络 I/O。已通过当前 gRPC 实例实测的代表性调用包括
+当前运行状态使用 `ready / agent_connected_production`。54 个 unary 查询都有精确能力项；
+46 个操作已绑定 admissions.tsv 支持的真实 Provider handler。配置东财妙想 Key 后，
+`MoneyFlows`、`FundFlowSeries`、`Auctions`、`MarketBreadth` 无需 Provider 或
+`allow_unadmitted` 请求设置即可返回已有字段；响应仍强制
+`admission=UNADMITTED`、`complete=false` 和 blocker。其他诊断操作仍需显式 opt-in。
+已通过当前 gRPC 实例实测的代表性调用包括
 Tencent 行情与字段级不完整证券元数据、Sina 全球指数和 USD/CNY、FRED GDP、SEC EDGAR、
-WallstreetCN 新闻以及 TDX 公共协议板块目录和公司概况。LocalTerminal/LocalAnalysis 事件仍为 `UNADMITTED`，外部系统
-必须保留该标记，不能把诊断事件当成已准入生产行情。`10.211.55.3` 是当前工作站地址；
+WallstreetCN 新闻以及 TDX 公共协议板块目录和公司概况。LocalTerminal 价格、累计成交量、
+累计成交额事件为 `ADMITTED`；LocalAnalysis 异动仍为 `UNADMITTED`，外部系统必须按
+每条 envelope 的标记消费。`10.211.55.3` 是当前工作站地址；
 地址或网段变化时必须重新签发包含新 IP 的服务端证书并同步收紧防火墙规则，禁止跳过
 TLS 校验。
+
+2026-08-15 生产 E2E 在两标的 generation 中回放了 846 条 admitted fast observation
+和 84 条 admitted snapshot；Listener Status 广告的三个 family 与准入表完全一致。
 
 ### 确定性验证
 
@@ -568,8 +584,8 @@ cargo run -p magic-tdx-rs --example live_probe --release
 ```
 
 该命令打印 Quote、全部 K 线周期、五档、分时、逐笔、证券列表/数量、实时与报告期
-财务、45 个命名指标、XDXR、板块、基金和 F10。财务报告包会校验 HTTP 边界、ZIP
-目录、解压长度和 CRC。
+财务、45 个命名指标、XDXR、板块、基金和 F10。财务报告包只通过有界 TDX 报告协议
+获取，不再回退到明文 HTTP；文件名、ZIP 目录、解压长度和 CRC 都会校验。
 
 ### Tencent 功能 probe
 
@@ -844,7 +860,7 @@ bash tools/release/package.sh
 ```text
 target/dist/GIT_SHA/
 ├── bin/
-│   ├── magic-market-monitor-server.exe       # 仅 Windows，diagnostic/admitted=false
+│   ├── magic-market-monitor-server.exe       # 仅 Windows，三类原始 TDX 数据已准入
 │   ├── magic-market-grpc-server[.exe]         # 认证只读 gRPC 服务
 │   ├── magic-market-tdx-agent.exe             # 仅 Windows、出站连接 gRPC
 │   ├── magic-tdx-native-bridge.exe            # 仅 Windows，必须与 server 同目录
@@ -900,9 +916,9 @@ shasum -a 256 -c SHA256SUMS
 
 Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架构、Rust/Cargo
 版本和 Git SHA，不能把 macOS 二进制当成 Linux/Windows 制品。
-非 Windows 主机不会构建或安装上述本地 TDX 诊断二进制；Windows 原生包同时包含
-两者，且现有 `SHA256SUMS` 的 `bin/` 遍历会自动覆盖它们。打包存在不改变任何准入
-常量，也不表示 Gate D 生产准入。
+非 Windows 主机不会构建或安装上述本地 TDX monitor/discovery 二进制；Windows 原生包
+同时包含两者，且现有 `SHA256SUMS` 的 `bin/` 遍历会自动覆盖它们。打包不会扩大三个
+已准入原始 family，也不会提升 LocalAnalysis。
 
 ### 平台与网络摘要
 
@@ -910,7 +926,7 @@ Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架�
 | --- | --- | --- |
 | Core / Router | macOS、Linux、Windows | 无 |
 | TDX | macOS、Linux、Windows | 行情服务器 TCP 7709；财务包 `data.tdx.com.cn:80` |
-| TDX local diagnostic pair | Windows | 同目录 helper；固定 `http://127.0.0.1:17709/`；无远程监听 |
+| TDX local monitor pair | Windows | 同目录 helper；固定 `http://127.0.0.1:17709/`；无远程监听 |
 | Tencent | macOS、Linux、Windows | `qt.gtimg.cn`、`web.ifzq.gtimg.cn`、`ifzq.gtimg.cn`、`stock.gtimg.cn` 的 HTTPS |
 | Sina | macOS、Linux、Windows | `hq.sinajs.cn`、`quotes.sina.cn`、`stock.finance.sina.com.cn` 的 HTTPS |
 | Eastmoney Web | macOS、Linux、Windows | `reportapi`、`push2/push2delay/push2his/push2ex`、`datacenter-web`、`emappdata` 等文档列出的 HTTPS 主机 |
@@ -927,8 +943,7 @@ Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架�
 | 当前 EMQuant bridge | x86_64 macOS | 厂商加密服务器列表定义的目标；本机官方 SDK |
 
 TDX SmartClient 需要服务账号拥有独立可写目录来保存服务器健康缓存。TDX 财务包
-沿用厂商 HTTP 分发端点，代码校验结构、长度和 CRC，但传输层不加密；严格环境应
-关闭该能力或接入经过批准的完整性代理。
+只从当前有界 TDX TCP 报告会话下载；旧的厂商明文 HTTP 分发回退已删除。
 
 当前 EMQuant C++ bridge 使用 macOS `.dylib`、`dlopen` 和 POSIX API。Linux 或
 Windows 虽可编译 Rust 层，但运行前必须基于对应平台官方 SDK 单独实现并验收。
@@ -998,7 +1013,8 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | IMF diagnostics | 未准入 | 两次 live 与三次 load 尝试均为 typed HTTP 403，新版 Swagger 需要 beta portal 登录 |
 | World Bank exact USA GDP 2024 live/load | 通过 | 官方 per-series metadata 证明 `current US$`/Annual；两次 formal live 各返回 `29298013000000`，三次串行 load 通过；仅精确范围为 true |
 | FRED/SEC identified live/load | 通过 | 2026-08-13：FRED 两次各返回 4 个 GDP 季度记录，SEC 两次各返回 5 条 Apple 申报；两者三次串行 load 均通过，运行身份未进入证据；正式能力已开启 |
-| gRPC Provider composition | 部分实网通过、精确失败保留 | 2026-08-14：54 个操作全部精确登记，46 个绑定 handler、8 个显式 `UNIMPLEMENTED`；新增 Tencent 字段级不完整证券元数据与 TDX 公共 F10 公司概况。当前实例实测 Tencent 行情、Sina 全球指数/汇率、FRED GDP、SEC EDGAR、CFETS Shibor、CNInfo 全市场公告、HKEX 北向、THS 热榜、WallstreetCN/Eastmoney 新闻、iWencai 语义搜索及 TDX 板块/公司概况通过；Jin10 日历与 State Council 当前协议失败 |
+| gRPC Provider composition | 部分实网通过、精确失败保留 | 2026-08-15：54 个操作全部精确登记，46 个正式 handler；TDX Agent 正式转发价格、累计成交量和累计成交额，异动仍为影子；东财妙想部分字段仍为 `UNADMITTED`；CFFEX 仍 TLS EOF |
+| Eastmoney Miaoxiang diagnostics | 鉴权与部分字段实测通过、生产未准入 | Key 仅从环境读取且日志/Debug 脱敏；600396.SH 返回日级五档净额、2026-08-14 竞价量 2,951,900 股/额 53,665,542 元；全 A 返回上涨 2400、下跌 2970、平盘 170、涨停 64、跌停 13；不完整字段保持空 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 2026-07-27 当前树 live 覆盖 SSE 公告/龙虎榜、SZSE 公告/Quote/五档/龙虎榜及 HKEX 两条北向日统计；load 8/8、零失败，最小请求起始间隔 1001 ms |
 | Router strict 5-second quote | 通过 | 2026-07-27 13:01 连续竞价：TDX 因缺可信源时间被拒绝，Tencent 600519.SH 被选中，源龄 3613 ms |
@@ -1008,7 +1024,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | Eastmoney Provider Top-N | 通过 | 2026-07-29 22:25 +08:00 正式 trait 分别返回量比/主力净流入 20 行；请求开始和响应后 observation 均在 15:35 后，源总数 5,542，`source_at=None` |
 | CFFEX official delivery | 诊断实现通过；生产未准入 | 确定性诊断测试精确返回 IF2602/IH2602/IC2602/IM2602；2026-07-27 双 TLS 均未取得 HTTP。官方明文页诊断确认 2026-07-17 及 IF/IH/IC/IM 结算价，但明文不进入 Provider，capability 仍为 false |
 | iWencai live/load | 通过 | 2026-08-14：两次 live 各 7 条；三次串行 load 3/3、共 21 条、最小请求起始间隔 1000 ms、最大并发 1；Key 不进入日志或证据 |
-| Release package | 每个提交独立构建 | 四十九个独立 probe；Windows 另成对安装两个 admitted=false 的 TDX 本地诊断二进制；跟踪文档、许可证、构建元数据和 SHA-256 清单 |
+| Release package | 每个提交独立构建 | 四十九个独立 probe；Windows 成对安装 TDX monitor/discovery 二进制；跟踪文档、许可证、构建元数据和 SHA-256 清单 |
 
 任何 Provider 字段、授权、服务器或网页协议发生变化后，都必须重新运行对应的
 确定性测试和真实 probe。旧验收记录不能自动证明新版本仍然可用。
@@ -1019,6 +1035,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | --- | --- |
 | [部署手册](docs/DEPLOYMENT.md) | 可重复构建、平台、网络、EMQuant runtime、健康检查、回滚与升级 |
 | [gRPC 外部对接](docs/integrations/grpc-external-api.md) | Protobuf 版本、mTLS/Bearer 认证、查询、事件订阅/重放与 TDX Agent 合同 |
+| [Eastmoney Miaoxiang 诊断](docs/integrations/eastmoney-miaoxiang.md) | 鉴权方式、固定查询模板、现场证据、部分字段和准入边界 |
 | [TDX 能力矩阵](docs/TDX_CAPABILITIES.md) | 全数据族、北京市场、证据和显式不支持边界 |
 | [TDX 本地终端 Rust 轮询边界](docs/integrations/tdx-local-terminal.md) | 自动发现、固定 TQ-Local HTTP、版本感知、零 Python/DLL 决策与未准入条件 |
 | [TDX 生命周期实网证据](docs/evidence/2026-07-27-tdx-lifecycle.md) | 上市日期、标准化企业行动、verified-empty 与时间戳边界 |

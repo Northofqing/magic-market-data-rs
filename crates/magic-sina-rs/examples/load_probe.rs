@@ -211,7 +211,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .records()
                     .iter()
                     .map(|contract| {
-                        NonEmptyText::new(contract.contract_code.as_str())
+                        NonEmptyText::new(contract.contract_code().as_str())
                             .map_err(|error| error.to_string())
                     })
                     .collect()

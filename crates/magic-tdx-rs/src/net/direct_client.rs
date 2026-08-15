@@ -70,7 +70,7 @@ impl TdxDirectClient {
         }
 
         if header.zip_size != header.unzip_size {
-            utils::decompress_zlib(&body_buf)
+            utils::decompress_zlib_exact(&body_buf, header.unzip_size)
         } else {
             Ok(body_buf)
         }

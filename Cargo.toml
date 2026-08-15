@@ -48,6 +48,7 @@ repository = "https://github.com/Northofqing/magic-market-data-rs"
 [workspace.dependencies]
 calamine = { version = "0.36.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
+sha2 = "0.10.9"
 thiserror = "2"
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -1,6 +1,6 @@
 use magic_market_core::{
-    AssetClass, DataBatch, Exchange, InstrumentId, Money, Price, Provenance, ProviderId, Quantity,
-    Quote,
+    AssetClass, DataBatch, DataStatus, Exchange, InstrumentId, Money, Price, Provenance,
+    ProviderId, Quantity, Quote,
 };
 use magic_market_router::{
     AcceptancePolicy, AttemptStatus, FailoverChain, FailureAction, FailureKind, RouterError,
@@ -331,20 +331,64 @@ fn missing_provenance_batch_id_is_never_selected() {
         panic!("provenance must serialize as an object");
     };
     provenance.insert("batch_id".into(), Value::Null);
-    let missing: DataBatch<Quote> = serde_json::from_value(json).unwrap();
+    assert!(serde_json::from_value::<DataBatch<Quote>>(json).is_err());
+}
 
-    let mut chain = FailoverChain::new(AcceptancePolicy::new());
-    chain
-        .register(source(ProviderId::Tencent, Ok(missing)))
+#[test]
+fn record_statuses_are_enforced_without_treating_partial_as_complete() {
+    let stale = Quote::from_parts(
+        instrument(),
+        None,
+        Price::new(15.5).unwrap(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Quantity::new(100.0).unwrap(),
+        None,
+        DataStatus::Stale,
+        None,
+        "observed",
+        ProviderId::Tencent,
+        "status:stale",
+    )
+    .unwrap();
+    let stale_batch = DataBatch::strict(
+        vec![stale],
+        Provenance::new("fixture", "observed")
+            .unwrap()
+            .with_batch_id("status:stale")
+            .unwrap(),
+    );
+    let mut default_chain = FailoverChain::new(AcceptancePolicy::new());
+    default_chain
+        .register(source(ProviderId::Tencent, Ok(stale_batch)))
         .unwrap();
-    let error = chain.route(&[instrument()]).unwrap_err();
+    let error = default_chain.route(&[instrument()]).unwrap_err();
     assert!(matches!(
         error.attempts()[0].status(),
         AttemptStatus::Rejected {
-            kind: FailureKind::Evidence,
+            kind: FailureKind::Quality,
             ..
         }
     ));
+
+    let mut available_only =
+        FailoverChain::new(AcceptancePolicy::new().with_require_available_records(true));
+    available_only
+        .register(source(
+            ProviderId::Tencent,
+            Ok(batch(
+                ProviderId::Tencent,
+                "status:partial",
+                "status:partial",
+                false,
+                None,
+            )),
+        ))
+        .unwrap();
+    assert!(available_only.route(&[instrument()]).is_err());
 }
 
 #[test]

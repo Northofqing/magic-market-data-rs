@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Concrete, non-forgeable provider bindings for magic market-data routing"
 
 [dependencies]
+magic-baidu-rs = { path = "../magic-baidu-rs", version = "=0.2.0" }
 magic-cfets-rs = { path = "../magic-cfets-rs", version = "=0.2.0" }
 magic-cninfo-rs = { path = "../magic-cninfo-rs", version = "=0.2.0" }
 magic-eastmoney-rs = { path = "../magic-eastmoney-rs", version = "=0.2.0" }

@@ -1,5 +1,5 @@
 use crate::{FailureAction, FailureKind, RoutedSource, SourceError};
-use magic_market_core::{DataBatch, EvidenceTimestamp, ProviderId, SourcedRecord};
+use magic_market_core::{DataBatch, DataStatus, EvidenceTimestamp, ProviderId, SourcedRecord};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -9,6 +9,7 @@ pub struct AcceptancePolicy {
     require_complete: bool,
     require_source_at: bool,
     accept_complete_empty: bool,
+    require_available_records: bool,
     max_source_age: Option<Duration>,
 }
 
@@ -18,6 +19,7 @@ impl AcceptancePolicy {
             require_complete: false,
             require_source_at: false,
             accept_complete_empty: false,
+            require_available_records: false,
             max_source_age: None,
         }
     }
@@ -70,6 +72,17 @@ impl AcceptancePolicy {
 
     pub const fn accept_complete_empty(self) -> bool {
         self.accept_complete_empty
+    }
+
+    /// Requires every record family with a normalized status to be `Available`.
+    /// Status-less families are rejected when this policy is enabled.
+    pub const fn with_require_available_records(mut self, required: bool) -> Self {
+        self.require_available_records = required;
+        self
+    }
+
+    pub const fn require_available_records(self) -> bool {
+        self.require_available_records
     }
 }
 
@@ -316,6 +329,30 @@ fn rejected_batch<Record: SourcedRecord>(
                 "record provider {:?} does not match registered provider {provider_id:?}",
                 record.provider_id()
             ),
+        ));
+    }
+    if let Some(status) = batch.records().iter().find_map(|record| {
+        record.evidence_status().filter(|status| {
+            matches!(
+                status,
+                DataStatus::Stale | DataStatus::Conflicted | DataStatus::Unsupported
+            )
+        })
+    }) {
+        return Some((
+            FailureKind::Quality,
+            format!("record status {status:?} is not routable"),
+        ));
+    }
+    if policy.require_available_records()
+        && batch
+            .records()
+            .iter()
+            .any(|record| record.evidence_status() != Some(DataStatus::Available))
+    {
+        return Some((
+            FailureKind::Quality,
+            "record status is not Available under the configured policy".into(),
         ));
     }
     if let Some(record) = batch

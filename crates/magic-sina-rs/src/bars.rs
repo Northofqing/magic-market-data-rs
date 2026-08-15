@@ -236,7 +236,8 @@ pub(crate) fn parse_bars_response(
                 ProviderId::Sina,
                 batch_id.clone(),
             )?
-            .with_source_at(row.source_at)?,
+            .with_source_at(row.source_at)?
+            .with_observed_at(observed_at)?,
         );
     }
     let latest_source_at = records

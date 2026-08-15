@@ -5,9 +5,6 @@
 //!   2. 连接时长不同 — 全量获取可能持续数秒，不适合共享连接池
 //!   3. 避免影响行情数据的实时性
 
-use flate2::read::ZlibDecoder;
-use std::io::Read;
-
 use crate::error::Result;
 use crate::loge;
 use crate::net::connection::TcpConnection;
@@ -99,12 +96,7 @@ impl TdxF10Client {
         }
 
         if header.zip_size != header.unzip_size {
-            let mut decoder = ZlibDecoder::new(&body_buf[..]);
-            let mut decompressed = Vec::new();
-            decoder.read_to_end(&mut decompressed).map_err(|e| {
-                crate::error_codes::ErrorCode::DECOMPRESS_FAILED.err(format!("{}", e))
-            })?;
-            Ok(decompressed)
+            utils::decompress_zlib_exact(&body_buf, header.unzip_size)
         } else {
             Ok(body_buf)
         }

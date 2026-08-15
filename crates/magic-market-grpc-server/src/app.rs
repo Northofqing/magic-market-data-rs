@@ -76,9 +76,10 @@ where
             Some(request.preferred_provider),
             payload,
         )
+        .map(|command| command.with_unadmitted_access(request.allow_unadmitted))
         .map_err(|error| status_from_error(&context.request_id, operation, error))?;
 
-        let unary_permit = self
+        let _unary_permit = self
             .unary
             .clone()
             .try_acquire_owned()
@@ -91,7 +92,11 @@ where
         let gateway = self.gateway.clone();
         let request_id = context.request_id;
         let task = tokio::task::spawn_blocking(move || {
-            let _permits = (unary_permit, blocking_permit);
+            // A timed-out blocking call cannot be force-cancelled. Keep the
+            // blocking permit with the worker so abandoned work remains
+            // bounded, while the request-scoped unary permit is released as
+            // soon as the client-facing deadline expires.
+            let _blocking_permit = blocking_permit;
             gateway.execute(command)
         });
         let result = tokio::time::timeout(self.blocking_deadline, task)
@@ -103,7 +108,11 @@ where
         Ok(Response::new(v1::QueryResponse {
             request_id,
             operation: grpc_operation(operation) as i32,
-            admission: v1::AdmissionState::Admitted as i32,
+            admission: if result.repository_admitted {
+                v1::AdmissionState::Admitted as i32
+            } else {
+                v1::AdmissionState::Unadmitted as i32
+            },
             selected_provider: result.provider,
             batch_id: result.batch_id,
             complete: result.complete,
@@ -119,6 +128,7 @@ where
                     data: record.data().to_vec(),
                 })
                 .collect(),
+            diagnostic_blocker: result.diagnostic_blocker.unwrap_or_default(),
         }))
     }
 }
@@ -160,6 +170,7 @@ where
                 provider: capability.provider,
                 exact_scope: capability.exact_scope,
                 blocker: capability.blocker.unwrap_or_default(),
+                diagnostic_available: capability.diagnostic_available,
             })
             .collect();
         Ok(Response::new(v1::CapabilitiesResponse {
@@ -385,9 +396,27 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
 #[cfg(test)]
 mod tests {
     use magic_market_grpc_contracts::v1::market_data_service_server::MarketDataService;
-    use magic_market_service::OperationRegistry;
+    use magic_market_service::{Capability, OperationRegistry, QueryResult};
 
     use super::*;
+
+    struct SlowGateway {
+        delay: Duration,
+    }
+
+    impl BlockingQueryGateway for SlowGateway {
+        fn capabilities(&self) -> Vec<Capability> {
+            Vec::new()
+        }
+
+        fn execute(&self, _command: QueryCommand) -> Result<QueryResult, ServiceError> {
+            std::thread::sleep(self.delay);
+            Err(ServiceError::Unavailable {
+                operation: Operation::RealtimeQuotes,
+                reason: "slow test provider".to_owned(),
+            })
+        }
+    }
 
     fn request() -> Request<v1::QueryRequest> {
         Request::new(v1::QueryRequest {
@@ -402,6 +431,7 @@ mod tests {
                 content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
                 data: b"{}".to_vec(),
             }),
+            allow_unadmitted: false,
         })
     }
 
@@ -428,6 +458,79 @@ mod tests {
         .unwrap();
         assert_eq!(detail.request_id, "request-1");
         assert_eq!(detail.reason_code, "capability_unadmitted");
+    }
+
+    #[tokio::test]
+    async fn explicit_diagnostic_rpc_returns_records_without_promoting_admission() {
+        let mut registry = OperationRegistry::all_unadmitted("evidence missing");
+        registry
+            .register_diagnostic_handler(
+                Capability {
+                    operation: Operation::TechnicalBars,
+                    repository_admitted: false,
+                    runtime_available: false,
+                    provider: "Baidu".to_owned(),
+                    exact_scope: "diagnostic daily bars".to_owned(),
+                    blocker: Some("continuity is unproved".to_owned()),
+                    diagnostic_available: false,
+                },
+                |_| {
+                    Ok(QueryResult {
+                        provider: "Baidu".to_owned(),
+                        batch_id: "diagnostic-batch".to_owned(),
+                        complete: true,
+                        observed_at: "2026-08-15T00:00:00Z".to_owned(),
+                        source_at: Some("2026-08-14".to_owned()),
+                        records: vec![CanonicalPayload::new(
+                            "magic.market.technical_bar",
+                            1,
+                            br#"{"ma5":null}"#.to_vec(),
+                            1024,
+                        )
+                        .unwrap()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+        let application =
+            GrpcApplication::new(Arc::new(registry), 1024, 1, 1, Duration::from_secs(1)).unwrap();
+        let mut request = request();
+        request.get_mut().preferred_provider = "Baidu".to_owned();
+        request.get_mut().allow_unadmitted = true;
+        let response = application
+            .technical_bars(request)
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.admission, v1::AdmissionState::Unadmitted as i32);
+        assert!(!response.complete);
+        assert_eq!(response.selected_provider, "Baidu");
+        assert_eq!(response.records.len(), 1);
+        assert_eq!(response.diagnostic_blocker, "continuity is unproved");
+    }
+
+    #[tokio::test]
+    async fn deadline_releases_unary_capacity_but_keeps_abandoned_work_bounded() {
+        let application = GrpcApplication::new(
+            Arc::new(SlowGateway {
+                delay: Duration::from_millis(150),
+            }),
+            1024,
+            1,
+            1,
+            Duration::from_millis(20),
+        )
+        .unwrap();
+
+        let status = application.realtime_quotes(request()).await.unwrap_err();
+        assert_eq!(status.code(), Code::DeadlineExceeded);
+        assert_eq!(application.unary.available_permits(), 1);
+        assert_eq!(application.blocking.available_permits(), 0);
+
+        tokio::time::sleep(Duration::from_millis(180)).await;
+        assert_eq!(application.blocking.available_permits(), 1);
     }
 
     #[test]

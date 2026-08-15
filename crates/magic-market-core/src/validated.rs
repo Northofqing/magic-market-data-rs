@@ -164,7 +164,7 @@ impl<'de> Deserialize<'de> for IsoDate {
     }
 }
 
-fn is_valid_iso_date(value: &str) -> bool {
+pub(crate) fn is_valid_iso_date(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 10
         || bytes[4] != b'-'

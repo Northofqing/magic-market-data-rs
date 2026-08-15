@@ -17,13 +17,15 @@ struct DiagnosticReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     cumulative_volume: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    cumulative_amount: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     reason_code: Option<&'static str>,
 }
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let parsed = parse_arguments(&arguments);
-    let (instrument, limits, request_id, bridge_sequence, observed_at_utc) = match parsed {
+    let (method, instrument, limits, request_id, bridge_sequence, observed_at_utc) = match parsed {
         Ok(parsed) => parsed,
         Err(message) => {
             eprintln!("{message}");
@@ -32,12 +34,15 @@ fn main() -> ExitCode {
     };
 
     let started = Instant::now();
-    let result = TqLoopbackClient::new(limits).poll_price_volume(
-        request_id,
-        bridge_sequence,
-        &instrument,
-        observed_at_utc,
-    );
+    let client = TqLoopbackClient::new(limits);
+    let result = match method {
+        ProbeMethod::PriceVolume => {
+            client.poll_price_volume(request_id, bridge_sequence, &instrument, observed_at_utc)
+        }
+        ProbeMethod::MarketSnapshot => {
+            client.poll_market_snapshot(request_id, bridge_sequence, &instrument, observed_at_utc)
+        }
+    };
     let latency_micros = started.elapsed().as_micros();
     let (report, exit) = match result {
         Ok(observation) => (
@@ -47,6 +52,7 @@ fn main() -> ExitCode {
                 latency_micros,
                 price: observation.price.map(|value| value.value),
                 cumulative_volume: observation.cumulative_volume.map(|value| value.value),
+                cumulative_amount: observation.cumulative_amount.map(|value| value.value),
                 reason_code: None,
             },
             ExitCode::SUCCESS,
@@ -58,6 +64,7 @@ fn main() -> ExitCode {
                 latency_micros,
                 price: None,
                 cumulative_volume: None,
+                cumulative_amount: None,
                 reason_code: Some(reason_code(&error)),
             },
             ExitCode::from(3),
@@ -73,15 +80,42 @@ fn main() -> ExitCode {
     exit
 }
 
-type ParsedArguments = (TqInstrument, TqLoopbackLimits, u64, u64, String);
+#[derive(Clone, Copy)]
+enum ProbeMethod {
+    PriceVolume,
+    MarketSnapshot,
+}
+
+type ParsedArguments = (
+    ProbeMethod,
+    TqInstrument,
+    TqLoopbackLimits,
+    u64,
+    u64,
+    String,
+);
 
 fn parse_arguments(arguments: &[String]) -> Result<ParsedArguments, &'static str> {
+    let (method, values) = match arguments {
+        [method, rest @ ..] if rest.len() == 10 => {
+            let method = match method.as_str() {
+                "price-volume" => ProbeMethod::PriceVolume,
+                "market-snapshot" => ProbeMethod::MarketSnapshot,
+                _ => return Err("method must be exactly price-volume or market-snapshot"),
+            };
+            (method, rest)
+        }
+        values if values.len() == 10 => (ProbeMethod::PriceVolume, values),
+        _ => {
+            return Err(
+                "usage: tq_loopback_probe [price-volume|market-snapshot] <SH|SZ|BJ> <six-digit-code> <connect-ms> <read-ms> <write-ms> <request-bytes> <response-bytes> <request-id> <bridge-sequence> <observed-at-utc>",
+            );
+        }
+    };
     let [exchange, code, connect_ms, read_ms, write_ms, request_bytes, response_bytes, request_id, bridge_sequence, observed_at_utc] =
-        arguments
+        values
     else {
-        return Err(
-            "usage: tq_loopback_probe <SH|SZ|BJ> <six-digit-code> <connect-ms> <read-ms> <write-ms> <request-bytes> <response-bytes> <request-id> <bridge-sequence> <observed-at-utc>",
-        );
+        return Err("internal probe argument shape mismatch");
     };
     let exchange = match exchange.as_str() {
         "SH" => SourceExchange::Shanghai,
@@ -108,6 +142,7 @@ fn parse_arguments(arguments: &[String]) -> Result<ParsedArguments, &'static str
         return Err("observed-at-utc must be unpadded non-control text");
     }
     Ok((
+        method,
         instrument,
         limits,
         request_id,

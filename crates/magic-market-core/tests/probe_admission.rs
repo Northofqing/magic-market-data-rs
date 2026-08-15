@@ -56,7 +56,11 @@ fn evidence_timestamps_preserve_nanoseconds_and_reject_excess_precision() {
         epoch_over.duration_since(epoch_source),
         Some(Duration::from_secs(5) + Duration::from_nanos(1))
     );
-    for invalid in ["2026-07-23T10:00:05.0000000001Z", "1784786405.0000000001"] {
+    for invalid in [
+        "20240101",
+        "2026-07-23T10:00:05.0000000001Z",
+        "1784786405.0000000001",
+    ] {
         assert!(
             EvidenceTimestamp::parse_instant(invalid).is_err(),
             "excess timestamp precision was silently accepted: {invalid}"
@@ -515,28 +519,13 @@ fn every_evidence_mismatch_is_rejected_explicitly() {
         );
     }
 
-    let provenance_without_batch_id: Provenance = serde_json::from_value(serde_json::json!({
+    assert!(serde_json::from_value::<Provenance>(serde_json::json!({
         "source": "fixture",
         "source_at": source,
         "fetched_at": observed,
         "batch_id": null
     }))
-    .unwrap();
-    let missing_batch_id = DataBatch::strict(
-        vec![Record {
-            identity: "600519.SH",
-            evidence: evidence(ProviderId::Tonghuashun, observed, source, batch_id),
-        }],
-        provenance_without_batch_id,
-    );
-    let error = verify_admitted_batch(
-        &missing_batch_id,
-        &policy(),
-        |record| &record.evidence,
-        |record| record.identity.to_owned(),
-    )
-    .unwrap_err();
-    assert_eq!(error, ProbeAdmissionError::MissingBatchId);
+    .is_err());
 }
 
 #[test]

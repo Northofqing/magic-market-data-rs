@@ -13,12 +13,14 @@ const SWITCHES: &[&str] = &[
     "--max-payload-bytes",
     "--unary-concurrency",
     "--blocking-concurrency",
+    "--provider-timeout-ms",
     "--blocking-deadline-ms",
     "--max-subscribers",
     "--subscriber-queue-capacity",
     "--replay-max-events",
     "--replay-max-bytes",
     "--agent-command-capacity",
+    "--agent-heartbeat-timeout-ms",
     "--shutdown-timeout-ms",
     "--reflection",
     "--tls-cert",
@@ -35,12 +37,14 @@ pub(crate) struct ServerConfig {
     pub(crate) max_payload_bytes: usize,
     pub(crate) unary_concurrency: usize,
     pub(crate) blocking_concurrency: usize,
+    pub(crate) provider_timeout: Duration,
     pub(crate) blocking_deadline: Duration,
     pub(crate) max_subscribers: usize,
     pub(crate) subscriber_queue_capacity: usize,
     pub(crate) replay_max_events: usize,
     pub(crate) replay_max_bytes: usize,
     pub(crate) agent_command_capacity: usize,
+    pub(crate) agent_heartbeat_timeout: Duration,
     pub(crate) shutdown_timeout: Duration,
     pub(crate) reflection: bool,
     pub(crate) tls: Option<TlsFiles>,
@@ -124,6 +128,14 @@ impl ServerConfig {
             ));
         }
 
+        let provider_timeout = positive_duration(&values, "--provider-timeout-ms")?;
+        let blocking_deadline = positive_duration(&values, "--blocking-deadline-ms")?;
+        if provider_timeout > blocking_deadline {
+            return Err(ConfigError::Invalid(
+                "--provider-timeout-ms must not exceed --blocking-deadline-ms".to_owned(),
+            ));
+        }
+
         Ok(Self {
             bind,
             auth_token,
@@ -132,12 +144,14 @@ impl ServerConfig {
             max_payload_bytes: positive_usize(&values, "--max-payload-bytes")?,
             unary_concurrency: positive_usize(&values, "--unary-concurrency")?,
             blocking_concurrency: positive_usize(&values, "--blocking-concurrency")?,
-            blocking_deadline: positive_duration(&values, "--blocking-deadline-ms")?,
+            provider_timeout,
+            blocking_deadline,
             max_subscribers: positive_usize(&values, "--max-subscribers")?,
             subscriber_queue_capacity: positive_usize(&values, "--subscriber-queue-capacity")?,
             replay_max_events: positive_usize(&values, "--replay-max-events")?,
             replay_max_bytes: positive_usize(&values, "--replay-max-bytes")?,
             agent_command_capacity: positive_usize(&values, "--agent-command-capacity")?,
+            agent_heartbeat_timeout: positive_duration(&values, "--agent-heartbeat-timeout-ms")?,
             shutdown_timeout: positive_duration(&values, "--shutdown-timeout-ms")?,
             reflection: boolean(&values, "--reflection")?,
             tls,

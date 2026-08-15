@@ -15,6 +15,7 @@ mod fund_flow;
 mod limit_pool;
 mod mapping;
 mod market_rankings;
+mod mx;
 mod news;
 mod popularity;
 mod post_close;
@@ -36,6 +37,12 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use error::EastmoneyError;
+pub use market_rankings::DiagnosticMarketRankingEntry;
+pub use mx::{
+    DiagnosticMarketBreadth, DiagnosticOpeningAuction, EastmoneyMxClient,
+    MX_DAILY_FUND_FLOW_ADMITTED, MX_MARKET_BREADTH_ADMITTED, MX_OPENING_AUCTION_ADMITTED,
+};
+pub use post_close::DiagnosticPostCloseFlow;
 pub use transport::EastmoneyTransport;
 use transport::{
     HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES, MAX_HTML_RESPONSE_BYTES, MAX_PDF_RESPONSE_BYTES,

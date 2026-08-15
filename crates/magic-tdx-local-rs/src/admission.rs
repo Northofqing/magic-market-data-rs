@@ -4,14 +4,15 @@
 //! false until its own deterministic contracts, bounded live probes and
 //! registry evidence have passed the repository's admission gates.
 
-/// Local-terminal price observations have not completed admission.
-pub const LOCAL_TERMINAL_PRICE_ADMITTED: bool = false;
+/// Local-terminal observation-time price is admitted for the exact TQ-Local
+/// schema. This does not assert source-timestamp freshness.
+pub const LOCAL_TERMINAL_PRICE_ADMITTED: bool = true;
 
-/// Local-terminal cumulative amount observations have not completed admission.
-pub const LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED: bool = false;
+/// Local-terminal cumulative amount is admitted in exact CNY units.
+pub const LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED: bool = true;
 
-/// Local-terminal cumulative volume observations have not completed admission.
-pub const LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED: bool = false;
+/// Local-terminal cumulative volume is admitted in source lot units.
+pub const LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED: bool = true;
 
 /// Local-terminal source-record-count evidence has not completed admission.
 pub const LOCAL_TERMINAL_SOURCE_RECORD_COUNT_ADMITTED: bool = false;
@@ -203,19 +204,19 @@ mod tests {
     }
 
     #[test]
-    fn every_local_terminal_capability_is_false_by_default() {
+    fn only_source_record_count_remains_unadmitted() {
         const {
-            assert!(!LOCAL_TERMINAL_PRICE_ADMITTED);
-            assert!(!LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED);
-            assert!(!LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED);
+            assert!(LOCAL_TERMINAL_PRICE_ADMITTED);
+            assert!(LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED);
+            assert!(LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED);
             assert!(!LOCAL_TERMINAL_SOURCE_RECORD_COUNT_ADMITTED);
         }
         assert_eq!(
             LocalTerminalAdmission::current(),
             LocalTerminalAdmission {
-                price: false,
-                cumulative_amount: false,
-                cumulative_volume: false,
+                price: true,
+                cumulative_amount: true,
+                cumulative_volume: true,
                 source_record_count: false,
             }
         );
@@ -230,9 +231,9 @@ mod tests {
         assert_eq!(
             LocalTerminalAdmission::current(),
             LocalTerminalAdmission {
-                price: false,
-                cumulative_amount: false,
-                cumulative_volume: false,
+                price: true,
+                cumulative_amount: true,
+                cumulative_volume: true,
                 source_record_count: false,
             }
         );
@@ -240,10 +241,10 @@ mod tests {
         let runtime = LocalTerminalRuntimeAvailability::from_hello(&hello).unwrap();
         let combined = LocalTerminalAdmission::current().combine(runtime);
         assert_eq!(combined.price.runtime, RuntimeAvailability::Available);
-        assert_eq!(combined.price.repository, RepositoryAdmission::Unadmitted);
-        assert!(!combined.price.is_effectively_available());
-        assert!(!combined.cumulative_amount.is_effectively_available());
-        assert!(!combined.cumulative_volume.is_effectively_available());
+        assert_eq!(combined.price.repository, RepositoryAdmission::Admitted);
+        assert!(combined.price.is_effectively_available());
+        assert!(combined.cumulative_amount.is_effectively_available());
+        assert!(combined.cumulative_volume.is_effectively_available());
         assert!(!combined.source_record_count.is_effectively_available());
     }
 
