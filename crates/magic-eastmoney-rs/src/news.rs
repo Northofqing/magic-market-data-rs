@@ -286,7 +286,10 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
     let (host, path) = remainder
         .split_once('/')
         .ok_or_else(|| EastmoneyError::Protocol("Eastmoney news article URL has no path".into()))?;
-    if !matches!(host, "finance.eastmoney.com" | "global.eastmoney.com") {
+    if !matches!(
+        host,
+        "finance.eastmoney.com" | "global.eastmoney.com" | "biz.eastmoney.com"
+    ) {
         return Err(EastmoneyError::Protocol(format!(
             "Eastmoney news article host {host:?} is not an admitted global-news host"
         )));

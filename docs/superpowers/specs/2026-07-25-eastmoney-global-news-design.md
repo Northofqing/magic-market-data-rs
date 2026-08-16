@@ -39,7 +39,8 @@ Each admitted row maps to `NewsItem`:
 - `summary` and `content`: `None`, because the list page supplies neither;
 - `publisher`: `东方财富网`;
 - `canonical_url`: normalized HTTPS URL on the exact source host,
-  `finance.eastmoney.com` or `global.eastmoney.com`;
+  `finance.eastmoney.com`, `global.eastmoney.com`, or `biz.eastmoney.com`;
+  the article page is retained as metadata and is not fetched;
 - `published_at`: the exact `YYYY-MM-DD HH:MM` list timestamp;
 - `instruments`: empty; title mentions are not structured source identities;
 - `topics`: one source family label, `财经`;

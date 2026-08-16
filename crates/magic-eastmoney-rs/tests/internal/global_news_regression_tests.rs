@@ -160,19 +160,24 @@ fn global_news_rejects_duplicate_id_url_and_noncanonical_urls() {
 }
 
 #[test]
-fn global_news_accepts_exact_global_host_and_preserves_it_in_canonical_url() {
-    let (item_id, canonical_url) =
-        normalize_global_article_url("http://global.eastmoney.com/a/202607253821086055.html")
-            .unwrap();
-    assert_eq!(item_id, "202607253821086055");
-    assert_eq!(
-        canonical_url,
-        "https://global.eastmoney.com/a/202607253821086055.html"
-    );
-    assert!(normalize_global_article_url(
-        "https://global.eastmoney.com.example/a/202607253821086055.html"
-    )
-    .is_err());
+fn global_news_accepts_exact_official_hosts_and_preserves_them_in_canonical_url() {
+    for host in [
+        "finance.eastmoney.com",
+        "global.eastmoney.com",
+        "biz.eastmoney.com",
+    ] {
+        let input = format!("http://{host}/a/202607253821086055.html");
+        let (item_id, canonical_url) = normalize_global_article_url(&input).unwrap();
+        assert_eq!(item_id, "202607253821086055");
+        assert_eq!(
+            canonical_url,
+            format!("https://{host}/a/202607253821086055.html")
+        );
+        assert!(normalize_global_article_url(&format!(
+            "https://{host}.example/a/202607253821086055.html"
+        ))
+        .is_err());
+    }
 }
 
 #[test]

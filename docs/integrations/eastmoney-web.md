@@ -48,7 +48,8 @@ roll.eastmoney.com
 `https://roll.eastmoney.com/finance.html`，禁止翻页、查询参数和跳转；响应必须是
 带 UTF-8 charset 的 `text/html` 且不超过 2 MiB。完整 `#artList` 中每条都必须为
 `财经` 分类、分钟时间倒序、标题内外一致，并使用
-`finance.eastmoney.com/a/<纯数字 ID>.html`。页面没有证券身份，故
+`finance.eastmoney.com`、`global.eastmoney.com` 或 `biz.eastmoney.com` 上的
+`/a/<纯数字 ID>.html`。这些地址只作为来源元数据保存，不会抓取文章正文。页面没有证券身份，故
 `NewsItem::instruments` 为空，不得转成个股新闻。
 
 HTTP 客户端禁止重定向，默认超时 12 秒，单响应最多 4 MiB。所有克隆的客户端共享

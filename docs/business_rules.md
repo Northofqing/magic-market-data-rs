@@ -425,8 +425,9 @@ Eastmoney global latest news is admitted only from the exact first page at
 `#artList` before applying a caller limit of at most 20. Every row must be in
 the source `财经` category, use a calendar-valid newest-first minute timestamp,
 have matching attribute/visible titles, and use a unique numeric article ID at
-the canonical `/a/<id>.html` path on exactly `finance.eastmoney.com` or
-`global.eastmoney.com`. The public page does
+the canonical `/a/<id>.html` path on exactly `finance.eastmoney.com`,
+`global.eastmoney.com`, or `biz.eastmoney.com`. These hosts are retained as
+metadata links only and are not fetched by this operation. The public page does
 not provide structured security identity, so records keep an empty instrument
 list and may not be presented as instrument news.
 
