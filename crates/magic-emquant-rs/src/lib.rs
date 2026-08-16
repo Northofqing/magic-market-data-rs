@@ -200,8 +200,8 @@ impl EmQuantClient {
     }
 }
 
-/// Returns the fixed workspace build location used by
-/// `tools/emquant/build_snapshot_bridge.sh`.
+/// Returns the fixed workspace build location used by the platform bridge
+/// builder below `tools/emquant`.
 pub fn workspace_bridge_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -237,8 +237,13 @@ pub fn discover_bridge_path() -> Result<PathBuf, EmQuantError> {
         .map(|path| path.display().to_string())
         .collect::<Vec<_>>()
         .join(", ");
+    #[cfg(windows)]
+    let build_hint =
+        "tools\\emquant\\build_snapshot_bridge_windows.cmd C:\\path\\to\\EMQuantAPI_CPP";
+    #[cfg(not(windows))]
+    let build_hint = "tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac";
     Err(EmQuantError::InvalidRequest(format!(
-        "EMQuant bridge is not built; run tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac (searched: {searched})"
+        "EMQuant bridge is not built; run {build_hint} (searched: {searched})"
     )))
 }
 

@@ -184,13 +184,14 @@ shasum -a 256 -c SHA256SUMS
 | SSE/SZSE/HKEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
 | CFFEX official diagnostic | 仅诊断 | 仅诊断 | 仅诊断 | capability=false；生产 trait `Unsupported`；官方 TLS live 未通过 |
 | iWencai | 支持 | 支持 | 支持 | Rustls HTTPS；需要获授权 API Key |
-| EMQuant Rust 层 | 支持 | 可编译 | 可编译 | 运行还取决于厂商 SDK |
-| 当前 EMQuant C++ bridge | x86_64 macOS | 未适配 | 未适配 | 使用 `.dylib`、`dlopen` 和 POSIX API |
+| EMQuant Rust 层 | 支持 | 可编译 | 支持 | 运行还取决于厂商 SDK 与账号权限 |
+| EMQuant C++ bridge | x86_64 macOS | 未适配 | x86_64 Windows | macOS 使用 `.dylib`/`dlopen`；Windows 使用绝对路径 `LoadLibraryEx` 和官方 x64 DLL |
 
 macOS 的 EMQuant SDK 必须与进程架构相同。Apple Silicon 主机若只有厂商 x86_64
 SDK，需要在 x86_64/Rosetta 构建和运行整条链路，不能让 arm64 Rust 进程加载 x86_64
-动态库。Linux/Windows 部署 EMQuant 前必须基于对应平台官方 SDK 单独实现并验收
-桥接器；当前包不能声称已经跨平台运行 EMQuant。
+动态库。Windows x64 使用独立构建脚本和官方 `EmQuantAPI_x64.dll`，并要求微软
+VC++ 2010 SP1 x64 运行库。Linux bridge 仍未适配。任一平台的 SDK、设备激活和终端
+登录都不能替代账号的 EMQuant API 服务端权限。
 
 ## 网络与文件权限
 
@@ -324,28 +325,39 @@ capture 的 false 标记仅是准入前历史证据。
 ## EMQuant 运行时部署
 
 厂商 SDK、服务器列表、激活令牌受其许可证约束，不进入 Git，也不由发布包自动
-分发。在每台获授权的目标机上准备 SDK：
+分发。在每台获授权的目标机上准备与平台匹配的官方 SDK。
+
+macOS：
 
 ```bash
 bash tools/emquant/check_sdk.sh /approved/path/EMQuantAPI_CPP_Mac
 bash tools/emquant/build_snapshot_bridge.sh /approved/path/EMQuantAPI_CPP_Mac
 ```
 
+Windows x64：
+
+```powershell
+tools\emquant\build_snapshot_bridge_windows.cmd C:\approved\EMQuantAPI_CPP
+```
+
+Windows DLL 依赖 `MSVCP100.dll`/`MSVCR100.dll`；只允许安装微软签名的 VC++ 2010
+SP1 x64 Redistributable。不得从第三方站点复制运行库 DLL。
+
 脚本创建下列项目内、Git 忽略布局：
 
 ```text
 target/emquant/
-├── emquant-snapshot
+├── emquant-snapshot[.exe]
 └── runtime/
-    ├── libEMQuantAPIx64.dylib
+    ├── libEMQuantAPIx64.dylib | EmQuantAPI_x64.dll
     ├── ServerList.json.e
-    ├── loginactivator_mac
-    ├── image/
-    └── userInfo                 # 激活后生成，0600
+    ├── loginactivator_mac | LoginActivator.exe
+    ├── image/ | APIActivator/
+    └── userInfo                 # 激活后生成，不进入 Git
 ```
 
 macOS 脚本只清除复制件的隔离属性并对复制件临时签名，不修改 Downloads 中的厂商
-原文件。首次部署要在目标机运行 `runtime/loginactivator_mac` 完成短信激活；桌面
+原文件。首次部署要在目标机运行平台对应的 `LoginActivator` 完成短信激活；桌面
 东方财富客户端登录不能替代 API 激活。`userInfo` 通常与设备绑定：备份只用于同机
 灾难恢复且必须加密，迁移主机应重新激活，不应把它复制进镜像、制品、日志或 Git。
 
@@ -364,11 +376,16 @@ MAGIC_EMQUANT_USERNAME
 MAGIC_EMQUANT_PASSWORD
 ```
 
-当前开发机在 2026-07-23 重新完成短信激活并开通 Choice 权限后，官方 SDK 已成功
+macOS 开发机在 2026-07-23 重新完成短信激活并开通 Choice 权限后，官方 SDK 已成功
 登录，`csd` 日线和 `css` 日级资金流取得真实记录。Quote、五档和 `chmc` 分钟线仍
 返回 `10001012/EQERR_ACCESS_INSUFFICIENCE`。该码表示账号已认证，但具体服务或字段
 权限不足；需要分别追加对应权限并重跑数据族探针。不能用“审核通过”“登录成功”
 或某一个数据族成功推断其余数据族已经上线。
+
+Windows 开发机在 2026-08-16 安装 Choice 9.14.0.1 与官方 C++ SDK 2.7.5.0，编译并
+加载 x64 bridge、完成设备短信激活。完整 Rust probe 的 Quote、五档、日级资金流、
+日线与 5 分钟线均在查询前返回 `10001004/EQERR_ACCESS_EXPIRE`；这证明 Windows
+链路可执行，但账号 API 权限已过期，不能据此发布任何 Windows EMQuant 数据能力。
 
 ## 健康检查与上线门
 

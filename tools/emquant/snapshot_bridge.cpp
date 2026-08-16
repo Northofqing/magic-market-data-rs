@@ -1,14 +1,30 @@
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <cstdlib>
 #include <cstring>
-#include <dlfcn.h>
 #include <iomanip>
 #include <iostream>
-#include <limits.h>
 #include <sstream>
 #include <string>
-#include <unistd.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#include <limits.h>
+#include <unistd.h>
+#endif
+
+#ifdef _MSC_VER
+#pragma warning(push, 0)
+#endif
 #include "EmQuantAPI.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 using SetServerListDir = void (*)(const char *);
 using Start = EQErr (*)(EQLOGININFO *, const char *, logcallback);
@@ -20,6 +36,15 @@ using ReleaseData = EQErr (*)(void *);
 static int discard_log(const char *) { return 0; }
 
 static std::string executable_dir(const char *argv0) {
+#ifdef _WIN32
+    char resolved[MAX_PATH];
+    const DWORD length = GetModuleFileNameA(nullptr, resolved, MAX_PATH);
+    std::string value = length > 0 && length < MAX_PATH
+        ? std::string(resolved, length)
+        : std::string(argv0 ? argv0 : "");
+    const std::string::size_type slash = value.find_last_of("/\\");
+    return slash != std::string::npos ? value.substr(0, slash) : ".";
+#else
     char resolved[PATH_MAX];
     const char *path = argv0;
     if (argv0 && realpath(argv0, resolved)) path = resolved;
@@ -28,6 +53,7 @@ static std::string executable_dir(const char *argv0) {
     if (slash != std::string::npos) return value.substr(0, slash);
     char current[PATH_MAX];
     return getcwd(current, sizeof(current)) ? current : ".";
+#endif
 }
 
 static std::string json_string(const char *value) {
@@ -71,15 +97,70 @@ static std::string value_json(const EQVARIENT *value) {
     return out.str();
 }
 
-template <typename T> static T symbol(void *handle, const char *name) {
+struct Library {
+#ifdef _WIN32
+    HMODULE handle;
+#else
+    void *handle;
+#endif
+};
+
+static Library load_library(const char *path) {
+#ifdef _WIN32
+    char absolute[MAX_PATH];
+    const DWORD length = GetFullPathNameA(path, MAX_PATH, absolute, nullptr);
+    if (length == 0 || length >= MAX_PATH) {
+        std::cerr << "unable to resolve EMQuant library path " << path
+                  << ": Win32 error " << GetLastError() << '\n';
+        std::exit(3);
+    }
+    HMODULE handle = LoadLibraryExA(
+        absolute,
+        nullptr,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!handle) {
+        std::cerr << "unable to load EMQuant library " << absolute
+                  << ": Win32 error " << GetLastError() << '\n';
+        std::exit(3);
+    }
+    return {handle};
+#else
+    void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    if (!handle) {
+        std::cerr << "unable to load EMQuant library " << path << ": " << dlerror() << '\n';
+        std::exit(3);
+    }
+    return {handle};
+#endif
+}
+
+static void close_library(Library library) {
+#ifdef _WIN32
+    FreeLibrary(library.handle);
+#else
+    dlclose(library.handle);
+#endif
+}
+
+template <typename T> static T symbol(Library library, const char *name) {
+#ifdef _WIN32
+    FARPROC raw = GetProcAddress(library.handle, name);
+    if (!raw) {
+        std::cerr << "missing EMQuant symbol " << name
+                  << ": Win32 error " << GetLastError() << '\n';
+        std::exit(3);
+    }
+    return reinterpret_cast<T>(raw);
+#else
     dlerror();
-    void *raw = dlsym(handle, name);
+    void *raw = dlsym(library.handle, name);
     const char *error = dlerror();
     if (error) {
         std::cerr << "missing EMQuant symbol " << name << ": " << error << '\n';
         std::exit(3);
     }
     return reinterpret_cast<T>(raw);
+#endif
 }
 
 static const char *error_hint(EQErr error) {
@@ -124,7 +205,11 @@ int main(int argc, char **argv) {
         return 2;
     }
     const std::string runtime_dir = executable_dir(argv[0]) + "/runtime";
+#ifdef _WIN32
+    const std::string default_library = runtime_dir + "/EmQuantAPI_x64.dll";
+#else
     const std::string default_library = runtime_dir + "/libEMQuantAPIx64.dylib";
+#endif
     const char *library_env = std::getenv("MAGIC_EMQUANT_LIB");
     const char *server_dir_env = std::getenv("MAGIC_EMQUANT_SERVER_LIST");
     const char *library = library_env && library_env[0] != '\0'
@@ -139,11 +224,7 @@ int main(int argc, char **argv) {
         std::cerr << "MAGIC_EMQUANT_USERNAME and MAGIC_EMQUANT_PASSWORD must be set together\n";
         return 2;
     }
-    void *handle = dlopen(library, RTLD_NOW | RTLD_LOCAL);
-    if (!handle) {
-        std::cerr << "unable to load EMQuant library " << library << ": " << dlerror() << '\n';
-        return 3;
-    }
+    const Library handle = load_library(library);
     const auto set_server_dir = symbol<SetServerListDir>(handle, "setserverlistdir");
     const auto start = symbol<Start>(handle, "start");
     const auto stop = symbol<Stop>(handle, "stop");
@@ -161,12 +242,16 @@ int main(int argc, char **argv) {
         std::cerr << "EMQuant login failed with code " << login_error;
         if (login_error == EQERR_NEED_ACTIVATE) {
             std::cerr << " (EQERR_NEED_ACTIVATE: run " << runtime_dir
+#ifdef _WIN32
+                      << "/LoginActivator.exe and complete API activation)";
+#else
                       << "/loginactivator_mac and complete API activation)";
+#endif
         } else if (const char *hint = error_hint(login_error)) {
             std::cerr << " (" << hint << ')';
         }
         std::cerr << '\n';
-        dlclose(handle);
+        close_library(handle);
         return 4;
     }
     EQDATA *data = nullptr;
@@ -189,7 +274,7 @@ int main(int argc, char **argv) {
         std::cerr << '\n';
         if (data) release_data(data);
         stop();
-        dlclose(handle);
+        close_library(handle);
         return 5;
     }
     std::cout << "{\"records\":[";
@@ -212,6 +297,6 @@ int main(int argc, char **argv) {
     std::cout << "]}\n";
     release_data(data);
     stop();
-    dlclose(handle);
+    close_library(handle);
     return 0;
 }

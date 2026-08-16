@@ -7,18 +7,30 @@ The bridge reads SDK paths and credentials from environment variables. This
 crate never accepts, stores, or logs credentials. Provider capabilities must be
 enabled only after the account's corresponding product permissions are verified.
 
-Build the bridge, then run the live probe:
+Build the bridge for the installed official SDK, then run the live probe.
+
+macOS:
 
 ```bash
 tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac
 cargo run -p magic-emquant-rs --example live_probe --release
 ```
 
+Windows x64:
+
+```powershell
+tools\emquant\build_snapshot_bridge_windows.cmd C:\path\to\EMQuantAPI_CPP
+cargo run -p magic-emquant-rs --example live_probe --release
+```
+
 The builder always resolves paths relative to this repository and writes the
-executable to `target/emquant/emquant-snapshot` by default. It also installs the
+executable to `target/emquant/emquant-snapshot[.exe]` by default. It also installs the
 encrypted server list, activator image assets, a project-local SDK library, and
 a protected project-local copy of the activation file when present under ignored
-`target/emquant/runtime`. On macOS,
+`target/emquant/runtime`. On Windows, the builder locates the installed Visual
+Studio x64 C++ toolchain and copies only the official x64 DLL, server list and
+activator layout. The DLL is loaded from its absolute path with dependency
+search restricted to its own directory and System32. On macOS,
 the builder clears quarantine metadata and ad-hoc signs only the local library
 copy; the vendor download remains unchanged. The Rust adapter and bridge discover
 those project-local paths automatically. `MAGIC_EMQUANT_BRIDGE`,
@@ -26,7 +38,8 @@ those project-local paths automatically. `MAGIC_EMQUANT_BRIDGE`,
 overrides.
 
 If the probe reports `10001014 (EQERR_NEED_ACTIVATE)`, run the prepared
-`target/emquant/runtime/loginactivator_mac` beside `ServerList.json.e` and
+`target/emquant/runtime/LoginActivator.exe` on Windows or
+`target/emquant/runtime/loginactivator_mac` on macOS beside `ServerList.json.e` and
 complete the official API activation flow. It writes `userInfo` into that
 ignored runtime directory. A desktop Eastmoney login is a separate session and
 does not activate EMQuant API access. The macOS activator requires GTK 3 and
@@ -45,7 +58,7 @@ and year bars. Responses must be non-empty, strictly ascending, code-complete,
 and OHLC-consistent. The adapter requests unadjusted prices explicitly and
 returns at most the requested limit.
 
-The bundled Mac SDK's declared `chmc` API supplies raw minute OHLCV records.
+The bundled SDK's declared `chmc` API supplies raw minute OHLCV records.
 The adapter exposes 1/5/15/30/60-minute intervals and builds intervals above
 one minute locally from consecutive raw records. It rejects reversed records
 and gaps inside an aggregation bucket. `chmc` entitlement still needs a live
@@ -69,3 +82,11 @@ EMQuant 2.0 and later authenticate with the official `userInfo` activation
 token beside `ServerList.json.e`; no username/password variables are needed.
 `MAGIC_EMQUANT_USERNAME` and `MAGIC_EMQUANT_PASSWORD` remain optional and must
 be supplied together only for legacy SDK compatibility.
+
+On 2026-08-16, Choice terminal 9.14.0.1 and the official Windows C++ SDK
+2.7.5.0 were installed on the Windows development host. The bridge compiled,
+loaded the signed vendor runtime and completed device activation, but every
+read family failed at login with `10001004 (EQERR_ACCESS_EXPIRE)`. Therefore no
+Windows data family is admitted from that account until Choice restores its
+EMQuant API entitlement. Desktop terminal login and successful device
+activation do not override this server-side permission gate.

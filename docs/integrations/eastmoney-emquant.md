@@ -2,7 +2,7 @@
 
 ## 已探测到的本地 SDK
 
-本机存在官方 EMQuant C++ SDK：
+历史 macOS 开发机存在官方 EMQuant C++ SDK：
 
 ```text
 /Users/zhangzhen/Downloads/EMQuantAPI_CPP_Mac/
@@ -11,6 +11,11 @@
 └── x64/EmQuantAPITestExe/main.cpp
 ```
 
+2026-08-16 Windows 开发机安装 Choice 9.14.0.1，并从 Choice 量化接口官方下载
+C++ SDK 2.7.5.0 到 Git 忽略的 `target/emquant-sdk/`。下载包 SHA-256 为
+`9f3f32160b61be6cdd4dd1be260c984072364c6df88724724d0697ffeecdef89`，包含
+`EmQuantAPI.h`、`EmQuantAPI_x64.dll`、`ServerList.json.e` 和官方激活工具。
+
 SDK 版权声明要求授权使用；构建脚本只把本机动态库复制到 Git 忽略的运行目录，
 不会提交厂商文件、账号或令牌。
 
@@ -18,12 +23,12 @@ SDK 版权声明要求授权使用；构建脚本只把本机动态库复制到 
 
 | 项目契约 | EMQuant API | 状态 |
 | --- | --- | --- |
-| 实时 Quote | `csqsnapshot` | Rust 适配完成；当前字段权限返回 `10001012` |
-| 日/周/月/年 K 线 | `csd` | 日线实盘通过；周/月/年已实现待分别实测 |
-| 1/5/15/30/60 分钟线 | `chmc` + Rust 聚合 | Rust 适配完成；当前服务权限返回 `10001012` |
+| 实时 Quote | `csqsnapshot` | Rust 适配完成；历史 macOS 字段权限 `10001012`；当前 Windows 账号总门 `10001004` |
+| 日/周/月/年 K 线 | `csd` | macOS 日线历史实盘通过；当前 Windows 账号总门 `10001004` |
+| 1/5/15/30/60 分钟线 | `chmc` + Rust 聚合 | Rust 适配完成；历史 macOS 服务权限 `10001012`；当前 Windows 账号总门 `10001004` |
 | 逐笔 | `chq` | 字段与分页尚未验证，显式 `Unsupported` |
-| 盘口/Level-2 | `csqsnapshot` 五档指标 | Rust 适配完成；当前字段权限返回 `10001012` |
-| 日级资金流 | `css` 大/中/小单流入流出指标 | 实盘通过 |
+| 盘口/Level-2 | `csqsnapshot` 五档指标 | Rust 适配完成；历史 macOS 字段权限 `10001012`；当前 Windows 账号总门 `10001004` |
+| 日级资金流 | `css` 大/中/小单流入流出指标 | macOS 历史实盘通过；当前 Windows 账号总门 `10001004` |
 | 开盘集合竞价 | 未找到完整可验证字段集 | 显式 `Unsupported` |
 | 证券元数据 | 未完成字段与源时间验证 | 显式 `Unsupported` |
 
@@ -42,6 +47,8 @@ MAGIC_EMQUANT_SERVER_LIST=/absolute/path/to/sdk/x64/bin
 MAGIC_EMQUANT_USERNAME=旧版授权账号  # 可选，必须与密码同时设置
 MAGIC_EMQUANT_PASSWORD=旧版授权密码  # 可选，必须与账号同时设置
 ```
+
+Windows 覆盖路径使用 `EmQuantAPI_x64.dll`；默认同级 runtime 布局无需设置覆盖变量。
 
 账号、密码和激活令牌不进入仓库、日志或测试 fixture。EMQuant 2.0 及以后按照官方
 头文件说明，默认使用与 `ServerList.json.e` 同目录的 `userInfo` 激活令牌自动登录，
@@ -62,6 +69,13 @@ tools/emquant/build_snapshot_bridge.sh /path/to/EMQuantAPI_CPP_Mac
 target/emquant/emquant-snapshot 600396.SH PRECLOSE,OPEN,HIGH,LOW,NOW,AMOUNT
 ```
 
+Windows x64：
+
+```text
+tools\emquant\build_snapshot_bridge_windows.cmd C:\path\to\EMQuantAPI_CPP
+target\emquant\emquant-snapshot.exe 600396.SH PRECLOSE,OPEN,HIGH,LOW,NOW,AMOUNT
+```
+
 程序只调用 `csqsnapshot`、`csd`、`chmc` 和 `css` 的只读查询，向标准输出写
 JSON；错误信息不包含凭据。
 
@@ -72,7 +86,7 @@ cargo run -p magic-emquant-rs --example live_probe --release
 ```
 
 构建脚本无论从哪个目录调用，都会把桥接程序放到仓库固定路径
-`target/emquant/emquant-snapshot`，把加密服务器列表和 SDK 动态库复制到 Git 忽略的
+`target/emquant/emquant-snapshot[.exe]`，把加密服务器列表和 SDK 动态库复制到 Git 忽略的
 `target/emquant/runtime/`，复制激活器的 `image/` 资源，并在那里建立指向存在时的
 `userInfo` 激活文件的权限受限本地副本。
 在 macOS 上，脚本会清除动态库复制件的下载隔离属性，并只对复制件执行本机临时
@@ -83,11 +97,18 @@ Rust 适配层和桥接器
 路径，才设置对应变量；SDK 与激活文件不会提交到仓库。
 
 若探针返回 `10001014 (EQERR_NEED_ACTIVATE)`，执行脚本已经准备并本机临时签名的
-`target/emquant/runtime/loginactivator_mac`，在官方界面完成 API 激活。该程序与
+`target/emquant/runtime/loginactivator_mac`（macOS）或
+`target/emquant/runtime/LoginActivator.exe`（Windows），在官方界面完成 API 激活。该程序与
 `ServerList.json.e` 位于同一目录，成功后会在这个 Git 忽略目录生成 `userInfo`。
 东方财富桌面客户端登录与 EMQuant API 激活是两套独立会话，前者不会替代后者。
 macOS 激活器依赖 GTK 3，界面使用账号绑定手机号与短信验证码，不提供用户名密码
 输入框。`userInfo` 应设为仅当前用户可读写，且绝不能提交、打印或复制进发布包。
+
+2026-08-16 Windows 设备已成功生成 `userInfo`，证明设备激活完成；随后 bridge 和
+完整 Rust live probe 均收到 `10001004 (EQERR_ACCESS_EXPIRE)`。Quote、五档、日级
+资金流、日线和 5 分钟线全部被同一账号级服务端权限门阻断，没有任何查询记录产生。
+该结果不是字段名、Windows loader 或解析器失败。必须由 Choice 量化接口后台或客户
+经理恢复 EMQuant API 权限后重跑；Choice 桌面终端登录不能绕过此门。
 
 本机在 2026-07-23 再次完成短信激活并开通 Choice 权限后，关闭激活器的干净 SDK
 进程已成功登录。真实 `css` 取得华电辽能、平安银行的完整日级资金流，真实 `csd`
