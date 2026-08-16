@@ -49,18 +49,18 @@ where
 }
 
 #[test]
-fn public_capability_is_truthful_before_live_admission() {
+fn public_capability_is_scoped_to_the_admitted_economy_feed() {
     assert_provider_bounds::<YonhapClient>();
     let capabilities = YonhapClient::content_capabilities();
     assert!(!capabilities.instrument_news);
-    assert!(!capabilities.global_news);
+    assert!(capabilities.global_news);
 }
 
 #[test]
 fn unsupported_trait_calls_do_not_touch_transport() {
     let calls = Arc::new(AtomicUsize::new(0));
     let client = YonhapClient::with_channel_and_transport(
-        YonhapChannel::Economy,
+        YonhapChannel::Rolling,
         FixtureTransport {
             calls: Arc::clone(&calls),
         },
@@ -75,6 +75,22 @@ fn unsupported_trait_calls_do_not_touch_transport() {
         Err(YonhapError::Unsupported(_))
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn admitted_economy_trait_fetches_metadata() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client = YonhapClient::with_channel_and_transport(
+        YonhapChannel::Economy,
+        FixtureTransport {
+            calls: Arc::clone(&calls),
+        },
+    );
+
+    let batch = client.global_news(PositiveU32::new(1).unwrap()).unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(batch.records().len(), 1);
+    assert_eq!(batch.records()[0].topics[0].as_str(), "经济");
 }
 
 #[test]

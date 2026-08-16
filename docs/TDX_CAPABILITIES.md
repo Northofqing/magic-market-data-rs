@@ -63,6 +63,16 @@ incomplete; it never promotes `observed_at` into source time. These records
 cannot enter a downstream five-second freshness gate that requires an
 auditable source timestamp.
 
+That distinction is preserved by the external derived products. On 2026-08-16
+`OutcomeDailyBars` passed two live and three serial requests for 600396.SH with
+20 exact daily bars ending on the requested 2026-08-14 `through` date, so that
+TDX-only product is admitted. `T0Evidence` also completed two live and three
+serial four-family captures (Quote, five-level book, 20 daily bars and 20
+five-minute bars), but Quote/book retained `source_at=None` and
+`status=Unavailable`. It is therefore exposed only as an explicit opt-in gRPC
+diagnostic with `admission=UNADMITTED` and `complete=false`; successful TCP
+reads do not promote it.
+
 The security-list packet supplies name and enough evidence to identify ST
 names. The normalized Gateway joins it with the exact requested finance record
 to supply a validated listing date; mismatched identities, malformed dates and

@@ -11,18 +11,18 @@ Choice/EMQuant 适配到同一组强校验数据契约，并提供保留来源�
 不访问公网；真实行情通过显式运行的只读 probe 验收，不会用 fixture、旧缓存或零值
 冒充实盘成功。
 
-> 当前状态（2026-08-14）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
+> 当前状态（2026-08-16）：TDX、Tencent、Sina、TDX→Tencent 路由、CNInfo、THS、
 > CLS、Jin10、The Paper、Baidu，以及 SSE/SZSE 官方公告与龙虎榜、SZSE Quote/五档和 HKEX
 > 北向日统计已通过真实网络验收；CFFEX 官方 IF/IH/IC/IM 交割通知的确定性解析已实现，
-> 但 2026-07-27 的 Rustls 与 Native TLS 实网均在取得 HTTP 前握手失败，所以正式
+> 但 2026-08-16 对 `2026-07` 的 Rustls 与 Native TLS 实网均在取得 HTTP 前连接超时，所以正式
 > capability 仍为 `false`，不会用明文 HTTP 或日期公式绕过生产门禁。
 > Eastmoney 已声明能力的 live/load 探针全部通过，
 > 分钟/日级资金流因当前网络返回 empty reply 而保持未声明能力；关键词新闻响应没有
 > 结构化证券身份，也不伪装成个股新闻。东财财经滚动页已作为独立全局最新资讯实现，
 > 不把新闻文本提升为证券身份。
-> 韩联社简体中文 7 路 RSS 的 metadata-only Provider、严格解析和探针已实现；2026-07-26
-> release Rust 客户端在沙箱内外访问 Rolling/Economy 均收到 TLS unexpected EOF，
-> 因此 `global_news=false`、生产 trait 返回 `Unsupported`，只保留显式诊断入口。
+> 韩联社简体中文 7 路 RSS 的 metadata-only Provider、严格解析和探针已实现；2026-08-16
+> Economy 固定 feed 完成两次 live 和三次串行 load，已按该精确范围准入并注册 gRPC。
+> Rolling 可达但超过 100 条完整源上限，其余频道仍只保留显式诊断入口。
 > 华尔街见闻单一公开 RSS 的 metadata-only Provider 已通过 release live 和同一客户端
 > 两次串行负载验收，`global_news=true`；只输出标题、数字 ID、规范链接、发布时间和
 > 证据，不读取或输出 description/正文，也不从标题推断证券身份。
@@ -79,9 +79,9 @@ HTTP 栈由 [transport registry](docs/integrations/http-transports.tsv) 机械�
 | `magic-tdx-native-bridge` | Windows 同用户/会话 `TdxW.exe` 发现与版本证据 | crate 为 `publish=false`；Windows 诊断包与 server 同目录安装，只做短命发现 |
 | `magic-market-monitor` | 注入时间/资源策略的价格/金额/成交量确定性窗口、BR-044 事件和有界 replay | 无 I/O/系统时钟；生产阈值待 shadow evidence |
 | `magic-market-monitor-server` | 自动发现 TDX、固定 TQ-Local 快慢双路径轮询、监控组合与 4-byte big-endian 长度前缀 JSON 输出的可选 Windows 叶子服务 | amount 使用独立有界 worker；stdout 有界队列慢消费者即停；三类原始数据生产可用，异动规则仍为影子 |
-| `magic-market-grpc-contracts` | `magic.market.v1` Protobuf、descriptor set 与有界 wire 校验 | 54 个只读查询、TDX 动态监控列表、事件订阅/重放和 Agent 双向流；不含 Provider I/O |
+| `magic-market-grpc-contracts` | `magic.market.v1` Protobuf、descriptor set 与有界 wire 校验 | 60 个只读查询（含独立个股新闻与 5 个组合产品接口）、TDX 动态监控列表、事件订阅/重放和 Agent 双向流；不含 Provider I/O |
 | `magic-market-service` | transport-neutral 查询命令、能力注册和 admission-before-I/O 门 | 不依赖 gRPC；未登记 handler 明确失败 |
-| `magic-market-grpc-server` | 认证 gRPC/HTTP2 服务、blocking Provider 隔离、多 Provider 精确选择与有界事件 hub | 远程绑定强制 mTLS；54 个查询均有精确登记，其中 46 个绑定正式 handler；TDX 三类原始数据事件为 ADMITTED，异动事件仍为 UNADMITTED |
+| `magic-market-grpc-server` | 认证 gRPC/HTTP2 服务、blocking Provider 隔离、多 Provider 精确选择与有界事件 hub | 远程绑定强制 mTLS；60 个查询均有精确登记，其中 51 个操作绑定正式 handler；五个组合产品中四个已实盘，`T0Evidence` 只提供显式 opt-in 的 UNADMITTED 诊断；TDX 三类原始数据事件为 ADMITTED，异动事件仍为 UNADMITTED |
 | `magic-market-tdx-agent` | Windows 出站 Agent，监督固定同目录 monitor、应用版本化 watchlist replacement 并转发有界帧 | 列表变化重启 monitor/新 generation；不开放入站端口；仅按仓库字段门提升原始 observation admission |
 | `magic-tencent-rs` | HTTPS + GBK/JSON 的腾讯补充源，覆盖沪深京基础行情及股票/指数/ETF 行情统计 | 公共网页接口，无正式 SLA |
 | `magic-sina-rs` | HTTPS + GB18030/JSON 的新浪补充源，覆盖基础行情、沪深财务三表和沪市 ETF 期权 | 历史分时、逐笔、资金流和竞价不支持；无正式 SLA |
@@ -92,7 +92,7 @@ HTTP 栈由 [transport registry](docs/integrations/http-transports.tsv) 机械�
 | `magic-cls-rs` | 财联社签名电报/全球新闻 | 只支持全局电报，不伪造个股过滤 |
 | `magic-jin10-rs` | 金十公开 7x24 财经快讯 | 只接收未锁定的公开新闻，不请求受保护详情 |
 | `magic-thepaper-rs` | 澎湃新闻财经频道原生文章 | 外链转载不归因给澎湃；不伪造个股过滤 |
-| `magic-yonhap-rs` | 韩联社官方简体中文 RSS metadata | 当前 live 未准入；不抓正文、不存储、不伪造个股过滤 |
+| `magic-yonhap-rs` | 韩联社官方简体中文 RSS metadata | Economy 精确 feed 已准入；其他频道诊断；不抓正文、不存储、不伪造个股过滤 |
 | `magic-wallstreetcn-rs` | 华尔街见闻公开 RSS metadata | 已 live 准入；只读单一 RSS，不抓正文/文章页、不存储、不伪造个股过滤 |
 | `magic-baidu-rs` | 百度未复权日线和源端 MA5/10/20 | 不提供 Quote/分钟/Level-2 |
 | `magic-iwencai-rs` | 获授权 API Key 的语义搜索 | 无 Key 明确鉴权失败，不复用 Cookie |
@@ -195,7 +195,7 @@ Router 适配器已经通过确定性测试。
 | 资金面与筹码 | `FundFlowPoint`、`BoardFlow`、融资融券、大宗、户数、解禁、分红 | Eastmoney 除资金流 host 当前网络失败外均实盘；资金流解析/fixture 已完成 |
 | 盘后资金流排行 | `PostCloseFlow`、`PostCloseFlowRequest` | Core/Router 严格合同和 Eastmoney 诊断实现完成；实网存在缺失指标与混合 `f124`，production capability 为 false、正式 trait 返回 `Unsupported` |
 | Provider Top-N 排名 | `ProviderTopNRankingEntry`、`ProviderTopNRankingRequest` | Eastmoney 同日 15:35 后或后续休市日读取最新已结算交易日的单响应页量比/主力净流入；每行 `f297` 严格绑定请求交易日，不声明任意历史、全市场覆盖、宽度或 `source_at` |
-| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10、WallstreetCN、新华财经、第一财经、证券时报全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；Yonhap 中文 RSS metadata 已实现但 live 未准入；个股新闻仍待结构化证券身份来源 |
+| 新闻/公告/互动 | `NewsItem`、`Announcement`、`InvestorQuestion` | CLS、Jin10、WallstreetCN、新华财经、第一财经、证券时报和 Yonhap Economy 全球财经新闻，The Paper 原生财经文章，CNInfo 个股/全市场公告和互动易；个股新闻仍待结构化证券身份来源 |
 | 官方宏观与利率 | `EconomicObservation`、`ReferenceRateObservation`、`OfficialFxFixing` | NBS/PBC/CFETS/FRED/IMF/World Bank 严格实现；NBS 精确全国/北京 CPI、PBC 两个精确范围、CFETS Shibor/LPR/中间价及 World Bank 精确 USA GDP 已准入，其余显式关闭 |
 | 海外申报元数据 | `CompanyFiling` | SEC submissions recent/older 原子分页实现；描述性 User-Agent 实网 live/load 已通过，只返回元数据与规范链接 |
 | 公司与财报 | `SecurityProfile`、三类 `FinancialStatement` | Sina 沪深三表实盘；SecurityProfile/TDX 映射待接 |
@@ -250,7 +250,7 @@ Router 适配器已经通过确定性测试。
 | CLS | 签名全球电报及来源时间、发布者、关联股票/主题 | 不伪造个股过滤，不是行情源 |
 | Jin10 | 公开 7x24 财经快讯/文章及来源时间、主题；公开经济日历 | 排除锁定 VIP 行；不请求受保护详情；不伪造个股过滤 |
 | The Paper | 财经频道原生文章、栏目、标签及来源时间 | 排除外链转载；不把文本证券名提升为结构化身份 |
-| Yonhap Chinese RSS diagnostic | 7 个官方简体中文 RSS 的严格 metadata 解析已通过；2026-07-26 Rolling/Economy release 探针均在 TLS 初始化时收到 unexpected EOF | 尚未生产准入：`global_news=false`、trait 返回 `Unsupported`；只映射标题/ID/链接/时间/频道/证据，不抓正文 |
+| Yonhap Chinese RSS | Economy 固定 feed 于 2026-08-16 完成 2 次 live、3 次串行 load；7 个固定频道共用严格 metadata 解析 | `global_news=true` 仅限 Economy；Rolling 超过 100 条完整源上限，其他频道仍为显式诊断；不抓正文 |
 | WallstreetCN RSS | 单一公开 RSS 的严格 metadata 解析；2026-07-26 live 和两次串行 load 均通过 | `global_news=true`；只映射标题/数字 ID/链接/时间/证据，summary/content 恒缺失，不抓文章页或推断证券 |
 | Xinhua Finance | 官方新闻首屏严格 metadata 解析；两次 live 和三次 load 已通过 | `global_news=true`；完整校验最多 13 行后截断，只保留标题/ID/链接/时间/栏目 |
 | Yicai | 官方 `firstlist` 首屏严格 metadata 解析；两次 live 和三次 load 已通过 | `global_news=true`；不保留 NewsNotes、图片、视频或分享字段，转载保留原发布方 |
@@ -513,8 +513,11 @@ grpcurl `
 非空唯一 `request_id` 和相同的认证 metadata。完整 RPC、错误模型、订阅、重放与
 TDX Agent 合同见 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)。
 
-当前运行状态使用 `ready / agent_connected_production`。54 个 unary 查询都有精确能力项；
-46 个操作已绑定 admissions.tsv 支持的真实 Provider handler。配置东财妙想 Key 后，
+当前运行状态使用 `ready / agent_connected_production`。60 个 unary 查询都有精确能力项；
+51 个操作已绑定证据支持的真实 Provider handler。行情类可显式选择 Tencent、TDX、Sina
+或 SZSE 的已登记来源；公告/龙虎榜可选择 SSE、SZSE 或既有来源；全局新闻可选择
+WallstreetCN、Eastmoney、Jin10、CLS、ThePaper、XinhuaFinance、Yicai、SecuritiesTimes，
+个股新闻使用独立 `InstrumentNews` RPC 与 Sina。配置东财妙想 Key 后，
 `MoneyFlows`、`FundFlowSeries`、`Auctions`、`MarketBreadth` 无需 Provider 或
 `allow_unadmitted` 请求设置即可返回已有字段；响应仍强制
 `admission=UNADMITTED`、`complete=false` 和 blocker。其他诊断操作仍需显式 opt-in。
@@ -522,7 +525,9 @@ TDX Agent 合同见 [gRPC 外部对接文档](docs/integrations/grpc-external-ap
 Tencent 行情与字段级不完整证券元数据、Sina 全球指数和 USD/CNY、FRED GDP、SEC EDGAR、
 WallstreetCN 新闻以及 TDX 公共协议板块目录和公司概况。LocalTerminal 价格、累计成交量、
 累计成交额事件为 `ADMITTED`；LocalAnalysis 异动仍为 `UNADMITTED`，外部系统必须按
-每条 envelope 的标记消费。`10.211.55.3` 是当前工作站地址；
+每条 envelope 的标记消费。异动 envelope 的 `observed_at` 固定使用监控器生成消息时
+绑定的触发观测时间，payload 声明 `time_basis=local_observation_time`；它不会冒充仍为空的
+`source_at`，并在顶层保留精确证券标识以支持按标的订阅。`10.211.55.3` 是当前工作站地址；
 地址或网段变化时必须重新签发包含新 IP 的服务端证书并同步收紧防火墙规则，禁止跳过
 TLS 校验。
 
@@ -741,10 +746,10 @@ CLS/Jin10/The Paper/Baidu/Yonhap/WallstreetCN 最多 3 请求，official-exchang
 公共/官方网页 probe 都强制并发 1、请求间隔至少 1 秒。默认
 证券和日期可以通过各 crate 文档列出的 `MAGIC_*` 环境变量覆盖。
 
-Yonhap 默认读取 Rolling，可用 `MAGIC_YONHAP_CHANNEL` 选择 `economy` 等 7 个固定
-通道，`MAGIC_YONHAP_LIMIT` 限制 1–50。`MAGIC_YONHAP_MATCH` 只对当前有界 RSS
-窗口做区分大小写的本地标题匹配，不是历史搜索；当前 live 未准入时会保留真实 TLS
-错误而非回退 fixture：
+Yonhap 正式 Provider 固定读取 Economy；诊断 `live_probe` 默认 Rolling，并可用
+`MAGIC_YONHAP_CHANNEL` 选择 7 个固定通道，`MAGIC_YONHAP_LIMIT` 限制 1–50。
+`MAGIC_YONHAP_MATCH` 只对当前有界 RSS 窗口做区分大小写的本地标题匹配，不是
+历史搜索；失败保留真实错误而非回退 fixture：
 
 ```bash
 MAGIC_YONHAP_CHANNEL=economy MAGIC_YONHAP_MATCH='半导体' \
@@ -935,7 +940,7 @@ Linux 可用 `sha256sum -c SHA256SUMS`。制品绑定构建它的 OS、CPU 架�
 | CLS | macOS、Linux、Windows | `www.cls.cn` 的 HTTPS |
 | Jin10 | macOS、Linux、Windows | `flash-api.jin10.com` 的 HTTPS |
 | The Paper | macOS、Linux、Windows | `www.thepaper.cn` 的 HTTPS |
-| Yonhap | macOS、Linux、Windows | `cn.yna.co.kr` 7 个固定 RSS 路径的 HTTPS；当前 live TLS 未准入 |
+| Yonhap | macOS、Linux、Windows | `cn.yna.co.kr` 7 个固定 RSS 路径的 HTTPS；仅 Economy 正式准入 |
 | WallstreetCN | macOS、Linux、Windows | `dedicated.wallstreetcn.com` 精确 `/rss.xml` 的 HTTPS |
 | Baidu | macOS、Linux、Windows | `finance.pae.baidu.com` 的 HTTPS |
 | SSE/SZSE/HKEX official | macOS、Linux、Windows | `query.sse.com.cn`、`www.szse.cn`、`www.hkex.com.hk` 的 HTTPS |
@@ -1002,7 +1007,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | CLS live/load | 通过 | 签名电报 5 条；load 2/2、20 条记录、零失败 |
 | Jin10 live | 通过 | 公开财经新闻 5 条；锁定 VIP 行被排除；短暂 21 行滚动窗口单独受界 |
 | The Paper live | 通过 | 财经频道原生文章 5 条；栏目/标签、来源时间和原生 canonical URL 完整 |
-| Yonhap Chinese RSS | 确定性实现通过；生产未准入 | 22 个库测试、4 个能力测试和 4 个 probe 配置测试通过；Rolling/Economy release live 均为 TLS unexpected EOF，故 capability 保持 false |
+| Yonhap Chinese RSS | Economy 正式准入 | 22 个库测试、5 个能力测试和 4 个 probe 配置测试通过；Economy 2 次 live、3 次串行 load 全部通过；Rolling 可达但超过 100 条源上限 |
 | WallstreetCN RSS live/load | 通过 | live 20 条严格 metadata；同一客户端 load 2/2、各 10 条、总耗时 7.529 秒；`global_news=true`，summary/content 恒缺失 |
 | PBC 2024 money supply live/load | 通过 | 两次 live 各返回 12 个 M2 月份；Jan–Oct present、Nov–Dec missing；三次串行 load 通过；仅该精确目录 `economic_series=true` |
 | CFETS Shibor/LPR/official FX live/load | 通过 | 两次 live 覆盖 Shibor ON/1W、LPR 1Y/5Y、USD/CNY 与 100JPY/CNY；三族分别完成三次串行 load；DR007 保持 false |
@@ -1013,7 +1018,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | IMF diagnostics | 未准入 | 两次 live 与三次 load 尝试均为 typed HTTP 403，新版 Swagger 需要 beta portal 登录 |
 | World Bank exact USA GDP 2024 live/load | 通过 | 官方 per-series metadata 证明 `current US$`/Annual；两次 formal live 各返回 `29298013000000`，三次串行 load 通过；仅精确范围为 true |
 | FRED/SEC identified live/load | 通过 | 2026-08-13：FRED 两次各返回 4 个 GDP 季度记录，SEC 两次各返回 5 条 Apple 申报；两者三次串行 load 均通过，运行身份未进入证据；正式能力已开启 |
-| gRPC Provider composition | 部分实网通过、精确失败保留 | 2026-08-15：54 个操作全部精确登记，46 个正式 handler；TDX Agent 正式转发价格、累计成交量和累计成交额，异动仍为影子；东财妙想部分字段仍为 `UNADMITTED`；CFFEX 仍 TLS EOF |
+| gRPC Provider composition | Provider parity 确定性测试通过、实网仍按来源证据解释 | 2026-08-16：60 个操作全部精确登记，51 个操作有正式 handler；`IndexQuotes` 六指数、`IntradayShape` 242 点、`OutcomeDailyBars` 20 根精确 through 绑定和 `UpperLimitPoolReview` 四池均完成两次 live 与三次串行验证；`T0Evidence` 四族读取同样完成 2+3 次，但因 Quote/盘口源时间缺失只返回 opt-in UNADMITTED 诊断；Yonhap Economy 已加入 GlobalNews，Baidu/EMQuant 仅显式诊断，IMF 保持 fail-closed；TDX Agent 异动仍为影子 |
 | Eastmoney Miaoxiang diagnostics | 鉴权与部分字段实测通过、生产未准入 | Key 仅从环境读取且日志/Debug 脱敏；600396.SH 返回日级五档净额、2026-08-14 竞价量 2,951,900 股/额 53,665,542 元；全 A 返回上涨 2400、下跌 2970、平盘 170、涨停 64、跌停 13；不完整字段保持空 |
 | Baidu live/load | 通过 | 华电辽能未复权日 K/MA；load 2/2、40 条记录、零失败 |
 | SSE/SZSE/HKEX official live/load | 通过 | 2026-07-27 当前树 live 覆盖 SSE 公告/龙虎榜、SZSE 公告/Quote/五档/龙虎榜及 HKEX 两条北向日统计；load 8/8、零失败，最小请求起始间隔 1001 ms |
@@ -1052,7 +1057,7 @@ Apple Silicon 只有 x86_64 SDK 时，整条 EMQuant 进程链必须在 x86_64/R
 | [CLS 接入](docs/integrations/cls-web.md) | 签名全球电报、字段和限流边界 |
 | [Jin10 接入](docs/integrations/jin10-web.md) | 公开财经快讯、VIP 排除、字段和限流边界 |
 | [The Paper 接入](docs/integrations/thepaper-web.md) | 财经频道原生文章、转载排除和字段边界 |
-| [Yonhap RSS 接入](docs/integrations/yonhap-rss.md) | 7 个官方中文 feed、metadata-only 合同、探针与当前 TLS 未准入状态 |
+| [Yonhap RSS 接入](docs/integrations/yonhap-rss.md) | 7 个官方中文 feed、metadata-only 合同及 Economy 窄准入证据 |
 | [WallstreetCN RSS 接入](docs/integrations/wallstreetcn-rss.md) | 单一公开 feed、metadata-only 合同、生产准入与条款边界 |
 | [NBS 官方源](docs/integrations/nbs-official.md) | 匿名目录/指标/地区/数据 JSON 合同、精确全国与北京 CPI 准入边界 |
 | [PBC 官方源](docs/integrations/pbc-official.md) | 精确货币供应量目录、表结构与社融缺口 |

@@ -1,51 +1,77 @@
 use std::{env, error::Error, sync::Arc, time::Duration};
 
+use crate::derived_products::{
+    IndexQuotesRequest, IntradayShapeRecord, IntradayShapeRequest, OutcomeDailyBarsRecord,
+    OutcomeDailyBarsRequest, T0EvidenceRecord, T0EvidenceRequest, UpperLimitPoolReviewRecord,
+    UpperLimitPoolReviewRequest,
+};
+
 use magic_baidu_rs::{BaiduClient, BaiduError};
 use magic_cfets_rs::{CfetsClient, CfetsError};
+use magic_cls_rs::{ClsClient, ClsError};
 use magic_cninfo_rs::{CninfoClient, CninfoError};
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError, EastmoneyMxClient};
-use magic_exchange_rs::{CffexClient, CffexConfig, ExchangeError, HkexClient};
+use magic_emquant_rs::{EmQuantClient, EmQuantError};
+use magic_exchange_rs::{
+    CffexClient, CffexConfig, ExchangeError, HkexClient, SseClient, SseConfig, SzseClient,
+    SzseConfig,
+};
 use magic_fred_rs::{FredClient, FredError};
 use magic_gov_rs::{GovClient, GovError};
 use magic_iwencai_rs::{IwencaiClient, IwencaiError, SEMANTIC_SEARCH_ADMITTED};
 use magic_jin10_rs::{Jin10Client, Jin10Error};
 use magic_market_core::{
-    Announcements, BarsRequest, BlockTrades, BoardCategory, BoardConstituentProvider,
-    BoardConstituentRequest, BoardDirectoryProvider, BoardDirectoryRequest, BoardFlows,
-    BoardMembershipProvider, CompanyFilingRequest, CompanyFilingsProvider, ConceptHits,
-    ConsensusData, ContractMonth, CorporateActionRequest, CorporateActions, DataBatch, DataStatus,
-    DividendPlans, DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest,
-    EconomicCalendarProvider, EconomicCalendarRequest, EconomicSeriesProvider,
-    EconomicSeriesRequest, FinancialStatements, FlowInterval, FlowScope, ForeignExchangeProvider,
-    FundFlowPoint, FundFlowRequest, FundFlowSeries, FuturesDeliveryRequest, FxRequest,
-    GlobalIndexProvider, GlobalIndexRequest, HistoricalBars, HolderCounts,
-    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, InvestorQuestions, IsoDate,
-    LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketAnnouncementRequest,
-    MarketAnnouncements, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind,
-    MarketStatisticsProvider, MinuteData, MinuteDataRequest, MoneyFlow, NewsProvider, NonEmptyText,
+    Announcements, Bar, BarInterval, BarsRequest, BlockTrades, BoardCategory,
+    BoardConstituentProvider, BoardConstituentRequest, BoardDirectoryProvider,
+    BoardDirectoryRequest, BoardFlows, BoardMembershipProvider, CompanyFilingRequest,
+    CompanyFilingsProvider, ConceptHits, ConsensusData, ContractMonth, CorporateActionRequest,
+    CorporateActions, DataBatch, DataStatus, DividendPlans, DragonTigerData, DragonTigerDiscovery,
+    DragonTigerDiscoveryRequest, EconomicCalendarProvider, EconomicCalendarRequest,
+    EconomicSeriesProvider, EconomicSeriesRequest, EvidenceTimestamp, FinancialStatements,
+    FlowInterval, FlowScope, ForeignExchangeProvider, FundFlowPoint, FundFlowRequest,
+    FundFlowSeries, FuturesDeliveryRequest, FxRequest, GlobalIndexProvider, GlobalIndexRequest,
+    HistoricalBars, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
+    InstrumentSignalRequest, InvestorQuestions, IsoDate, LimitPoolRequest, LimitPools,
+    LockupEvents, MarginData, MarketAnnouncementRequest, MarketAnnouncements,
+    MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind, MarketStatisticsProvider,
+    MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsProvider, NonEmptyText,
     NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
-    OfficialFxFixingRequest, OptionData, OrderBooks, PolicyDocuments, PolicyRequest,
-    PopularityData, PositiveU32, PostCloseFlowRequest, ProviderTopNRankingRequest,
-    ProviderTopNRankings, RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest,
+    OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks, PolicyDocuments, PolicyRequest,
+    PopularityData, PositiveU32, PostCloseFlowRequest, ProviderId, ProviderTopNRankingRequest,
+    ProviderTopNRankings, Quote, RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest,
     ResearchDocumentRequest, ResearchDocuments, ResearchReports, ResearchRequest,
     SecurityMetadataProvider, SecurityProfiles, SemanticSearch, SemanticSearchRequest,
-    StatementKind, StrongStockReasons, TargetPriceData, TargetPriceRequest, TechnicalBarsProvider,
-    Trades, TradesRequest,
+    SourceEvidence, StatementKind, StrongStockReasons, TargetPriceData, TargetPriceRequest,
+    TechnicalBarsProvider, Trades, TradesRequest,
+};
+use magic_market_router::{
+    quote_source, AcceptancePolicy, AttemptStatus, FailureKind, QuoteRouter, RouterError,
+    SourceError,
 };
 use magic_market_service::{
     CanonicalPayload, Capability, Operation, OperationRegistry, QueryCommand, QueryResult,
     ServiceError,
 };
+use magic_nbs_rs::{NbsClient, NbsError};
+use magic_pbc_rs::{PbcClient, PbcError};
 use magic_sec_rs::{SecEdgarClient, SecEdgarError};
 use magic_sina_rs::{SinaClient, SinaError};
+use magic_stcn_rs::{StcnClient, StcnError};
 use magic_tdx_rs::{
     BlockService, TdxBoardProvider, TdxError, TdxSecurityProfileProvider, TdxSmartClient,
 };
 use magic_tencent_rs::{TencentClient, TencentError};
+use magic_thepaper_rs::{ThePaperClient, ThePaperError};
 use magic_ths_rs::{ThsClient, ThsError};
 use magic_wallstreetcn_rs::{WallstreetCnClient, WallstreetCnError};
+use magic_worldbank_rs::{WorldBankClient, WorldBankError};
+use magic_xinhua_rs::{XinhuaClient, XinhuaError};
+use magic_yicai_rs::{YicaiClient, YicaiError};
+use magic_yonhap_rs::{YonhapChannel, YonhapClient, YonhapError};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
+use time::{OffsetDateTime, UtcOffset};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.request";
@@ -76,6 +102,7 @@ pub const COMPANY_FILINGS_REQUEST_SCHEMA: &str = "magic.market.company_filings.r
 pub const COMPANY_FILINGS_RECORD_SCHEMA: &str = "magic.market.company_filing";
 pub const GLOBAL_NEWS_REQUEST_SCHEMA: &str = "magic.market.global_news.request";
 pub const GLOBAL_NEWS_RECORD_SCHEMA: &str = "magic.market.news_item";
+pub const INSTRUMENT_NEWS_REQUEST_SCHEMA: &str = "magic.market.instrument_news.request";
 pub const ANNOUNCEMENTS_REQUEST_SCHEMA: &str = "magic.market.announcements.request";
 pub const ANNOUNCEMENTS_RECORD_SCHEMA: &str = "magic.market.announcement";
 pub const MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA: &str = "magic.market.market_announcements.request";
@@ -145,6 +172,17 @@ pub const MONEY_FLOWS_REQUEST_SCHEMA: &str = "magic.market.money_flows.request";
 pub const MONEY_FLOWS_RECORD_SCHEMA: &str = "magic.market.money_flow";
 pub const FUTURES_DELIVERY_REQUEST_SCHEMA: &str = "magic.market.futures_delivery.request";
 pub const FUTURES_DELIVERY_RECORD_SCHEMA: &str = "magic.market.futures_delivery_event";
+pub const INDEX_QUOTES_REQUEST_SCHEMA: &str = "magic.market.index_quotes.request";
+pub const INDEX_QUOTES_RECORD_SCHEMA: &str = REALTIME_QUOTES_RECORD_SCHEMA;
+pub const INTRADAY_SHAPE_REQUEST_SCHEMA: &str = "magic.market.intraday_shape.request";
+pub const INTRADAY_SHAPE_RECORD_SCHEMA: &str = "magic.market.intraday_shape";
+pub const T0_EVIDENCE_REQUEST_SCHEMA: &str = "magic.market.t0_evidence.request";
+pub const T0_EVIDENCE_RECORD_SCHEMA: &str = "magic.market.t0_evidence";
+pub const OUTCOME_DAILY_BARS_REQUEST_SCHEMA: &str = "magic.market.outcome_daily_bars.request";
+pub const OUTCOME_DAILY_BARS_RECORD_SCHEMA: &str = "magic.market.outcome_daily_bars";
+pub const UPPER_LIMIT_POOL_REVIEW_REQUEST_SCHEMA: &str =
+    "magic.market.upper_limit_pool_review.request";
+pub const UPPER_LIMIT_POOL_REVIEW_RECORD_SCHEMA: &str = "magic.market.upper_limit_pool_review";
 pub const TECHNICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.technical_bars.request";
 pub const TECHNICAL_BARS_RECORD_SCHEMA: &str = "magic.market.technical_bar";
 pub const FUND_FLOW_SERIES_REQUEST_SCHEMA: &str = "magic.market.fund_flow_series.request";
@@ -187,6 +225,18 @@ pub enum ProductionRegistryError {
     Gov(#[from] GovError),
     #[error("WallstreetCN production client initialization failed: {0}")]
     WallstreetCn(#[from] WallstreetCnError),
+    #[error("CLS production client initialization failed: {0}")]
+    Cls(#[from] ClsError),
+    #[error("ThePaper production client initialization failed: {0}")]
+    ThePaper(#[from] ThePaperError),
+    #[error("Xinhua production client initialization failed: {0}")]
+    Xinhua(#[from] XinhuaError),
+    #[error("Yicai production client initialization failed: {0}")]
+    Yicai(#[from] YicaiError),
+    #[error("Securities Times production client initialization failed: {0}")]
+    Stcn(#[from] StcnError),
+    #[error("Yonhap production client initialization failed: {0}")]
+    Yonhap(#[from] YonhapError),
     #[error("Eastmoney production client initialization failed: {0}")]
     Eastmoney(#[from] EastmoneyError),
     #[error("FRED production client initialization failed: {0}")]
@@ -203,6 +253,12 @@ pub enum ProductionRegistryError {
     Iwencai(#[from] IwencaiError),
     #[error("TDX production client initialization failed: {0}")]
     Tdx(#[from] TdxError),
+    #[error("NBS production client initialization failed: {0}")]
+    Nbs(#[from] NbsError),
+    #[error("PBC production client initialization failed: {0}")]
+    Pbc(#[from] PbcError),
+    #[error("World Bank production client initialization failed: {0}")]
+    WorldBank(#[from] WorldBankError),
     #[error("production operation registration failed: {0}")]
     Service(#[from] ServiceError),
 }
@@ -321,6 +377,28 @@ fn registry_with_tencent(
         },
         move |command| execute_tencent_quotes(&quotes, command, maximum_payload_bytes),
     )?;
+    let index_quotes = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::IndexQuotes,
+            TENCENT_PROVIDER,
+            "one through six unique Shanghai or Shenzhen index identities with caller-selected positive source freshness",
+        ),
+        move |command| {
+            execute_tencent_index_quotes(&index_quotes, command, maximum_payload_bytes)
+        },
+    )?;
+    let intraday_shape = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::IntradayShape,
+            "LocalAnalysis",
+            "deterministic regular-session shape from one complete Tencent minute series",
+        ),
+        move |command| {
+            execute_tencent_intraday_shape(&intraday_shape, command, maximum_payload_bytes)
+        },
+    )?;
     let bars = client.clone();
     registry.register_handler(
         capability(Operation::HistoricalBars, TENCENT_BARS_SCOPE),
@@ -411,6 +489,7 @@ fn register_extended_providers(
             )
         },
     )?;
+    let financials = sina.clone();
     registry.register_handler(
         admitted(
             Operation::FinancialStatements,
@@ -420,7 +499,7 @@ fn register_extended_providers(
         move |command| {
             let request: FinancialStatementsRequest =
                 decode_request(&command, FINANCIAL_STATEMENTS_REQUEST_SCHEMA)?;
-            let batch = sina
+            let batch = financials
                 .financial_statements(&request.instruments, request.kind)
                 .map_err(|error| provider_error(Operation::FinancialStatements, error))?;
             provider_query_result(
@@ -470,6 +549,7 @@ fn register_extended_providers(
     )?;
 
     register_fred(registry, maximum_payload_bytes)?;
+    register_economic_provider_parity(registry, provider_timeout, maximum_payload_bytes)?;
     register_sec(registry, maximum_payload_bytes)?;
     register_eastmoney(registry, provider_timeout, maximum_payload_bytes)?;
 
@@ -493,6 +573,8 @@ fn register_extended_providers(
             )
         },
     )?;
+    register_global_news_parity(registry, provider_timeout, maximum_payload_bytes)?;
+    register_sina_parity(registry, sina, maximum_payload_bytes)?;
 
     let cninfo = CninfoClient::new()?;
     let announcements = cninfo.clone();
@@ -575,6 +657,267 @@ fn register_extended_providers(
     Ok(())
 }
 
+fn register_global_news_parity(
+    registry: &mut OperationRegistry,
+    provider_timeout: Duration,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    register_global_news_provider(
+        registry,
+        ClsClient::with_timeout(provider_timeout)?,
+        "Cls",
+        "bounded public CLS financial-news metadata",
+        maximum_payload_bytes,
+    )?;
+    register_global_news_provider(
+        registry,
+        ThePaperClient::with_timeout(provider_timeout)?,
+        "ThePaper",
+        "bounded native The Paper finance-channel article metadata",
+        maximum_payload_bytes,
+    )?;
+    register_global_news_provider(
+        registry,
+        XinhuaClient::with_timeout(provider_timeout)?,
+        "XinhuaFinance",
+        "bounded first-party Xinhua Finance front-page metadata",
+        maximum_payload_bytes,
+    )?;
+    register_global_news_provider(
+        registry,
+        YicaiClient::with_timeout(provider_timeout)?,
+        "Yicai",
+        "bounded first-party Yicai first-page metadata",
+        maximum_payload_bytes,
+    )?;
+    register_global_news_provider(
+        registry,
+        StcnClient::with_timeout(provider_timeout)?,
+        "SecuritiesTimes",
+        "bounded first-party Securities Times front-page metadata",
+        maximum_payload_bytes,
+    )?;
+    register_global_news_provider(
+        registry,
+        YonhapClient::for_channel_with_timeout(YonhapChannel::Economy, provider_timeout)?,
+        "Yonhap",
+        "bounded official Yonhap Economy RSS metadata only",
+        maximum_payload_bytes,
+    )?;
+    Ok(())
+}
+
+fn register_global_news_provider<P>(
+    registry: &mut OperationRegistry,
+    client: P,
+    provider: &'static str,
+    scope: &'static str,
+    maximum_payload_bytes: usize,
+) -> Result<(), ServiceError>
+where
+    P: NewsProvider + Send + Sync + 'static,
+    P::Error: Error + 'static,
+{
+    registry.register_handler(
+        admitted(Operation::GlobalNews, provider, scope),
+        move |command| {
+            let request: LimitRequest = decode_request(&command, GLOBAL_NEWS_REQUEST_SCHEMA)?;
+            let batch = client
+                .global_news(request.limit)
+                .map_err(|error| provider_error(Operation::GlobalNews, error))?;
+            provider_query_result(
+                batch,
+                provider,
+                GLOBAL_NEWS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )
+}
+
+fn register_economic_provider_parity(
+    registry: &mut OperationRegistry,
+    provider_timeout: Duration,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    register_economic_provider(
+        registry,
+        NbsClient::new(provider_timeout)?,
+        "Nbs",
+        "admitted national and regional NBS series with exact source namespace and period",
+        maximum_payload_bytes,
+    )?;
+    register_economic_provider(
+        registry,
+        PbcClient::new(provider_timeout)?,
+        "Pbc",
+        "admitted money-supply, social-financing and regional PBC series",
+        maximum_payload_bytes,
+    )?;
+    register_economic_provider(
+        registry,
+        WorldBankClient::new()?,
+        "WorldBank",
+        "exact admitted World Bank source 2 USA annual GDP observation",
+        maximum_payload_bytes,
+    )?;
+    Ok(())
+}
+
+fn register_economic_provider<P>(
+    registry: &mut OperationRegistry,
+    client: P,
+    provider: &'static str,
+    scope: &'static str,
+    maximum_payload_bytes: usize,
+) -> Result<(), ServiceError>
+where
+    P: EconomicSeriesProvider + Send + Sync + 'static,
+    P::Error: Error + 'static,
+{
+    registry.register_handler(
+        admitted(Operation::EconomicSeries, provider, scope),
+        move |command| {
+            execute_typed(
+                command,
+                ECONOMIC_SERIES_REQUEST_SCHEMA,
+                ECONOMIC_SERIES_RECORD_SCHEMA,
+                provider,
+                maximum_payload_bytes,
+                |request: &EconomicSeriesRequest| client.economic_series(request),
+            )
+        },
+    )
+}
+
+fn register_sina_parity(
+    registry: &mut OperationRegistry,
+    client: SinaClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ServiceError> {
+    let quotes = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::RealtimeQuotes,
+            "Sina",
+            "bounded verified Shanghai/Shenzhen/Beijing snapshot quotes",
+        ),
+        move |command| {
+            let request: RealtimeQuotesRequest =
+                decode_request(&command, REALTIME_QUOTES_REQUEST_SCHEMA)?;
+            let batch = quotes
+                .realtime_quotes(&request.instruments)
+                .map_err(|error| provider_error(Operation::RealtimeQuotes, error))?;
+            provider_query_result(
+                batch,
+                "Sina",
+                REALTIME_QUOTES_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let bars = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::HistoricalBars,
+            "Sina",
+            "one verified Shanghai/Shenzhen/Beijing instrument and bounded source interval",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                HISTORICAL_BARS_REQUEST_SCHEMA,
+                HISTORICAL_BARS_RECORD_SCHEMA,
+                "Sina",
+                maximum_payload_bytes,
+                |request: &BarsRequest| bars.historical_bars(request),
+            )
+        },
+    )?;
+
+    let minute = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::MinuteData,
+            "Sina",
+            "one verified Shanghai/Shenzhen/Beijing instrument and bounded minute request",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                MINUTE_DATA_REQUEST_SCHEMA,
+                MINUTE_DATA_RECORD_SCHEMA,
+                "Sina",
+                maximum_payload_bytes,
+                |request: &MinuteDataRequest| minute.minute_data(request),
+            )
+        },
+    )?;
+
+    let books = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::OrderBooks,
+            "Sina",
+            "bounded verified Shanghai/Shenzhen/Beijing five-level order books",
+        ),
+        move |command| {
+            let request: InstrumentsRequest = decode_request(&command, ORDER_BOOKS_REQUEST_SCHEMA)?;
+            let batch = books
+                .order_books(&request.instruments)
+                .map_err(|error| provider_error(Operation::OrderBooks, error))?;
+            provider_query_result(
+                batch,
+                "Sina",
+                ORDER_BOOKS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let metadata = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::SecurityMetadata,
+            "Sina",
+            "bounded verified source security metadata",
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, SECURITY_METADATA_REQUEST_SCHEMA)?;
+            let batch = metadata
+                .security_metadata(&request.instruments)
+                .map_err(|error| provider_error(Operation::SecurityMetadata, error))?;
+            provider_query_result(
+                batch,
+                "Sina",
+                SECURITY_METADATA_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    registry.register_handler(
+        admitted(
+            Operation::InstrumentNews,
+            "Sina",
+            "one Shanghai or Shenzhen A-share equity; bounded official company-news pages and inclusive source-date filter",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                INSTRUMENT_NEWS_REQUEST_SCHEMA,
+                GLOBAL_NEWS_RECORD_SCHEMA,
+                "Sina",
+                maximum_payload_bytes,
+                |request: &InstrumentDateRangeRequest| client.instrument_news(request),
+            )
+        },
+    )?;
+    Ok(())
+}
+
 fn register_exact_blockers(registry: &mut OperationRegistry) -> Result<(), ServiceError> {
     for capability in [
         blocked(
@@ -589,6 +932,12 @@ fn register_exact_blockers(registry: &mut OperationRegistry) -> Result<(), Servi
             "derived complete-market breadth snapshot",
             "no admitted complete-market source composition is registered for breadth analysis",
         ),
+        blocked(
+            Operation::EconomicSeries,
+            "Imf",
+            "annual IMF economic-series adapter",
+            "IMF DataMapper returns HTTP 403 and the replacement SDMX contract requires beta-portal authentication",
+        ),
     ] {
         registry.register_unavailable(capability)?;
     }
@@ -601,6 +950,7 @@ fn register_diagnostic_handlers(
     maximum_payload_bytes: usize,
 ) -> Result<(), ProductionRegistryError> {
     let baidu = BaiduClient::with_timeout(provider_timeout)?;
+    let baidu_bars = baidu.clone();
     registry.register_diagnostic_handler(
         blocked(
             Operation::TechnicalBars,
@@ -616,6 +966,24 @@ fn register_diagnostic_handlers(
                 "Baidu",
                 maximum_payload_bytes,
                 |request: &BarsRequest| baidu.technical_bars(request),
+            )
+        },
+    )?;
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::HistoricalBars,
+            "Baidu",
+            "one A-share equity; bounded unadjusted daily OHLCV/amount",
+            "trading-calendar, adjacent-session and corporate-action continuity evidence remain unproved",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                HISTORICAL_BARS_REQUEST_SCHEMA,
+                HISTORICAL_BARS_RECORD_SCHEMA,
+                "Baidu",
+                maximum_payload_bytes,
+                |request: &BarsRequest| baidu_bars.historical_bars(request),
             )
         },
     )?;
@@ -809,6 +1177,134 @@ fn register_diagnostic_handlers(
             )
         },
     )?;
+    register_emquant_diagnostics(registry, provider_timeout, maximum_payload_bytes)?;
+    Ok(())
+}
+
+fn register_emquant_diagnostics(
+    registry: &mut OperationRegistry,
+    provider_timeout: Duration,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    let client = match EmQuantClient::discover()
+        .and_then(|client| client.with_timeout(provider_timeout))
+    {
+        Ok(client) => Arc::new(client),
+        Err(error) => {
+            let blocker = format!(
+                "EMQuant read-only bridge is not runtime-discoverable or admitted: {error}"
+            );
+            for (operation, scope) in [
+                (
+                    Operation::RealtimeQuotes,
+                    "runtime-entitled EMQuant quote snapshot diagnostic",
+                ),
+                (
+                    Operation::HistoricalBars,
+                    "runtime-entitled EMQuant daily or intraday bar diagnostic",
+                ),
+                (
+                    Operation::OrderBooks,
+                    "runtime-entitled EMQuant five-level order-book diagnostic",
+                ),
+                (
+                    Operation::MoneyFlows,
+                    "runtime-entitled EMQuant normalized money-flow diagnostic",
+                ),
+            ] {
+                registry.register_unavailable(blocked(operation, "EmQuant", scope, &blocker))?;
+            }
+            return Ok(());
+        }
+    };
+
+    let quotes = client.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::RealtimeQuotes,
+            "EmQuant",
+            "runtime-entitled EMQuant quote snapshot diagnostic",
+            "EMQuant bridge availability and product entitlement do not constitute repository admission",
+        ),
+        move |command| {
+            let request: RealtimeQuotesRequest =
+                decode_request(&command, REALTIME_QUOTES_REQUEST_SCHEMA)?;
+            let batch = quotes
+                .realtime_quotes(&request.instruments)
+                .map_err(|error| provider_error(Operation::RealtimeQuotes, error))?;
+            provider_query_result(
+                batch,
+                "EmQuant",
+                REALTIME_QUOTES_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let bars = client.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::HistoricalBars,
+            "EmQuant",
+            "runtime-entitled EMQuant daily or intraday bar diagnostic",
+            "EMQuant bridge availability and product entitlement do not constitute repository admission",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                HISTORICAL_BARS_REQUEST_SCHEMA,
+                HISTORICAL_BARS_RECORD_SCHEMA,
+                "EmQuant",
+                maximum_payload_bytes,
+                |request: &BarsRequest| bars.historical_bars(request),
+            )
+        },
+    )?;
+
+    let books = client.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::OrderBooks,
+            "EmQuant",
+            "runtime-entitled EMQuant five-level order-book diagnostic",
+            "EMQuant bridge availability and product entitlement do not constitute repository admission",
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, ORDER_BOOKS_REQUEST_SCHEMA)?;
+            let batch = books
+                .order_books(&request.instruments)
+                .map_err(|error| provider_error(Operation::OrderBooks, error))?;
+            provider_query_result(
+                batch,
+                "EmQuant",
+                ORDER_BOOKS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::MoneyFlows,
+            "EmQuant",
+            "runtime-entitled EMQuant normalized money-flow diagnostic",
+            "EMQuant bridge availability, field methodology and product entitlement remain repository-unadmitted",
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, MONEY_FLOWS_REQUEST_SCHEMA)?;
+            let batch = client
+                .money_flows(&request.instruments)
+                .map_err(|error| provider_error(Operation::MoneyFlows, error))?;
+            provider_query_result(
+                batch,
+                "EmQuant",
+                MONEY_FLOWS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
     Ok(())
 }
 
@@ -992,6 +1488,7 @@ fn register_additional_providers(
             )
         },
     )?;
+    register_exchange_parity(registry, provider_timeout, maximum_payload_bytes)?;
 
     let ths = ThsClient::new()?;
     let consensus = ths.clone();
@@ -1121,12 +1618,219 @@ fn register_additional_providers(
     Ok(())
 }
 
+fn register_exchange_parity(
+    registry: &mut OperationRegistry,
+    provider_timeout: Duration,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    let sse = SseClient::with_config(SseConfig {
+        timeout: provider_timeout,
+        ..SseConfig::default()
+    })?;
+    let szse = SzseClient::with_config(SzseConfig {
+        timeout: provider_timeout,
+        ..SzseConfig::default()
+    })?;
+
+    let quotes = szse.clone();
+    registry.register_handler(
+        admitted(
+            Operation::RealtimeQuotes,
+            "Szse",
+            "official SZSE snapshot quotes for explicitly requested Shenzhen instruments",
+        ),
+        move |command| {
+            let request: RealtimeQuotesRequest =
+                decode_request(&command, REALTIME_QUOTES_REQUEST_SCHEMA)?;
+            let batch = quotes
+                .realtime_quotes(&request.instruments)
+                .map_err(|error| provider_error(Operation::RealtimeQuotes, error))?;
+            provider_query_result(
+                batch,
+                "Szse",
+                REALTIME_QUOTES_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let books = szse.clone();
+    registry.register_handler(
+        admitted(
+            Operation::OrderBooks,
+            "Szse",
+            "official SZSE five-level books for explicitly requested Shenzhen instruments",
+        ),
+        move |command| {
+            let request: InstrumentsRequest = decode_request(&command, ORDER_BOOKS_REQUEST_SCHEMA)?;
+            let batch = books
+                .order_books(&request.instruments)
+                .map_err(|error| provider_error(Operation::OrderBooks, error))?;
+            provider_query_result(
+                batch,
+                "Szse",
+                ORDER_BOOKS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let sse_announcements = sse.clone();
+    registry.register_handler(
+        admitted(
+            Operation::Announcements,
+            "Sse",
+            "official SSE instrument announcements for an explicit bounded date range",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                ANNOUNCEMENTS_REQUEST_SCHEMA,
+                ANNOUNCEMENTS_RECORD_SCHEMA,
+                "Sse",
+                maximum_payload_bytes,
+                |request: &InstrumentDateRangeRequest| sse_announcements.announcements(request),
+            )
+        },
+    )?;
+    let szse_announcements = szse.clone();
+    registry.register_handler(
+        admitted(
+            Operation::Announcements,
+            "Szse",
+            "official SZSE instrument announcements for an explicit bounded date range",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                ANNOUNCEMENTS_REQUEST_SCHEMA,
+                ANNOUNCEMENTS_RECORD_SCHEMA,
+                "Szse",
+                maximum_payload_bytes,
+                |request: &InstrumentDateRangeRequest| szse_announcements.announcements(request),
+            )
+        },
+    )?;
+
+    registry.register_handler(
+        admitted(
+            Operation::DragonTiger,
+            "Sse",
+            "official SSE dragon-tiger entries or seats for an explicit request",
+        ),
+        move |command| {
+            let request: DragonTigerRequest =
+                decode_request(&command, DRAGON_TIGER_REQUEST_SCHEMA)?;
+            match request {
+                DragonTigerRequest::Entries(request) => {
+                    let batch = sse
+                        .dragon_tiger_entries(&request)
+                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
+                    provider_query_result(
+                        batch,
+                        "Sse",
+                        DRAGON_TIGER_ENTRY_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+                DragonTigerRequest::Seats(request) => {
+                    let batch = sse
+                        .dragon_tiger_seats(&request)
+                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
+                    provider_query_result(
+                        batch,
+                        "Sse",
+                        DRAGON_TIGER_SEAT_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+            }
+        },
+    )?;
+    registry.register_handler(
+        admitted(
+            Operation::DragonTiger,
+            "Szse",
+            "official SZSE dragon-tiger entries or seats for an explicit request",
+        ),
+        move |command| {
+            let request: DragonTigerRequest =
+                decode_request(&command, DRAGON_TIGER_REQUEST_SCHEMA)?;
+            match request {
+                DragonTigerRequest::Entries(request) => {
+                    let batch = szse
+                        .dragon_tiger_entries(&request)
+                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
+                    provider_query_result(
+                        batch,
+                        "Szse",
+                        DRAGON_TIGER_ENTRY_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+                DragonTigerRequest::Seats(request) => {
+                    let batch = szse
+                        .dragon_tiger_seats(&request)
+                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
+                    provider_query_result(
+                        batch,
+                        "Szse",
+                        DRAGON_TIGER_SEAT_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+            }
+        },
+    )?;
+    Ok(())
+}
+
 fn register_tdx_public(
     registry: &mut OperationRegistry,
     provider_timeout: Duration,
     maximum_payload_bytes: usize,
 ) -> Result<(), ProductionRegistryError> {
     let timeout_seconds = provider_timeout.as_secs_f64();
+    let client = Arc::new(TdxSmartClient::new());
+    register_tdx_market_parity(
+        registry,
+        client.clone(),
+        timeout_seconds,
+        maximum_payload_bytes,
+    )?;
+    let t0_evidence = client.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::T0Evidence,
+            "Tdx",
+            "bounded TDX-only quote, book, daily-bar and five-minute-bar evidence bundle",
+            "TDX public quote and order-book packets do not expose an admitted source timestamp; the exact available fields are diagnostic-only",
+        ),
+        move |command| {
+            execute_tdx_t0_evidence(
+                &t0_evidence,
+                timeout_seconds,
+                command,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    let outcome_bars = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::OutcomeDailyBars,
+            "Tdx",
+            "TDX-only exact daily-bar preimage ending on the requested through date with no routing or fallback",
+        ),
+        move |command| {
+            execute_tdx_outcome_daily_bars(
+                &outcome_bars,
+                timeout_seconds,
+                command,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
     let boards = TdxBoardProvider::new("180.153.18.170", 7709, timeout_seconds);
     let directory = boards.clone();
     registry.register_handler(
@@ -1233,7 +1937,6 @@ fn register_tdx_public(
         },
     )?;
 
-    let client = Arc::new(TdxSmartClient::new());
     registry.register_handler(
         admitted(
             Operation::CorporateActions,
@@ -1253,6 +1956,153 @@ fn register_tdx_public(
                 response.into_batch(),
                 "Tdx",
                 CORPORATE_ACTIONS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn register_tdx_market_parity(
+    registry: &mut OperationRegistry,
+    client: Arc<TdxSmartClient>,
+    timeout_seconds: f64,
+    maximum_payload_bytes: usize,
+) -> Result<(), ServiceError> {
+    let quotes = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::RealtimeQuotes,
+            "Tdx",
+            "TDX public protocol 1..=60 normalized quotes without strict source-time freshness",
+        ),
+        move |command| {
+            let request: RealtimeQuotesRequest =
+                decode_request(&command, REALTIME_QUOTES_REQUEST_SCHEMA)?;
+            quotes
+                .connect_to_any(Some(timeout_seconds))
+                .map_err(|error| provider_error(Operation::RealtimeQuotes, error))?;
+            let batch = quotes
+                .realtime_quotes(&request.instruments)
+                .map_err(|error| provider_error(Operation::RealtimeQuotes, error))?;
+            provider_query_result(
+                batch,
+                "Tdx",
+                REALTIME_QUOTES_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let bars = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::HistoricalBars,
+            "Tdx",
+            "TDX public protocol normalized exact-pagination historical bars",
+        ),
+        move |command| {
+            let request: BarsRequest = decode_request(&command, HISTORICAL_BARS_REQUEST_SCHEMA)?;
+            bars.connect_to_any(Some(timeout_seconds))
+                .map_err(|error| provider_error(Operation::HistoricalBars, error))?;
+            let batch = bars
+                .historical_bars(&request)
+                .map_err(|error| provider_error(Operation::HistoricalBars, error))?;
+            provider_query_result(
+                batch,
+                "Tdx",
+                HISTORICAL_BARS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let minute = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::MinuteData,
+            "Tdx",
+            "TDX public protocol normalized current or historical minute observations",
+        ),
+        move |command| {
+            let request: MinuteDataRequest = decode_request(&command, MINUTE_DATA_REQUEST_SCHEMA)?;
+            minute
+                .connect_to_any(Some(timeout_seconds))
+                .map_err(|error| provider_error(Operation::MinuteData, error))?;
+            let batch = minute
+                .minute_data(&request)
+                .map_err(|error| provider_error(Operation::MinuteData, error))?;
+            provider_query_result(
+                batch,
+                "Tdx",
+                MINUTE_DATA_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let books = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::OrderBooks,
+            "Tdx",
+            "TDX public protocol normalized five-level order books",
+        ),
+        move |command| {
+            let request: InstrumentsRequest = decode_request(&command, ORDER_BOOKS_REQUEST_SCHEMA)?;
+            books
+                .connect_to_any(Some(timeout_seconds))
+                .map_err(|error| provider_error(Operation::OrderBooks, error))?;
+            let batch = books
+                .order_books(&request.instruments)
+                .map_err(|error| provider_error(Operation::OrderBooks, error))?;
+            provider_query_result(
+                batch,
+                "Tdx",
+                ORDER_BOOKS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let trades = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::Trades,
+            "Tdx",
+            "TDX public protocol bounded normalized current or historical transactions",
+        ),
+        move |command| {
+            let request: TradesRequest = decode_request(&command, TRADES_REQUEST_SCHEMA)?;
+            trades
+                .connect_to_any(Some(timeout_seconds))
+                .map_err(|error| provider_error(Operation::Trades, error))?;
+            let batch = trades
+                .trades(&request)
+                .map_err(|error| provider_error(Operation::Trades, error))?;
+            provider_query_result(batch, "Tdx", TRADES_RECORD_SCHEMA, maximum_payload_bytes)
+        },
+    )?;
+
+    registry.register_handler(
+        admitted(
+            Operation::SecurityMetadata,
+            "Tdx",
+            "TDX public protocol bounded normalized security metadata",
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, SECURITY_METADATA_REQUEST_SCHEMA)?;
+            client
+                .connect_to_any(Some(timeout_seconds))
+                .map_err(|error| provider_error(Operation::SecurityMetadata, error))?;
+            let batch = client
+                .security_metadata(&request.instruments)
+                .map_err(|error| provider_error(Operation::SecurityMetadata, error))?;
+            provider_query_result(
+                batch,
+                "Tdx",
+                SECURITY_METADATA_RECORD_SCHEMA,
                 maximum_payload_bytes,
             )
         },
@@ -1399,6 +2249,17 @@ fn register_eastmoney(
         "upper, broken, lower and previous-upper pools for an exact trading date",
         maximum_payload_bytes,
         |client, request: &LimitPoolRequest| client.limit_pool(request),
+    )?;
+    let upper_limit_review = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::UpperLimitPoolReview,
+            "Eastmoney",
+            "atomic four-family Eastmoney limit-pool facts for one exact trading date",
+        ),
+        move |command| {
+            execute_upper_limit_pool_review(&upper_limit_review, command, maximum_payload_bytes)
+        },
     )?;
     register_eastmoney_typed(
         registry,
@@ -1690,6 +2551,926 @@ fn execute_tencent_quotes(
     )
 }
 
+fn execute_tencent_index_quotes(
+    client: &TencentClient,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: IndexQuotesRequest = decode_request(&command, INDEX_QUOTES_REQUEST_SCHEMA)?;
+    let maximum = Duration::from_millis(request.maximum_source_age_millis());
+    let policy = AcceptancePolicy::new()
+        .with_require_complete(true)
+        .with_require_source_at(true)
+        .with_require_available_records(true)
+        .with_max_source_age(maximum)
+        .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?;
+    let mut router = QuoteRouter::new(policy);
+    router
+        .register(quote_source(
+            ProviderId::Tencent,
+            Arc::new(client.clone()),
+            classify_tencent_source_error,
+        ))
+        .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    let batch = router
+        .route(request.indices())
+        .map_err(map_index_quote_router_error)?
+        .into_batch();
+    provider_query_result(
+        batch,
+        TENCENT_PROVIDER,
+        INDEX_QUOTES_RECORD_SCHEMA,
+        maximum_payload_bytes,
+    )
+}
+
+fn execute_tencent_intraday_shape(
+    client: &TencentClient,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: IntradayShapeRequest = decode_request(&command, INTRADAY_SHAPE_REQUEST_SCHEMA)?;
+    let minute_request = match request.trading_date() {
+        Some(date) => MinuteDataRequest::new(request.instrument().clone())
+            .with_date(date.as_str())
+            .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?,
+        None => MinuteDataRequest::new(request.instrument().clone()),
+    };
+    let batch = client
+        .minute_data(&minute_request)
+        .map_err(|error| map_tencent_error(Operation::IntradayShape, error))?;
+    if !batch.quality().is_complete()
+        && !batch
+            .quality()
+            .issues()
+            .iter()
+            .all(|issue| issue.ends_with(": cumulative amount unavailable"))
+    {
+        return Err(ServiceError::FailedPrecondition(format!(
+            "Tencent IntradayShape input is incomplete: {}",
+            batch.quality().issues().join("; ")
+        )));
+    }
+    let evidence = tencent_batch_evidence(&batch)?;
+    let regular_points = batch
+        .records()
+        .iter()
+        .filter(|point| is_regular_session_minute(point.minute_at()))
+        .collect::<Vec<_>>();
+    if regular_points.is_empty() {
+        return Err(ServiceError::FailedPrecondition(
+            "Tencent IntradayShape input has no regular-session points".into(),
+        ));
+    }
+    if regular_points.len()
+        > usize::try_from(request.maximum_points().get()).map_err(|_| {
+            ServiceError::InvalidRequest("IntradayShape maximum_points exceeds usize".into())
+        })?
+    {
+        return Err(ServiceError::FailedPrecondition(format!(
+            "Tencent regular-session minute count {} exceeds requested maximum_points {}",
+            regular_points.len(),
+            request.maximum_points().get()
+        )));
+    }
+    validate_intraday_points(&regular_points, request.instrument(), &evidence)?;
+    let trading_date = IsoDate::new(&regular_points[0].minute_at()[..10])
+        .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    if request
+        .trading_date()
+        .is_some_and(|requested| requested != &trading_date)
+    {
+        return Err(ServiceError::FailedPrecondition(
+            "Tencent IntradayShape source date contradicts the request".into(),
+        ));
+    }
+    if request.trading_date().is_none() && trading_date != current_china_date_for_shape()? {
+        return Err(ServiceError::FailedPrecondition(format!(
+            "Tencent current-session minute source date {} is not the current China date",
+            trading_date.as_str()
+        )));
+    }
+    let first_at = minute_point_instant(regular_points[0].minute_at())?;
+    let last = regular_points
+        .last()
+        .copied()
+        .ok_or_else(|| ServiceError::Internal("IntradayShape lost its last point".into()))?;
+    let last_at = minute_point_instant(last.minute_at())?;
+    let open = regular_points[0].price();
+    let latest = last.price();
+    let high = magic_market_core::Price::new(
+        regular_points
+            .iter()
+            .map(|point| point.price().get())
+            .fold(f64::NEG_INFINITY, f64::max),
+    )
+    .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    let low = magic_market_core::Price::new(
+        regular_points
+            .iter()
+            .map(|point| point.price().get())
+            .fold(f64::INFINITY, f64::min),
+    )
+    .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    let (up_points, down_points, flat_points) = intraday_direction_counts(&regular_points)?;
+    let cumulative_volume = Some(last.cumulative_quantity());
+    let amount_presence = regular_points
+        .iter()
+        .map(|point| point.cumulative_amount().is_some())
+        .collect::<std::collections::BTreeSet<_>>();
+    if amount_presence.len() != 1 {
+        return Err(ServiceError::FailedPrecondition(
+            "IntradayShape cumulative amount presence changes within one source series".into(),
+        ));
+    }
+    let cumulative_amount = last.cumulative_amount();
+    let vwap = match (cumulative_amount, last.cumulative_quantity().get()) {
+        (Some(amount), lots) if lots > 0.0 => Some(
+            magic_market_core::Price::new(amount.get() / (lots * 100.0))
+                .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?,
+        ),
+        _ => None,
+    };
+    let input_evidence = vec![evidence];
+    let input_digest_sha256 = intraday_shape_digest(&request, batch.records(), &input_evidence)?;
+    let point_count = PositiveU32::new(u32::try_from(regular_points.len()).map_err(|_| {
+        ServiceError::FailedPrecondition("IntradayShape point count exceeds u32".into())
+    })?)
+    .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    let record = IntradayShapeRecord::new(
+        request.instrument().clone(),
+        trading_date,
+        first_at,
+        last_at,
+        point_count,
+        open,
+        high,
+        low,
+        latest,
+        vwap,
+        cumulative_volume,
+        cumulative_amount,
+        up_points,
+        down_points,
+        flat_points,
+        input_evidence.clone(),
+        PositiveU32::new(1).map_err(|error| ServiceError::Internal(error.to_string()))?,
+        input_digest_sha256.clone(),
+    )
+    .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    let payload = CanonicalPayload::new(
+        INTRADAY_SHAPE_RECORD_SCHEMA,
+        SCHEMA_VERSION,
+        serde_json::to_vec(&record).map_err(|error| {
+            ServiceError::Internal(format!("IntradayShape serialization failed: {error}"))
+        })?,
+        maximum_payload_bytes,
+    )?;
+    Ok(QueryResult {
+        provider: "LocalAnalysis".to_owned(),
+        batch_id: format!("local-analysis:intraday-shape:{input_digest_sha256}"),
+        complete: true,
+        observed_at: input_evidence[0].observed_at().to_owned(),
+        source_at: input_evidence[0].source_at().map(str::to_owned),
+        records: vec![payload],
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
+fn tencent_batch_evidence<T>(batch: &DataBatch<T>) -> Result<SourceEvidence, ServiceError> {
+    let provenance = batch.provenance();
+    if provenance.source() != "tencent-web" {
+        return Err(ServiceError::FailedPrecondition(format!(
+            "IntradayShape expected tencent-web provenance, got {}",
+            provenance.source()
+        )));
+    }
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        ServiceError::FailedPrecondition("IntradayShape input batch has no batch_id".into())
+    })?;
+    let evidence = SourceEvidence::new(ProviderId::Tencent, provenance.fetched_at(), batch_id)
+        .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    match provenance.source_at() {
+        Some(source_at) => evidence
+            .with_source_at(source_at)
+            .map_err(|error| ServiceError::FailedPrecondition(error.to_string())),
+        None => Err(ServiceError::FailedPrecondition(
+            "IntradayShape input provenance has no source_at".into(),
+        )),
+    }
+}
+
+fn is_regular_session_minute(minute_at: &str) -> bool {
+    let Some(clock) = minute_at.get(11..16) else {
+        return false;
+    };
+    ("09:30"..="11:30").contains(&clock) || ("13:00"..="15:00").contains(&clock)
+}
+
+fn current_china_date_for_shape() -> Result<IsoDate, ServiceError> {
+    let offset = UtcOffset::from_hms(8, 0, 0)
+        .map_err(|error| ServiceError::Internal(format!("fixed China offset failed: {error}")))?;
+    IsoDate::new(
+        OffsetDateTime::now_utc()
+            .to_offset(offset)
+            .date()
+            .to_string(),
+    )
+    .map_err(|error| ServiceError::Internal(error.to_string()))
+}
+
+fn minute_point_instant(minute_at: &str) -> Result<String, ServiceError> {
+    let date = minute_at.get(..10).ok_or_else(|| {
+        ServiceError::FailedPrecondition("IntradayShape minute date is missing".into())
+    })?;
+    let clock = minute_at.get(11..16).ok_or_else(|| {
+        ServiceError::FailedPrecondition("IntradayShape minute clock is missing".into())
+    })?;
+    let instant = format!("{date}T{clock}:00+08:00");
+    EvidenceTimestamp::parse_instant(&instant)
+        .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    Ok(instant)
+}
+
+fn validate_intraday_points(
+    points: &[&MinutePoint],
+    instrument: &InstrumentId,
+    evidence: &SourceEvidence,
+) -> Result<(), ServiceError> {
+    let mut previous: Option<&str> = None;
+    for point in points {
+        if point.instrument() != instrument
+            || point.provider() != ProviderId::Tencent
+            || point.batch_id() != evidence.batch_id()
+            || point.observed_at() != evidence.observed_at()
+            || point.source_at().is_none()
+        {
+            return Err(ServiceError::FailedPrecondition(
+                "IntradayShape minute evidence is incomplete or inconsistent".into(),
+            ));
+        }
+        let expected_status = if point.cumulative_amount().is_some() {
+            DataStatus::Available
+        } else {
+            DataStatus::Unavailable
+        };
+        if point.status() != expected_status {
+            return Err(ServiceError::FailedPrecondition(
+                "IntradayShape minute status contradicts cumulative amount availability".into(),
+            ));
+        }
+        if previous.is_some_and(|value| value >= point.minute_at()) {
+            return Err(ServiceError::FailedPrecondition(
+                "IntradayShape minutes must be strictly ordered".into(),
+            ));
+        }
+        previous = Some(point.minute_at());
+    }
+    Ok(())
+}
+
+fn intraday_direction_counts(points: &[&MinutePoint]) -> Result<(u32, u32, u32), ServiceError> {
+    let mut up = 0_u32;
+    let mut down = 0_u32;
+    let mut flat = 1_u32;
+    for pair in points.windows(2) {
+        let previous = pair[0].price().get();
+        let current = pair[1].price().get();
+        match current.total_cmp(&previous) {
+            std::cmp::Ordering::Greater => {
+                up = up.checked_add(1).ok_or_else(|| {
+                    ServiceError::FailedPrecondition("direction count overflow".into())
+                })?;
+            }
+            std::cmp::Ordering::Less => {
+                down = down.checked_add(1).ok_or_else(|| {
+                    ServiceError::FailedPrecondition("direction count overflow".into())
+                })?;
+            }
+            std::cmp::Ordering::Equal => {
+                flat = flat.checked_add(1).ok_or_else(|| {
+                    ServiceError::FailedPrecondition("direction count overflow".into())
+                })?;
+            }
+        }
+    }
+    Ok((up, down, flat))
+}
+
+#[derive(Serialize)]
+struct IntradayShapeDigestInput<'a> {
+    request: &'a IntradayShapeRequest,
+    points: &'a [MinutePoint],
+    input_evidence: &'a [SourceEvidence],
+}
+
+fn intraday_shape_digest(
+    request: &IntradayShapeRequest,
+    points: &[MinutePoint],
+    input_evidence: &[SourceEvidence],
+) -> Result<String, ServiceError> {
+    let normalized = serde_json::to_vec(&IntradayShapeDigestInput {
+        request,
+        points,
+        input_evidence,
+    })
+    .map_err(|error| {
+        ServiceError::Internal(format!("IntradayShape digest encoding failed: {error}"))
+    })?;
+    domain_separated_sha256(b"magic.intraday_shape.v1\0", &normalized)
+}
+
+fn domain_separated_sha256(domain: &[u8], normalized: &[u8]) -> Result<String, ServiceError> {
+    let length = u64::try_from(normalized.len())
+        .map_err(|_| ServiceError::Internal("digest input length exceeds u64".into()))?;
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    hasher.update(length.to_be_bytes());
+    hasher.update(normalized);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn execute_upper_limit_pool_review(
+    client: &EastmoneyClient,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: UpperLimitPoolReviewRequest =
+        decode_request(&command, UPPER_LIMIT_POOL_REVIEW_REQUEST_SCHEMA)?;
+    let fetch = |kind| -> Result<LimitPoolReviewInput, ServiceError> {
+        let pool_request = LimitPoolRequest::new(
+            kind,
+            request.trading_date().clone(),
+            request.per_pool_limit(),
+        )
+        .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?;
+        match client.limit_pool(&pool_request) {
+            Ok(batch) => {
+                if !batch.quality().is_complete() {
+                    return Err(ServiceError::FailedPrecondition(format!(
+                        "Eastmoney upper-limit review input is incomplete: {}",
+                        batch.quality().issues().join("; ")
+                    )));
+                }
+                let evidence = eastmoney_batch_evidence(&batch)?;
+                Ok(LimitPoolReviewInput {
+                    records: batch.into_records(),
+                    evidence,
+                })
+            }
+            Err(EastmoneyError::VerifiedEmpty(empty)) => {
+                validate_limit_pool_verified_empty(&empty, &pool_request)?;
+                Ok(LimitPoolReviewInput {
+                    records: Vec::new(),
+                    evidence: empty.evidence().clone(),
+                })
+            }
+            Err(error) => Err(provider_error(Operation::UpperLimitPoolReview, error)),
+        }
+    };
+    let upper = fetch(magic_market_core::LimitPoolKind::Upper)?;
+    let broken = fetch(magic_market_core::LimitPoolKind::Broken)?;
+    let lower = fetch(magic_market_core::LimitPoolKind::Lower)?;
+    let previous_upper = fetch(magic_market_core::LimitPoolKind::PreviousUpper)?;
+    let input_evidence = vec![
+        upper.evidence.clone(),
+        broken.evidence.clone(),
+        lower.evidence.clone(),
+        previous_upper.evidence.clone(),
+    ];
+    let input_digest_sha256 = upper_limit_review_digest(
+        request.trading_date(),
+        &upper.records,
+        &broken.records,
+        &lower.records,
+        &previous_upper.records,
+        &input_evidence,
+    )?;
+    let record = UpperLimitPoolReviewRecord::new(
+        request.trading_date().clone(),
+        upper.records,
+        broken.records,
+        lower.records,
+        previous_upper.records,
+        input_evidence.clone(),
+        PositiveU32::new(1).map_err(|error| ServiceError::Internal(error.to_string()))?,
+        input_digest_sha256.clone(),
+    )
+    .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    let data = serde_json::to_vec(&record).map_err(|error| {
+        ServiceError::Internal(format!(
+            "UpperLimitPoolReview serialization failed: {error}"
+        ))
+    })?;
+    let payload = CanonicalPayload::new(
+        UPPER_LIMIT_POOL_REVIEW_RECORD_SCHEMA,
+        SCHEMA_VERSION,
+        data,
+        maximum_payload_bytes,
+    )?;
+    let observed_at = input_evidence
+        .last()
+        .map(SourceEvidence::observed_at)
+        .ok_or_else(|| ServiceError::Internal("UpperLimitPoolReview has no evidence".into()))?
+        .to_owned();
+    let source_at = common_source_at(&input_evidence);
+    Ok(QueryResult {
+        provider: "Eastmoney".to_owned(),
+        batch_id: format!(
+            "eastmoney:upper-limit-pool-review:{}:{}",
+            request.trading_date().as_str(),
+            input_digest_sha256
+        ),
+        complete: true,
+        observed_at,
+        source_at,
+        records: vec![payload],
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
+struct LimitPoolReviewInput {
+    records: Vec<magic_market_core::LimitPoolEntry>,
+    evidence: SourceEvidence,
+}
+
+fn validate_limit_pool_verified_empty(
+    empty: &magic_market_core::VerifiedEmpty,
+    request: &LimitPoolRequest,
+) -> Result<(), ServiceError> {
+    let expected_identity = format!(
+        "{:?}:{}:limit={}",
+        request.kind(),
+        request.trading_date().as_str(),
+        request.limit().get()
+    );
+    if empty.family() != "limit_pool"
+        || empty.request_identity() != expected_identity
+        || empty.evidence().provider() != ProviderId::Eastmoney
+        || empty.evidence().source_at() != Some(request.trading_date().as_str())
+        || empty.provenance().source() != "eastmoney-web"
+    {
+        return Err(ServiceError::FailedPrecondition(
+            "Eastmoney verified-empty evidence contradicts the limit-pool request".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn eastmoney_batch_evidence<T>(batch: &DataBatch<T>) -> Result<SourceEvidence, ServiceError> {
+    let provenance = batch.provenance();
+    if provenance.source() != "eastmoney-web" {
+        return Err(ServiceError::FailedPrecondition(format!(
+            "UpperLimitPoolReview expected eastmoney-web provenance, got {}",
+            provenance.source()
+        )));
+    }
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        ServiceError::FailedPrecondition("UpperLimitPoolReview input batch has no batch_id".into())
+    })?;
+    let evidence = SourceEvidence::new(ProviderId::Eastmoney, provenance.fetched_at(), batch_id)
+        .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    match provenance.source_at() {
+        Some(source_at) => evidence
+            .with_source_at(source_at)
+            .map_err(|error| ServiceError::FailedPrecondition(error.to_string())),
+        None => Ok(evidence),
+    }
+}
+
+#[derive(Serialize)]
+struct UpperLimitReviewDigestInput<'a> {
+    trading_date: &'a IsoDate,
+    upper: &'a [magic_market_core::LimitPoolEntry],
+    broken: &'a [magic_market_core::LimitPoolEntry],
+    lower: &'a [magic_market_core::LimitPoolEntry],
+    previous_upper: &'a [magic_market_core::LimitPoolEntry],
+    input_evidence: &'a [SourceEvidence],
+}
+
+fn upper_limit_review_digest(
+    trading_date: &IsoDate,
+    upper: &[magic_market_core::LimitPoolEntry],
+    broken: &[magic_market_core::LimitPoolEntry],
+    lower: &[magic_market_core::LimitPoolEntry],
+    previous_upper: &[magic_market_core::LimitPoolEntry],
+    input_evidence: &[SourceEvidence],
+) -> Result<String, ServiceError> {
+    let normalized = serde_json::to_vec(&UpperLimitReviewDigestInput {
+        trading_date,
+        upper,
+        broken,
+        lower,
+        previous_upper,
+        input_evidence,
+    })
+    .map_err(|error| {
+        ServiceError::Internal(format!(
+            "UpperLimitPoolReview digest encoding failed: {error}"
+        ))
+    })?;
+    let length = u64::try_from(normalized.len()).map_err(|_| {
+        ServiceError::Internal("UpperLimitPoolReview digest input length exceeds u64".into())
+    })?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"magic.upper_limit_pool_review.v1\0");
+    hasher.update(length.to_be_bytes());
+    hasher.update(&normalized);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn common_source_at(input_evidence: &[SourceEvidence]) -> Option<String> {
+    let source_at = input_evidence.first()?.source_at()?;
+    input_evidence
+        .iter()
+        .all(|evidence| evidence.source_at() == Some(source_at))
+        .then(|| source_at.to_owned())
+}
+
+fn execute_tdx_t0_evidence(
+    client: &TdxSmartClient,
+    timeout_seconds: f64,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: T0EvidenceRequest = decode_request(&command, T0_EVIDENCE_REQUEST_SCHEMA)?;
+    client
+        .connect_to_any(Some(timeout_seconds))
+        .map_err(|error| provider_error(Operation::T0Evidence, error))?;
+    let quotes = client
+        .realtime_quotes(request.instruments())
+        .map_err(|error| provider_error(Operation::T0Evidence, error))?;
+    let books = client
+        .order_books(request.instruments())
+        .map_err(|error| provider_error(Operation::T0Evidence, error))?;
+    let quote_evidence = tdx_batch_evidence(Operation::T0Evidence, &quotes)?;
+    let book_evidence = tdx_batch_evidence(Operation::T0Evidence, &books)?;
+    validate_exact_tdx_instruments("quote", request.instruments(), quotes.records(), |record| {
+        record.instrument()
+    })?;
+    validate_exact_tdx_instruments(
+        "order-book",
+        request.instruments(),
+        books.records(),
+        |record| record.instrument(),
+    )?;
+
+    let daily_limit = checked_tdx_bar_limit("daily_bar_count", request.daily_bar_count())?;
+    let five_minute_limit =
+        checked_tdx_bar_limit("five_minute_bar_count", request.five_minute_bar_count())?;
+    let mut records = Vec::with_capacity(request.instruments().len());
+    let mut payloads = Vec::with_capacity(request.instruments().len());
+    let mut all_evidence = vec![quote_evidence.clone(), book_evidence.clone()];
+    for instrument in request.instruments() {
+        let daily_request = BarsRequest::new(instrument.clone(), BarInterval::Day, daily_limit)
+            .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?;
+        let daily = client
+            .historical_bars(&daily_request)
+            .map_err(|error| provider_error(Operation::T0Evidence, error))?;
+        require_complete_tdx_batch(Operation::T0Evidence, "daily bars", &daily)?;
+        let daily_evidence = tdx_batch_evidence(Operation::T0Evidence, &daily)?;
+
+        let five_minute_request =
+            BarsRequest::new(instrument.clone(), BarInterval::Minute5, five_minute_limit)
+                .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?;
+        let five_minute = client
+            .historical_bars(&five_minute_request)
+            .map_err(|error| provider_error(Operation::T0Evidence, error))?;
+        require_complete_tdx_batch(Operation::T0Evidence, "five-minute bars", &five_minute)?;
+        let five_minute_evidence = tdx_batch_evidence(Operation::T0Evidence, &five_minute)?;
+
+        let quote = exact_tdx_record("quote", quotes.records(), instrument, |record| {
+            record.instrument()
+        })?;
+        let order_book = exact_tdx_record("order-book", books.records(), instrument, |record| {
+            record.instrument()
+        })?;
+        let input_evidence = vec![
+            quote_evidence.clone(),
+            book_evidence.clone(),
+            daily_evidence.clone(),
+            five_minute_evidence.clone(),
+        ];
+        let daily_bars = daily.into_records();
+        let five_minute_bars = five_minute.into_records();
+        let digest = t0_evidence_digest(
+            instrument,
+            &quote,
+            &order_book,
+            &daily_bars,
+            &five_minute_bars,
+            &input_evidence,
+        )?;
+        let record = T0EvidenceRecord::new(
+            instrument.clone(),
+            quote,
+            order_book,
+            daily_bars,
+            five_minute_bars,
+            request.daily_bar_count(),
+            request.five_minute_bar_count(),
+            input_evidence,
+            PositiveU32::new(1).map_err(|error| ServiceError::Internal(error.to_string()))?,
+            digest,
+        )
+        .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+        payloads.push(CanonicalPayload::new(
+            T0_EVIDENCE_RECORD_SCHEMA,
+            SCHEMA_VERSION,
+            serde_json::to_vec(&record).map_err(|error| {
+                ServiceError::Internal(format!("T0Evidence serialization failed: {error}"))
+            })?,
+            maximum_payload_bytes,
+        )?);
+        all_evidence.push(daily_evidence);
+        all_evidence.push(five_minute_evidence);
+        records.push(record);
+    }
+    let aggregate_digest = domain_separated_sha256(
+        b"magic.t0_evidence.batch.v1\0",
+        &serde_json::to_vec(&records).map_err(|error| {
+            ServiceError::Internal(format!("T0Evidence batch digest encoding failed: {error}"))
+        })?,
+    )?;
+    let observed_at = latest_observed_at(&all_evidence, "T0Evidence")?;
+    Ok(QueryResult {
+        provider: "Tdx".to_owned(),
+        batch_id: format!("tdx:t0-evidence:{aggregate_digest}"),
+        complete: false,
+        observed_at,
+        source_at: common_source_at(&all_evidence),
+        records: payloads,
+        repository_admitted: false,
+        diagnostic_blocker: Some(
+            "TDX public quote and order-book packets do not expose an admitted source timestamp"
+                .to_owned(),
+        ),
+    })
+}
+
+fn execute_tdx_outcome_daily_bars(
+    client: &TdxSmartClient,
+    timeout_seconds: f64,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: OutcomeDailyBarsRequest =
+        decode_request(&command, OUTCOME_DAILY_BARS_REQUEST_SCHEMA)?;
+    client
+        .connect_to_any(Some(timeout_seconds))
+        .map_err(|error| provider_error(Operation::OutcomeDailyBars, error))?;
+    let limit = checked_tdx_bar_limit("limit", request.limit())?;
+    let bars_request = BarsRequest::new(request.instrument().clone(), BarInterval::Day, limit)
+        .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?;
+    let batch = client
+        .historical_bars(&bars_request)
+        .map_err(|error| provider_error(Operation::OutcomeDailyBars, error))?;
+    require_complete_tdx_batch(Operation::OutcomeDailyBars, "daily bars", &batch)?;
+    let evidence = tdx_batch_evidence(Operation::OutcomeDailyBars, &batch)?;
+    let bars = batch.into_records();
+    let input_evidence = vec![evidence.clone()];
+    let digest = outcome_daily_bars_digest(&request, &bars, &input_evidence)?;
+    let record = OutcomeDailyBarsRecord::new(
+        request.instrument().clone(),
+        request.through().clone(),
+        request.outcome_due_at(),
+        bars,
+        request.limit(),
+        input_evidence,
+        PositiveU32::new(1).map_err(|error| ServiceError::Internal(error.to_string()))?,
+        digest.clone(),
+    )
+    .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    let payload = CanonicalPayload::new(
+        OUTCOME_DAILY_BARS_RECORD_SCHEMA,
+        SCHEMA_VERSION,
+        serde_json::to_vec(&record).map_err(|error| {
+            ServiceError::Internal(format!("OutcomeDailyBars serialization failed: {error}"))
+        })?,
+        maximum_payload_bytes,
+    )?;
+    Ok(QueryResult {
+        provider: "Tdx".to_owned(),
+        batch_id: format!("tdx:outcome-daily-bars:{digest}"),
+        complete: true,
+        observed_at: evidence.observed_at().to_owned(),
+        source_at: evidence.source_at().map(str::to_owned),
+        records: vec![payload],
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
+fn checked_tdx_bar_limit(field: &'static str, value: PositiveU32) -> Result<u16, ServiceError> {
+    u16::try_from(value.get()).map_err(|_| {
+        ServiceError::InvalidRequest(format!("{field} exceeds the TDX u16 request limit"))
+    })
+}
+
+fn require_complete_tdx_batch<T>(
+    operation: Operation,
+    family: &str,
+    batch: &DataBatch<T>,
+) -> Result<(), ServiceError> {
+    if batch.quality().is_complete() {
+        Ok(())
+    } else {
+        Err(ServiceError::Unavailable {
+            operation,
+            reason: format!(
+                "TDX {family} input is incomplete: {}",
+                batch.quality().issues().join("; ")
+            ),
+        })
+    }
+}
+
+fn tdx_batch_evidence<T>(
+    operation: Operation,
+    batch: &DataBatch<T>,
+) -> Result<SourceEvidence, ServiceError> {
+    let provenance = batch.provenance();
+    if provenance.source() != "tdx-smart" {
+        return Err(ServiceError::FailedPrecondition(format!(
+            "{} expected tdx-smart provenance, got {}",
+            operation.as_str(),
+            provenance.source()
+        )));
+    }
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        ServiceError::FailedPrecondition(format!(
+            "{} TDX input batch has no batch_id",
+            operation.as_str()
+        ))
+    })?;
+    let evidence = SourceEvidence::new(ProviderId::Tdx, provenance.fetched_at(), batch_id)
+        .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    provenance
+        .source_at()
+        .map_or(Ok(evidence.clone()), |source_at| {
+            evidence
+                .with_source_at(source_at)
+                .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))
+        })
+}
+
+fn validate_exact_tdx_instruments<T>(
+    family: &str,
+    requested: &[InstrumentId],
+    records: &[T],
+    instrument: impl Fn(&T) -> &InstrumentId + Copy,
+) -> Result<(), ServiceError> {
+    if records.len() != requested.len()
+        || requested.iter().any(|requested| {
+            records
+                .iter()
+                .filter(|record| instrument(record) == requested)
+                .count()
+                != 1
+        })
+    {
+        return Err(ServiceError::FailedPrecondition(format!(
+            "TDX T0Evidence {family} identities do not exactly match the request"
+        )));
+    }
+    Ok(())
+}
+
+fn exact_tdx_record<T: Clone>(
+    family: &str,
+    records: &[T],
+    requested: &InstrumentId,
+    instrument: impl Fn(&T) -> &InstrumentId,
+) -> Result<T, ServiceError> {
+    let mut matching = records
+        .iter()
+        .filter(|record| instrument(record) == requested);
+    let record = matching.next().cloned().ok_or_else(|| {
+        ServiceError::FailedPrecondition(format!(
+            "TDX T0Evidence omitted {family} for {}",
+            requested.code()
+        ))
+    })?;
+    if matching.next().is_some() {
+        return Err(ServiceError::FailedPrecondition(format!(
+            "TDX T0Evidence duplicated {family} for {}",
+            requested.code()
+        )));
+    }
+    Ok(record)
+}
+
+fn latest_observed_at(evidence: &[SourceEvidence], family: &str) -> Result<String, ServiceError> {
+    evidence
+        .iter()
+        .map(SourceEvidence::observed_at)
+        .max()
+        .map(str::to_owned)
+        .ok_or_else(|| ServiceError::Internal(format!("{family} has no input evidence")))
+}
+
+#[derive(Serialize)]
+struct T0EvidenceDigestInput<'a> {
+    instrument: &'a InstrumentId,
+    quote: &'a Quote,
+    order_book: &'a OrderBook,
+    daily_bars: &'a [Bar],
+    five_minute_bars: &'a [Bar],
+    input_evidence: &'a [SourceEvidence],
+}
+
+fn t0_evidence_digest(
+    instrument: &InstrumentId,
+    quote: &Quote,
+    order_book: &OrderBook,
+    daily_bars: &[Bar],
+    five_minute_bars: &[Bar],
+    input_evidence: &[SourceEvidence],
+) -> Result<String, ServiceError> {
+    let normalized = serde_json::to_vec(&T0EvidenceDigestInput {
+        instrument,
+        quote,
+        order_book,
+        daily_bars,
+        five_minute_bars,
+        input_evidence,
+    })
+    .map_err(|error| {
+        ServiceError::Internal(format!("T0Evidence digest encoding failed: {error}"))
+    })?;
+    domain_separated_sha256(b"magic.t0_evidence.v1\0", &normalized)
+}
+
+#[derive(Serialize)]
+struct OutcomeDailyBarsDigestInput<'a> {
+    request: &'a OutcomeDailyBarsRequest,
+    bars: &'a [Bar],
+    input_evidence: &'a [SourceEvidence],
+}
+
+fn outcome_daily_bars_digest(
+    request: &OutcomeDailyBarsRequest,
+    bars: &[Bar],
+    input_evidence: &[SourceEvidence],
+) -> Result<String, ServiceError> {
+    let normalized = serde_json::to_vec(&OutcomeDailyBarsDigestInput {
+        request,
+        bars,
+        input_evidence,
+    })
+    .map_err(|error| {
+        ServiceError::Internal(format!("OutcomeDailyBars digest encoding failed: {error}"))
+    })?;
+    domain_separated_sha256(b"magic.outcome_daily_bars.v1\0", &normalized)
+}
+
+fn classify_tencent_source_error(error: TencentError) -> SourceError {
+    match error {
+        TencentError::InvalidRequest(message) => {
+            SourceError::stop(FailureKind::InvalidRequest, message)
+        }
+        TencentError::Unsupported(message) => SourceError::stop(FailureKind::Unsupported, message),
+        TencentError::Transport(message) => SourceError::try_next(FailureKind::Transport, message),
+        TencentError::Decode(message) | TencentError::Protocol(message) => {
+            SourceError::stop(FailureKind::Protocol, message)
+        }
+        TencentError::Core(error) => SourceError::stop(FailureKind::Provider, error.to_string()),
+    }
+}
+
+fn map_index_quote_router_error(error: RouterError) -> ServiceError {
+    if let RouterError::InvalidConfiguration(message) = &error {
+        return ServiceError::FailedPrecondition(message.clone());
+    }
+    let Some(attempt) = error.attempts().last() else {
+        return ServiceError::FailedPrecondition(error.to_string());
+    };
+    match attempt.status() {
+        AttemptStatus::Failed { kind, message, .. } => match kind {
+            FailureKind::InvalidRequest => ServiceError::InvalidRequest(message.clone()),
+            FailureKind::Unsupported => ServiceError::Unsupported {
+                operation: Operation::IndexQuotes,
+                reason: message.clone(),
+            },
+            FailureKind::Transport | FailureKind::Timeout | FailureKind::RateLimited => {
+                ServiceError::Unavailable {
+                    operation: Operation::IndexQuotes,
+                    reason: message.clone(),
+                }
+            }
+            _ => ServiceError::FailedPrecondition(message.clone()),
+        },
+        AttemptStatus::Rejected { message, .. } => {
+            ServiceError::FailedPrecondition(message.clone())
+        }
+        AttemptStatus::Selected => ServiceError::FailedPrecondition(
+            "IndexQuotes routing failed after a selected attempt".into(),
+        ),
+    }
+}
+
 fn execute_tencent_bars(
     client: &TencentClient,
     command: QueryCommand,
@@ -1855,18 +3636,27 @@ fn provider_error(operation: Operation, error: impl Error + 'static) -> ServiceE
         };
     }
     map_known!(BaiduError, map_baidu_error);
+    map_known!(ClsError, map_cls_error);
     map_known!(SinaError, map_sina_error);
     map_known!(CfetsError, map_cfets_error);
     map_known!(CninfoError, map_cninfo_error);
     map_known!(EastmoneyError, map_eastmoney_error);
+    map_known!(EmQuantError, map_emquant_error);
     map_known!(ExchangeError, map_exchange_error);
     map_known!(FredError, map_fred_error);
     map_known!(GovError, map_gov_error);
     map_known!(IwencaiError, map_iwencai_error);
     map_known!(Jin10Error, map_jin10_error);
+    map_known!(NbsError, map_nbs_error);
+    map_known!(PbcError, map_pbc_error);
     map_known!(SecEdgarError, map_sec_error);
+    map_known!(StcnError, map_stcn_error);
     map_known!(ThsError, map_ths_error);
+    map_known!(ThePaperError, map_thepaper_error);
     map_known!(WallstreetCnError, map_wallstreetcn_error);
+    map_known!(WorldBankError, map_worldbank_error);
+    map_known!(XinhuaError, map_xinhua_error);
+    map_known!(YicaiError, map_yicai_error);
     map_known!(TdxError, map_tdx_error);
     ServiceError::FailedPrecondition(format!(
         "{} provider request failed: {error}",
@@ -1880,6 +3670,97 @@ fn map_baidu_error(operation: Operation, error: &BaiduError) -> ServiceError {
         BaiduError::Transport(_) => unavailable(operation, error),
         BaiduError::Unsupported(reason) => unsupported(operation, reason),
         BaiduError::Decode(_) | BaiduError::Protocol(_) | BaiduError::Core(_) => {
+            precondition(error)
+        }
+    }
+}
+
+fn map_cls_error(operation: Operation, error: &ClsError) -> ServiceError {
+    match error {
+        ClsError::InvalidRequest(message) => invalid(message),
+        ClsError::Transport(_) => unavailable(operation, error),
+        ClsError::Unsupported(reason) => unsupported(operation, reason),
+        ClsError::Decode(_) | ClsError::Protocol(_) | ClsError::Core(_) => precondition(error),
+    }
+}
+
+fn map_emquant_error(operation: Operation, error: &EmQuantError) -> ServiceError {
+    match error {
+        EmQuantError::InvalidRequest(message) => invalid(message),
+        EmQuantError::Bridge(_) => unavailable(operation, error),
+        EmQuantError::Unsupported(reason) => unsupported(operation, reason),
+        EmQuantError::InvalidResponse(_) | EmQuantError::Core(_) => precondition(error),
+    }
+}
+
+fn map_nbs_error(operation: Operation, error: &NbsError) -> ServiceError {
+    match error {
+        NbsError::InvalidRequest(message) => invalid(message),
+        NbsError::Transport(_) => unavailable(operation, error),
+        NbsError::Unsupported(reason) => unsupported(operation, reason),
+        NbsError::Decode(_) | NbsError::Protocol(_) | NbsError::Core(_) => precondition(error),
+    }
+}
+
+fn map_pbc_error(operation: Operation, error: &PbcError) -> ServiceError {
+    match error {
+        PbcError::InvalidRequest(message) => invalid(message),
+        PbcError::Transport(_) => unavailable(operation, error),
+        PbcError::Unsupported(reason) => unsupported(operation, reason),
+        PbcError::Decode(_) | PbcError::Protocol(_) | PbcError::Core(_) => precondition(error),
+    }
+}
+
+fn map_stcn_error(operation: Operation, error: &StcnError) -> ServiceError {
+    match error {
+        StcnError::InvalidRequest(message) => invalid(message),
+        StcnError::Transport(_) => unavailable(operation, error),
+        StcnError::Unsupported(reason) => unsupported(operation, reason),
+        StcnError::Decode(_) | StcnError::Protocol(_) | StcnError::Core(_) => precondition(error),
+    }
+}
+
+fn map_thepaper_error(operation: Operation, error: &ThePaperError) -> ServiceError {
+    match error {
+        ThePaperError::InvalidRequest(message) => invalid(message),
+        ThePaperError::Transport(_) => unavailable(operation, error),
+        ThePaperError::Unsupported(reason) => unsupported(operation, reason),
+        ThePaperError::Decode(_) | ThePaperError::Protocol(_) | ThePaperError::Core(_) => {
+            precondition(error)
+        }
+    }
+}
+
+fn map_worldbank_error(operation: Operation, error: &WorldBankError) -> ServiceError {
+    match error {
+        WorldBankError::InvalidRequest(message) => invalid(message),
+        WorldBankError::Authentication(_) | WorldBankError::Transport(_) => {
+            unavailable(operation, error)
+        }
+        WorldBankError::Unsupported(reason) => unsupported(operation, reason),
+        WorldBankError::Decode(_) | WorldBankError::Protocol(_) | WorldBankError::Core(_) => {
+            precondition(error)
+        }
+    }
+}
+
+fn map_xinhua_error(operation: Operation, error: &XinhuaError) -> ServiceError {
+    match error {
+        XinhuaError::InvalidRequest(message) => invalid(message),
+        XinhuaError::Transport(_) => unavailable(operation, error),
+        XinhuaError::Unsupported(reason) => unsupported(operation, reason),
+        XinhuaError::Decode(_) | XinhuaError::Protocol(_) | XinhuaError::Core(_) => {
+            precondition(error)
+        }
+    }
+}
+
+fn map_yicai_error(operation: Operation, error: &YicaiError) -> ServiceError {
+    match error {
+        YicaiError::InvalidRequest(message) => invalid(message),
+        YicaiError::Transport(_) => unavailable(operation, error),
+        YicaiError::Unsupported(reason) => unsupported(operation, reason),
+        YicaiError::Decode(_) | YicaiError::Protocol(_) | YicaiError::Core(_) => {
             precondition(error)
         }
     }
@@ -2097,13 +3978,15 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use magic_market_core::{Quote, SecurityMetadata};
+    use magic_eastmoney_rs::EastmoneyTransport;
+    use magic_market_core::{AssetClass, Quote, SecurityMetadata};
     use magic_market_service::QueryCommand;
     use magic_tencent_rs::SnapshotTransport;
 
     use super::*;
 
     const QUOTE_RESPONSE: &str = "v_sh600396=\"1~ABC~600396~15.47~14.92~15.30~1775070~821130~950794~15.47~212~15.46~95~15.45~64~15.44~3~15.43~375~15.49~49~15.50~2721~15.51~241~15.52~450~15.53~86~~20260723094907~0.55~3.69~15.88~14.85~15.47/1775070/2729507908~1775070~272951~\";";
+    const INDEX_QUOTE_RESPONSE: &str = "v_sh000001=\"1~Shanghai Composite~000001~3560.47~3544.15~3551.30~1775070~821130~950794~3560.47~212~3560.46~95~3560.45~64~3560.44~3~3560.43~375~3560.49~49~3560.50~2721~3560.51~241~3560.52~450~3560.53~86~~20260723094907~16.32~0.46~3568.88~3538.85~3560.47/1775070/2729507908~1775070~272951~\";";
 
     #[derive(Clone)]
     struct StaticTransport {
@@ -2114,6 +3997,59 @@ mod tests {
         fn get(&self, _url: &str) -> Result<Vec<u8>, TencentError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(QUOTE_RESPONSE.as_bytes().to_vec())
+        }
+    }
+
+    #[derive(Clone)]
+    struct IndexTransport {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl SnapshotTransport for IndexTransport {
+        fn get(&self, _url: &str) -> Result<Vec<u8>, TencentError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(INDEX_QUOTE_RESPONSE.as_bytes().to_vec())
+        }
+    }
+
+    #[derive(Clone)]
+    struct ShapeTransport {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl SnapshotTransport for ShapeTransport {
+        fn get(&self, _url: &str) -> Result<Vec<u8>, TencentError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(br#"{"code":0,"data":{"sh600396":{"data":[{"date":"20260723","data":["0930 10.00 10 100000.00","0931 10.20 20 204000.00","1300 10.10 30 303000.00"]}]}}}"#.to_vec())
+        }
+    }
+
+    #[derive(Clone)]
+    struct LimitPoolTransport {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl EastmoneyTransport for LimitPoolTransport {
+        fn get(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(br#"{"rc":0,"data":{"tc":1,"qdate":20260723,"pool":[{"c":"600396","m":1,"p":1308000,"zdp":9.97,"lbc":3}]}}"#.to_vec())
+        }
+
+        fn post_json(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: &[u8],
+            _max_bytes: usize,
+        ) -> Result<Vec<u8>, EastmoneyError> {
+            Err(EastmoneyError::Protocol(
+                "unexpected POST in limit-pool test".into(),
+            ))
         }
     }
 
@@ -2165,7 +4101,7 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 46);
+        assert_eq!(admitted.len(), 51);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
@@ -2182,33 +4118,124 @@ mod tests {
                 Operation::PostCloseFlows,
                 Operation::MarketRankings,
                 Operation::MarketBreadth,
+                Operation::T0Evidence,
             ]
         );
+        let t0 = capabilities
+            .iter()
+            .find(|capability| capability.operation == Operation::T0Evidence)
+            .unwrap();
+        assert!(!t0.repository_admitted);
+        assert!(!t0.runtime_available);
+        assert!(t0.diagnostic_available);
+        assert!(matches!(
+            registry.execute(command_for(Operation::T0Evidence, "wrong.schema", None)),
+            Err(ServiceError::Unsupported { .. })
+        ));
+        assert!(matches!(
+            registry.execute(
+                command_for(Operation::T0Evidence, "wrong.schema", Some("Tdx"))
+                    .with_unadmitted_access(true)
+            ),
+            Err(ServiceError::InvalidRequest(_))
+        ));
         let diagnostic = capabilities
             .iter()
             .filter(|capability| capability.diagnostic_available)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(
-            diagnostic,
-            BTreeSet::from([
-                Operation::MoneyFlows,
-                Operation::FuturesDelivery,
-                Operation::TechnicalBars,
-                Operation::FundFlowSeries,
-                Operation::PostCloseFlows,
-                Operation::MarketRankings,
-            ])
-        );
+        for operation in [
+            Operation::MoneyFlows,
+            Operation::FuturesDelivery,
+            Operation::TechnicalBars,
+            Operation::HistoricalBars,
+            Operation::FundFlowSeries,
+            Operation::PostCloseFlows,
+            Operation::MarketRankings,
+            Operation::T0Evidence,
+        ] {
+            assert!(diagnostic.contains(&operation));
+        }
         assert!(capabilities
             .iter()
-            .filter(|capability| {
-                matches!(
-                    capability.operation,
-                    Operation::Auctions | Operation::MarketBreadth
-                )
-            })
+            .filter(|capability| capability.provider == "Tdx"
+                && capability.operation == Operation::Auctions)
+            .chain(capabilities.iter().filter(|capability| {
+                capability.provider == "LocalAnalysis"
+                    && capability.operation == Operation::MarketBreadth
+            }))
             .all(|capability| !capability.diagnostic_available));
+    }
+
+    #[test]
+    fn production_registry_exposes_every_new_provider_parity_registration() {
+        let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
+        let capabilities = registry.capabilities();
+        let expected_admitted = [
+            (Operation::GlobalNews, "Cls"),
+            (Operation::GlobalNews, "ThePaper"),
+            (Operation::GlobalNews, "XinhuaFinance"),
+            (Operation::GlobalNews, "Yicai"),
+            (Operation::GlobalNews, "SecuritiesTimes"),
+            (Operation::GlobalNews, "Yonhap"),
+            (Operation::EconomicSeries, "Nbs"),
+            (Operation::EconomicSeries, "Pbc"),
+            (Operation::EconomicSeries, "WorldBank"),
+            (Operation::RealtimeQuotes, "Sina"),
+            (Operation::HistoricalBars, "Sina"),
+            (Operation::MinuteData, "Sina"),
+            (Operation::OrderBooks, "Sina"),
+            (Operation::SecurityMetadata, "Sina"),
+            (Operation::InstrumentNews, "Sina"),
+            (Operation::IndexQuotes, "Tencent"),
+            (Operation::IntradayShape, "LocalAnalysis"),
+            (Operation::UpperLimitPoolReview, "Eastmoney"),
+            (Operation::OutcomeDailyBars, "Tdx"),
+            (Operation::RealtimeQuotes, "Tdx"),
+            (Operation::HistoricalBars, "Tdx"),
+            (Operation::MinuteData, "Tdx"),
+            (Operation::OrderBooks, "Tdx"),
+            (Operation::Trades, "Tdx"),
+            (Operation::SecurityMetadata, "Tdx"),
+            (Operation::RealtimeQuotes, "Szse"),
+            (Operation::OrderBooks, "Szse"),
+            (Operation::Announcements, "Sse"),
+            (Operation::Announcements, "Szse"),
+            (Operation::DragonTiger, "Sse"),
+            (Operation::DragonTiger, "Szse"),
+        ];
+        for (operation, provider) in expected_admitted {
+            assert!(
+                capabilities.iter().any(|capability| {
+                    capability.operation == operation
+                        && capability.provider == provider
+                        && capability.repository_admitted
+                        && capability.runtime_available
+                        && !capability.diagnostic_available
+                }),
+                "missing admitted {provider} {} registration",
+                operation.as_str()
+            );
+        }
+
+        for (operation, provider) in [
+            (Operation::HistoricalBars, "Baidu"),
+            (Operation::RealtimeQuotes, "EmQuant"),
+            (Operation::HistoricalBars, "EmQuant"),
+            (Operation::OrderBooks, "EmQuant"),
+            (Operation::MoneyFlows, "EmQuant"),
+            (Operation::EconomicSeries, "Imf"),
+        ] {
+            assert!(
+                capabilities.iter().any(|capability| {
+                    capability.operation == operation
+                        && capability.provider == provider
+                        && !capability.repository_admitted
+                }),
+                "missing fail-closed {provider} {} registration",
+                operation.as_str()
+            );
+        }
     }
 
     #[test]
@@ -2228,6 +4255,155 @@ mod tests {
         let quote: Quote = serde_json::from_slice(result.records[0].data()).unwrap();
         assert_eq!(quote.instrument().code(), "600396");
         assert_eq!(quote.provider(), magic_market_core::ProviderId::Tencent);
+    }
+
+    #[test]
+    fn index_quotes_enforce_typed_identity_and_strict_freshness() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = TencentClient::with_transport(IndexTransport {
+            calls: calls.clone(),
+        });
+        let registry = registry_with_tencent(client, Duration::from_secs(1), 4096).unwrap();
+        let index_request = serde_json::to_vec(&serde_json::json!({
+            "indices": [{
+                "exchange": "Shanghai",
+                "code": "000001",
+                "asset_class": "Index"
+            }],
+            "maximum_source_age_millis": 315_576_000_000_u64
+        }))
+        .unwrap();
+        let command = QueryCommand::new(
+            "index-quotes-1",
+            Operation::IndexQuotes,
+            Some(TENCENT_PROVIDER.to_owned()),
+            CanonicalPayload::new(
+                INDEX_QUOTES_REQUEST_SCHEMA,
+                SCHEMA_VERSION,
+                index_request,
+                4096,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let result = registry.execute(command).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(result.repository_admitted);
+        assert_eq!(result.records.len(), 1);
+        let quote: Quote = serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(quote.instrument().asset_class(), AssetClass::Index);
+
+        let equity_request = serde_json::to_vec(&serde_json::json!({
+            "indices": [{
+                "exchange": "Shanghai",
+                "code": "600396",
+                "asset_class": "Equity"
+            }],
+            "maximum_source_age_millis": 5000
+        }))
+        .unwrap();
+        let command = QueryCommand::new(
+            "index-quotes-2",
+            Operation::IndexQuotes,
+            Some(TENCENT_PROVIDER.to_owned()),
+            CanonicalPayload::new(
+                INDEX_QUOTES_REQUEST_SCHEMA,
+                SCHEMA_VERSION,
+                equity_request,
+                4096,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            registry.execute(command),
+            Err(ServiceError::InvalidRequest(_))
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn intraday_shape_uses_one_ordered_minute_series_and_deterministic_arithmetic() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = TencentClient::with_transport(ShapeTransport {
+            calls: calls.clone(),
+        });
+        let registry = registry_with_tencent(client, Duration::from_secs(1), 65_536).unwrap();
+        let request = IntradayShapeRequest::new(
+            InstrumentId::new(
+                magic_market_core::Exchange::Shanghai,
+                "600396",
+                AssetClass::Equity,
+            )
+            .unwrap(),
+            Some(IsoDate::new("2026-07-23").unwrap()),
+            PositiveU32::new(800).unwrap(),
+        )
+        .unwrap();
+        let command = QueryCommand::new(
+            "intraday-shape-1",
+            Operation::IntradayShape,
+            Some("LocalAnalysis".into()),
+            CanonicalPayload::new(
+                INTRADAY_SHAPE_REQUEST_SCHEMA,
+                SCHEMA_VERSION,
+                serde_json::to_vec(&request).unwrap(),
+                65_536,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let result = registry.execute(command).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(result.repository_admitted);
+        assert!(result.complete);
+        assert_eq!(result.provider, "LocalAnalysis");
+        let record: IntradayShapeRecord = serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(record.point_count().get(), 3);
+        assert_eq!(record.trading_date().as_str(), "2026-07-23");
+        assert_eq!(record.input_evidence().len(), 1);
+    }
+
+    #[test]
+    fn upper_limit_pool_review_is_one_atomic_checked_four_family_record() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = EastmoneyClient::with_transport(LimitPoolTransport {
+            calls: calls.clone(),
+        });
+        let request = UpperLimitPoolReviewRequest::new(
+            IsoDate::new("2026-07-23").unwrap(),
+            PositiveU32::new(10).unwrap(),
+        )
+        .unwrap();
+        let command = QueryCommand::new(
+            "upper-review-1",
+            Operation::UpperLimitPoolReview,
+            Some("Eastmoney".into()),
+            CanonicalPayload::new(
+                UPPER_LIMIT_POOL_REVIEW_REQUEST_SCHEMA,
+                SCHEMA_VERSION,
+                serde_json::to_vec(&request).unwrap(),
+                65_536,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let result = execute_upper_limit_pool_review(&client, command, 65_536).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 4);
+        assert!(result.repository_admitted);
+        assert!(result.complete);
+        assert_eq!(result.provider, "Eastmoney");
+        assert_eq!(result.source_at.as_deref(), Some("2026-07-23"));
+        assert_eq!(result.records.len(), 1);
+        let record: UpperLimitPoolReviewRecord =
+            serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(record.upper().len(), 1);
+        assert_eq!(record.broken().len(), 1);
+        assert_eq!(record.lower().len(), 1);
+        assert_eq!(record.previous_upper().len(), 1);
+        assert_eq!(record.maximum_streak(), Some(3));
+        assert_eq!(record.input_evidence().len(), 4);
+        assert_eq!(record.input_digest_sha256().len(), 64);
     }
 
     #[test]
@@ -2299,7 +4475,10 @@ mod tests {
             Err(ServiceError::InvalidRequest(_))
         ));
         assert!(matches!(
-            registry.execute(command(REALTIME_QUOTES_REQUEST_SCHEMA, Some("Tdx"))),
+            registry.execute(command(
+                REALTIME_QUOTES_REQUEST_SCHEMA,
+                Some("NotRegistered")
+            )),
             Err(ServiceError::Unsupported { .. })
         ));
         assert_eq!(calls.load(Ordering::SeqCst), 0);

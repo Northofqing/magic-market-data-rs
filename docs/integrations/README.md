@@ -35,6 +35,9 @@ silently diverge.
 - [`tdx-local-terminal-compatibility.tsv`](tdx-local-terminal-compatibility.tsv)
   is the version/schema evidence inventory; executable identity is provenance
   and the bounded loopback health probe decides runtime compatibility.
+- [`grpc-external-api.md`](grpc-external-api.md) is the authenticated external
+  transport contract; [`grpc-derived-products.md`](grpc-derived-products.md)
+  fixes the five append-only composed-product payload schemas.
 
 The HTTP transport registry is an architecture-control inventory. It does not
 grant provider admission; `admissions.tsv` remains the BR-009 capability

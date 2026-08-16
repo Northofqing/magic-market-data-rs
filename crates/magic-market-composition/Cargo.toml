@@ -9,8 +9,10 @@ description = "Concrete, non-forgeable provider bindings for magic market-data r
 [dependencies]
 magic-baidu-rs = { path = "../magic-baidu-rs", version = "=0.2.0" }
 magic-cfets-rs = { path = "../magic-cfets-rs", version = "=0.2.0" }
+magic-cls-rs = { path = "../magic-cls-rs", version = "=0.2.0" }
 magic-cninfo-rs = { path = "../magic-cninfo-rs", version = "=0.2.0" }
 magic-eastmoney-rs = { path = "../magic-eastmoney-rs", version = "=0.2.0" }
+magic-emquant-rs = { path = "../magic-emquant-rs", version = "=0.2.0" }
 magic-fred-rs = { path = "../magic-fred-rs", version = "=0.2.0" }
 magic-gov-rs = { path = "../magic-gov-rs", version = "=0.2.0" }
 magic-iwencai-rs = { path = "../magic-iwencai-rs", version = "=0.2.0" }
@@ -19,16 +21,25 @@ magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
 magic-market-monitor = { path = "../magic-market-monitor", version = "=0.2.0" }
 magic-market-router = { path = "../magic-market-router", version = "=0.2.0" }
 magic-market-service = { path = "../magic-market-service", version = "=0.2.0" }
+magic-nbs-rs = { path = "../magic-nbs-rs", version = "=0.2.0" }
+magic-pbc-rs = { path = "../magic-pbc-rs", version = "=0.2.0" }
 magic-sec-rs = { path = "../magic-sec-rs", version = "=0.2.0" }
 magic-sina-rs = { path = "../magic-sina-rs", version = "=0.2.0" }
+magic-stcn-rs = { path = "../magic-stcn-rs", version = "=0.2.0" }
 magic-ths-rs = { path = "../magic-ths-rs", version = "=0.2.0" }
+magic-thepaper-rs = { path = "../magic-thepaper-rs", version = "=0.2.0" }
 magic-exchange-rs = { path = "../magic-exchange-rs", version = "=0.2.0" }
 magic-tdx-local-rs = { path = "../magic-tdx-local-rs", version = "=0.2.0" }
 magic-tdx-rs = { path = "../magic-tdx-rs", version = "=0.2.0" }
 magic-tencent-rs = { path = "../magic-tencent-rs", version = "=0.2.0" }
 magic-wallstreetcn-rs = { path = "../magic-wallstreetcn-rs", version = "=0.2.0" }
+magic-worldbank-rs = { path = "../magic-worldbank-rs", version = "=0.2.0" }
+magic-xinhua-rs = { path = "../magic-xinhua-rs", version = "=0.2.0" }
+magic-yicai-rs = { path = "../magic-yicai-rs", version = "=0.2.0" }
+magic-yonhap-rs = { path = "../magic-yonhap-rs", version = "=0.2.0" }
 serde.workspace = true
 serde_json = "1"
+sha2.workspace = true
 thiserror.workspace = true
 time = { version = "=0.3.54", default-features = false, features = ["std"] }
 

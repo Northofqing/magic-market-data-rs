@@ -18,6 +18,7 @@ magic-wallstreetcn-rs	WallstreetCn	GLOBAL_NEWS_ADMITTED	true	docs/integrations/w
 magic-worldbank-rs	WorldBank	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/worldbank-indicators.md	admitted	2026-08-13	2	3	-
 magic-xinhua-rs	XinhuaFinance	GLOBAL_NEWS_ADMITTED	true	docs/integrations/xinhua-finance.md	admitted	2026-07-29	2	3	-
 magic-yicai-rs	Yicai	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yicai-news.md	admitted	2026-07-29	2	3	-
+magic-yonhap-rs	Yonhap	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yonhap-rss.md	admitted	2026-08-16	2	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_PRICE_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	15	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	4	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	15	3	-

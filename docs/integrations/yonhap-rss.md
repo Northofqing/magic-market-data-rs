@@ -7,20 +7,24 @@ simplified-Chinese RSS metadata. It does not crawl article pages and does not
 implement historical search, persistence, caching, translation, or security
 identity inference.
 
-As of 2026-07-26:
+As of 2026-08-16:
 
 - deterministic request, transport, parser, pacing, metadata, capability, and
   Router evidence tests pass;
 - `instrument_news=false`;
-- `global_news=false`;
-- `NewsProvider::global_news` returns typed `Unsupported`;
-- `YonhapClient::probe_global_news` is the only explicit network diagnostic.
+- `global_news=true` for the exact Economy feed only;
+- the production constructor and gRPC composition select Economy;
+- `NewsProvider::global_news` returns typed `Unsupported` before I/O for all
+  other explicitly selected channels;
+- `YonhapClient::probe_global_news` remains the explicit diagnostic for all
+  seven fixed channels.
 
-The release-built production Rust client received
-`tls connection init failed: unexpected end of file` from both Rolling and
-Economy RSS, including outside the sandbox. BR-021 therefore prohibits a live
-capability claim. Fixture success does not replace production endpoint
-evidence.
+The release-built Rust client completed two Economy live probes and three
+serial Economy load requests on 2026-08-16. Each live probe returned ten
+complete metadata records; load completed 3/3 with thirty total records and a
+minimum request-start interval of 1000 ms. The Rolling feed was reachable but
+contained more than the 100-row complete-source bound, so it remains a typed
+protocol failure instead of receiving a larger speculative limit.
 
 ## Official endpoint allowlist
 
@@ -59,7 +63,8 @@ wrong final URLs, or a body over 2 MiB fail explicitly.
 - gate held through complete response acquisition;
 - no hidden retry, alternate endpoint, stale cache, or cross-Provider fallback.
 
-The load probe is serial, defaults to two requests, and permits at most three.
+The load probe is serial, fixed to the admitted Economy feed, defaults to two
+requests, and permits at most three.
 
 ## Strict XML and row validation
 
@@ -132,7 +137,7 @@ not contain the text; it is not evidence that the story never existed.
 | `Transport` | TLS, connection, HTTP status, body-read, or request-gate failure |
 | `Decode` | malformed/non-UTF-8 XML or invalid XML declaration/attributes |
 | `Protocol` | wrong MIME/final URL, oversize body, bad structure/row/time/order/evidence |
-| `Unsupported` | unadmitted global trait or unsupported instrument filter |
+| `Unsupported` | non-Economy global trait or unsupported instrument filter |
 | `Core` | normalized value/evidence contract rejection |
 
 Errors remain visible and typed. The adapter does not return fixture data,

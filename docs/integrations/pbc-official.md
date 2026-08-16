@@ -65,6 +65,13 @@ overlap. `economic_series=true` therefore applies only to the exact 2024
 only to the exact workbook contract documented below; no other family is
 promoted by the HTML evidence.
 
+On 2026-08-16 a broad gRPC parity run received one explicit HTTP 404 for this
+same fixed HTML URL. An immediate isolated release probe, without changing the
+host, path, headers, parser or limits, succeeded and returned all twelve M2
+monthly observations (ten present, two source-blank). The transient failure is
+therefore preserved as availability evidence; no alternate URL or scraped
+fallback was introduced.
+
 ## Explicit unsupported operations
 
 Uncataloged years, national social-financing article/PDF ingestion, other

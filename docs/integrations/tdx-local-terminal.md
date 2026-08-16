@@ -171,6 +171,17 @@ admitted snapshots in generation
 `00003ebc-0000-4000-818c-f369f1e24f04:1`; the server-side tests separately reject
 an admitted LocalAnalysis payload.
 
+On 2026-08-16 the rebuilt Server/Agent/monitor chain verified the external
+LocalAnalysis envelope contract against the running TDX terminal. A bounded
+1,000-event replay contained 985 admitted raw observations/snapshots and 15
+unadmitted analysis updates. Every analysis update passed the exact requested
+instrument filter, carried a parseable monitor observation time, declared
+`local_observation_time`, and repeated the same instrument inside its canonical
+payload. The observed transitions were `warmed_up` and explicit resets during a
+non-trading Sunday; no price/amount/volume trigger was fabricated from static
+off-session values. This closes external message-time and identity plumbing,
+not production threshold or trading-calendar admission.
+
 The earlier unchanged samples and an ineffective immediate `refresh_cache`
 call still establish that this is an interval batch source, not a
 source-timestamped tick stream. The wrapper excludes `tick` in its market-data
@@ -223,6 +234,14 @@ On a Windows host, `tools/release/package.sh` builds and installs
 manifest covers both. Neither binary auto-starts or opens an inbound listener.
 The price, cumulative-volume and cumulative-amount fields are production-admitted;
 source-record count and every LocalAnalysis event remain unadmitted.
+
+Each LocalAnalysis frame nevertheless carries the monitor-captured
+`observed_at_utc` of the triggering local observation plus the explicit
+`time_basis=local_observation_time`. The Agent copies this timestamp into the
+external event envelope instead of substituting Agent receive or gRPC delivery
+time. `source_at` remains absent because message time is not provider source
+time. The frame repeats the exact canonical instrument at top level so external
+instrument filters cannot collapse analysis events into a terminal-wide label.
 
 ## Blocked capabilities
 

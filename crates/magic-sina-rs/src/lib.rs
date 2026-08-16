@@ -191,7 +191,10 @@ fn validate_sina_endpoint(url: &str) -> Result<(), SinaError> {
     let authority = remainder.split(['/', '?', '#']).next().unwrap_or_default();
     if !matches!(
         authority,
-        "hq.sinajs.cn" | "stock.finance.sina.com.cn" | "vip.stock.finance.sina.com.cn"
+        "hq.sinajs.cn"
+            | "quotes.sina.cn"
+            | "stock.finance.sina.com.cn"
+            | "vip.stock.finance.sina.com.cn"
     ) {
         return Err(SinaError::InvalidRequest(
             "Sina endpoint host is not registered".into(),
@@ -957,6 +960,18 @@ mod tests {
 
     fn bj() -> InstrumentId {
         InstrumentId::new(Exchange::Beijing, "920118", AssetClass::Equity).unwrap()
+    }
+
+    #[test]
+    fn endpoint_allowlist_includes_the_fixed_kline_host_without_suffix_matching() {
+        assert!(validate_sina_endpoint(
+            "https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
+        )
+        .is_ok());
+        assert!(validate_sina_endpoint(
+            "https://quotes.sina.cn.attacker.invalid/cn/api/json_v2.php"
+        )
+        .is_err());
     }
 
     #[test]

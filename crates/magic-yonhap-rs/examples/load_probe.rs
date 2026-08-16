@@ -1,5 +1,5 @@
 use magic_market_core::PositiveU32;
-use magic_yonhap_rs::YonhapClient;
+use magic_yonhap_rs::{YonhapChannel, YonhapClient};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -24,7 +24,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or(2);
     validate_load(requests)?;
 
-    let client = YonhapClient::new()?;
+    // Production admission evidence is intentionally scoped to the fixed
+    // Economy feed. The rolling feed has a different source-cardinality
+    // contract and must not be substituted by this load probe.
+    let client = YonhapClient::for_channel(YonhapChannel::Economy)?;
     let started = Instant::now();
     let mut records = 0_usize;
     for index in 0..requests {

@@ -23,6 +23,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 const DEFAULT_ENDPOINT: &str = "https://qt.gtimg.cn/q=";
+const ALLOWED_ENDPOINT_PREFIXES: [&str; 6] = [
+    DEFAULT_ENDPOINT,
+    "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=",
+    "https://ifzq.gtimg.cn/appstock/app/kline/mkline?param=",
+    "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=",
+    "https://web.ifzq.gtimg.cn/appstock/app/day/query?code=",
+    "https://stock.gtimg.cn/data/index.php?appn=detail&action=data&c=",
+];
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_BATCH_SIZE: usize = 50;
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
@@ -74,9 +82,9 @@ impl HttpsTransport {
 
 impl SnapshotTransport for HttpsTransport {
     fn get(&self, url: &str) -> Result<Vec<u8>, TencentError> {
-        if !url.starts_with(DEFAULT_ENDPOINT) {
+        if !allowed_endpoint(url) {
             return Err(TencentError::InvalidRequest(
-                "Tencent request is outside the fixed HTTPS quote endpoint".into(),
+                "Tencent request is outside the fixed HTTPS endpoint allowlist".into(),
             ));
         }
         let response = self
@@ -103,6 +111,12 @@ impl SnapshotTransport for HttpsTransport {
         }
         Ok(body)
     }
+}
+
+fn allowed_endpoint(url: &str) -> bool {
+    ALLOWED_ENDPOINT_PREFIXES
+        .iter()
+        .any(|prefix| url.starts_with(prefix))
 }
 
 /// Read-only Tencent quote client. Clones share one connection-pooling agent.
@@ -162,6 +176,14 @@ impl TencentClient {
 
     fn snapshots(&self, instruments: &[InstrumentId]) -> Result<Vec<Snapshot>, TencentError> {
         let symbols = validate_instruments(instruments)?;
+        let url = format!("{}{}", self.endpoint, symbols.join(","));
+        let response = self.transport.get(&url)?;
+        let parsed = parse_response(&response)?;
+        order_snapshots(&symbols, parsed)
+    }
+
+    fn quote_snapshots(&self, instruments: &[InstrumentId]) -> Result<Vec<Snapshot>, TencentError> {
+        let symbols = validate_quote_instruments(instruments)?;
         let url = format!("{}{}", self.endpoint, symbols.join(","));
         let response = self.transport.get(&url)?;
         let parsed = parse_response(&response)?;
@@ -250,6 +272,59 @@ pub(crate) fn validate_instruments(
                 return Err(TencentError::InvalidRequest(format!(
                     "{} must be a six-digit A-share code",
                     code
+                )));
+            }
+            let symbol = format!("{prefix}{code}");
+            if !seen.insert(symbol.clone()) {
+                return Err(TencentError::InvalidRequest(format!(
+                    "duplicate instrument {symbol}"
+                )));
+            }
+            Ok(symbol)
+        })
+        .collect()
+}
+
+fn validate_quote_instruments(instruments: &[InstrumentId]) -> Result<Vec<String>, TencentError> {
+    if instruments.is_empty() {
+        return Err(TencentError::InvalidRequest(
+            "instrument list must not be empty".into(),
+        ));
+    }
+    if instruments.len() > MAX_BATCH_SIZE {
+        return Err(TencentError::InvalidRequest(format!(
+            "at most {MAX_BATCH_SIZE} instruments are accepted per request"
+        )));
+    }
+    let mut seen = HashSet::with_capacity(instruments.len());
+    instruments
+        .iter()
+        .map(|instrument| {
+            if !matches!(
+                instrument.asset_class(),
+                AssetClass::Equity | AssetClass::Index
+            ) {
+                return Err(TencentError::Unsupported(format!(
+                    "asset class {:?} has no verified Tencent quote contract",
+                    instrument.asset_class()
+                )));
+            }
+            if instrument.exchange() == Exchange::Beijing
+                && instrument.asset_class() == AssetClass::Index
+            {
+                return Err(TencentError::Unsupported(
+                    "Beijing index quote identity is unverified".into(),
+                ));
+            }
+            let prefix = match instrument.exchange() {
+                Exchange::Shanghai => "sh",
+                Exchange::Shenzhen => "sz",
+                Exchange::Beijing => "bj",
+            };
+            let code = instrument.code();
+            if code.len() != 6 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(TencentError::InvalidRequest(format!(
+                    "{code} must be a six-digit market code"
                 )));
             }
             let symbol = format!("{prefix}{code}");
@@ -795,7 +870,7 @@ impl RealtimeQuotes for TencentClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<Self::Quote>, Self::Error> {
-        let snapshots = self.snapshots(instruments)?;
+        let snapshots = self.quote_snapshots(instruments)?;
         let observed_at = now()?;
         let batch_id = format!("tencent-web:{observed_at}:quote");
         let mut records = Vec::with_capacity(snapshots.len());
@@ -1105,6 +1180,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn production_transport_allowlist_is_closed_over_only_verified_families() {
+        for url in [
+            "https://qt.gtimg.cn/q=sh600396",
+            "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600396,day,,,20,qfq",
+            "https://ifzq.gtimg.cn/appstock/app/kline/mkline?param=sh600396,m5,,20",
+            "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=sh600396",
+            "https://web.ifzq.gtimg.cn/appstock/app/day/query?code=sh600396",
+            "https://stock.gtimg.cn/data/index.php?appn=detail&action=data&c=sh600396&p=0",
+        ] {
+            assert!(allowed_endpoint(url), "{url}");
+        }
+        for url in [
+            "http://qt.gtimg.cn/q=sh600396",
+            "https://evil.example/q=sh600396",
+            "https://web.ifzq.gtimg.cn/other/path",
+            "https://stock.gtimg.cn.evil.example/data/index.php?appn=detail&action=data&c=sh600396",
+        ] {
+            assert!(!allowed_endpoint(url), "{url}");
+        }
+    }
+
     fn encoded(lines: &str) -> Vec<u8> {
         let (bytes, _, had_errors) = GBK.encode(lines);
         assert!(!had_errors);
@@ -1187,6 +1284,29 @@ mod tests {
         assert!(matches!(
             client.market_statistics(&[sh()]),
             Err(TencentError::Protocol(message)) if message.contains("turnover rate")
+        ));
+    }
+
+    #[test]
+    fn realtime_quotes_accept_verified_shenzhen_or_shanghai_index_identity_only() {
+        let client = TencentClient::with_transport(FixtureTransport {
+            response: encoded(INDEX_STATS_LINE),
+        });
+        let batch = client.realtime_quotes(&[index()]).unwrap();
+        assert_eq!(batch.records().len(), 1);
+        assert_eq!(batch.records()[0].instrument(), &index());
+        assert_eq!(batch.records()[0].provider(), ProviderId::Tencent);
+        assert!(batch.records()[0].source_at().is_some());
+
+        assert!(matches!(
+            client.order_books(&[index()]),
+            Err(TencentError::Unsupported(_))
+        ));
+        let beijing_index =
+            InstrumentId::new(Exchange::Beijing, "899050", AssetClass::Index).unwrap();
+        assert!(matches!(
+            client.realtime_quotes(&[beijing_index]),
+            Err(TencentError::Unsupported(message)) if message.contains("Beijing index")
         ));
     }
 

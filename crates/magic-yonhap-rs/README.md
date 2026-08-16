@@ -8,15 +8,14 @@ simplified-Chinese RSS feeds.
 `YonhapClient::content_capabilities()` reports:
 
 - `instrument_news = false`
-- `global_news = false`
+- `global_news = true` for the exact Economy feed
 
-The deterministic parser and transport contract are implemented, but live
-admission is currently false. On 2026-07-26 the release-built Rust client
-received `tls connection init failed: unexpected end of file` from both the
-Rolling and Economy feeds, including outside the sandbox.
-`NewsProvider::global_news` therefore returns typed `Unsupported`.
-`probe_global_news` is the explicitly named diagnostic path that performs a
-bounded request and preserves the real transport failure.
+On 2026-08-16 the release-built Rust client completed two Economy live probes
+and three serial Economy load requests. The production constructor selects
+Economy, and `NewsProvider::global_news` is admitted only for that channel.
+Other explicitly selected channels return typed `Unsupported` before I/O on
+the trait path. `probe_global_news` remains the explicitly named diagnostic;
+the reachable Rolling feed currently fails the unchanged 100-source-item bound.
 
 ## Official channels
 

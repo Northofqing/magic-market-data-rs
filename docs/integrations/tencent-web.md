@@ -16,6 +16,7 @@
 | 统一契约 | 上海/深圳 | 北京 | 精确边界 |
 | --- | --- | --- | --- |
 | `RealtimeQuotes` | 已实盘通过 | 已实盘通过 | 名称、价量额、涨跌幅、源时间 |
+| `IndexQuotes` | 沪深六指数实盘通过 | 不支持 | 1..=6 个显式 Index 身份；调用方提供正 source-age 门 |
 | `OrderBooks` | 已实盘通过 | 已实盘通过 | 五档价格/数量与可见总深度 |
 | `HistoricalBars` | 1/5/15/30/60 分钟、日/周/月 | 仅日线实盘通过 | 未复权；年线明确不支持 |
 | `MinuteData` | 当日与按日期历史 | 当日及历史端点已验证 | 累计量；累计额缺失时保持 `None` |
@@ -44,7 +45,9 @@
 | 分钟 K 线 | `ifzq.gtimg.cn` |
 | 当日逐笔 | `stock.gtimg.cn` |
 
-部署防火墙需要允许这些域名的 TCP 443。必须按域名解析，不能固定当前 IP；任何
+部署防火墙需要允许这些域名的 TCP 443。生产 transport 只接受仓库固定的六个
+HTTPS 前缀：Quote、复权 K 线、分钟 K 线、历史分时、当日分时和逐笔；HTTP、近似
+域名、未知路径和调用方 URL 都在联网前拒绝。必须按域名解析，不能固定当前 IP；任何
 DNS、TLS、HTTP、解码或字段矛盾都会返回错误，不会切换到 TDX。
 
 ## 字段、单位与证据
@@ -100,6 +103,7 @@ cargo run -p magic-tencent-rs --example live_probe --release --locked --offline
 ```text
 MAGIC_TENCENT_CODES=600396.SH,000001.SZ,920118.BJ
 MAGIC_TENCENT_STATISTICS_CODES=600396.SH:EQUITY,000001.SH:INDEX,510050.SH:ETF
+MAGIC_TENCENT_INDEX_CODES=000001.SH:INDEX,399001.SZ:INDEX,399006.SZ:INDEX,000300.SH:INDEX,000905.SH:INDEX,000852.SH:INDEX
 MAGIC_TENCENT_HISTORY_DATE=2026-07-22
 MAGIC_TENCENT_TIMEOUT_SECS=10
 ```
@@ -124,6 +128,26 @@ SLA，也不是可持续频率建议；生产调用必须有自己的限频、�
 
 同日 `statistics` 专项探针为 12 请求/3 并发，12/12 成功、36 条记录、28.76
 req/s、P50 66.801 ms、P95 181.955 ms、最大 192.500 ms。
+
+2026-08-16 的 `IndexQuotes` 组合探针执行两次 live 和三次串行请求，每次均完整返回
+上证指数、深证成指、创业板指、沪深 300、中证 500 和中证 1000，六条记录状态均为
+`Available`。探针运行于周日，因此显式使用三天 source-age 门，并保留源端
+2026-08-14 的各自时间；同一批次若请求 5 秒 freshness 会被 Router 拒绝，不会用本机
+观测时间冒充源时间。可复现命令：
+
+```bash
+cargo run -p magic-market-composition --example index_quotes_live_probe --locked --offline
+```
+
+同日 `IntradayShape` 对 600396.SH 的 2026-08-14 历史分时执行两次 live 和三次
+串行请求，每次均从完整源响应中选出 242 个正常交易时段点，得到 open/high/low/latest
+= 18.18/18.18/16.97/16.99、累计量 2,835,626 手、累计额 4,962,294,835 元、
+VWAP 17.499821326930984、上涨/下跌/平盘点 98/127/17。源端 25 个盘后点保留在
+输入摘要中但不进入常规时段形态计算：
+
+```bash
+cargo run -p magic-market-composition --example intraday_shape_live_probe --release --locked --offline
+```
 
 盘前当前价为零时，统一 Quote 无法构造正价格，命令会显式失败；涨跌停、停牌等
 导致盘口一侧缺失时，记录保留已有档位并标为 `Unavailable`。上层切源时必须保留

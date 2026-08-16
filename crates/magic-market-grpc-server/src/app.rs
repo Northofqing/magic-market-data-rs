@@ -277,6 +277,12 @@ implement_query_service! {
         concept_hits => ConceptHits,
         option_data => OptionData,
         provider_top_n_rankings => ProviderTopNRankings,
+        instrument_news => InstrumentNews,
+        index_quotes => IndexQuotes,
+        intraday_shape => IntradayShape,
+        t0_evidence => T0Evidence,
+        outcome_daily_bars => OutcomeDailyBars,
+        upper_limit_pool_review => UpperLimitPoolReview,
 }
 
 pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
@@ -335,6 +341,12 @@ pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
         Operation::ConceptHits => v1::Operation::ConceptHits,
         Operation::OptionData => v1::Operation::OptionData,
         Operation::ProviderTopNRankings => v1::Operation::ProviderTopNRankings,
+        Operation::InstrumentNews => v1::Operation::InstrumentNews,
+        Operation::IndexQuotes => v1::Operation::IndexQuotes,
+        Operation::IntradayShape => v1::Operation::IntradayShape,
+        Operation::T0Evidence => v1::Operation::T0Evidence,
+        Operation::OutcomeDailyBars => v1::Operation::OutcomeDailyBars,
+        Operation::UpperLimitPoolReview => v1::Operation::UpperLimitPoolReview,
     }
 }
 

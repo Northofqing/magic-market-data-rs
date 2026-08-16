@@ -14,9 +14,9 @@ magic-market-transport	infrastructure	reqwest,rustls	false	target	-
 magic-nbs-rs	shared	-	true	target	-
 magic-pbc-rs	shared	-	true	target	-
 magic-sec-rs	shared	-	true	target	-
-magic-sina-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-sina-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack with exact fixed hosts including quotes.sina.cn for K-line/financial endpoints; migrate behind shared transport
 magic-stcn-rs	shared	-	true	target	-
-magic-tencent-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-tencent-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack with a closed six-prefix HTTPS allowlist for quote, bars, minute and trades; migrate behind shared transport
 magic-thepaper-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-ths-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-tdx-local-rs	legacy-direct	ureq	false	reviewed-exception	official TQ-Local API is fixed to http://127.0.0.1:17709/; loopback only, no proxy, no redirects, bounded blocking requests

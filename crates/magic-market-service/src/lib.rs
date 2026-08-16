@@ -83,6 +83,12 @@ define_operations! {
     ConceptHits => "concept_hits",
     OptionData => "option_data",
     ProviderTopNRankings => "provider_top_n_rankings",
+    InstrumentNews => "instrument_news",
+    IndexQuotes => "index_quotes",
+    IntradayShape => "intraday_shape",
+    T0Evidence => "t0_evidence",
+    OutcomeDailyBars => "outcome_daily_bars",
+    UpperLimitPoolReview => "upper_limit_pool_review",
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

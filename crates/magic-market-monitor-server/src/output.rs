@@ -220,6 +220,9 @@ pub(crate) enum ServiceEvent {
     Analysis {
         generation: u64,
         admitted: bool,
+        instrument: String,
+        observed_at_utc: String,
+        time_basis: magic_market_core::ObservationTimeBasis,
         update: crate::analysis::AnalysisUpdate,
     },
     SnapshotObservation {

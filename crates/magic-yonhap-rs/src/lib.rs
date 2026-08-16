@@ -22,6 +22,11 @@ const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RETURNED_ITEMS: u32 = 50;
 const MAX_SOURCE_ITEMS: usize = 100;
 
+/// The fixed Economy feed passed the repository admission gate on 2026-08-16.
+/// Other Yonhap channels remain explicit diagnostics and are not promoted by
+/// this family-level capability.
+pub const GLOBAL_NEWS_ADMITTED: bool = true;
+
 /// One official simplified-Chinese Yonhap RSS channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum YonhapChannel {
@@ -222,7 +227,7 @@ impl std::fmt::Debug for YonhapClient {
 
 impl YonhapClient {
     pub fn new() -> Result<Self, YonhapError> {
-        Self::for_channel(YonhapChannel::Rolling)
+        Self::for_channel(YonhapChannel::Economy)
     }
 
     pub fn for_channel(channel: YonhapChannel) -> Result<Self, YonhapError> {
@@ -230,12 +235,12 @@ impl YonhapClient {
     }
 
     pub fn with_timeout(timeout: Duration) -> Result<Self, YonhapError> {
-        Self::for_channel_with_timeout(YonhapChannel::Rolling, timeout)
+        Self::for_channel_with_timeout(YonhapChannel::Economy, timeout)
     }
 
     pub fn with_transport(transport: impl YonhapTransport + 'static) -> Self {
         Self::from_parts(
-            YonhapChannel::Rolling,
+            YonhapChannel::Economy,
             Arc::new(transport),
             MINIMUM_REQUEST_INTERVAL,
         )
@@ -255,7 +260,7 @@ impl YonhapClient {
     pub const fn content_capabilities() -> ContentCapabilities {
         ContentCapabilities {
             instrument_news: false,
-            global_news: false,
+            global_news: GLOBAL_NEWS_ADMITTED,
             announcements: false,
             market_announcements: false,
             investor_questions: false,
@@ -274,7 +279,7 @@ impl YonhapClient {
         parse_response(response.body(), self.channel, limit.get(), &observed_at)
     }
 
-    fn for_channel_with_timeout(
+    pub fn for_channel_with_timeout(
         channel: YonhapChannel,
         timeout: Duration,
     ) -> Result<Self, YonhapError> {
@@ -330,10 +335,13 @@ impl NewsProvider for YonhapClient {
         ))
     }
 
-    fn global_news(&self, _limit: PositiveU32) -> Result<DataBatch<NewsItem>, Self::Error> {
-        Err(YonhapError::Unsupported(
-            "Yonhap global news is pending bounded live admission; use probe_global_news for explicit diagnostics".into(),
-        ))
+    fn global_news(&self, limit: PositiveU32) -> Result<DataBatch<NewsItem>, Self::Error> {
+        if self.channel != YonhapChannel::Economy {
+            return Err(YonhapError::Unsupported(
+                "only the fixed Yonhap Economy RSS feed is production-admitted; use probe_global_news for other explicit channel diagnostics".into(),
+            ));
+        }
+        self.probe_global_news(limit)
     }
 }
 
@@ -997,7 +1005,7 @@ mod tests {
     fn channel_and_request_default_and_selected_channels_are_explicit() {
         assert_eq!(
             YonhapClient::new().unwrap().channel(),
-            YonhapChannel::Rolling
+            YonhapChannel::Economy
         );
         assert_eq!(
             YonhapClient::for_channel(YonhapChannel::Economy)

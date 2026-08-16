@@ -126,6 +126,12 @@ native-tls:
 继续返回 typed `Unsupported`。精确命令、时间和完整结果见
 [`2026-07-27-cffex-delivery.md`](../evidence/2026-07-27-cffex-delivery.md)。
 
+2026-08-16 使用独立 release 构建再次请求同一 `2026-07` 范围，Rustls 和启用
+`native-tls` feature 的系统 TLS 均在精确
+`https://www.cffex.com.cn/cn/jystz.html` 建连阶段超时。两次都未取得 HTTP
+状态或响应体，因此仍是上游可达性阻塞，不是解析失败；实现没有改用明文 HTTP、
+浏览器 Cookie、备用域名或另一来源。
+
 默认测试证券/日期和覆盖变量见
 [`crates/magic-exchange-rs/README.md`](../../crates/magic-exchange-rs/README.md)。
 

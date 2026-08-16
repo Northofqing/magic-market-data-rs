@@ -172,14 +172,14 @@ shasum -a 256 -c SHA256SUMS
 | `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；生产数据族仍待准入 |
 | `magic-market-monitor` | 支持 | 支持 | 支持 | 纯确定性价格窗口与有界 replay；无 I/O |
 | `magic-market-monitor-server` | typed Unsupported | typed Unsupported | 诊断叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听，生产准入仍关闭 |
-| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；54 个查询精确登记，46 个正式 handler；配置东财妙想 Key 时其 4 个固定部分字段操作默认可读且始终 UNADMITTED，其他诊断仍需 opt-in |
+| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；60 个查询精确登记，51 个操作有正式 handler，`IndexQuotes`、`IntradayShape`、`OutcomeDailyBars` 与 `UpperLimitPoolReview` 已实盘；`T0Evidence` 仅显式 opt-in 且始终 UNADMITTED；配置东财妙想 Key 时其 4 个固定部分字段操作默认可读且始终 UNADMITTED，Baidu/EMQuant 等其他诊断仍需 opt-in |
 | `magic-market-tdx-agent` | typed Unsupported | typed Unsupported | 诊断出站 Agent | 固定同目录 monitor/helper；不开放入站端口，不提升 admission |
 | `magic-tdx-native-bridge --discover` | typed Unsupported | typed Unsupported | 仅发现 | Windows 同用户/会话 `TdxW.exe` 发现和版本证据；不获取行情 |
 | `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |
 | TDX | 支持 | 支持 | 支持 | 公共行情/财务需要出站 TCP 与可写缓存目录；本地终端只访问固定 loopback HTTP |
 | Tencent | 支持 | 支持 | 支持 | Rustls HTTPS 与内置 WebPKI 根证书 |
 | Sina | 支持 | 支持 | 支持 | Rustls HTTPS、GB18030/JSON，无本地运行时 |
-| Eastmoney/CNInfo/THS/CLS/Jin10/The Paper/Yonhap/WallstreetCN/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源；Yonhap 当前 live TLS 未准入，WallstreetCN 已准入 |
+| Eastmoney/CNInfo/THS/CLS/Jin10/The Paper/Yonhap/WallstreetCN/Baidu | 支持 | 支持 | 支持 | Rustls HTTPS；公共网页补充源；Yonhap 仅 Economy feed 已准入，其余频道保持诊断 |
 | State Council official | 支持 | 支持 | 支持 | Rustls HTTPS；官方政策文件 |
 | SSE/SZSE/HKEX official | 支持 | 支持 | 支持 | Rustls HTTPS；官方公共只读数据 |
 | CFFEX official diagnostic | 仅诊断 | 仅诊断 | 仅诊断 | capability=false；生产 trait `Unsupported`；官方 TLS live 未通过 |
@@ -483,8 +483,8 @@ Quote/Level-2/分钟权限不足而保持整体非零退出；Sina probe 会打�
 接收未锁定的公开 type-0/type-2 新闻，The Paper probe 只接收财经频道原生文章并
 排除外链转载；两者都不从文本猜测证券身份。Yonhap probe 只读取选定的官方中文
 RSS，打印标题、ACK ID、规范链接、来源时间、频道和证据，并验证 summary/content
-缺失；截至 2026-07-26 Rolling/Economy 的生产 Rust TLS 都收到 unexpected EOF，
-所以该 probe 预期非零、capability 保持 false。`MAGIC_YONHAP_MATCH` 的未命中只
+缺失；2026-08-16 Economy 完成 2 次 live 和 3 次串行 load，生产仅注册 Economy。
+Rolling 当前因完整 feed 超过 100 条而明确失败。`MAGIC_YONHAP_MATCH` 的未命中只
 表示当前有界 RSS 窗口没有该标题文本，不能作为历史不存在的证据。WallstreetCN
 probe 只读取精确 `/rss.xml`，严格解析完整 feed 后打印标题、数字 ID、规范链接、
 来源时间和证据，summary/content 恒缺失；2026-07-26 live 20 条和同一客户端串行

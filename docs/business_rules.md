@@ -437,9 +437,13 @@ identity and URL, publication time, channel and provenance only; summary and
 content remain absent and article pages are never fetched. The complete feed
 must pass exact endpoint, XML structure, required-field, unique-ID/URL,
 newest-first and 100-row bounds before caller-limit truncation. Public global
-news capability is true only after the production Rust client passes bounded
-live admission; otherwise the trait remains explicitly unsupported and only
-the named diagnostic method may perform the fetch.
+news capability is scoped per fixed channel. The Economy endpoint is the only
+production-admitted channel after two bounded live and three serial load
+observations on 2026-08-16. The production constructor therefore selects
+Economy. Every other explicit channel, including Rolling, remains diagnostic
+and its trait call fails before I/O; the Rolling feed currently exceeds the
+100-row complete-source bound. No channel admission widens another channel's
+endpoint or resource limits.
 
 ## BR-031 WallstreetCN RSS metadata boundary
 The WallstreetCN Provider may read only
@@ -535,6 +539,14 @@ best-effort. Unavailable replay and slow-consumer loss are explicit. Replay
 delivery time does not change event identity and replay must not be described as
 at-least-once. Replay sizes, restart policy, watchlist bounds and throughput
 defaults are selected only from shadow evidence, never from proposal values.
+Until a provider source timestamp is independently proved, the anomaly envelope
+uses the timestamp captured when the monitor obtained the triggering local
+observation and declares `local_observation_time` as its time basis. Agent relay
+time and gRPC delivery time do not replace that timestamp. `source_at` remains
+absent and the local observation time cannot satisfy strict source freshness.
+The framed message also carries the exact canonical instrument at top level;
+Agent and gRPC filters must not infer it from a nested analysis payload or fall
+back to a synthetic terminal-wide identity.
 
 ## BR-045 Versioned external gRPC boundary
 
@@ -663,3 +675,33 @@ that sends neither an event nor a heartbeat within its configured deadline and
 removes the command channel before reporting it connected. Eastmoney public and
 authenticated diagnostic calls share one production pacing lane. None of these
 hardening changes promotes a Provider, data family or diagnostic admission.
+
+## BR-050 Derived market-data product boundary
+
+`IndexQuotes`, `IntradayShape`, `T0Evidence`, `OutcomeDailyBars`, and
+`UpperLimitPoolReview` are versioned external data products, not aliases that
+permit an arbitrary existing Provider response to be relabelled. Their v1 JSON
+contracts are fixed by `docs/integrations/grpc-derived-products.md`. Every
+request is explicitly bounded and every output retains the exact normalized
+Provider input evidence. Nullable source fields remain null; zero, local fetch
+time and another family's evidence must not fill a missing value.
+
+`IndexQuotes` accepts only exact index identities and requires source-backed
+freshness. `IntradayShape` consumes one complete, ordered minute series and uses
+only its documented deterministic arithmetic. `T0Evidence` and
+`OutcomeDailyBars` are TDX-only atomic compositions with no routing, fallback or
+mixed-Provider success. `UpperLimitPoolReview` requires all four exact pool
+families for one trading date and may expose facts and counts but no trading
+recommendation or strategy score.
+
+The five RPCs are append-only. A product remains false and returns typed
+`UNIMPLEMENTED` before Provider I/O until its complete composition,
+deterministic contract suite and live admission are registered. `IndexQuotes`,
+`IntradayShape`, `OutcomeDailyBars`, and `UpperLimitPoolReview` meet that gate
+through bounded deterministic compositions and two live plus three serial
+observations. `T0Evidence` remains false because TDX public Quote and
+order-book packets lack an admitted source timestamp. It may expose the exact
+four-family bundle only through an explicit opt-in diagnostic that stays
+incomplete and unadmitted. Adding an ordinary empty record, fixture result,
+partial bundle or client-selected `allow_unadmitted` path does not satisfy
+production admission.

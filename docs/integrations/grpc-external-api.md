@@ -5,11 +5,11 @@
 | 项目 | 状态 |
 | --- | --- |
 | Protobuf v1 合同 | 已建立，可生成客户端 |
-| 54 个只读数据族 RPC | 已进入 v1 Proto |
+| 60 个只读数据族 RPC | 已进入 v1 Proto；新增 `InstrumentNews` 与 5 个组合数据产品接口 |
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 54 个操作精确登记；46 个正式 handler，6 个 opt-in 诊断 handler，2 个无数据操作 fail-before-I/O |
+| Unary Provider composition | 60 个操作精确登记；51 个操作有正式 handler；`IndexQuotes`、`IntradayShape`、`OutcomeDailyBars` 与 `UpperLimitPoolReview` 已实盘；`T0Evidence` 只提供显式 opt-in 的 UNADMITTED 诊断；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
 | TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额为生产数据；异动事件仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
@@ -186,6 +186,7 @@ MarketDragonTiger          DragonTigerDiscovery
 MarketRankings             MarketBreadth
 Popularity                 ConceptHits
 OptionData                 ProviderTopNRankings
+InstrumentNews
 ```
 
 所有方法都是只读 unary RPC。没有账户、资产、持仓、委托、撤单或成交写接口。
@@ -274,6 +275,11 @@ payload
 没有源时间，不能用 `observed_at` 代填。`GetListenerStatus.admitted_event_families` 返回
 当前三个精确 family；`analysis` 事件继续返回 `UNADMITTED`。
 
+`analysis` 事件的 `observed_at` 来自监控器生成异动消息时绑定的触发观测时间，原始
+payload 同时声明 `time_basis=local_observation_time`。Agent 接收时间和 gRPC 发送时间
+都不会覆盖该值；`source_at` 继续为空。异动 frame 在顶层携带规范证券标识，订阅和
+重放的 instrument filter 不依赖嵌套 payload 推断。
+
 消费方必须持久化最后成功处理的 `generation + sequence`。generation 改变表示 TDX
 重启、终端替换或服务明确重建连续性，不能把新旧 generation 拼成连续行情。
 
@@ -348,18 +354,30 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 
 ## 10. 当前实现状态
 
-- Protobuf/descriptor、54 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
+- Protobuf/descriptor、60 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
   blocking 调用隔离均已实现；
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；价格、累计成交量和累计成交额进入
   生产事件流，异动仍为影子模式；
-- unary registry 对 54 个操作逐项精确登记：46 个操作绑定 admissions.tsv 范围内的
-  Tencent、Sina、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
-  HKEX、THS、State Council、iWencai 或 TDX 公共协议 handler；
-- `MoneyFlows`、`FuturesDelivery`、`TechnicalBars`、`FundFlowSeries`、
-  `PostCloseFlows`、`MarketRankings` 登记了显式 opt-in 诊断 handler；配置
+- unary registry 对 60 个操作逐项精确登记：51 个操作绑定证据支持的正式 handler；
+  除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
+  HKEX、THS、State Council 与 iWencai 外，也可精确选择 TDX 公共协议、Sina、SSE、SZSE、
+  CLS、ThePaper、XinhuaFinance、Yicai、SecuritiesTimes、NBS、PBC 与 WorldBank；
+- `InstrumentNews` 是 append-only 的第 55 个操作，只接受 Sina 已验证的沪深 A 股公司新闻
+  合同；请求 schema 为 `magic.market.instrument_news.request`，记录 schema 复用
+  `magic.market.news_item`，日期范围必须同时提供 start/end 或同时省略；
+- `IndexQuotes`、`IntradayShape`、`T0Evidence`、`OutcomeDailyBars` 和
+  `UpperLimitPoolReview` 是 append-only 的第 56..60 个操作。其 v1 请求/记录字段见
+  [`grpc-derived-products.md`](grpc-derived-products.md)；`IndexQuotes` 已绑定腾讯六指数
+  严格 freshness composition，`IntradayShape` 已绑定腾讯完整分钟序列确定性派生，
+  `OutcomeDailyBars` 已绑定 TDX-only 精确 through 日线，`UpperLimitPoolReview` 已绑定东财
+  同交易日四池原子组合；`T0Evidence` 只有显式 `allow_unadmitted=true` 才读取现有四族，
+  且因 Quote/盘口无已证明源时间始终返回 `UNADMITTED` 与 `complete=false`；
+- `MoneyFlows`、`FuturesDelivery`、`TechnicalBars`、Baidu `HistoricalBars`、
+  `FundFlowSeries`、`PostCloseFlows`、`MarketRankings` 登记了显式 opt-in 诊断 handler；
+  EMQuant bridge 可发现时，其 Quote、日线/日内 K、盘口和资金流也只作为显式诊断来源；配置
   `EASTMONEY_API_KEY`（兼容别名 `MX_APIKEY`）后，`Auctions` 和 `MarketBreadth` 也登记
   东财妙想诊断 handler。这 4 个固定模板操作默认即可返回 `UNADMITTED` partial 数据；
   其他诊断仍只有 `allow_unadmitted=true` 才执行；

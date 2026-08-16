@@ -93,6 +93,45 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
+    let index_codes = std::env::var("MAGIC_TENCENT_INDEX_CODES").unwrap_or_else(|_| {
+        "000001.SH:INDEX,399001.SZ:INDEX,399006.SZ:INDEX,000300.SH:INDEX,000905.SH:INDEX,000852.SH:INDEX"
+            .to_owned()
+    });
+    let index_instruments = index_codes
+        .split(',')
+        .map(parse_statistics_instrument)
+        .collect::<Result<Vec<_>, _>>()?;
+    if index_instruments
+        .iter()
+        .any(|instrument| instrument.asset_class() != AssetClass::Index)
+    {
+        return Err("MAGIC_TENCENT_INDEX_CODES accepts INDEX identities only".into());
+    }
+    let index_quotes = client.realtime_quotes(&index_instruments)?;
+    if index_quotes.records().len() != index_instruments.len() {
+        return Err("index quote response cardinality mismatch".into());
+    }
+    println!(
+        "index_quotes count={} provenance={:?} quality={:?}",
+        index_quotes.records().len(),
+        index_quotes.provenance(),
+        index_quotes.quality()
+    );
+    for quote in index_quotes.records() {
+        println!(
+            "index_quote code={} exchange={:?} price={} previous_close={:?} volume_lots={} amount_yuan={:?} source_at={:?} observed_at={} status={:?}",
+            quote.instrument().code(),
+            quote.instrument().exchange(),
+            quote.price().get(),
+            quote.previous_close().map(|value| value.get()),
+            quote.volume().get(),
+            quote.amount().map(Money::get),
+            quote.source_at(),
+            quote.observed_at(),
+            quote.status(),
+        );
+    }
+
     let quotes = client.realtime_quotes(&instruments)?;
     if quotes.records().len() != instruments.len() {
         return Err("quote response cardinality mismatch".into());

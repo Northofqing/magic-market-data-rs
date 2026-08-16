@@ -297,10 +297,16 @@ impl AgentClient {
                         if let Some(configuration) = configuration {
                             return Ok(SessionEnd::Reconfigure(configuration));
                         }
+                        // A successful idle heartbeat does not create an event frame.
+                        // Start the next receive cycle instead of falling through to the
+                        // pending-frame delivery path.
+                        continue;
                     }
                 }
             }
-            let frame = pending.as_ref().ok_or(ClientError::MissingPendingFrame)?;
+            let Some(frame) = pending.as_ref() else {
+                continue;
+            };
             outgoing
                 .send(v1::AgentMessage {
                     body: Some(v1::agent_message::Body::Event(event_from_frame(
@@ -548,8 +554,6 @@ pub(crate) enum ClientError {
     SequenceExhausted,
     #[error("agent/server sequence contradiction: local={local}, server={server}")]
     SequenceContradiction { local: u64, server: u64 },
-    #[error("pending frame state is missing")]
-    MissingPendingFrame,
     #[error("monitor frame is not JSON: {0}")]
     FrameJson(serde_json::Error),
     #[error("monitor frame has no event type")]
@@ -598,10 +602,12 @@ mod tests {
         let error = event_from_frame("00000000-0000-4000-8000-000000000001", 1, raw).unwrap_err();
         assert!(matches!(error, ClientError::UnadmittedAnalysisClaim));
 
-        let raw = br#"{"type":"analysis","instrument":"600396.SH","admitted":false}"#;
+        let raw = br#"{"type":"analysis","instrument":"600396.SH","admitted":false,"observed_at_utc":"2026-08-15T00:00:01Z","time_basis":"local_observation_time"}"#;
         let event = event_from_frame("00000000-0000-4000-8000-000000000001", 1, raw).unwrap();
         assert_eq!(event.provider, "LocalAnalysis");
         assert_eq!(event.admission, v1::AdmissionState::Unadmitted as i32);
+        assert_eq!(event.observed_at, "2026-08-15T00:00:01Z");
+        assert!(event.source_at.is_empty());
         assert_eq!(event.payload.unwrap().data, raw);
     }
 

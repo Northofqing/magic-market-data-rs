@@ -760,6 +760,9 @@ where
                 self.output.emit(&ServiceEvent::Analysis {
                     generation: self.generation,
                     admitted,
+                    instrument: update.instrument.clone(),
+                    observed_at_utc: reading.observed_at_utc.clone(),
+                    time_basis: magic_market_core::ObservationTimeBasis::LocalObservationTime,
                     update,
                 })?;
             }
@@ -902,6 +905,9 @@ where
                 generation: self.generation,
                 admitted: LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED
                     && LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED,
+                instrument: update.instrument.clone(),
+                observed_at_utc: result.job.reading.observed_at_utc.clone(),
+                time_basis: magic_market_core::ObservationTimeBasis::LocalObservationTime,
                 update,
             })?;
         }
@@ -1741,6 +1747,9 @@ mod tests {
             event,
             ServiceEvent::Analysis {
                 admitted: false,
+                instrument,
+                observed_at_utc,
+                time_basis: magic_market_core::ObservationTimeBasis::LocalObservationTime,
                 update: crate::analysis::AnalysisUpdate {
                     family: AnalysisFamily::Amount,
                     transition: crate::analysis::AnalysisTransition::Triggered { value: 70.0 },
@@ -1748,7 +1757,8 @@ mod tests {
                     ..
                 },
                 ..
-            }
+            } if instrument == "EQUITY:SH:600000"
+                && observed_at_utc == "2026-08-13T01:02:03Z"
         )));
         assert_eq!(runtime.poller.calls, 4);
     }
