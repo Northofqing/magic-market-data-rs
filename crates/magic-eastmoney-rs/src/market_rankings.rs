@@ -25,10 +25,15 @@ const MAX_RETURNED_RANKS: u32 = 200;
 const MAX_PAGE_ATTEMPTS: usize = 3;
 const UNIVERSE: &str = "Eastmoney A-share equities";
 
-/// One source-ranked diagnostic row. Optional source fields remain `null` and
-/// never become zero, an empty label, or a fabricated security identity.
+/// A bounded first-page ranking is admitted only as one atomic provider
+/// response. It does not claim a complete full-market pagination snapshot.
+pub const BOUNDED_MARKET_RANKINGS_ADMITTED: bool = true;
+
+/// One source-ranked row from a single bounded provider response. Optional
+/// fields are retained for backward-compatible diagnostic decoding; the
+/// admitted parser requires every identity, value and source-time field.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct DiagnosticMarketRankingEntry {
+pub struct MarketRankingSnapshotEntry {
     kind: MarketRankingKind,
     source_rank: PositiveU32,
     instrument: Option<InstrumentId>,
@@ -40,6 +45,14 @@ pub struct DiagnosticMarketRankingEntry {
     fetched_count: PositiveU32,
     evidence: SourceEvidence,
 }
+
+impl MarketRankingSnapshotEntry {
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+}
+
+pub type DiagnosticMarketRankingEntry = MarketRankingSnapshotEntry;
 
 impl MarketRankings for EastmoneyClient {
     type Error = EastmoneyError;
@@ -73,6 +86,37 @@ impl MarketRankings for EastmoneyClient {
 }
 
 impl EastmoneyClient {
+    /// Returns a bounded ranking snapshot from one HTTPS response. The source
+    /// order, reported universe size, row count and per-row source time are
+    /// preserved; no multi-page completeness claim is made.
+    pub fn bounded_market_rankings_snapshot(
+        &self,
+        kind: &MarketRankingKind,
+        limit: PositiveU32,
+    ) -> Result<magic_market_core::DataBatch<MarketRankingSnapshotEntry>, EastmoneyError> {
+        if limit.get() > PAGE_SIZE {
+            return Err(EastmoneyError::InvalidRequest(format!(
+                "Eastmoney bounded market ranking limit must be at most {PAGE_SIZE}"
+            )));
+        }
+        let field = ranking_field(kind)?;
+        let mut last_transport_error = None;
+        for endpoint in ENDPOINTS {
+            let url = ranking_url_for(endpoint, kind, field, 1, PAGE_SIZE)?;
+            match self.fetch_ranking_page(&url) {
+                Ok(bytes) => return parse_atomic_market_ranking_page(&bytes, kind, limit),
+                Err(EastmoneyError::Transport(message)) => {
+                    last_transport_error = Some(format!("{endpoint}: {message}"));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(EastmoneyError::Transport(format!(
+            "all Eastmoney bounded ranking HTTPS endpoints failed: {}",
+            last_transport_error.unwrap_or_else(|| "no endpoint attempted".into())
+        )))
+    }
+
     /// Fetches only the first bounded source ranking page for explicit
     /// diagnostic use. This method never claims complete-market coverage.
     pub fn diagnose_partial_market_rankings(
@@ -373,6 +417,92 @@ fn parse_diagnostic_market_ranking_page(
         ));
     }
     context.finish_with_issues(records, issues)
+}
+
+fn parse_atomic_market_ranking_page(
+    bytes: &[u8],
+    kind: &MarketRankingKind,
+    limit: PositiveU32,
+) -> Result<magic_market_core::DataBatch<MarketRankingSnapshotEntry>, EastmoneyError> {
+    if limit.get() > PAGE_SIZE {
+        return Err(EastmoneyError::InvalidRequest(format!(
+            "Eastmoney bounded market ranking limit must be at most {PAGE_SIZE}"
+        )));
+    }
+    let envelope = parse_page(bytes)?;
+    if envelope.total == 0 || envelope.total > MAX_UNIVERSE_SIZE {
+        return Err(EastmoneyError::Protocol(format!(
+            "Eastmoney ranking universe {} is outside 1..={MAX_UNIVERSE_SIZE}",
+            envelope.total
+        )));
+    }
+    let expected_page_count = envelope.total.min(PAGE_SIZE);
+    let fetched_count = u32::try_from(envelope.rows.len())
+        .map_err(|_| EastmoneyError::Protocol("ranking page length overflow".into()))?;
+    if fetched_count != expected_page_count {
+        return Err(EastmoneyError::Protocol(format!(
+            "Eastmoney bounded ranking response returned {fetched_count} rows; expected {expected_page_count}"
+        )));
+    }
+
+    let field = ranking_field(kind)?;
+    let unit = ranking_unit(kind)?;
+    let context = BatchContext::new("market-ranking-snapshot", None)?;
+    let returned = usize::try_from(limit.get().min(fetched_count))
+        .map_err(|_| EastmoneyError::Protocol("ranking limit overflow".into()))?;
+    let mut seen = HashSet::with_capacity(returned);
+    let mut previous_value = None;
+    let mut records = Vec::with_capacity(returned);
+    for (index, row) in envelope.rows.into_iter().take(returned).enumerate() {
+        let code = optional_string(row.get("f12"))?
+            .ok_or_else(|| EastmoneyError::Protocol("market ranking f12 is absent".into()))?;
+        let market = optional_u32(row.get("f13"))?
+            .ok_or_else(|| EastmoneyError::Protocol("market ranking f13 is absent".into()))?;
+        let instrument = instrument_from_market(&code, i64::from(market))?;
+        if !seen.insert(instrument.clone()) {
+            return Err(EastmoneyError::Protocol(format!(
+                "market ranking contains duplicate instrument {instrument:?}"
+            )));
+        }
+        let label = optional_string(row.get("f14"))?
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| EastmoneyError::Protocol("market ranking f14 is absent".into()))?;
+        let value = FiniteNumber::new(optional_f64(row.get(field))?.ok_or_else(|| {
+            EastmoneyError::Protocol(format!("market ranking {field} is absent"))
+        })?)?;
+        if matches!(kind, MarketRankingKind::VolumeRatio) && value.get().is_sign_negative() {
+            return Err(EastmoneyError::Protocol(
+                "market ranking volume ratio must be non-negative".into(),
+            ));
+        }
+        if previous_value.is_some_and(|previous: f64| previous < value.get()) {
+            return Err(EastmoneyError::Protocol(
+                "market ranking source order is not descending".into(),
+            ));
+        }
+        previous_value = Some(value.get());
+        let epoch = optional_u32(row.get("f124"))?
+            .filter(|epoch| *epoch > 0)
+            .ok_or_else(|| EastmoneyError::Protocol("market ranking f124 is absent".into()))?;
+        let source_at = unix_seconds_to_china_rfc3339(i64::from(epoch))
+            .map_err(|_| EastmoneyError::Protocol("market ranking f124 is out of range".into()))?;
+        records.push(MarketRankingSnapshotEntry {
+            kind: kind.clone(),
+            source_rank: PositiveU32::new(
+                u32::try_from(index + 1)
+                    .map_err(|_| EastmoneyError::Protocol("ranking rank overflow".into()))?,
+            )?,
+            instrument: Some(instrument),
+            label: Some(label),
+            value: Some(value),
+            unit: unit.clone(),
+            source_at: Some(source_at.clone()),
+            reported_universe_size: PositiveU32::new(envelope.total)?,
+            fetched_count: PositiveU32::new(fetched_count)?,
+            evidence: context.evidence_at(Some(&source_at))?,
+        });
+    }
+    context.finish(records)
 }
 
 #[cfg(test)]

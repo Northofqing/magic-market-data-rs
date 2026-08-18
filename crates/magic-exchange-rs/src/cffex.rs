@@ -25,6 +25,27 @@ const DELIVERY_TITLE: &str = "股指期货和股指期权合约交割的通知";
 const USER_AGENT: &str =
     "Mozilla/5.0 (compatible; magic-exchange-rs/0.2; read-only CFFEX notice parser)";
 
+/// The formal production scope is a checked-in, revisioned 2026 schedule. It
+/// performs no runtime HTTP and therefore cannot downgrade transport security.
+pub const CFFEX_2026_FUTURES_DELIVERY_ADMITTED: bool = true;
+const FIXED_SCHEDULE_YEAR: u32 = 2026;
+const FIXED_SCHEDULE_REVISION: &str = "cffex-equity-index-delivery-2026-v1";
+const FIXED_SCHEDULE_NOTICE_URL: &str = "https://www.cffex.com.cn/jystz/20251217/46425.html";
+const FIXED_DELIVERY_DATES: [&str; 12] = [
+    "2026-01-16",
+    "2026-02-24",
+    "2026-03-20",
+    "2026-04-17",
+    "2026-05-15",
+    "2026-06-22",
+    "2026-07-17",
+    "2026-08-21",
+    "2026-09-18",
+    "2026-10-16",
+    "2026-11-20",
+    "2026-12-18",
+];
+
 pub type CffexTlsBackend = TlsBackend;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -284,12 +305,12 @@ impl CffexClient {
     pub const fn calendar_capabilities() -> CalendarCapabilities {
         CalendarCapabilities {
             economic_releases: false,
-            futures_delivery: false,
+            futures_delivery: CFFEX_2026_FUTURES_DELIVERY_ADMITTED,
         }
     }
 
-    /// Exercises the bounded official-notice implementation without advertising
-    /// the capability before a current live acceptance succeeds.
+    /// Exercises the separately unadmitted bounded official-notice diagnostic.
+    /// It does not alter the checked-in production schedule's admission state.
     pub fn probe_futures_delivery_calendar(
         &self,
         request: &FuturesDeliveryRequest,
@@ -418,14 +439,53 @@ impl FuturesDeliveryCalendar for CffexClient {
         &self,
         request: &FuturesDeliveryRequest,
     ) -> Result<DataBatch<FuturesDeliveryEvent>, Self::Error> {
-        if !Self::calendar_capabilities().futures_delivery {
-            return Err(ExchangeError::Unsupported(
-                "CFFEX futures delivery calendar is not admitted until a bounded live probe passes"
-                    .into(),
-            ));
-        }
-        self.fetch_futures_delivery_calendar(request)
+        fixed_2026_futures_delivery_calendar(request)
     }
+}
+
+fn fixed_2026_futures_delivery_calendar(
+    request: &FuturesDeliveryRequest,
+) -> Result<DataBatch<FuturesDeliveryEvent>, ExchangeError> {
+    if request.year().get() != FIXED_SCHEDULE_YEAR {
+        return Err(ExchangeError::Unsupported(format!(
+            "formal CFFEX futures delivery is admitted only for {FIXED_SCHEDULE_YEAR}; requested {}",
+            request.year().get()
+        )));
+    }
+    let month = request.month().get();
+    let index = usize::try_from(month - 1)
+        .map_err(|_| ExchangeError::InvalidRequest("CFFEX month index overflow".into()))?;
+    let date = *FIXED_DELIVERY_DATES
+        .get(index)
+        .ok_or_else(|| ExchangeError::InvalidRequest("CFFEX month is outside 1..=12".into()))?;
+    let delivery_date = IsoDate::new(date)?;
+    let observed_at = now()?;
+    let batch_id = format!("{FIXED_SCHEDULE_REVISION}:{month:02}");
+    let provenance = Provenance::new(FIXED_SCHEDULE_REVISION, observed_at.clone())?
+        .with_batch_id(batch_id.clone())?;
+    let evidence = SourceEvidence::new(ProviderId::Cffex, observed_at, batch_id)?;
+    let notice_url = HttpsUrl::new(FIXED_SCHEDULE_NOTICE_URL)?;
+    let suffix = format!("{:02}{month:02}", FIXED_SCHEDULE_YEAR % 100);
+    let records = [
+        (FuturesProduct::If, "IF"),
+        (FuturesProduct::Ih, "IH"),
+        (FuturesProduct::Ic, "IC"),
+        (FuturesProduct::Im, "IM"),
+    ]
+    .into_iter()
+    .map(|(product, prefix)| {
+        Ok(FuturesDeliveryEvent {
+            product,
+            contract_code: NonEmptyText::new(format!("{prefix}{suffix}"))?,
+            last_trading_date: Some(delivery_date.clone()),
+            delivery_date: delivery_date.clone(),
+            method: FuturesDeliveryMethod::Cash,
+            notice_url: notice_url.clone(),
+            evidence: evidence.clone(),
+        })
+    })
+    .collect::<Result<Vec<_>, ExchangeError>>()?;
+    Ok(DataBatch::strict(records, provenance))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -828,7 +888,7 @@ mod tests {
 
     impl ExchangeTransport for RejectTransport {
         fn execute(&self, _request: &HttpRequest) -> Result<HttpResponse, ExchangeError> {
-            panic!("production CFFEX trait must not touch transport while capability is false");
+            panic!("production CFFEX fixed schedule must never touch transport");
         }
     }
 
@@ -873,13 +933,76 @@ mod tests {
     }
 
     #[test]
-    fn production_trait_returns_unsupported_without_touching_transport() {
+    fn production_trait_uses_fixed_schedule_without_touching_transport() {
         let client = CffexClient::with_transport(CffexConfig::default(), RejectTransport).unwrap();
+        let batch = client.futures_delivery_calendar(&request()).unwrap();
+        assert_eq!(batch.records().len(), 4);
+        for (record, (product, code)) in batch.records().iter().zip([
+            (FuturesProduct::If, "IF2602"),
+            (FuturesProduct::Ih, "IH2602"),
+            (FuturesProduct::Ic, "IC2602"),
+            (FuturesProduct::Im, "IM2602"),
+        ]) {
+            assert_eq!(record.product, product);
+            assert_eq!(record.contract_code.as_str(), code);
+            assert_eq!(record.delivery_date.as_str(), "2026-02-24");
+            assert_eq!(
+                record.last_trading_date.as_ref(),
+                Some(&record.delivery_date)
+            );
+            assert_eq!(record.method, FuturesDeliveryMethod::Cash);
+            assert_eq!(record.notice_url.as_str(), FIXED_SCHEDULE_NOTICE_URL);
+            assert_eq!(
+                record.evidence.batch_id(),
+                batch.provenance().batch_id().unwrap()
+            );
+        }
+    }
 
-        assert!(matches!(
-            client.futures_delivery_calendar(&request()),
-            Err(ExchangeError::Unsupported(_))
-        ));
+    #[test]
+    fn fixed_schedule_covers_all_2026_months_and_rejects_other_years_before_io() {
+        const EXPECTED_DATES: [&str; 12] = [
+            "2026-01-16",
+            "2026-02-24",
+            "2026-03-20",
+            "2026-04-17",
+            "2026-05-15",
+            "2026-06-22",
+            "2026-07-17",
+            "2026-08-21",
+            "2026-09-18",
+            "2026-10-16",
+            "2026-11-20",
+            "2026-12-18",
+        ];
+        assert_eq!(FIXED_DELIVERY_DATES, EXPECTED_DATES);
+        let client = CffexClient::with_transport(CffexConfig::default(), RejectTransport).unwrap();
+        for (month, expected) in EXPECTED_DATES.into_iter().enumerate() {
+            let request = FuturesDeliveryRequest::new(
+                PositiveU32::new(2026).unwrap(),
+                PositiveU32::new(u32::try_from(month + 1).unwrap()).unwrap(),
+            )
+            .unwrap();
+            let batch = client.futures_delivery_calendar(&request).unwrap();
+            assert_eq!(batch.records().len(), 4);
+            assert!(batch.records().iter().all(|record| {
+                record.delivery_date.as_str() == expected
+                    && record.last_trading_date.as_ref() == Some(&record.delivery_date)
+                    && record.method == FuturesDeliveryMethod::Cash
+                    && record.notice_url.as_str() == FIXED_SCHEDULE_NOTICE_URL
+            }));
+        }
+        for year in [2025, 2027] {
+            let outside = FuturesDeliveryRequest::new(
+                PositiveU32::new(year).unwrap(),
+                PositiveU32::new(1).unwrap(),
+            )
+            .unwrap();
+            assert!(matches!(
+                client.futures_delivery_calendar(&outside),
+                Err(ExchangeError::Unsupported(_))
+            ));
+        }
     }
 
     #[test]
@@ -937,10 +1060,11 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(matches!(
-            client.futures_delivery_calendar(&request()),
-            Err(ExchangeError::Unsupported(_))
-        ));
+        let formal = client.futures_delivery_calendar(&request()).unwrap();
+        assert!(formal
+            .records()
+            .iter()
+            .all(|record| record.method == FuturesDeliveryMethod::Cash));
         let batch = client.probe_futures_delivery_calendar(&request()).unwrap();
         assert_eq!(batch.records().len(), 4);
         assert_eq!(batch.records()[0].contract_code.as_str(), "IF2602");

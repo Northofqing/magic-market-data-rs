@@ -1,4 +1,4 @@
-use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
+use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError, EastmoneyMxClient};
 use magic_market_core::{
     verify_admitted_batch, verify_admitted_time_series_batch, verify_verified_empty, AssetClass,
     BlockTrades, BoardCategory, BoardFlows, DataBatch, DividendPlans, DragonTigerData,
@@ -19,6 +19,9 @@ use time::{OffsetDateTime, UtcOffset};
 fn main() -> Result<(), Box<dyn Error>> {
     let client = EastmoneyClient::new()?;
     let mut failures = Vec::new();
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("final-four") {
+        return run_final_four_probe(&client);
+    }
     if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("provider-topn-rankings") {
         let trading_date = IsoDate::new(required_env("MAGIC_EASTMONEY_TOPN_DATE")?)?;
         let limit = PositiveU32::new(env("MAGIC_EASTMONEY_TOPN_LIMIT", "20").parse::<u32>()?)?;
@@ -409,6 +412,103 @@ fn main() -> Result<(), Box<dyn Error>> {
         client.instrument_news(&news_request),
     );
     print_summary(&failures)
+}
+
+fn run_final_four_probe(client: &EastmoneyClient) -> Result<(), Box<dyn Error>> {
+    let source_date = IsoDate::new(required_env("MAGIC_EASTMONEY_FINAL_FOUR_DATE")?)?;
+    let exchange = match required_env("MAGIC_EASTMONEY_FINAL_FOUR_EXCHANGE")?.as_str() {
+        "sh" | "SH" => Exchange::Shanghai,
+        "sz" | "SZ" => Exchange::Shenzhen,
+        other => {
+            return Err(format!(
+                "MAGIC_EASTMONEY_FINAL_FOUR_EXCHANGE must be sh or sz; got {other:?}"
+            )
+            .into())
+        }
+    };
+    let target = instrument(exchange, required_env("MAGIC_EASTMONEY_FINAL_FOUR_CODE")?)?;
+    let ranking_kind = match required_env("MAGIC_EASTMONEY_RANKING_KIND")?.as_str() {
+        "volume-ratio" => MarketRankingKind::VolumeRatio,
+        "main-net-inflow" => MarketRankingKind::MainNetInflow,
+        other => {
+            return Err(format!(
+            "MAGIC_EASTMONEY_RANKING_KIND must be volume-ratio or main-net-inflow; got {other:?}"
+        )
+            .into())
+        }
+    };
+    let limit_value = required_env("MAGIC_EASTMONEY_FINAL_FOUR_LIMIT")?.parse::<u32>()?;
+    if !(1..=100).contains(&limit_value) {
+        return Err("MAGIC_EASTMONEY_FINAL_FOUR_LIMIT must be in 1..=100".into());
+    }
+    let limit = PositiveU32::new(limit_value)?;
+    let attempts = required_env("MAGIC_EASTMONEY_FINAL_FOUR_ATTEMPTS")?.parse::<u32>()?;
+    if !(1..=5).contains(&attempts) {
+        return Err("MAGIC_EASTMONEY_FINAL_FOUR_ATTEMPTS must be in 1..=5".into());
+    }
+    let mx = EastmoneyMxClient::from_env_with_client(client)?;
+
+    for attempt in 1..=attempts {
+        let auction = mx.diagnose_opening_auction(&target, &source_date)?;
+        print_final_four_evidence("opening_auction", attempt, &auction, 1, |record| {
+            &record.evidence
+        })?;
+
+        let breadth = mx.diagnose_market_breadth(&source_date)?;
+        print_final_four_evidence("market_breadth", attempt, &breadth, 1, |record| {
+            &record.evidence
+        })?;
+
+        let ranking = client.bounded_market_rankings_snapshot(&ranking_kind, limit)?;
+        print_final_four_evidence(
+            "bounded_market_rankings_snapshot",
+            attempt,
+            &ranking,
+            usize::try_from(limit_value)?,
+            |record| record.evidence(),
+        )?;
+    }
+
+    println!("live_probe_status=admitted");
+    Ok(())
+}
+
+fn print_final_four_evidence<T>(
+    label: &str,
+    attempt: u32,
+    batch: &DataBatch<T>,
+    maximum_records: usize,
+    evidence_of: impl Fn(&T) -> &SourceEvidence,
+) -> Result<(), Box<dyn Error>> {
+    if !batch.quality().is_complete()
+        || batch.records().is_empty()
+        || batch.records().len() > maximum_records
+    {
+        return Err(format!(
+            "{label} attempt {attempt} returned invalid cardinality or incomplete quality"
+        )
+        .into());
+    }
+    let batch_id = batch
+        .provenance()
+        .batch_id()
+        .ok_or_else(|| format!("{label} attempt {attempt} has no batch identity"))?;
+    if batch.records().iter().any(|record| {
+        let evidence = evidence_of(record);
+        evidence.provider() != ProviderId::Eastmoney
+            || evidence.batch_id() != batch_id
+            || evidence.observed_at() != batch.provenance().fetched_at()
+    }) {
+        return Err(format!("{label} attempt {attempt} has inconsistent record evidence").into());
+    }
+    println!(
+        "family={label} attempt={attempt} records={} source={} observed_at={} source_at={:?} batch_id={batch_id}",
+        batch.records().len(),
+        batch.provenance().source(),
+        batch.provenance().fetched_at(),
+        batch.provenance().source_at(),
+    );
+    Ok(())
 }
 
 fn probe_limit_pool(

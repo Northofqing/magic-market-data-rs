@@ -105,19 +105,27 @@ array/source order. Different metrics or normalized response contents must not
 share an identity; JSON whitespace or object-key order alone must not change
 it. Random values and locally fabricated `source_at` values are prohibited.
 
+The gRPC `MarketRankings` operation is a second narrow contract over one bounded
+Eastmoney HTTPS response. It requires every selected row to contain an exact
+security identity, non-empty source name, metric, unit, continuous source rank
+and positive provider timestamp. It retains the provider-reported universe size
+and actual first-page row count, but does not claim complete-universe pagination,
+cutoff-tie completeness or a common source instant.
+
 ## BR-035 Licensed and authenticated data boundaries
-The complete opening-auction contract requires provider-backed matched price,
+The complete Level-2 opening-auction contract requires provider-backed matched price,
 previous close, change, matched quantity and amount, unmatched bid and ask
 quantities, volume ratio, exact instrument identity and provider source time.
 Ordinary quotes, trades and public HTML must not be used to infer unmatched
-queues or fabricate source time. Public partial auction observations may use a
-separately named diagnostic contract but do not advertise `Auctions`; production
-admission requires an authorized Level-2 or broker Provider passing the common
-conformance suite. Broker cash, positions, orders and executions belong to a
+queues or fabricate source time. The narrower gRPC `Auctions` observation may
+advertise only one-response source-returned matched quantity in shares and
+matched amount in CNY for one exact equity and source date. Level-2-only fields
+remain explicit `null`; this does not promote the complete Core auction
+capability. Broker cash, positions, orders and executions belong to a
 separate authenticated account gateway. Browser cookies and logged-in page
 scraping are not a production account API, and this workspace must not add a
 downstream account path dependency.
-The shared auction conformance policy binds an explicit provider source name,
+The complete Level-2 auction conformance policy binds an explicit provider source name,
 China trading date and `09:15:00..=09:25:00 +08:00` opening-auction window;
 fresh continuous-session, closing-auction or wrong-date data fails even when
 all numeric fields are present.
@@ -600,23 +608,24 @@ HTTP/API response does not promote admission. Response identity, protocol type,
 security or universe identity, source date, indicator labels, raw scalar
 cardinality and observed unit metadata must match the requested diagnostic family.
 
-Opening-auction diagnostics may expose only source-returned opening-auction volume
-in shares and amount in CNY. Matched price, previous close, unmatched queues,
-volume ratio and provider time remain null unless independently proved. Market
-breadth diagnostics may expose the source-returned up/down/flat and limit-up/down
-counts, but listed-universe total, coverage and source-time skew remain null. These
-separately named diagnostic records remain incomplete and `UNADMITTED`; they never
-satisfy the complete `Auctions` or `MarketBreadth` Core contracts. Empty tables,
+Opening-auction production observations use one fixed query and one result table
+to expose source-returned volume in shares and amount in CNY. Matched price,
+previous close, unmatched queues, volume ratio and provider time remain null
+unless independently proved. Market-breadth production observations use one
+fixed response containing listed total, up/down/flat and limit-up/down counts;
+`valid = up + down + flat` and coverage are checked. One response proves
+acquisition atomicity, while absent provider source instants keep source-time
+skew `null` rather than fabricating zero.
+These narrow records do not satisfy the complete Level-2 auction contract. Empty tables,
 extra dates, identity mismatch, unit mismatch, malformed decimals or missing
 required diagnostic fields fail explicitly rather than becoming a successful
 empty or zero-filled record.
 
-When the server process has a valid Key, the four fixed-template Miaoxiang
-diagnostics (`MoneyFlows`, `FundFlowSeries`, `Auctions`, `MarketBreadth`) are
-registered only as explicit diagnostics. Requests must select
-`EastmoneyMiaoxiang` and set `allow_unadmitted=true`; otherwise they fail before
-Provider I/O. The Key does not create a default-readable exception and does not
-change the response admission, completeness, blocker or null fields.
+When the server process has a valid Key, the exact admitted auction and breadth
+templates are default-readable production operations. `MoneyFlows` and
+`FundFlowSeries` retain their separate public-provider production routes and the
+Miaoxiang variants remain diagnostic. Without the Key, auction and breadth stay
+repository-admitted but runtime-unavailable and fail before Provider I/O.
 
 ## BR-047 TDX dynamic watchlist control
 
@@ -729,11 +738,17 @@ It is an evidence bundle, not a BR-033 realtime freshness claim. Adding an
 ordinary empty record, fixture result, partial bundle or client-selected
 `allow_unadmitted` path does not satisfy production admission.
 
-## BR-051 CFFEX plaintext notice diagnostic boundary
+## BR-051 CFFEX fixed schedule and plaintext notice diagnostic boundary
 
-The CFFEX production `FuturesDeliveryCalendar` capability remains false and its
-formal trait fails before I/O while the official HTTPS notice origin is not
-reachable from the supported runtime. An explicit diagnostic may read only the
+The production `FuturesDeliveryCalendar` is a versioned checked-in 2026 schedule
+for IF/IH/IC/IM only. It performs no runtime network I/O, returns exact monthly
+delivery/last-trading dates with `Cash` settlement, and rejects every non-2026
+request before I/O. A new year requires a new reviewed revision and tests; the
+runtime never extends dates by a calendar formula. The revision is grounded in
+the official [equity-index futures contract rule](https://www.cffex.com.cn/hs300/)
+and [2026 holiday closure notice](https://www.cffex.com.cn/jystz/20251217/46425.html).
+
+The separate explicit diagnostic may read only the
 public, credential-free HTTP origin `http://www.cffex.com.cn` and only the exact
 bounded paths `/cn/jystz.html`, `/cn/jystz_<2..=120>.html`, and
 `/cn/jystz/<YYYYMMDD>/<numeric-id>.html`. It sends GET only, no body, cookies,
@@ -771,7 +786,7 @@ leave a missing or non-common batch `source_at` absent, retain the exact input
 evidence and state that the result is ineligible for BR-033 strict source-time
 freshness. Local time never repairs wrong identity, missing required fields,
 partial coverage, unordered data, stale source dates or licensed-data gaps.
-This boundary currently admits only the exact TDX `T0Evidence` four-family
-bundle and Eastmoney `PostCloseFlows` snapshot specified by BR-019 and BR-050;
-it does not promote `MarketRankings`, `MarketBreadth`, `Auctions`,
-`FuturesDelivery`, CFETS DR007 or IMF data.
+This boundary also applies to the bounded Eastmoney ranking response, Miaoxiang
+auction/breadth responses and fixed CFFEX schedule: local time is observation
+evidence only. It does not promote complete multi-page rankings, complete
+Level-2 auctions, CFETS DR007 or IMF data.

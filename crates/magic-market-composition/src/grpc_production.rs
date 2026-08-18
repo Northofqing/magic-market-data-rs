@@ -13,8 +13,7 @@ use magic_cninfo_rs::{CninfoClient, CninfoError};
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError, EastmoneyMxClient};
 use magic_emquant_rs::{EmQuantClient, EmQuantError};
 use magic_exchange_rs::{
-    CffexClient, CffexConfig, ExchangeError, HkexClient, SseClient, SseConfig, SzseClient,
-    SzseConfig,
+    CffexClient, ExchangeError, HkexClient, SseClient, SseConfig, SzseClient, SzseConfig,
 };
 use magic_fred_rs::{FredClient, FredError};
 use magic_gov_rs::{GovClient, GovError};
@@ -29,20 +28,21 @@ use magic_market_core::{
     DragonTigerDiscoveryRequest, EconomicCalendarProvider, EconomicCalendarRequest,
     EconomicSeriesProvider, EconomicSeriesRequest, EvidenceTimestamp, FinancialStatements,
     FlowInterval, FlowScope, ForeignExchangeProvider, FundFlowPoint, FundFlowRequest,
-    FundFlowSeries, FuturesDeliveryRequest, FxRequest, GlobalIndexProvider, GlobalIndexRequest,
-    HistoricalBars, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
-    InstrumentSignalRequest, InvestorQuestions, IsoDate, LimitPoolRequest, LimitPools,
-    LockupEvents, MarginData, MarketAnnouncementRequest, MarketAnnouncements,
-    MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind, MarketStatisticsProvider,
-    MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsProvider, NonEmptyText,
-    NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
-    OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks, PolicyDocuments, PolicyRequest,
-    PopularityData, PositiveU32, PostCloseFlowRequest, PostCloseFlows, ProviderId,
-    ProviderTopNRankingRequest, ProviderTopNRankings, Quote, RealtimeQuotes, ReferenceRateProvider,
-    ReferenceRateRequest, ResearchDocumentRequest, ResearchDocuments, ResearchReports,
-    ResearchRequest, SecurityMetadataProvider, SecurityProfiles, SemanticSearch,
-    SemanticSearchRequest, SourceEvidence, StatementKind, StrongStockReasons, TargetPriceData,
-    TargetPriceRequest, TechnicalBarsProvider, Trades, TradesRequest,
+    FundFlowSeries, FuturesDeliveryCalendar, FuturesDeliveryRequest, FxRequest,
+    GlobalIndexProvider, GlobalIndexRequest, HistoricalBars, HolderCounts,
+    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, InvestorQuestions, IsoDate,
+    LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketAnnouncementRequest,
+    MarketAnnouncements, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind,
+    MarketStatisticsProvider, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
+    NewsProvider, NonEmptyText, NorthboundDailyRequest, NorthboundDailyStatistics,
+    OfficialFxFixingProvider, OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks,
+    PolicyDocuments, PolicyRequest, PopularityData, PositiveU32, PostCloseFlowRequest,
+    PostCloseFlows, ProviderId, ProviderTopNRankingRequest, ProviderTopNRankings, Quote,
+    RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest, ResearchDocumentRequest,
+    ResearchDocuments, ResearchReports, ResearchRequest, SecurityMetadataProvider,
+    SecurityProfiles, SemanticSearch, SemanticSearchRequest, SourceEvidence, StatementKind,
+    StrongStockReasons, TargetPriceData, TargetPriceRequest, TechnicalBarsProvider, Trades,
+    TradesRequest,
 };
 use magic_market_router::{
     quote_source, AcceptancePolicy, AttemptStatus, FailureKind, QuoteRouter, RouterError,
@@ -652,7 +652,7 @@ fn register_extended_providers(
         },
     )?;
     register_additional_providers(registry, provider_timeout, maximum_payload_bytes)?;
-    register_diagnostic_handlers(registry, provider_timeout, maximum_payload_bytes)?;
+    register_extended_handlers(registry, provider_timeout, maximum_payload_bytes)?;
     register_exact_blockers(registry)?;
     Ok(())
 }
@@ -919,32 +919,17 @@ fn register_sina_parity(
 }
 
 fn register_exact_blockers(registry: &mut OperationRegistry) -> Result<(), ServiceError> {
-    for capability in [
-        blocked(
-            Operation::Auctions,
-            "Tdx",
-            "normalized call-auction records",
-            "TDX public auction capability is false and no admitted production auction provider is configured",
-        ),
-        blocked(
-            Operation::MarketBreadth,
-            "LocalAnalysis",
-            "derived complete-market breadth snapshot",
-            "no admitted complete-market source composition is registered for breadth analysis",
-        ),
-        blocked(
-            Operation::EconomicSeries,
-            "Imf",
-            "annual IMF economic-series adapter",
-            "IMF DataMapper returns HTTP 403 and the replacement SDMX contract requires beta-portal authentication",
-        ),
-    ] {
-        registry.register_unavailable(capability)?;
-    }
+    let capability = blocked(
+        Operation::EconomicSeries,
+        "Imf",
+        "annual IMF economic-series adapter",
+        "IMF DataMapper returns HTTP 403 and the replacement SDMX contract requires beta-portal authentication",
+    );
+    registry.register_unavailable(capability)?;
     Ok(())
 }
 
-fn register_diagnostic_handlers(
+fn register_extended_handlers(
     registry: &mut OperationRegistry,
     provider_timeout: Duration,
     maximum_payload_bytes: usize,
@@ -1008,12 +993,11 @@ fn register_diagnostic_handlers(
         )?;
 
         let auctions = mx.clone();
-        registry.register_diagnostic_handler(
-            blocked(
+        registry.register_handler(
+            admitted(
                 Operation::Auctions,
                 "EastmoneyMiaoxiang",
-                "one equity and exact source date; opening-auction matched volume in shares and amount in CNY",
-                "matched price, previous close, unmatched bid/ask, volume ratio and provider time remain unavailable",
+                "one equity and exact source date; one-response opening-auction matched volume in shares and amount in CNY; Level-2 fields remain null",
             ),
             move |command| {
                 let request: AuctionDiagnosticRequest =
@@ -1031,12 +1015,11 @@ fn register_diagnostic_handlers(
         )?;
 
         let breadth = mx.clone();
-        registry.register_diagnostic_handler(
-            blocked(
+        registry.register_handler(
+            admitted(
                 Operation::MarketBreadth,
                 "EastmoneyMiaoxiang",
-                "exact source date; all-A up/down/flat and limit-up/limit-down counts",
-                "listed universe total, coverage and source-time skew remain unavailable",
+                "exact source date; one-response all-A listed/valid/up/down/flat/limit-up/limit-down counts with proved coverage",
             ),
             move |command| {
                 let request: MarketBreadthDiagnosticRequest =
@@ -1052,6 +1035,23 @@ fn register_diagnostic_handlers(
                 )
             },
         )?;
+    } else {
+        for capability in [
+            runtime_unavailable(
+                Operation::Auctions,
+                "EastmoneyMiaoxiang",
+                "one equity and exact source date; one-response opening-auction matched volume in shares and amount in CNY; Level-2 fields remain null",
+                "EASTMONEY_API_KEY or MX_APIKEY is not configured",
+            ),
+            runtime_unavailable(
+                Operation::MarketBreadth,
+                "EastmoneyMiaoxiang",
+                "exact source date; one-response all-A listed/valid/up/down/flat/limit-up/limit-down counts with proved coverage",
+                "EASTMONEY_API_KEY or MX_APIKEY is not configured",
+            ),
+        ] {
+            registry.register_unavailable(capability)?;
+        }
     }
 
     let post_close = eastmoney.clone();
@@ -1076,18 +1076,17 @@ fn register_diagnostic_handlers(
         },
     )?;
 
-    registry.register_diagnostic_handler(
-        blocked(
+    registry.register_handler(
+        admitted(
             Operation::MarketRankings,
             "Eastmoney",
-            "first bounded A-share source ranking page; available fields are returned and missing fields remain null",
-            "complete-market coverage and source-time atomicity are not claimed",
+            "one bounded A-share source ranking response with exact identity, rank, value, unit, source time and reported universe size",
         ),
         move |command| {
             let request: MarketRankingsRequest =
                 decode_request(&command, MARKET_RANKINGS_REQUEST_SCHEMA)?;
             let batch = eastmoney
-                .diagnose_partial_market_rankings(&request.kind, request.limit)
+                .bounded_market_rankings_snapshot(&request.kind, request.limit)
                 .map_err(|error| map_eastmoney_error(Operation::MarketRankings, &error))?;
             provider_query_result(
                 batch,
@@ -1098,21 +1097,18 @@ fn register_diagnostic_handlers(
         },
     )?;
 
-    let mut cffex_config = CffexConfig::plaintext_http_diagnostic();
-    cffex_config.timeout = provider_timeout;
-    let cffex = CffexClient::with_config(cffex_config)?;
-    registry.register_diagnostic_handler(
-        blocked(
+    let cffex = CffexClient::new()?;
+    registry.register_handler(
+        admitted(
             Operation::FuturesDelivery,
             "Cffex",
-            "fixed-path official CFFEX equity-index futures delivery notice diagnostic",
-            "diagnostic acquisition uses plaintext HTTP; formal HTTPS admission remains unavailable and delivery method can be NotProvided",
+            "versioned 2026 CFFEX equity-index futures delivery schedule; cash settlement; no runtime network transport",
         ),
         move |command| {
             let request: FuturesDeliveryRequest =
                 decode_request(&command, FUTURES_DELIVERY_REQUEST_SCHEMA)?;
             let batch = cffex
-                .probe_futures_delivery_calendar(&request)
+                .futures_delivery_calendar(&request)
                 .map_err(|error| provider_error(Operation::FuturesDelivery, error))?;
             provider_query_result(
                 batch,
@@ -4090,21 +4086,13 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 56);
+        assert_eq!(admitted.len(), 60);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
             .filter(|operation| !admitted.contains(operation))
             .collect::<Vec<_>>();
-        assert_eq!(
-            blocked,
-            vec![
-                Operation::Auctions,
-                Operation::FuturesDelivery,
-                Operation::MarketRankings,
-                Operation::MarketBreadth,
-            ]
-        );
+        assert!(blocked.is_empty());
         let t0 = capabilities
             .iter()
             .find(|capability| capability.operation == Operation::T0Evidence)
@@ -4128,22 +4116,15 @@ mod tests {
             .filter(|capability| capability.diagnostic_available)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
+        assert!(diagnostic.contains(&Operation::HistoricalBars));
         for operation in [
+            Operation::Auctions,
             Operation::FuturesDelivery,
-            Operation::HistoricalBars,
             Operation::MarketRankings,
+            Operation::MarketBreadth,
         ] {
-            assert!(diagnostic.contains(&operation));
+            assert!(!diagnostic.contains(&operation));
         }
-        assert!(capabilities
-            .iter()
-            .filter(|capability| capability.provider == "Tdx"
-                && capability.operation == Operation::Auctions)
-            .chain(capabilities.iter().filter(|capability| {
-                capability.provider == "LocalAnalysis"
-                    && capability.operation == Operation::MarketBreadth
-            }))
-            .all(|capability| !capability.diagnostic_available));
     }
 
     #[test]
@@ -4169,6 +4150,8 @@ mod tests {
             (Operation::IndexQuotes, "Tencent"),
             (Operation::IntradayShape, "LocalAnalysis"),
             (Operation::UpperLimitPoolReview, "Eastmoney"),
+            (Operation::MarketRankings, "Eastmoney"),
+            (Operation::FuturesDelivery, "Cffex"),
             (Operation::FundFlowSeries, "Eastmoney"),
             (Operation::MoneyFlows, "Eastmoney"),
             (Operation::PostCloseFlows, "Eastmoney"),
@@ -4200,6 +4183,21 @@ mod tests {
                 "missing admitted {provider} {} registration",
                 operation.as_str()
             );
+        }
+
+        for operation in [Operation::Auctions, Operation::MarketBreadth] {
+            let capability = capabilities
+                .iter()
+                .find(|capability| {
+                    capability.operation == operation && capability.provider == "EastmoneyMiaoxiang"
+                })
+                .expect("missing admitted Miaoxiang registration");
+            assert!(capability.repository_admitted);
+            assert_eq!(
+                capability.runtime_available,
+                eastmoney_mx_key_is_configured()
+            );
+            assert!(!capability.diagnostic_available);
         }
 
         for (operation, provider) in [

@@ -38,6 +38,6 @@ fn provider_identities_are_exact_and_unimplemented_families_remain_false() {
 
     assert_eq!(CffexClient::provider_id(), ProviderId::Cffex);
     let calendar = CffexClient::calendar_capabilities();
-    assert!(!calendar.futures_delivery);
+    assert!(calendar.futures_delivery);
     assert!(!calendar.economic_releases);
 }

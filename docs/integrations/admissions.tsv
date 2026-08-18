@@ -20,6 +20,7 @@ magic-xinhua-rs	XinhuaFinance	GLOBAL_NEWS_ADMITTED	true	docs/integrations/xinhua
 magic-yicai-rs	Yicai	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yicai-news.md	admitted	2026-07-29	2	3	-
 magic-yonhap-rs	Yonhap	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yonhap-rss.md	admitted	2026-08-16	2	3	-
 magic-baidu-rs	Baidu	TECHNICAL_BARS_ADMITTED	true	docs/integrations/baidu-web.md	admitted	2026-08-17	2	3	-
+magic-exchange-rs	Cffex	CFFEX_2026_FUTURES_DELIVERY_ADMITTED	true	docs/integrations/exchange-official.md	admitted	2026-08-18	2	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_PRICE_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	15	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	4	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	15	3	-
@@ -30,7 +31,8 @@ magic-market-monitor	LocalAnalysis	LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED	true	docs
 magic-market-monitor	LocalAnalysis	LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-17	2	3	-
 magic-market-monitor	LocalAnalysis	LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-17	2	3	-
 magic-eastmoney-rs	Eastmoney	MX_DAILY_FUND_FLOW_ADMITTED	false	docs/integrations/eastmoney-miaoxiang.md	blocked	2026-08-15	3	0	Authenticated natural-language query cardinality and serial load stability are not a production data contract
-magic-eastmoney-rs	Eastmoney	MX_OPENING_AUCTION_ADMITTED	false	docs/integrations/eastmoney-miaoxiang.md	blocked	2026-08-15	3	0	Matched price previous close unmatched queues volume ratio and provider time remain unavailable
-magic-eastmoney-rs	Eastmoney	MX_MARKET_BREADTH_ADMITTED	false	docs/integrations/eastmoney-miaoxiang.md	blocked	2026-08-15	2	0	Listed universe total coverage and source-time skew remain unavailable
+magic-eastmoney-rs	Eastmoney	MX_OPENING_AUCTION_ADMITTED	true	docs/integrations/eastmoney-miaoxiang.md	admitted	2026-08-18	2	3	-
+magic-eastmoney-rs	Eastmoney	MX_MARKET_BREADTH_ADMITTED	true	docs/integrations/eastmoney-miaoxiang.md	admitted	2026-08-18	2	3	-
+magic-eastmoney-rs	Eastmoney	BOUNDED_MARKET_RANKINGS_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-18	2	3	-
 magic-eastmoney-rs	Eastmoney	PUBLIC_FUND_FLOW_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-17	2	3	-
 magic-eastmoney-rs	Eastmoney	PUBLIC_POST_CLOSE_FLOW_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-17	2	3	-

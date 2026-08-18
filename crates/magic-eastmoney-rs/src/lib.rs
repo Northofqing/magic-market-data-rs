@@ -38,7 +38,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use error::EastmoneyError;
 pub use fund_flow::PUBLIC_FUND_FLOW_ADMITTED;
-pub use market_rankings::DiagnosticMarketRankingEntry;
+pub use market_rankings::{
+    DiagnosticMarketRankingEntry, MarketRankingSnapshotEntry, BOUNDED_MARKET_RANKINGS_ADMITTED,
+};
 pub use mx::{
     DiagnosticMarketBreadth, DiagnosticOpeningAuction, EastmoneyMxClient,
     MX_DAILY_FUND_FLOW_ADMITTED, MX_MARKET_BREADTH_ADMITTED, MX_OPENING_AUCTION_ADMITTED,

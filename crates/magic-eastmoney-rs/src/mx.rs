@@ -16,8 +16,8 @@ const MAX_FUND_FLOW_ROWS: u32 = 20;
 const SOURCE_NAME: &str = "eastmoney-miaoxiang";
 
 pub const MX_DAILY_FUND_FLOW_ADMITTED: bool = false;
-pub const MX_OPENING_AUCTION_ADMITTED: bool = false;
-pub const MX_MARKET_BREADTH_ADMITTED: bool = false;
+pub const MX_OPENING_AUCTION_ADMITTED: bool = true;
+pub const MX_MARKET_BREADTH_ADMITTED: bool = true;
 
 #[derive(Clone)]
 struct ApiKey(Arc<str>);
@@ -103,37 +103,29 @@ impl EastmoneyMxClient {
         trading_date: &IsoDate,
     ) -> Result<DataBatch<DiagnosticOpeningAuction>, EastmoneyError> {
         let identity = instrument_identity(instrument)?;
-        let volume = self.query(&format!(
-            "查询{identity}在{trading_date}的开盘集合竞价成交量"
+        let response = self.query(&format!(
+            "查询{identity}在{trading_date}的开盘集合竞价成交量和开盘集合竞价成交额"
         ))?;
-        let amount = self.query(&format!(
-            "查询{identity}在{trading_date}的开盘集合竞价成交额"
-        ))?;
-        let volume_table = volume.single_table()?;
-        let amount_table = amount.single_table()?;
-        volume_table.validate_security(instrument)?;
-        amount_table.validate_security(instrument)?;
-        volume_table.validate_single_date(trading_date)?;
-        amount_table.validate_single_date(trading_date)?;
-        volume_table.validate_field("开盘集合竞价成交量", "股", "DAY")?;
-        amount_table.validate_field("开盘集合竞价成交额", "元", "DAY")?;
+        let table = response.single_table()?;
+        table.validate_security(instrument)?;
+        table.validate_single_date(trading_date)?;
+        table.validate_exact_field_set_size(2)?;
+        table.validate_field_set("开盘集合竞价成交量", Some("股"), "DAY")?;
+        table.validate_field_set("开盘集合竞价成交额", Some("元"), "DAY")?;
         let matched_quantity_shares = Quantity::new(parse_nonnegative_integer(
-            volume_table.scalar("开盘集合竞价成交量")?,
+            table.scalar("开盘集合竞价成交量")?,
             "opening auction volume",
         )? as f64)?;
         let matched_amount_cny = Money::new(parse_nonnegative_integer(
-            amount_table.scalar("开盘集合竞价成交额")?,
+            table.scalar("开盘集合竞价成交额")?,
             "opening auction amount",
         )? as f64)?;
         let observed = observed_at()?;
-        let batch_id = format!(
-            "eastmoney-mx:opening-auction:{}:{}",
-            volume.request_id, amount.request_id
-        );
+        let batch_id = format!("eastmoney-mx:opening-auction:{}", response.request_id);
         let evidence = source_evidence(&observed, &batch_id, trading_date.as_str())?;
         let record = DiagnosticOpeningAuction {
             instrument: instrument.clone(),
-            name: NonEmptyText::new(volume_table.entity.full_name.clone())?,
+            name: NonEmptyText::new(table.entity.full_name.clone())?,
             trading_date: trading_date.clone(),
             matched_price: None,
             previous_close: None,
@@ -143,16 +135,10 @@ impl EastmoneyMxClient {
             unmatched_bid_quantity_shares: None,
             unmatched_ask_quantity_shares: None,
             volume_ratio: None,
-            status: DataStatus::Unavailable,
+            status: DataStatus::Available,
             evidence,
         };
-        diagnostic_batch(
-            vec![record],
-            observed,
-            trading_date.as_str(),
-            batch_id,
-            "complete opening-auction fields and provider time remain unavailable",
-        )
+        strict_batch(vec![record], observed, trading_date.as_str(), batch_id)
     }
 
     pub fn diagnose_market_breadth(
@@ -160,7 +146,7 @@ impl EastmoneyMxClient {
         source_date: &IsoDate,
     ) -> Result<DataBatch<DiagnosticMarketBreadth>, EastmoneyError> {
         let response = self.query(&format!(
-            "查询{source_date}A股上涨家数、下跌家数、平盘家数、涨停家数和跌停家数"
+            "查询{source_date}全部A股上市总数、上涨家数、下跌家数、平盘家数、涨停家数和跌停家数"
         ))?;
         if response.tables.len() != 2 {
             return Err(EastmoneyError::Protocol(format!(
@@ -172,11 +158,36 @@ impl EastmoneyMxClient {
             table.validate_all_a_share_universe()?;
             table.validate_single_date(source_date)?;
         }
+        let breadth_fields = [
+            "上市股票数量",
+            "上涨家数",
+            "下跌家数",
+            "平盘家数",
+            "涨停家数",
+            "跌停家数",
+        ];
+        let field_set_count = response.tables.iter().try_fold(0_usize, |count, table| {
+            table.validate_primary_field_in_field_set().and_then(|()| {
+                count.checked_add(table.field_set.len()).ok_or_else(|| {
+                    EastmoneyError::Protocol("Miaoxiang breadth fieldSet count overflow".into())
+                })
+            })
+        })?;
+        if field_set_count != breadth_fields.len() {
+            return Err(EastmoneyError::Protocol(format!(
+                "Miaoxiang breadth fieldSet has {field_set_count} entries, expected exactly {}",
+                breadth_fields.len()
+            )));
+        }
+        for label in breadth_fields {
+            response.validate_unique_field_set(label, None, "DAY")?;
+        }
         let up = response.unique_u32("上涨家数")?;
         let down = response.unique_u32("下跌家数")?;
         let flat = response.unique_u32("平盘家数")?;
         let limit_up = response.unique_u32("涨停家数")?;
         let limit_down = response.unique_u32("跌停家数")?;
+        let listed_total = response.unique_u32("上市股票数量")?;
         let valid = up
             .checked_add(down)
             .and_then(|value| value.checked_add(flat))
@@ -186,6 +197,12 @@ impl EastmoneyMxClient {
                 "Miaoxiang limit counts contradict directional counts".into(),
             ));
         }
+        if listed_total < valid || listed_total == 0 {
+            return Err(EastmoneyError::Protocol(format!(
+                "Miaoxiang listed total {listed_total} is below valid count {valid}"
+            )));
+        }
+        let coverage = magic_market_core::Ratio::decimal(valid as f64 / listed_total as f64)?;
         let observed = observed_at()?;
         let batch_id = format!("eastmoney-mx:market-breadth:{}", response.request_id);
         let evidence = source_evidence(&observed, &batch_id, source_date.as_str())?;
@@ -193,25 +210,21 @@ impl EastmoneyMxClient {
             universe: NonEmptyText::new("all_a_shares")?,
             source_date: source_date.clone(),
             source_session: magic_market_core::MarketSession::PostClose,
-            listed_total: None,
+            listed_total: Some(listed_total),
             valid,
             up,
             down,
             flat,
             limit_up,
             limit_down,
-            coverage: None,
+            coverage: Some(coverage),
+            // One response proves acquisition atomicity. The provider exposes
+            // no per-field source instant, so source-time skew stays unknown.
             maximum_source_skew_millis: None,
-            status: DataStatus::Unavailable,
+            status: DataStatus::Available,
             evidence,
         };
-        diagnostic_batch(
-            vec![record],
-            observed,
-            source_date.as_str(),
-            batch_id,
-            "listed total, coverage and source-time skew remain unavailable",
-        )
+        strict_batch(vec![record], observed, source_date.as_str(), batch_id)
     }
 
     pub fn diagnose_daily_fund_flow(
@@ -475,10 +488,27 @@ impl MxResponse {
                 matches.len()
             )));
         };
-        table
-            .scalar(label)?
-            .parse::<u32>()
-            .map_err(|error| EastmoneyError::Protocol(format!("invalid {label} count: {error}")))
+        parse_source_count(table.scalar(label)?, label)
+    }
+
+    fn validate_unique_field_set(
+        &self,
+        label: &str,
+        unit: Option<&str>,
+        granularity: &str,
+    ) -> Result<(), EastmoneyError> {
+        let matches = self
+            .tables
+            .iter()
+            .filter(|table| table.has_label(label))
+            .collect::<Vec<_>>();
+        let [table] = matches.as_slice() else {
+            return Err(EastmoneyError::Protocol(format!(
+                "Miaoxiang returned {} tables for {label:?}, expected exactly 1",
+                matches.len()
+            )));
+        };
+        table.validate_field_set(label, unit, granularity)
     }
 }
 
@@ -492,6 +522,8 @@ struct MxTable {
     #[serde(rename = "nameMap")]
     name_map: BTreeMap<String, String>,
     field: MxField,
+    #[serde(rename = "fieldSet", default)]
+    field_set: Vec<MxField>,
     #[serde(rename = "entityTagDTO")]
     entity: MxEntity,
 }
@@ -581,6 +613,56 @@ impl MxTable {
             return Err(EastmoneyError::Protocol(format!(
                 "Miaoxiang field metadata does not prove {label:?}/{unit}/{granularity}"
             )));
+        }
+        Ok(())
+    }
+
+    fn validate_field_set(
+        &self,
+        label: &str,
+        unit: Option<&str>,
+        granularity: &str,
+    ) -> Result<(), EastmoneyError> {
+        let key = self.key_for_label(label)?;
+        let matching = self
+            .field_set
+            .iter()
+            .filter(|field| field.return_code == key && field.return_name == label)
+            .collect::<Vec<_>>();
+        let [field] = matching.as_slice() else {
+            return Err(EastmoneyError::Protocol(format!(
+                "Miaoxiang fieldSet has {} entries for {label:?}, expected exactly 1",
+                matching.len()
+            )));
+        };
+        if field.date_granularity != granularity || field.unit_name.as_deref() != unit {
+            return Err(EastmoneyError::Protocol(format!(
+                "Miaoxiang fieldSet does not prove {label:?}/{unit:?}/{granularity}"
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_exact_field_set_size(&self, expected: usize) -> Result<(), EastmoneyError> {
+        if self.field_set.len() != expected {
+            return Err(EastmoneyError::Protocol(format!(
+                "Miaoxiang fieldSet has {} entries, expected exactly {expected}",
+                self.field_set.len()
+            )));
+        }
+        self.validate_primary_field_in_field_set()
+    }
+
+    fn validate_primary_field_in_field_set(&self) -> Result<(), EastmoneyError> {
+        if !self.field_set.iter().any(|field| {
+            field.return_code == self.field.return_code
+                && field.return_name == self.field.return_name
+                && field.date_granularity == self.field.date_granularity
+                && field.unit_name == self.field.unit_name
+        }) {
+            return Err(EastmoneyError::Protocol(
+                "Miaoxiang primary field contradicts fieldSet".into(),
+            ));
         }
         Ok(())
     }
@@ -706,6 +788,46 @@ fn parse_nonnegative_integer(value: &str, field: &str) -> Result<u64, EastmoneyE
     Ok(value)
 }
 
+fn parse_source_count(value: &str, field: &str) -> Result<u32, EastmoneyError> {
+    let integer = match value.split_once('.') {
+        Some((integer, fraction))
+            if !integer.is_empty()
+                && (1..=6).contains(&fraction.len())
+                && fraction.bytes().all(|byte| byte == b'0') =>
+        {
+            integer
+        }
+        Some(_) => {
+            return Err(EastmoneyError::Protocol(format!(
+                "Miaoxiang {field} count has a non-integral decimal"
+            )))
+        }
+        None => value,
+    };
+    let canonical = if integer.bytes().all(|byte| byte.is_ascii_digit()) {
+        integer.to_owned()
+    } else {
+        let groups = integer.split(',').collect::<Vec<_>>();
+        let valid_grouping = groups.len() > 1
+            && (1..=3).contains(&groups[0].len())
+            && groups[0].bytes().all(|byte| byte.is_ascii_digit())
+            && groups[1..]
+                .iter()
+                .all(|group| group.len() == 3 && group.bytes().all(|byte| byte.is_ascii_digit()));
+        if !valid_grouping {
+            let preview = value.chars().take(24).collect::<String>();
+            return Err(EastmoneyError::Protocol(format!(
+                "Miaoxiang {field} count is not canonical digits or grouped digits: {preview:?} (chars={})",
+                value.chars().count()
+            )));
+        }
+        groups.concat()
+    };
+    canonical.parse::<u32>().map_err(|error| {
+        EastmoneyError::Protocol(format!("Miaoxiang {field} count is invalid: {error}"))
+    })
+}
+
 fn parse_money(value: &str, field: &str) -> Result<Money, EastmoneyError> {
     let value = value.parse::<f64>().map_err(|error| {
         EastmoneyError::Protocol(format!("Miaoxiang {field} is invalid: {error}"))
@@ -754,6 +876,18 @@ fn diagnostic_batch<T>(
     )?)
 }
 
+fn strict_batch<T>(
+    records: Vec<T>,
+    observed: String,
+    source_at: &str,
+    batch_id: String,
+) -> Result<DataBatch<T>, EastmoneyError> {
+    let provenance = Provenance::new(SOURCE_NAME, observed)?
+        .with_source_at(source_at)?
+        .with_batch_id(batch_id)?;
+    Ok(DataBatch::strict(records, provenance))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -764,8 +898,8 @@ mod tests {
     type ObservedRequest = (String, Vec<(String, String)>, Vec<u8>);
 
     const _: () = assert!(!MX_DAILY_FUND_FLOW_ADMITTED);
-    const _: () = assert!(!MX_OPENING_AUCTION_ADMITTED);
-    const _: () = assert!(!MX_MARKET_BREADTH_ADMITTED);
+    const _: () = assert!(MX_OPENING_AUCTION_ADMITTED);
+    const _: () = assert!(MX_MARKET_BREADTH_ADMITTED);
 
     #[derive(Clone)]
     struct FixtureTransport {
@@ -863,18 +997,40 @@ mod tests {
         })
     }
 
-    fn scalar_table(label: &str, code: &str, value: &str, unit: Option<&str>) -> serde_json::Value {
+    fn opening_auction_table(volume_unit: &str) -> serde_json::Value {
         json!({
             "code": "600396.SH",
             "entityName": "华电辽能(600396.SH)",
-            "rawTable": { code: [value], "headName": ["2026-08-14"] },
-            "nameMap": { code: label, "headNameSub": "数据来源" },
-            "field": {
-                "returnCode": code,
-                "returnName": label,
-                "dateGranularity": "DAY",
-                "unitName": unit
+            "rawTable": {
+                "100000000047336": ["2951900"],
+                "100000000047337": ["53665542"],
+                "headName": ["2026-08-14"]
             },
+            "nameMap": {
+                "100000000047336": "开盘集合竞价成交量",
+                "100000000047337": "开盘集合竞价成交额",
+                "headNameSub": "数据来源"
+            },
+            "field": {
+                "returnCode": "100000000047336",
+                "returnName": "开盘集合竞价成交量",
+                "dateGranularity": "DAY",
+                "unitName": volume_unit
+            },
+            "fieldSet": [
+                {
+                    "returnCode": "100000000047336",
+                    "returnName": "开盘集合竞价成交量",
+                    "dateGranularity": "DAY",
+                    "unitName": volume_unit
+                },
+                {
+                    "returnCode": "100000000047337",
+                    "returnName": "开盘集合竞价成交额",
+                    "dateGranularity": "DAY",
+                    "unitName": "元"
+                }
+            ],
             "entityTagDTO": entity()
         })
     }
@@ -893,26 +1049,10 @@ mod tests {
 
     #[test]
     fn opening_auction_preserves_observed_fields_and_nulls_unproved_fields() {
-        let transport = FixtureTransport::new(vec![
-            envelope(
-                "volume-request",
-                vec![scalar_table(
-                    "开盘集合竞价成交量",
-                    "100000000047336",
-                    "2951900",
-                    Some("股"),
-                )],
-            ),
-            envelope(
-                "amount-request",
-                vec![scalar_table(
-                    "开盘集合竞价成交额",
-                    "100000000047337",
-                    "53665542",
-                    Some("元"),
-                )],
-            ),
-        ]);
+        let transport = FixtureTransport::new(vec![envelope(
+            "auction-request",
+            vec![opening_auction_table("股")],
+        )]);
         let observed = transport.clone();
         let client = EastmoneyMxClient::with_transport("mkt_test_key", transport).unwrap();
         let batch = client
@@ -922,11 +1062,15 @@ mod tests {
         assert_eq!(record.matched_quantity_shares.unwrap().get(), 2_951_900.0);
         assert_eq!(record.matched_amount_cny.unwrap().get(), 53_665_542.0);
         assert!(record.matched_price.is_none());
+        assert!(record.previous_close.is_none());
+        assert!(record.change_percent.is_none());
         assert!(record.unmatched_bid_quantity_shares.is_none());
-        assert_eq!(record.status, DataStatus::Unavailable);
-        assert!(!batch.quality().is_complete());
+        assert!(record.unmatched_ask_quantity_shares.is_none());
+        assert!(record.volume_ratio.is_none());
+        assert_eq!(record.status, DataStatus::Available);
+        assert!(batch.quality().is_complete());
         let requests = observed.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
+        assert_eq!(requests.len(), 1);
         assert!(requests.iter().all(|request| request.0 == ENDPOINT));
         assert!(requests.iter().all(|request| request
             .1
@@ -938,32 +1082,45 @@ mod tests {
     fn opening_auction_rejects_unproved_unit() {
         let client = EastmoneyMxClient::with_transport(
             "mkt_test_key",
-            FixtureTransport::new(vec![
-                envelope(
-                    "volume-request",
-                    vec![scalar_table(
-                        "开盘集合竞价成交量",
-                        "100000000047336",
-                        "2951900",
-                        Some("手"),
-                    )],
-                ),
-                envelope(
-                    "amount-request",
-                    vec![scalar_table(
-                        "开盘集合竞价成交额",
-                        "100000000047337",
-                        "53665542",
-                        Some("元"),
-                    )],
-                ),
-            ]),
+            FixtureTransport::new(vec![envelope(
+                "auction-request",
+                vec![opening_auction_table("手")],
+            )]),
         )
         .unwrap();
         assert!(matches!(
             client.diagnose_opening_auction(&instrument(), &IsoDate::new("2026-08-14").unwrap()),
             Err(EastmoneyError::Protocol(_))
         ));
+    }
+
+    #[test]
+    fn opening_auction_rejects_two_tables_missing_field_set_and_wrong_amount_unit() {
+        let table = opening_auction_table("股");
+        for tables in [
+            vec![table.clone(), table.clone()],
+            {
+                let mut missing = table.clone();
+                missing.as_object_mut().unwrap().remove("fieldSet");
+                vec![missing]
+            },
+            {
+                let mut wrong_amount_unit = table;
+                wrong_amount_unit["fieldSet"][1]["unitName"] = json!("万元");
+                vec![wrong_amount_unit]
+            },
+        ] {
+            let client = EastmoneyMxClient::with_transport(
+                "mkt_test_key",
+                FixtureTransport::new(vec![envelope("auction-request", tables)]),
+            )
+            .unwrap();
+            assert!(matches!(
+                client
+                    .diagnose_opening_auction(&instrument(), &IsoDate::new("2026-08-14").unwrap()),
+                Err(EastmoneyError::Protocol(_))
+            ));
+        }
     }
 
     fn breadth_table(fields: &[(&str, &str, &str)], return_code: &str) -> serde_json::Value {
@@ -979,6 +1136,17 @@ mod tests {
             .iter()
             .map(|(label, code, _)| ((*code).to_owned(), json!(label)))
             .collect::<serde_json::Map<_, _>>();
+        let field_set = fields
+            .iter()
+            .map(|(label, code, _)| {
+                json!({
+                    "returnCode": code,
+                    "returnName": label,
+                    "dateGranularity": "DAY",
+                    "unitName": null
+                })
+            })
+            .collect::<Vec<_>>();
         json!({
             "code": "001071",
             "entityName": "全部A股(板块)",
@@ -990,6 +1158,7 @@ mod tests {
                 "dateGranularity": "DAY",
                 "unitName": null
             },
+            "fieldSet": field_set,
             "entityTagDTO": {
                 "entityType": "BLOCK",
                 "entityTypeName": "BLOCK",
@@ -1000,31 +1169,30 @@ mod tests {
     }
 
     #[test]
-    fn breadth_retains_counts_but_not_unproved_total_or_coverage() {
-        let client = EastmoneyMxClient::with_transport(
-            "mkt_test_key",
-            FixtureTransport::new(vec![envelope(
-                "breadth-request",
-                vec![
-                    breadth_table(
-                        &[
-                            ("上涨家数", "up", "2400"),
-                            ("下跌家数", "down", "2970"),
-                            ("平盘家数", "flat", "170"),
-                        ],
-                        "down",
-                    ),
-                    breadth_table(
-                        &[
-                            ("涨停家数", "limit-up", "64"),
-                            ("跌停家数", "limit-down", "13"),
-                        ],
-                        "limit-down",
-                    ),
-                ],
-            )]),
-        )
-        .unwrap();
+    fn breadth_proves_total_coverage_and_one_response_atomicity() {
+        let transport = FixtureTransport::new(vec![envelope(
+            "breadth-request",
+            vec![
+                breadth_table(
+                    &[
+                        ("上市股票数量", "listed", "5544"),
+                        ("上涨家数", "up", "2400"),
+                        ("下跌家数", "down", "2970"),
+                        ("平盘家数", "flat", "170"),
+                    ],
+                    "down",
+                ),
+                breadth_table(
+                    &[
+                        ("涨停家数", "limit-up", "64"),
+                        ("跌停家数", "limit-down", "13"),
+                    ],
+                    "limit-down",
+                ),
+            ],
+        )]);
+        let observed = transport.clone();
+        let client = EastmoneyMxClient::with_transport("mkt_test_key", transport).unwrap();
         let batch = client
             .diagnose_market_breadth(&IsoDate::new("2026-08-14").unwrap())
             .unwrap();
@@ -1032,9 +1200,67 @@ mod tests {
         assert_eq!((record.up, record.down, record.flat), (2400, 2970, 170));
         assert_eq!((record.limit_up, record.limit_down), (64, 13));
         assert_eq!(record.valid, 5540);
-        assert!(record.listed_total.is_none());
-        assert!(record.coverage.is_none());
-        assert_eq!(record.status, DataStatus::Unavailable);
+        assert_eq!(record.listed_total, Some(5544));
+        assert_eq!(record.coverage.unwrap().get(), 5540.0 / 5544.0);
+        assert!(record.maximum_source_skew_millis.is_none());
+        assert_eq!(record.status, DataStatus::Available);
+        assert!(batch.quality().is_complete());
+        assert_eq!(observed.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn source_counts_accept_only_canonical_or_thousands_grouped_digits() {
+        assert_eq!(parse_source_count("5544", "count").unwrap(), 5544);
+        assert_eq!(parse_source_count("5,544", "count").unwrap(), 5544);
+        assert_eq!(parse_source_count("5544.0", "count").unwrap(), 5544);
+        assert_eq!(parse_source_count("5,544.00", "count").unwrap(), 5544);
+        for invalid in ["", "55,44", ",544", "5,54a", "5544家", "5.544", "1.1"] {
+            assert!(parse_source_count(invalid, "count").is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn breadth_rejects_wrong_table_count_missing_field_set_and_total_contradiction() {
+        let directional = breadth_table(
+            &[
+                ("上市股票数量", "listed", "5544"),
+                ("上涨家数", "up", "2400"),
+                ("下跌家数", "down", "2970"),
+                ("平盘家数", "flat", "170"),
+            ],
+            "down",
+        );
+        let limits = breadth_table(
+            &[
+                ("涨停家数", "limit-up", "64"),
+                ("跌停家数", "limit-down", "13"),
+            ],
+            "limit-down",
+        );
+        let mut missing_field_set = limits.clone();
+        missing_field_set
+            .as_object_mut()
+            .unwrap()
+            .remove("fieldSet");
+        let mut contradictory_total = directional.clone();
+        contradictory_total["rawTable"]["listed"] = json!(["5539"]);
+
+        for tables in [
+            vec![directional.clone()],
+            vec![directional.clone(), limits.clone(), limits.clone()],
+            vec![directional.clone(), missing_field_set],
+            vec![contradictory_total, limits],
+        ] {
+            let client = EastmoneyMxClient::with_transport(
+                "mkt_test_key",
+                FixtureTransport::new(vec![envelope("breadth-request", tables)]),
+            )
+            .unwrap();
+            assert!(matches!(
+                client.diagnose_market_breadth(&IsoDate::new("2026-08-14").unwrap()),
+                Err(EastmoneyError::Protocol(_))
+            ));
+        }
     }
 
     #[test]

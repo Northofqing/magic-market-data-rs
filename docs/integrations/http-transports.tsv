@@ -4,7 +4,7 @@ magic-cfets-rs	shared	-	true	target	-
 magic-cls-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-cninfo-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-eastmoney-rs	legacy-direct	ring,ureq	false	reviewed-exception	existing provider-local ureq and ring stack; exact authenticated Miaoxiang POST host/path approved by BR-046; migrate behind shared transport
-magic-exchange-rs	hybrid	ureq	true	reviewed-exception	official exchange paths are split between shared transport and legacy ureq; BR-051 permits only the exact credential-free CFFEX HTTP notice paths as an explicitly plaintext UNADMITTED diagnostic while formal FuturesDelivery remains fail-before-I/O
+magic-exchange-rs	hybrid	ureq	true	reviewed-exception	official exchange paths are split between shared transport and legacy ureq; BR-051 formal 2026 FuturesDelivery uses a checked-in schedule with no runtime transport, while only the exact credential-free CFFEX HTTP notice paths remain an explicitly plaintext UNADMITTED diagnostic
 magic-fred-rs	shared	-	true	target	-
 magic-gov-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-imf-rs	shared	-	true	target	-

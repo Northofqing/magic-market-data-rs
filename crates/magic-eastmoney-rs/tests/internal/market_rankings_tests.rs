@@ -1,6 +1,7 @@
 use super::{
-    parse_diagnostic_market_ranking_page, parse_market_ranking_pages, parse_page, ranking_unit,
-    ranking_url, ranking_url_for, session_for_source_at,
+    parse_atomic_market_ranking_page, parse_diagnostic_market_ranking_page,
+    parse_market_ranking_pages, parse_page, ranking_unit, ranking_url, ranking_url_for,
+    session_for_source_at,
 };
 use crate::test_support::ScriptedTransport;
 use magic_market_core::{
@@ -84,6 +85,119 @@ fn partial_diagnostic_fetches_one_bounded_page_and_rejects_unbounded_limits_befo
     let client = crate::EastmoneyClient::with_transport(transport);
     assert!(matches!(
         client.diagnose_partial_market_rankings(
+            &MarketRankingKind::VolumeRatio,
+            PositiveU32::new(101).unwrap(),
+        ),
+        Err(crate::EastmoneyError::InvalidRequest(_))
+    ));
+    assert!(requests.lock().unwrap().is_empty());
+}
+
+#[test]
+fn bounded_snapshot_is_one_complete_response_and_requires_every_proved_field() {
+    let rows = (0..100)
+        .map(|index| {
+            row(
+                &format!("600{index:03}"),
+                1,
+                &format!("A{index}"),
+                &(200 - index).to_string(),
+                &(2_000 - index * 10).to_string(),
+                1_784_872_800,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let transport = ScriptedTransport::from_results([Ok(page(5_000, &rows))]);
+    let requests = transport.requests();
+    let client = crate::EastmoneyClient::with_transport(transport);
+    let batch = client
+        .bounded_market_rankings_snapshot(
+            &MarketRankingKind::VolumeRatio,
+            PositiveU32::new(20).unwrap(),
+        )
+        .unwrap();
+    assert!(batch.quality().is_complete());
+    assert_eq!(batch.records().len(), 20);
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    let first = serde_json::to_value(&batch.records()[0]).unwrap();
+    assert_eq!(first["reported_universe_size"], 5_000);
+    assert_eq!(first["fetched_count"], 100);
+    assert_eq!(first["source_rank"], 1);
+    assert!(!first["source_at"].is_null());
+    assert!(!first["value"].is_null());
+
+    let batch_id = batch.provenance().batch_id().unwrap();
+    assert!(batch.provenance().source_at().is_none());
+    for (index, record) in batch.records().iter().enumerate() {
+        assert_eq!(record.source_rank.get(), u32::try_from(index + 1).unwrap());
+        assert_eq!(record.evidence.batch_id(), batch_id);
+        assert_eq!(
+            record.evidence.observed_at(),
+            batch.provenance().fetched_at()
+        );
+        assert_eq!(record.evidence.source_at(), record.source_at.as_deref());
+    }
+
+    for bad_rows in [
+        [
+            r#"{"f10":3,"f13":1,"f14":"A","f62":30,"f124":1784872800}"#.to_owned(),
+            row("600002", 1, "B", "2", "20", 1_784_872_800),
+        ]
+        .join(","),
+        [
+            r#"{"f10":3,"f12":"600001","f14":"A","f62":30,"f124":1784872800}"#.to_owned(),
+            row("600002", 1, "B", "2", "20", 1_784_872_800),
+        ]
+        .join(","),
+        [
+            row("600001", 1, "", "3", "30", 1_784_872_800),
+            row("600002", 1, "B", "2", "20", 1_784_872_800),
+        ]
+        .join(","),
+        [
+            r#"{"f10":3,"f12":"600001","f13":1,"f62":30,"f124":1784872800}"#.to_owned(),
+            row("600002", 1, "B", "2", "20", 1_784_872_800),
+        ]
+        .join(","),
+        [
+            row("600001", 1, "A", "3", "30", 1_784_872_800),
+            r#"{"f12":"600002","f13":1,"f14":"B","f62":20,"f124":1784872800}"#.to_owned(),
+        ]
+        .join(","),
+        [
+            r#"{"f10":3,"f12":"600001","f13":1,"f14":"A","f62":30}"#.to_owned(),
+            row("600002", 1, "B", "2", "20", 1_784_872_800),
+        ]
+        .join(","),
+        [
+            row("600001", 1, "A", "3", "30", 1_784_872_800),
+            row("600001", 1, "duplicate", "2", "20", 1_784_872_800),
+        ]
+        .join(","),
+        [
+            row("600001", 1, "A", "2", "20", 1_784_872_800),
+            row("600002", 1, "B", "3", "30", 1_784_872_800),
+        ]
+        .join(","),
+    ] {
+        assert!(parse_atomic_market_ranking_page(
+            &page(2, &bad_rows),
+            &MarketRankingKind::VolumeRatio,
+            PositiveU32::new(2).unwrap(),
+        )
+        .is_err());
+    }
+}
+
+#[test]
+fn bounded_snapshot_rejects_limit_above_one_page_before_io() {
+    let transport = ScriptedTransport::from_bodies([]);
+    let requests = transport.requests();
+    let client = crate::EastmoneyClient::with_transport(transport);
+
+    assert!(matches!(
+        client.bounded_market_rankings_snapshot(
             &MarketRankingKind::VolumeRatio,
             PositiveU32::new(101).unwrap(),
         ),
