@@ -9,7 +9,7 @@ mod szse;
 mod szse_quote;
 mod transport;
 
-pub use cffex::{CffexClient, CffexConfig, CffexTlsBackend};
+pub use cffex::{CffexAccessMode, CffexClient, CffexConfig, CffexTlsBackend};
 pub use dragon_tiger::{
     parse_sse_response, parse_szse_detail_response, parse_szse_list_response,
     DragonTigerParseError, OfficialDragonTigerRequest, ParsedDragonTiger, SzseDragonTigerDetailKey,

@@ -20,9 +20,10 @@ or the existing `EastmoneyClient` public-web behavior.
 - Response: HTTP 200 and `application/json`, maximum 4 MiB, no redirects, positive
   connect/read/write timeout, one request per second shared pacing.
 - External access: when a valid Key is present at server startup, the four fixed
-  diagnostic handlers are the default selection and require no per-request
-  `preferred_provider` or `allow_unadmitted`; responses remain incomplete and
-  `UNADMITTED`.
+  diagnostic handlers become available only through
+  `preferred_provider=EastmoneyMiaoxiang` plus `allow_unadmitted=true`.
+  Requests without that explicit opt-in fail before Provider I/O; successful
+  diagnostics remain incomplete and `UNADMITTED`.
 - The existing Eastmoney legacy `ureq` transport is reused; its allowlist is widened
   only by the exact `mkapi2.dfcfs.com` host registered here.
 

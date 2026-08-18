@@ -28,7 +28,7 @@ sessions, credentials, portfolios, or order data.
 | Dividends | `DividendPlans` | `datacenter-web.eastmoney.com` | report/ex-date, state, cash/bonus/transfer/allotment per ten shares |
 | Limit pools | `LimitPools` | `push2ex.eastmoney.com` | upper, broken, lower and previous-upper pools; source `qdate` is mandatory and must match the requested date |
 | Popularity | `PopularityData` | `emappdata.eastmoney.com`, `push2.eastmoney.com` | rank and rank change, with separately evidenced quote join |
-| Strict post-close ranking diagnostic | `EastmoneyClient::diagnose_post_close_flows` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | current China date after 15:35, exact limit, one source timestamp, contiguous rank, code and name; production capability is false and formal `PostCloseFlows` returns `Unsupported` |
+| Post-close fund-flow ranking | `PostCloseFlows` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | current China date after 15:35, exact limit, contiguous rank, code/name and per-row source instant; batch uses local observation time and leaves mixed batch `source_at` null |
 | Full-market rankings | `MarketRankings` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | complete A-share pagination for volume ratio and main-net inflow, including code, name, source session, three-market coverage and one common source time (zero skew); a transport failure discards all pages and restarts at page one on the alternate HTTPS host; capability stays false until a stable-session live probe satisfies every gate |
 | Provider Top-N rankings | `ProviderTopNRankings` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | one provider-ordered page after 15:35 on the requested date or on a later closed-market capture date; exact selected metric/code/name, local source-response ordinal, per-security `f297` equal to the requested settled date, provider-declared total, inspected row count and no fabricated batch `source_at`; this is not arbitrary history, full-market coverage or breadth |
 | Global latest finance news | `NewsProvider::global_news` | `roll.eastmoney.com`; metadata links on exact `finance`, `global`, or `biz.eastmoney.com` hosts | complete first-page validation, newest-first minute time, numeric article identity and canonical URL; article pages are not fetched |
@@ -50,11 +50,10 @@ and only for typed transport failures; every retry still passes through the
 shared one-request/second gate. Endpoint failover never joins pages from two
 hosts: a failed partial operation is discarded and the alternate host starts
 again at page one. Intraday page drift remains an explicit atomic failure.
-`CapitalCapabilities.post_close_flow` is also false. The formal
-`PostCloseFlows` implementation returns typed `Unsupported`; only the explicitly
-named diagnostic method performs network I/O. A diagnostic success prints
-`admitted=false` and still requires human review before the capability can be
-enabled.
+`CapitalCapabilities.post_close_flow` is true for the exact bounded contract
+above. Per-row source instants remain unchanged; a mixed-time response is a
+complete local observation snapshot with batch `source_at=None`, not a realtime
+atomic-source-time claim.
 
 Provider Top-N admission is a separate capability family:
 

@@ -1,7 +1,9 @@
-use magic_baidu_rs::BaiduClient;
+use magic_baidu_rs::{BaiduClient, TECHNICAL_BARS_ADMITTED};
+
+const _: () = assert!(TECHNICAL_BARS_ADMITTED);
 
 #[test]
-fn technical_bars_stay_unadvertised_until_continuity_gates_are_proved() {
+fn technical_bars_are_admitted_without_promoting_generic_historical_bars() {
     let capabilities = BaiduClient::capabilities();
     assert!(!capabilities.bars);
     assert!(!capabilities.quotes);

@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for sequence in 1..=requests {
         let command = QueryCommand::new(
-            format!("t0-evidence-diagnostic-{sequence}"),
+            format!("t0-evidence-live-{sequence}"),
             Operation::T0Evidence,
             Some("Tdx".to_owned()),
             CanonicalPayload::new(
@@ -41,12 +41,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 serde_json::to_vec(&request)?,
                 MAX_PAYLOAD_BYTES,
             )?,
-        )?
-        .with_unadmitted_access(true);
+        )?;
         let result = registry.execute(command)?;
-        if result.repository_admitted || result.complete || result.records.len() != 1 {
+        if !result.repository_admitted || !result.complete || result.records.len() != 1 {
             return Err(format!(
-                "unexpected T0Evidence diagnostic result: admitted={} complete={} records={}",
+                "unexpected T0Evidence production result: admitted={} complete={} records={}",
                 result.repository_admitted,
                 result.complete,
                 result.records.len()
@@ -55,13 +54,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         let record: T0EvidenceRecord = serde_json::from_slice(result.records[0].data())?;
         println!(
-            "t0_evidence sequence={sequence} instrument={} quote_status={:?} book_status={:?} daily_bars={} five_minute_bars={} evidence={} source_at={:?} admitted={} complete={} blocker={:?} digest={}",
+            "t0_evidence sequence={sequence} instrument={} quote_status={:?} book_status={:?} daily_bars={} five_minute_bars={} evidence={} observed_at={} source_at={:?} admitted={} complete={} blocker={:?} digest={}",
             record.instrument().code(),
             record.quote().status(),
             record.order_book().status(),
             record.daily_bars().len(),
             record.five_minute_bars().len(),
             record.input_evidence().len(),
+            result.observed_at,
             result.source_at,
             result.repository_admitted,
             result.complete,
@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             record.input_digest_sha256(),
         );
     }
-    println!("t0_evidence_diagnostic_probe_status=observed requests={requests}");
+    println!("t0_evidence_live_probe_status=admitted requests={requests}");
     Ok(())
 }
 

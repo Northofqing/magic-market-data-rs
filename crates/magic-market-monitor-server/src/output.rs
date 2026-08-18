@@ -223,7 +223,7 @@ pub(crate) enum ServiceEvent {
         instrument: String,
         observed_at_utc: String,
         time_basis: magic_market_core::ObservationTimeBasis,
-        update: crate::analysis::AnalysisUpdate,
+        update: Box<crate::analysis::AnalysisUpdate>,
     },
     SnapshotObservation {
         generation: u64,
@@ -232,6 +232,14 @@ pub(crate) enum ServiceEvent {
         cumulative_amount: String,
         cumulative_amount_unit: AmountUnit,
         snapshot_price: String,
+        previous_close: String,
+        previous_close_unit: PriceUnit,
+        previous_close_admitted: bool,
+        open: String,
+        high: String,
+        low: String,
+        ohlc_unit: PriceUnit,
+        ohlc_admitted: bool,
         snapshot_volume: String,
         snapshot_volume_unit: VolumeUnit,
         price_matches_last_fast_sample: bool,
@@ -294,6 +302,12 @@ pub(crate) enum VolumeUnit {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AmountUnit {
     Cny,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PriceUnit {
+    CnyPerShare,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

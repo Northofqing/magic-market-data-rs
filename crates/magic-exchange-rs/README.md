@@ -23,10 +23,12 @@ its production capability remains false.
 paths and requires IF/IH/IC/IM plus the requested delivery date and settlement
 price wording. The notice does not independently prove the settlement method,
 so records use `FuturesDeliveryMethod::NotProvided`; the implementation never
-infers cash settlement or a “third Friday”. On 2026-07-27, bounded probes using
-explicit Rustls and Native TLS backends both failed during TLS initialization
-before an official HTTP response was received, so
-`calendar_capabilities().futures_delivery` remains false and the production
+infers cash settlement or a “third Friday”. The explicit
+`CffexConfig::plaintext_http_diagnostic()` mode is restricted to the official
+host and fixed public notice paths, sends no credentials, disables proxies and
+redirects, and marks provenance as `plaintext_http_diagnostic`. It is not an
+automatic HTTPS downgrade. On 2026-08-16 it returned four records for 2026-07,
+but `calendar_capabilities().futures_delivery` remains false and the production
 `FuturesDeliveryCalendar` trait returns typed `Unsupported`.
 
 SSE/SZSE announcements validate complete remote pages before local
@@ -88,18 +90,16 @@ Run the CFFEX diagnostic independently with:
 ```bash
 MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
 MAGIC_CFFEX_DELIVERY_YEAR=2026 \
-MAGIC_CFFEX_DELIVERY_MONTH=2 \
-MAGIC_CFFEX_TLS_BACKEND=rustls \
+MAGIC_CFFEX_DELIVERY_MONTH=7 \
+MAGIC_CFFEX_ACCESS_MODE=https \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
 
-`rustls` is the default and does not require system OpenSSL. To diagnose the
-system TLS stack explicitly, set `MAGIC_CFFEX_TLS_BACKEND=native-tls` and add
-`--features native-tls` to the Cargo command. The client never silently falls
-back between backends. Selecting Native TLS without compiling that feature
-returns typed `Unsupported` before networking.
-
-This command is diagnostic-only. A successful diagnostic emits
+The default `https` mode uses the shared bounded reqwest/rustls transport and
+emits `formal_https_probe_status=passed_unadmitted` until the complete admission
+evidence gate is satisfied. To exercise the separately reviewed plaintext
+diagnostic, set `MAGIC_CFFEX_ACCESS_MODE=plaintext-diagnostic`. A successful
+plaintext diagnostic emits
 `diagnostic_probe_status=passed` and
 `admission_state=diagnostic_complete_unadmitted`; it must not emit the
 production `live_probe_status=passed` marker. Notice publication time is kept

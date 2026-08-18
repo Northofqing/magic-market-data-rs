@@ -66,12 +66,13 @@ auditable source timestamp.
 That distinction is preserved by the external derived products. On 2026-08-16
 `OutcomeDailyBars` passed two live and three serial requests for 600396.SH with
 20 exact daily bars ending on the requested 2026-08-14 `through` date, so that
-TDX-only product is admitted. `T0Evidence` also completed two live and three
-serial four-family captures (Quote, five-level book, 20 daily bars and 20
-five-minute bars), but Quote/book retained `source_at=None` and
-`status=Unavailable`. It is therefore exposed only as an explicit opt-in gRPC
-diagnostic with `admission=UNADMITTED` and `complete=false`; successful TCP
-reads do not promote it.
+TDX-only product is admitted. `T0Evidence` completed two live and three serial
+four-family captures (Quote, five-level book, 20 daily bars and 20 five-minute
+bars). It is admitted as an exact evidence bundle: the response uses the
+current local Asia/Shanghai `observed_at`, Quote/book retain `source_at=None`
+and the batch `source_at` stays null. It is not eligible for a BR-033 strict
+source-time freshness gate; successful TCP reads do not promote it into a
+realtime quote route.
 
 The security-list packet supplies name and enough evidence to identify ST
 names. The normalized Gateway joins it with the exact requested finance record

@@ -6,6 +6,7 @@
 3. Add deterministic fixtures for auth redaction, endpoint/query bounds, outer and
    inner status, identity/date/unit/cardinality checks and partial-field retention.
 4. Register opt-in gRPC diagnostic handlers for daily fund flow, opening auction
-   and partial market breadth. Default calls continue to fail before provider I/O.
+   and partial market breadth. A configured Key never makes an unadmitted
+   handler default-readable; default calls continue to fail before provider I/O.
 5. Update external integration documentation and run formatting, tests, Clippy,
    docs, compliance, dependency and diff checks.

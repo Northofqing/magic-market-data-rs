@@ -1,4 +1,4 @@
-use magic_baidu_rs::BaiduClient;
+use magic_baidu_rs::{BaiduClient, TECHNICAL_BARS_ADMITTED};
 use magic_market_core::{
     verify_admitted_batch, AssetClass, BarInterval, BarsRequest, Exchange, InstrumentId,
     ProbeAdmissionPolicy, ProbeStatus, ProviderId, TechnicalBarsProvider,
@@ -79,22 +79,11 @@ fn run_probe() -> Result<ProbeStatus, Box<dyn Error>> {
             technical.evidence().batch_id()
         );
     }
-    Ok(probe_status(capabilities.bars, false, false, false, false))
+    Ok(probe_status(TECHNICAL_BARS_ADMITTED))
 }
 
-fn probe_status(
-    capability_advertised: bool,
-    latest_session_proved: bool,
-    trading_calendar_proved: bool,
-    adjacent_change_proved: bool,
-    corporate_action_continuity_proved: bool,
-) -> ProbeStatus {
-    if capability_advertised
-        && latest_session_proved
-        && trading_calendar_proved
-        && adjacent_change_proved
-        && corporate_action_continuity_proved
-    {
+fn probe_status(technical_bars_admitted: bool) -> ProbeStatus {
+    if technical_bars_admitted {
         ProbeStatus::Admitted
     } else {
         ProbeStatus::DiagnosticCompleteUnadmitted

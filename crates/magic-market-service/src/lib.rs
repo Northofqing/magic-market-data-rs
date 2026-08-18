@@ -248,7 +248,6 @@ type Handler = Arc<dyn Fn(QueryCommand) -> Result<QueryResult, ServiceError> + S
 struct Registration {
     capability: Capability,
     handler: Option<Handler>,
-    diagnostic_by_default: bool,
 }
 
 #[derive(Clone)]
@@ -277,7 +276,6 @@ impl OperationRegistry {
                             diagnostic_available: false,
                         },
                         handler: None,
-                        diagnostic_by_default: false,
                     }],
                 )
             })
@@ -290,40 +288,14 @@ impl OperationRegistry {
         self.insert_registration(Registration {
             capability,
             handler: None,
-            diagnostic_by_default: false,
         });
         Ok(())
     }
 
     pub fn register_diagnostic_handler<F>(
         &mut self,
-        capability: Capability,
-        handler: F,
-    ) -> Result<(), ServiceError>
-    where
-        F: Fn(QueryCommand) -> Result<QueryResult, ServiceError> + Send + Sync + 'static,
-    {
-        self.register_diagnostic_handler_with_default(capability, handler, false)
-    }
-
-    /// Registers a partial diagnostic that is readable without a per-request
-    /// opt-in while preserving `repository_admitted=false` and `complete=false`.
-    pub fn register_default_diagnostic_handler<F>(
-        &mut self,
-        capability: Capability,
-        handler: F,
-    ) -> Result<(), ServiceError>
-    where
-        F: Fn(QueryCommand) -> Result<QueryResult, ServiceError> + Send + Sync + 'static,
-    {
-        self.register_diagnostic_handler_with_default(capability, handler, true)
-    }
-
-    fn register_diagnostic_handler_with_default<F>(
-        &mut self,
         mut capability: Capability,
         handler: F,
-        diagnostic_by_default: bool,
     ) -> Result<(), ServiceError>
     where
         F: Fn(QueryCommand) -> Result<QueryResult, ServiceError> + Send + Sync + 'static,
@@ -333,7 +305,6 @@ impl OperationRegistry {
         self.insert_registration(Registration {
             capability,
             handler: Some(Arc::new(handler)),
-            diagnostic_by_default,
         });
         Ok(())
     }
@@ -350,7 +321,6 @@ impl OperationRegistry {
         self.insert_registration(Registration {
             capability,
             handler: Some(Arc::new(handler)),
-            diagnostic_by_default: false,
         });
         Ok(())
     }
@@ -401,10 +371,7 @@ impl OperationRegistry {
                 })?
         };
         let capability = &registration.capability;
-        if !capability.repository_admitted
-            && !command.allows_unadmitted()
-            && !registration.diagnostic_by_default
-        {
+        if !capability.repository_admitted && !command.allows_unadmitted() {
             return Err(ServiceError::Unsupported {
                 operation: command.operation,
                 reason: capability
@@ -746,45 +713,5 @@ mod tests {
                 |capability| capability.operation == Operation::TechnicalBars
                     && capability.diagnostic_available
             ));
-    }
-
-    #[test]
-    fn default_diagnostic_is_readable_but_never_promotes_admission_or_completeness() {
-        let mut registry = OperationRegistry::all_unadmitted("missing");
-        registry
-            .register_default_diagnostic_handler(
-                Capability {
-                    operation: Operation::Auctions,
-                    repository_admitted: false,
-                    runtime_available: false,
-                    provider: "PartialSource".to_owned(),
-                    exact_scope: "source-backed partial auction fields".to_owned(),
-                    blocker: Some("complete auction fields are unavailable".to_owned()),
-                    diagnostic_available: false,
-                },
-                |_| {
-                    Ok(QueryResult {
-                        provider: "PartialSource".to_owned(),
-                        batch_id: "batch-partial".to_owned(),
-                        complete: true,
-                        observed_at: "2026-08-15T00:00:00Z".to_owned(),
-                        source_at: Some("2026-08-14".to_owned()),
-                        records: vec![payload()],
-                        repository_admitted: true,
-                        diagnostic_blocker: None,
-                    })
-                },
-            )
-            .unwrap();
-
-        let result = registry
-            .execute(command(Operation::Auctions, Some("PartialSource")))
-            .unwrap();
-        assert!(!result.repository_admitted);
-        assert!(!result.complete);
-        assert_eq!(
-            result.diagnostic_blocker.as_deref(),
-            Some("complete auction fields are unavailable")
-        );
     }
 }

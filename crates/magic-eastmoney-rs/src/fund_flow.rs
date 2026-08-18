@@ -5,6 +5,11 @@ use crate::{
     instrument_from_market, query_url, secid, BatchContext, EastmoneyClient, EastmoneyError,
 };
 use magic_market_core::{FlowInterval, FlowScope, FundFlowPoint, FundFlowRequest, FundFlowSeries};
+
+/// Fixed public Eastmoney fund-flow is admitted for one Shanghai or Shenzhen
+/// equity, one-minute or daily intervals, exact CNY values and per-row source
+/// time.
+pub const PUBLIC_FUND_FLOW_ADMITTED: bool = true;
 use serde_json::Value;
 
 const MINUTE_ENDPOINT: &str = "https://push2.eastmoney.com/api/qt/stock/fflow/kline/get";
@@ -126,7 +131,7 @@ fn parse_fund_flow(
                 .and_then(|row| parse_row(row, interval))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let source_at = parsed.iter().map(|row| row.period_at.as_str()).max();
+    let source_at = parsed.iter().map(|row| row.source_at.as_str()).max();
     let context = BatchContext::new("fund-flow", source_at)?;
     let records = parsed
         .into_iter()
@@ -141,7 +146,7 @@ fn parse_fund_flow(
                 large_net: money(row.large_net)?,
                 medium_net: money(row.medium_net)?,
                 small_net: money(row.small_net)?,
-                evidence: context.evidence_at(Some(&row.period_at))?,
+                evidence: context.evidence_at(Some(&row.source_at))?,
             })
         })
         .collect::<Result<Vec<_>, EastmoneyError>>()?;
@@ -151,6 +156,7 @@ fn parse_fund_flow(
 #[derive(Debug)]
 struct FlowRow {
     period_at: String,
+    source_at: String,
     main_net: Option<f64>,
     small_net: Option<f64>,
     medium_net: Option<f64>,
@@ -171,9 +177,13 @@ fn parse_row(row: &str, interval: FlowInterval) -> Result<FlowRow, EastmoneyErro
     if period_at.is_empty() {
         return Err(EastmoneyError::Protocol("fund-flow period is empty".into()));
     }
-    match interval {
+    let source_at = match interval {
         FlowInterval::Minute1 => {
             validate_minute_timestamp(period_at, "fund-flow period_at")?;
+            let (date, time) = period_at.split_once(' ').ok_or_else(|| {
+                EastmoneyError::Protocol("fund-flow minute period has no separator".into())
+            })?;
+            format!("{date}T{time}:00+08:00")
         }
         FlowInterval::Day1 => {
             let source_date = iso_date(period_at)?;
@@ -182,15 +192,17 @@ fn parse_row(row: &str, interval: FlowInterval) -> Result<FlowRow, EastmoneyErro
                     "daily fund-flow period_at {period_at:?} must use YYYY-MM-DD"
                 )));
             }
+            period_at.to_owned()
         }
         other => {
             return Err(EastmoneyError::Unsupported(format!(
                 "fund-flow parser interval {other:?} is not verified"
             )))
         }
-    }
+    };
     Ok(FlowRow {
         period_at: period_at.to_owned(),
+        source_at,
         main_net: parse_number(fields[1])?,
         small_net: parse_number(fields[2])?,
         medium_net: parse_number(fields[3])?,

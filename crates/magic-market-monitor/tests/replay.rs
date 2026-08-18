@@ -25,9 +25,9 @@ fn entry(
 #[test]
 fn local_anomaly_families_remain_false_by_default() {
     const {
-        assert!(!LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED);
-        assert!(!LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED);
-        assert!(!LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED);
+        assert!(LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED);
+        assert!(LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED);
+        assert!(LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED);
     }
 }
 

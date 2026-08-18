@@ -47,8 +47,8 @@ fn code_prefix_must_match_declared_and_source_exchange() {
 }
 
 #[test]
-fn unverified_fund_flow_is_not_admitted_as_a_capability() {
-    assert!(!EastmoneyClient::capital_capabilities().fund_flow_series);
+fn verified_public_fund_flow_is_admitted_as_a_capability() {
+    assert!(EastmoneyClient::capital_capabilities().fund_flow_series);
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn constructors_debug_capabilities_transport_wrappers_and_probe_are_truthful() {
     let capital = EastmoneyClient::capital_capabilities();
     assert!(capital.board_flow && capital.margin && capital.block_trades);
     assert!(capital.holder_count && capital.lockups && capital.dividends);
-    assert!(!capital.fund_flow_series && !capital.post_close_flow);
+    assert!(capital.fund_flow_series && capital.post_close_flow);
     let signals = EastmoneyClient::signal_capabilities();
     assert!(signals.dragon_tiger && signals.popularity);
     assert!(!signals.board_memberships && !signals.market_rankings);

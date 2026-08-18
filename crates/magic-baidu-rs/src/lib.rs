@@ -14,6 +14,12 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
+/// Production admission for the exact source-supplied technical daily-bar contract.
+///
+/// This admits unadjusted OHLCV/amount plus optional source MA5/MA10/MA20. It does not
+/// claim adjusted-price continuity, a trading calendar, or locally recomputed indicators.
+pub const TECHNICAL_BARS_ADMITTED: bool = true;
+
 const ENDPOINT: &str = "https://finance.pae.baidu.com/selfselect/getstockquotation";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;

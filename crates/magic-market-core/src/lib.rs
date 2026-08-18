@@ -99,9 +99,9 @@ pub use options::{
 };
 pub use policy::{PolicyCapabilities, PolicyDocument, PolicyDocuments, PolicyRequest};
 pub use probe::{
-    verify_admitted_batch, verify_serial_load, verify_verified_empty, EvidenceTimestamp,
-    LoadProbeError, LoadProbeSnapshot, ProbeAdmissionError, ProbeAdmissionPolicy,
-    ProbeRequestTracker, ProbeStatus, VerifiedEmpty,
+    verify_admitted_batch, verify_admitted_time_series_batch, verify_serial_load,
+    verify_verified_empty, EvidenceTimestamp, LoadProbeError, LoadProbeSnapshot,
+    ProbeAdmissionError, ProbeAdmissionPolicy, ProbeRequestTracker, ProbeStatus, VerifiedEmpty,
 };
 pub use provenance::Provenance;
 pub use provider::{

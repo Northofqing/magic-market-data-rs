@@ -18,11 +18,13 @@ pub use admission::{
     CapabilityAvailability, LocalTerminalAdmission, LocalTerminalCapabilityAvailability,
     LocalTerminalRuntimeAvailability, RepositoryAdmission, RuntimeAvailability,
     LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED, LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED,
+    LOCAL_TERMINAL_OHLC_ADMITTED, LOCAL_TERMINAL_PREVIOUS_CLOSE_ADMITTED,
     LOCAL_TERMINAL_PRICE_ADMITTED, LOCAL_TERMINAL_SOURCE_RECORD_COUNT_ADMITTED,
 };
 pub use loopback::{
     TqEquityUniverseEvidence, TqInstrument, TqLoopbackClient, TqLoopbackError,
-    TqLoopbackErrorCategory, TqLoopbackLimits, TqReadMethod, TQ_LOOPBACK_ENDPOINT,
+    TqLoopbackErrorCategory, TqLoopbackLimits, TqMarketSnapshot, TqReadMethod, TqSnapshotPrices,
+    TQ_LOOPBACK_ENDPOINT,
 };
 pub use protocol::{
     ArtifactIdentity, BridgeCommand, BridgeErrorCode, BridgeErrorReport, BridgeMessage,

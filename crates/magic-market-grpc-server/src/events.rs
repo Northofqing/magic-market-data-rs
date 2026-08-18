@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use magic_market_core::{AnomalyEvent, AnomalyTransition, AssetClass, Exchange};
 use magic_market_grpc_contracts::v1;
 use magic_market_grpc_contracts::PROTOCOL_VERSION;
 use prost::Message;
@@ -446,6 +447,11 @@ impl EventHub {
                 "local_terminal_price".to_owned(),
                 "local_terminal_cumulative_volume".to_owned(),
                 "local_terminal_cumulative_amount".to_owned(),
+                "local_terminal_previous_close".to_owned(),
+                "local_terminal_ohlc".to_owned(),
+                "local_price_change_anomaly".to_owned(),
+                "local_amount_change_anomaly".to_owned(),
+                "local_volume_change_anomaly".to_owned(),
             ],
         }
     }
@@ -538,11 +544,6 @@ fn validate_admitted_tdx_event(
     event: &v1::MarketEventEnvelope,
     payload: &v1::CanonicalPayload,
 ) -> Result<(), Status> {
-    if event.provider != "LocalTerminal" {
-        return Err(Status::failed_precondition(
-            "only admitted LocalTerminal observation families are enabled",
-        ));
-    }
     let expected_schema = format!("magic.market.monitor.{}", event.event_kind);
     if payload.schema != expected_schema || payload.schema_version != 1 {
         return Err(Status::invalid_argument(
@@ -561,13 +562,26 @@ fn validate_admitted_tdx_event(
             "admitted TDX payload identity does not match the envelope",
         ));
     }
+    if event.provider == "LocalAnalysis" {
+        return validate_admitted_analysis_event(event, &document);
+    }
+    if event.provider != "LocalTerminal" {
+        return Err(Status::failed_precondition(
+            "admitted TDX provider is outside the local terminal boundary",
+        ));
+    }
     let admitted = match event.event_kind.as_str() {
         "observation" => {
-            admitted_json_field(&document, "price_admitted", "price")
-                || admitted_json_field(&document, "volume_admitted", "cumulative_volume")
+            let price = admitted_json_field(&document, "price_admitted", "price")?;
+            let volume = admitted_json_field(&document, "volume_admitted", "cumulative_volume")?;
+            price || volume
         }
         "snapshot_observation" => {
-            admitted_json_field(&document, "amount_admitted", "cumulative_amount")
+            let amount = admitted_json_field(&document, "amount_admitted", "cumulative_amount")?;
+            let previous_close =
+                admitted_json_field(&document, "previous_close_admitted", "previous_close")?;
+            let ohlc = admitted_json_fields(&document, "ohlc_admitted", &["open", "high", "low"])?;
+            amount || previous_close || ohlc
         }
         _ => false,
     };
@@ -579,19 +593,120 @@ fn validate_admitted_tdx_event(
     Ok(())
 }
 
+fn validate_admitted_analysis_event(
+    envelope: &v1::MarketEventEnvelope,
+    document: &serde_json::Value,
+) -> Result<(), Status> {
+    if envelope.event_kind != "analysis"
+        || !envelope.source_at.is_empty()
+        || document
+            .get("admitted")
+            .and_then(serde_json::Value::as_bool)
+            != Some(true)
+    {
+        return Err(Status::failed_precondition(
+            "admitted LocalAnalysis requires an observation-time analysis payload",
+        ));
+    }
+    let update = document
+        .get("update")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| Status::invalid_argument("analysis update is missing"))?;
+    let family = update
+        .get("family")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| Status::invalid_argument("analysis family is missing"))?;
+    let revision = update
+        .get("rule_version")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| Status::invalid_argument("analysis rule version is missing"))?;
+    let anomaly: AnomalyEvent = serde_json::from_value(
+        update
+            .get("anomaly_event")
+            .cloned()
+            .ok_or_else(|| Status::invalid_argument("analysis anomaly_event is missing"))?,
+    )
+    .map_err(|_| Status::invalid_argument("analysis anomaly_event is invalid"))?;
+    let expected_rule = match family {
+        "price" => "local_price_change",
+        "amount" => "local_amount_spike",
+        "volume" => "local_volume_spike",
+        _ => return Err(Status::invalid_argument("analysis family is invalid")),
+    };
+    if anomaly.rule().id() != expected_rule
+        || u64::from(anomaly.rule().revision()) != revision
+        || !matches!(
+            anomaly.transition(),
+            AnomalyTransition::Triggered | AnomalyTransition::Rearmed
+        )
+        || canonical_equity_label(anomaly.instrument()) != envelope.instrument
+        || anomaly.event_id().as_str() != envelope.event_id
+        || anomaly.derived_evidence().observed_at() != envelope.observed_at
+    {
+        return Err(Status::invalid_argument(
+            "analysis anomaly identity does not match its envelope",
+        ));
+    }
+    Ok(())
+}
+
+fn canonical_equity_label(instrument: &magic_market_core::InstrumentId) -> String {
+    let exchange = match instrument.exchange() {
+        Exchange::Shanghai => "SH",
+        Exchange::Shenzhen => "SZ",
+        Exchange::Beijing => "BJ",
+    };
+    let asset_class = match instrument.asset_class() {
+        AssetClass::Equity => "EQUITY",
+        _ => "INVALID",
+    };
+    format!("{asset_class}:{exchange}:{}", instrument.code())
+}
+
 fn admitted_json_field(
     document: &serde_json::Value,
     admission_field: &str,
     value_field: &str,
-) -> bool {
-    document
+) -> Result<bool, Status> {
+    let admitted = document
         .get(admission_field)
         .and_then(serde_json::Value::as_bool)
-        == Some(true)
+        .ok_or_else(|| Status::invalid_argument("TDX admission marker is missing"))?;
+    if admitted
         && document
             .get(value_field)
             .and_then(serde_json::Value::as_str)
-            .is_some()
+            .is_none()
+    {
+        return Err(Status::invalid_argument(
+            "TDX admitted family value is missing",
+        ));
+    }
+    Ok(admitted)
+}
+
+fn admitted_json_fields(
+    document: &serde_json::Value,
+    admission_field: &str,
+    value_fields: &[&str],
+) -> Result<bool, Status> {
+    let admitted = document
+        .get(admission_field)
+        .and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| Status::invalid_argument("TDX admission marker is missing"))?;
+    if admitted
+        && !value_fields.iter().all(|value_field| {
+            document
+                .get(*value_field)
+                .and_then(serde_json::Value::as_str)
+                .is_some()
+        })
+    {
+        return Err(Status::invalid_argument(
+            "TDX admitted family values are incomplete",
+        ));
+    }
+    Ok(admitted)
 }
 
 fn validate_context(context: Option<&v1::RequestContext>) -> Result<&v1::RequestContext, Status> {

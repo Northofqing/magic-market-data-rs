@@ -387,6 +387,8 @@ pub enum ProbeAdmissionError {
     EmptyIdentity,
     #[error("duplicate record business identity {identity}")]
     DuplicateIdentity { identity: String },
+    #[error("time-series record source_at moved backwards from {previous} to {actual}")]
+    NonMonotonicSourceTime { previous: String, actual: String },
     #[error(transparent)]
     Core(#[from] CoreError),
 }
@@ -421,6 +423,107 @@ pub fn verify_admitted_batch<T>(
             });
         }
     }
+    Ok(ProbeStatus::Admitted)
+}
+
+/// Verifies one advertised, non-empty Provider time series.
+///
+/// Unlike an atomic snapshot, individual records retain their own ordered
+/// source times. Batch provenance must identify the last record source time;
+/// Provider, observation, batch identity, quality, and business identities
+/// remain exact for every record.
+pub fn verify_admitted_time_series_batch<T>(
+    batch: &DataBatch<T>,
+    policy: &ProbeAdmissionPolicy,
+    evidence_of: impl Fn(&T) -> &SourceEvidence,
+    identity_of: impl Fn(&T) -> String,
+) -> Result<ProbeStatus, ProbeAdmissionError> {
+    if batch.records().is_empty() {
+        return Err(ProbeAdmissionError::EmptyBatch);
+    }
+    if !batch.quality().is_complete() || !batch.quality().issues().is_empty() {
+        return Err(ProbeAdmissionError::IncompleteQuality {
+            issues: batch.quality().issues().to_vec(),
+        });
+    }
+    let provenance = batch.provenance();
+    let batch_id = provenance
+        .batch_id()
+        .ok_or(ProbeAdmissionError::MissingBatchId)?;
+    let mut identities = HashSet::with_capacity(batch.records().len());
+    let mut previous: Option<(EvidenceTimestamp, String)> = None;
+    let mut latest_evidence = None;
+    for record in batch.records() {
+        let evidence = evidence_of(record);
+        if evidence.provider() != policy.expected_provider {
+            return Err(ProbeAdmissionError::ProviderMismatch {
+                expected: policy.expected_provider,
+                actual: evidence.provider(),
+            });
+        }
+        if evidence.observed_at() != provenance.fetched_at() {
+            return Err(ProbeAdmissionError::ObservedAtMismatch {
+                expected: provenance.fetched_at().to_owned(),
+                actual: evidence.observed_at().to_owned(),
+            });
+        }
+        if evidence.batch_id() != batch_id {
+            return Err(ProbeAdmissionError::BatchIdMismatch {
+                expected: batch_id.to_owned(),
+                actual: evidence.batch_id().to_owned(),
+            });
+        }
+        let source_at = evidence
+            .source_at()
+            .ok_or(ProbeAdmissionError::MissingSourceTime)?;
+        let source_time = EvidenceTimestamp::parse(source_at).map_err(|_| {
+            ProbeAdmissionError::InvalidTimestamp {
+                field: "source_at",
+                value: source_at.to_owned(),
+            }
+        })?;
+        let observed_time = EvidenceTimestamp::parse(provenance.fetched_at()).map_err(|_| {
+            ProbeAdmissionError::InvalidTimestamp {
+                field: "observed_at",
+                value: provenance.fetched_at().to_owned(),
+            }
+        })?;
+        if observed_time.duration_since(source_time).is_none() {
+            return Err(ProbeAdmissionError::FutureSourceTime {
+                source_at: source_at.to_owned(),
+                observed_at: provenance.fetched_at().to_owned(),
+            });
+        }
+        if let Some((previous_time, previous_source)) = &previous {
+            if source_time < *previous_time {
+                return Err(ProbeAdmissionError::NonMonotonicSourceTime {
+                    previous: previous_source.clone(),
+                    actual: source_at.to_owned(),
+                });
+            }
+        }
+        previous = Some((source_time, source_at.to_owned()));
+
+        let identity = identity_of(record);
+        let identity = identity.trim();
+        if identity.is_empty() || identity.chars().any(char::is_control) {
+            return Err(ProbeAdmissionError::EmptyIdentity);
+        }
+        if !identities.insert(identity.to_owned()) {
+            return Err(ProbeAdmissionError::DuplicateIdentity {
+                identity: identity.to_owned(),
+            });
+        }
+        latest_evidence = Some(evidence);
+    }
+    // The last record is the conservative latest point for a monotonic series.
+    // Reuse the atomic verifier for its exact provenance equality and optional
+    // maximum-age policy.
+    verify_evidence(
+        latest_evidence.ok_or(ProbeAdmissionError::EmptyBatch)?,
+        provenance,
+        policy,
+    )?;
     Ok(ProbeStatus::Admitted)
 }
 

@@ -8,14 +8,15 @@ fn suite_rotates_every_advertised_operation() {
     assert_eq!(selected.len(), super::SUITE_ATTEMPTS as usize);
     assert_eq!(selected.first(), Some(&"research-instrument"));
     assert_eq!(selected.last(), Some(&"news"));
-    assert!(!selected.contains(&"fund-flow"));
+    assert!(selected.contains(&"fund-flow"));
     assert!(selected.contains(&"dragon-tiger-discovery"));
     assert!(selected.contains(&"news"));
 }
 
 #[test]
-fn unadmitted_operations_and_failure_statuses_are_explicit() {
-    assert!(is_diagnostic_operation("fund-flow"));
+fn admitted_operations_and_failure_statuses_are_explicit() {
+    assert!(!is_diagnostic_operation("fund-flow"));
+    assert!(!is_diagnostic_operation("post-close-ranking"));
     assert!(!is_diagnostic_operation("news"));
     assert!(!is_diagnostic_operation("research-instrument"));
     assert_eq!(
@@ -34,5 +35,6 @@ fn unadmitted_operations_and_failure_statuses_are_explicit() {
 fn invalid_operation_message_lists_every_explicit_diagnostic() {
     let error = select_operation("unknown", 0).unwrap_err().to_string();
     assert!(error.contains("fund-flow"));
+    assert!(error.contains("post-close-ranking"));
     assert!(error.contains("news"));
 }

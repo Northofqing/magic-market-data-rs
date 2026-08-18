@@ -7,12 +7,10 @@ common `QueryRequest` / `QueryResponse` envelope. The JSON below is carried in
 `content_type=application/json; charset=utf-8`.
 
 The interfaces are present now so consumers can generate stable clients.
-`IndexQuotes`, `IntradayShape`, `OutcomeDailyBars`, and
-`UpperLimitPoolReview` have passed their deterministic composition tests, two
-live probes and three serial live requests. `T0Evidence` is implemented only as
-an explicit opt-in diagnostic because the public TDX quote and order-book
-packets do not expose an admitted source timestamp. An interface being listed
-here is not production admission.
+All five products have passed their deterministic composition tests, two live
+probes and three serial live requests. `T0Evidence` is admitted as an exact
+four-family evidence bundle using current local Asia/Shanghai observation time;
+it does not claim source-time freshness when TDX omits source timestamps.
 
 ## Common rules
 
@@ -152,13 +150,14 @@ non-empty `input_evidence`, `algorithm_id=magic.t0_evidence`, positive
 refer to the same instrument and one bounded capture; mixed Provider data is
 rejected.
 
-The diagnostic handler performs the four TDX reads and returns every available
-field only when the request sets `allow_unadmitted=true`. Two live requests and
-a separate three-request serial run for 600396.SH each returned one Quote, one
-five-level book, 20 daily bars, 20 five-minute bars, and four exact evidence
-objects. Quote and book retained `status=Unavailable`, their source times stayed
-`null`, and the result remained `admission=UNADMITTED` and `complete=false`.
-This is usable for field inspection but is not a production T0 signal.
+The formal handler performs the four TDX reads without fallback or
+`allow_unadmitted`. Two live requests and a separate three-request serial run on
+2026-08-17 for 600396.SH each returned one Quote, one five-level book, 20 daily
+bars, 20 five-minute bars and four exact evidence objects. The response was
+complete and repository-admitted. Its `observed_at` was the current local
+Asia/Shanghai instant; Quote/book source times and the response `source_at`
+stayed `null`. This is a production evidence bundle, not a BR-033 five-second
+freshness signal.
 
 ## `OutcomeDailyBars`
 
@@ -229,17 +228,14 @@ evidence; an ordinary empty or truncated batch is not accepted.
 
 ## Current capability state
 
-`IndexQuotes`, `IntradayShape`, `OutcomeDailyBars`, and
-`UpperLimitPoolReview` are admitted. `T0Evidence` is repository-unadmitted and
-returns typed gRPC `UNIMPLEMENTED` before Provider I/O unless the caller
-explicitly selects `preferred_provider=Tdx` and sets `allow_unadmitted=true`.
-That diagnostic path always returns an incomplete, unadmitted response with its
-blocker. It can become admitted only when quote/book source-time identity is
-proved without substituting local fetch time.
+All five derived products are admitted. `T0Evidence` accepts the normal request
+path, uses TDX only, returns `complete=true` and does not require an opt-in flag.
+Its local `observed_at` must never be copied into nullable provider `source_at`.
 
 The rebuilt Windows service was then exercised through its real mTLS + Bearer
-endpoint at `10.211.55.3:50051`. All five RPC methods decoded their v1 payloads:
-the four admitted products returned complete admitted responses, while T0
-returned 20+20 bars and the exact unadmitted/incomplete marker. This verifies
-the external transport mapping in addition to the direct composition probes;
-the address is deployment evidence, not a portable endpoint default.
+endpoint at `10.211.55.3:50051`; the address is deployment evidence, not a
+portable endpoint default. On 2026-08-18 the external capability registry
+reported 60 operations, 56 admitted and four blocked. A formal external
+`T0Evidence` request returned `complete=true`, `ADMITTED`, a current local
+`+08:00` `observed_at`, and `source_at=null`. This confirms that deployment uses
+the local observation clock without converting it into provider source time.

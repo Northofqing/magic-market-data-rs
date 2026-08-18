@@ -5,15 +5,16 @@ use magic_market_core::{
     FlowInterval, FlowScope, FundFlowRequest, FundFlowSeries, HolderCounts,
     InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate, LimitPoolKind,
     LimitPoolRequest, LimitPools, LockupEvents, MarginData, NewsProvider, NonEmptyText,
-    PopularityData, PositiveU32, ProbeStatus, ReportScope, ResearchReports, ResearchRequest,
+    PopularityData, PositiveU32, PostCloseFlowRequest, PostCloseFlows, ProbeStatus, ReportScope,
+    ResearchReports, ResearchRequest,
 };
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
-const MAX_HIGH_LEVEL_ATTEMPTS: u32 = 20;
-const SUITE_ATTEMPTS: u32 = 19;
+const MAX_HIGH_LEVEL_ATTEMPTS: u32 = 21;
+const SUITE_ATTEMPTS: u32 = 21;
 const MIN_PACING_MS: u64 = 1_000;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -47,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if pacing_ms < MIN_PACING_MS {
         return Err(format!("pacing must be at least {MIN_PACING_MS} ms").into());
     }
-    let diagnostic_mode = is_diagnostic_operation(&operation) || operation != "suite";
+    let diagnostic_mode = is_diagnostic_operation(&operation);
     let client = EastmoneyClient::new()?;
     let instrument = InstrumentId::new(
         Exchange::Shanghai,
@@ -224,6 +225,8 @@ fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error
     const SUITE: &[&str] = &[
         "research-instrument",
         "research-industry",
+        "fund-flow",
+        "post-close-ranking",
         "board-flow-industry",
         "board-flow-concept",
         "board-flow-region",
@@ -246,6 +249,7 @@ fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error
         "research-instrument",
         "research-industry",
         "fund-flow",
+        "post-close-ranking",
         "board-flow-industry",
         "board-flow-concept",
         "board-flow-region",
@@ -278,8 +282,8 @@ fn select_operation(requested: &str, attempt: u32) -> Result<&str, Box<dyn Error
     }
 }
 
-fn is_diagnostic_operation(operation: &str) -> bool {
-    operation == "fund-flow"
+fn is_diagnostic_operation(_operation: &str) -> bool {
+    false
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -341,6 +345,26 @@ fn run_operation(
                 small,
             )?;
             print_batch(client.fund_flow_series(&request)?);
+        }
+        "post-close-ranking" => {
+            let trading_date = IsoDate::new(
+                std::env::var("MAGIC_EASTMONEY_POST_CLOSE_DATE").map_err(|_| {
+                    EastmoneyError::InvalidRequest(
+                        "MAGIC_EASTMONEY_POST_CLOSE_DATE=YYYY-MM-DD is required".into(),
+                    )
+                })?,
+            )?;
+            let limit = PositiveU32::new(
+                std::env::var("MAGIC_EASTMONEY_POST_CLOSE_LIMIT")
+                    .unwrap_or_else(|_| "20".into())
+                    .parse::<u32>()
+                    .map_err(|error| {
+                        EastmoneyError::InvalidRequest(format!(
+                            "MAGIC_EASTMONEY_POST_CLOSE_LIMIT must be an integer: {error}"
+                        ))
+                    })?,
+            )?;
+            print_batch(client.post_close_flows(&PostCloseFlowRequest::new(trading_date, limit)?)?);
         }
         "board-flow-industry" => {
             print_batch(client.board_flows(BoardCategory::Industry, FlowInterval::Day1, small)?);

@@ -19,6 +19,14 @@ struct DiagnosticReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     cumulative_amount: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    previous_close: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    open: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    high: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    low: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     reason_code: Option<&'static str>,
 }
 
@@ -36,16 +44,19 @@ fn main() -> ExitCode {
     let started = Instant::now();
     let client = TqLoopbackClient::new(limits);
     let result = match method {
-        ProbeMethod::PriceVolume => {
-            client.poll_price_volume(request_id, bridge_sequence, &instrument, observed_at_utc)
-        }
-        ProbeMethod::MarketSnapshot => {
-            client.poll_market_snapshot(request_id, bridge_sequence, &instrument, observed_at_utc)
-        }
+        ProbeMethod::PriceVolume => client
+            .poll_price_volume(request_id, bridge_sequence, &instrument, observed_at_utc)
+            .map(|observation| (observation, None)),
+        ProbeMethod::MarketSnapshot => client
+            .poll_market_snapshot(request_id, bridge_sequence, &instrument, observed_at_utc)
+            .map(|snapshot| {
+                let (observation, prices) = snapshot.into_parts();
+                (observation, Some(prices))
+            }),
     };
     let latency_micros = started.elapsed().as_micros();
     let (report, exit) = match result {
-        Ok(observation) => (
+        Ok((observation, prices)) => (
             DiagnosticReport {
                 mode: "diagnostic",
                 status: "observed",
@@ -53,6 +64,12 @@ fn main() -> ExitCode {
                 price: observation.price.map(|value| value.value),
                 cumulative_volume: observation.cumulative_volume.map(|value| value.value),
                 cumulative_amount: observation.cumulative_amount.map(|value| value.value),
+                previous_close: prices
+                    .as_ref()
+                    .map(|prices| prices.previous_close.value.clone()),
+                open: prices.as_ref().map(|prices| prices.open.value.clone()),
+                high: prices.as_ref().map(|prices| prices.high.value.clone()),
+                low: prices.map(|prices| prices.low.value),
                 reason_code: None,
             },
             ExitCode::SUCCESS,
@@ -65,6 +82,10 @@ fn main() -> ExitCode {
                 price: None,
                 cumulative_volume: None,
                 cumulative_amount: None,
+                previous_close: None,
+                open: None,
+                high: None,
+                low: None,
                 reason_code: Some(reason_code(&error)),
             },
             ExitCode::from(3),

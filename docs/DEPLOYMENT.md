@@ -15,8 +15,8 @@ Windows 发布包成对安装该 server 和 discovery helper，但这只提供�
 包将它与 `magic-market-monitor-server.exe` 安装到同一目录；非 Windows 包不构建
 这两个文件。helper 只有 `--discover` 可用，`--probe`/`--serve` 均显式失败。它只
 发现当前用户/会话的 `TdxW.exe`，行情由 safe Rust 通过官方固定 TQ-Local loopback
-HTTP 获取。当前价、累计成交量和累计成交额是已准入生产字段；异动、源时间和源记录数
-仍未准入。
+HTTP 获取。当前价、累计成交量、累计成交额、昨收和 OHLC 是已准入生产字段；带合法
+Core 事件的三类异动 trigger/rearm 同样准入。源时间和源记录数仍不可用。
 
 - `magic-tdx-live-probe`：TDX 全能力真实探针；
 - `magic-emquant-live-probe`：官方 EMQuant SDK 探针；
@@ -169,10 +169,10 @@ shasum -a 256 -c SHA256SUMS
 | --- | --- | --- | --- | --- |
 | `magic-market-core` | 支持 | 支持 | 支持 | 纯 Rust 合同 |
 | `magic-market-router` | 支持 | 支持 | 支持 | 纯 Rust 同步路由与证据检查 |
-| `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；生产数据族仍待准入 |
+| `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；五类观察字段已按 family 准入 |
 | `magic-market-monitor` | 支持 | 支持 | 支持 | 纯确定性价格窗口与有界 replay；无 I/O |
-| `magic-market-monitor-server` | typed Unsupported | typed Unsupported | 诊断叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听，生产准入仍关闭 |
-| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；60 个查询精确登记，51 个操作有正式 handler，`IndexQuotes`、`IntradayShape`、`OutcomeDailyBars` 与 `UpperLimitPoolReview` 已实盘；`T0Evidence` 仅显式 opt-in 且始终 UNADMITTED；配置东财妙想 Key 时其 4 个固定部分字段操作默认可读且始终 UNADMITTED，Baidu/EMQuant 等其他诊断仍需 opt-in |
+| `magic-market-monitor-server` | typed Unsupported | typed Unsupported | Windows 生产叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听；状态消息与缺失字段保持未准入 |
+| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；60 个查询精确登记，56 个操作有正式 handler；`T0Evidence` 与 `PostCloseFlows` 使用本地 `observed_at` 且不伪造 `source_at`；东财妙想与 EMQuant 诊断均要求精确 Provider 加 `allow_unadmitted=true` |
 | `magic-market-tdx-agent` | typed Unsupported | typed Unsupported | 诊断出站 Agent | 固定同目录 monitor/helper；不开放入站端口，不提升 admission |
 | `magic-tdx-native-bridge --discover` | typed Unsupported | typed Unsupported | 仅发现 | Windows 同用户/会话 `TdxW.exe` 发现和版本证据；不获取行情 |
 | `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |

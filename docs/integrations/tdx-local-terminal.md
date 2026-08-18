@@ -96,6 +96,10 @@ floating point, to `1273546500` CNY and retains volume as `735536` lots. The
 captured response is the parser fixture
 `crates/magic-tdx-local-rs/tests/fixtures/tq_market_snapshot_success.json`;
 extra vendor fields remain bounded transport evidence and are not normalized.
+Rust now explicitly requests and retains `LastClose`, `Open`, `Max` and `Min` as
+independently typed CNY/share snapshot fields. The monitor publishes them as
+independently admitted observation-time previous-close and OHLC families; they
+are not inserted into or confused with the current-price family.
 The response has no source timestamp or source record count, and `ItemNum` is
 not relabelled as either fact.
 
@@ -182,6 +186,28 @@ non-trading Sunday; no price/amount/volume trigger was fabricated from static
 off-session values. This closes external message-time and identity plumbing,
 not production threshold or trading-calendar admission.
 
+On 2026-08-17 the Rust batch diagnostic exercised the same fast path with
+`600396.SH` and `000001.SZ` in one `get_pricevol` request. A one-second read
+budget failed closed as `timeout`; the explicit five-second retry completed in
+approximately 69 ms and returned exactly two identities in request order with
+consecutive bridge sequences and one observation timestamp. The off-session
+values were `600396.SH` price `0.00`, volume `0` lots and `000001.SZ` price
+`11.10`, volume `791332` lots. The zero price remains source evidence for a
+temporarily unavailable price family and is not converted into a positive
+price or trigger. This proves the bounded multi-instrument transport path; it
+does not create source timestamps or establish a production timeout default.
+
+The same 2026-08-17 diagnostic then exercised the independent snapshot path for
+`600396.SH`. The four-field request completed in approximately 66 ms and returned
+current price `16.82` CNY/share, cumulative volume `1683432` lots, cumulative
+amount `2830525000` CNY and response-backed previous close `16.99` CNY/share.
+After the fixed request was extended to name all seven required fields, another
+live call completed in approximately 45 ms and additionally returned open
+`16.44`, high `17.28` and low `16.43` CNY/share. The first three fields retain
+their existing family decisions. Two bounded live observations and three serial
+reads preserved the same field identity and units, so previous close and OHLC
+are independently admitted without creating a provider source timestamp.
+
 The earlier unchanged samples and an ineffective immediate `refresh_cache`
 call still establish that this is an interval batch source, not a
 source-timestamped tick stream. The wrapper excludes `tick` in its market-data
@@ -210,8 +236,10 @@ data flows through the discovery helper.
 
 ## Monitor server and package boundary
 
-`magic-market-monitor-server` serializes fast `get_pricevol` calls through the
-main scheduler. The slower independently paced `get_market_snapshot` amount
+`magic-market-monitor-server` sends the validated watchlist through one bounded,
+single-flight `get_pricevol` request per fast cycle and rejects the whole batch
+unless the response identity set is exact. The slower independently paced
+`get_market_snapshot` amount
 request uses a capacity-one worker and an explicit cadence. Busy work is a typed
 backpressure event; snapshot failure clears only the amount window and does not
 advance or replay price/volume state. The captured amount is converted exactly
@@ -232,8 +260,11 @@ On a Windows host, `tools/release/package.sh` builds and installs
 `magic-market-monitor-server.exe` and `magic-tdx-native-bridge.exe` into the same
 `bin/` directory. Non-Windows hosts build neither. The recursive `bin/` hash
 manifest covers both. Neither binary auto-starts or opens an inbound listener.
-The price, cumulative-volume and cumulative-amount fields are production-admitted;
-source-record count and every LocalAnalysis event remain unadmitted.
+Price, cumulative volume, cumulative amount, previous close and OHLC are
+production-admitted. Source-record count remains unavailable. The three anomaly
+families are admitted only for triggered/rearmed messages that carry a valid Core
+`AnomalyEvent` under an explicit positive versioned rule configuration; warm-up,
+cooling and reset messages remain unadmitted status events.
 
 Each LocalAnalysis frame nevertheless carries the monitor-captured
 `observed_at_utc` of the triggering local observation plus the explicit
@@ -245,11 +276,11 @@ instrument filters cannot collapse analysis events into a terminal-wide label.
 
 ## Blocked capabilities
 
-LocalTerminal OHLC/previous-close and source-record-count capabilities remain
-false. The source does not provide source timestamp or record-count semantics,
-so strict source freshness remains unavailable. LocalAnalysis anomaly families
-remain false until production thresholds and an authoritative trading-calendar
-session policy are approved. Level-2/order/queue data,
+Source-record count remains false because the source does not provide that
+semantic; poll sequence and array length are not substitutes. The source also
+does not provide a source timestamp, so strict source freshness remains
+unavailable. Anomaly thresholds, windows, hysteresis and cooldown are always
+explicit versioned deployment inputs rather than repository defaults. Level-2/order/queue data,
 full-market production monitoring, remote binding, raw retention, Webhook,
 durable broker and production replay/restart defaults are also false or absent.
 

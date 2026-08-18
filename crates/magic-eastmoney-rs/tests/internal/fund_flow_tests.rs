@@ -27,7 +27,10 @@ fn maps_minute_tier_fields_without_unit_coercion() {
     assert_eq!(point.super_large_net.unwrap().get(), 60.0);
     assert_eq!(point.main_ratio.unwrap().get(), 1.25);
     assert_eq!(point.main_ratio.unwrap().unit(), RatioUnit::Percent);
-    assert_eq!(point.evidence.source_at(), Some("2026-07-23 15:00"));
+    assert_eq!(
+        point.evidence.source_at(),
+        Some("2026-07-23T15:00:00+08:00")
+    );
 }
 
 #[test]

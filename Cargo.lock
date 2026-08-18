@@ -1069,6 +1069,7 @@ version = "0.2.0"
 dependencies = [
  "bytes",
  "magic-market-composition",
+ "magic-market-core",
  "magic-market-grpc-contracts",
  "magic-market-service",
  "prost",
@@ -1125,6 +1126,7 @@ dependencies = [
 name = "magic-market-tdx-agent"
 version = "0.2.0"
 dependencies = [
+ "magic-market-core",
  "magic-market-grpc-contracts",
  "serde_json",
  "thiserror",

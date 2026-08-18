@@ -48,7 +48,8 @@ aggregate instead of ranked security rows. Those paths remain unavailable.
 ## Admission
 
 The three repository constants remain `false`. When a valid Key is present at
-server startup, the four fixed gRPC diagnostics are default-readable without
-`preferred_provider` or `allow_unadmitted`. Responses are still forced incomplete
-and repository admission cannot be promoted by HTTP success or field presence. See BR-046 and the
+server startup, the four fixed gRPC diagnostics are available only with
+`preferred_provider=EastmoneyMiaoxiang` and `allow_unadmitted=true`. Responses
+are still forced incomplete and repository admission cannot be promoted by HTTP
+success or field presence. See BR-046 and the
 [Gate A design](../superpowers/specs/2026-08-15-eastmoney-miaoxiang-diagnostics-design.md).

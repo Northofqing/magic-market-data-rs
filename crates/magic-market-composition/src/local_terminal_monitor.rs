@@ -7,7 +7,7 @@ use magic_market_monitor::{
 use magic_tdx_local_rs::{
     SupervisorEvent, SupervisorMachine, SupervisorTransition, TransitionError,
     LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED, LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED,
-    LOCAL_TERMINAL_PRICE_ADMITTED, LOCAL_TERMINAL_SOURCE_RECORD_COUNT_ADMITTED,
+    LOCAL_TERMINAL_PRICE_ADMITTED,
 };
 
 /// One independently governed capability required by the initial production
@@ -37,9 +37,11 @@ pub enum LocalTerminalMonitorCompositionError {
 /// Production local-terminal monitor composition.
 ///
 /// Its constructor accepts no bridge, transport, process, runtime, or evidence
-/// injection. It is currently fail-closed because every initial source and
-/// analysis family remains false by default. Construction performs no I/O and
-/// starts no process, thread, subscription, network connection, or listener.
+/// injection. Construction proves that the three raw inputs and three derived
+/// event families are repository-admitted; the independently unavailable
+/// source-record-count field is not a prerequisite. Construction performs no
+/// I/O and starts no process, thread, subscription, network connection, or
+/// listener.
 pub struct LocalTerminalMonitorComposition {
     _private: (),
 }
@@ -58,10 +60,6 @@ impl LocalTerminalMonitorComposition {
             (
                 LocalMonitorCapability::LocalTerminalCumulativeVolume,
                 LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED,
-            ),
-            (
-                LocalMonitorCapability::LocalTerminalSourceRecordCount,
-                LOCAL_TERMINAL_SOURCE_RECORD_COUNT_ADMITTED,
             ),
             (
                 LocalMonitorCapability::LocalPriceChangeAnomaly,
@@ -85,7 +83,7 @@ impl LocalTerminalMonitorComposition {
                 capabilities,
             });
         }
-        Err(LocalTerminalMonitorCompositionError::ImplementationUnavailable)
+        Ok(Self { _private: () })
     }
 }
 

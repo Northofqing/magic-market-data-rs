@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use magic_market_core::{AnomalyEvent, AnomalyTransition, AssetClass, Exchange};
 use magic_market_grpc_contracts::v1;
 use magic_market_grpc_contracts::{CANONICAL_JSON_CONTENT_TYPE, PROTOCOL_VERSION};
 use thiserror::Error;
@@ -422,9 +423,17 @@ fn event_from_frame(
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
     let admission = event_admission(event_kind, &document)?;
+    let event_id = if event_kind == "analysis" && admission == v1::AdmissionState::Admitted as i32 {
+        admitted_analysis_event(&document, instrument)?
+            .event_id()
+            .as_str()
+            .to_owned()
+    } else {
+        format!("{generation}:{sequence}")
+    };
     Ok(v1::MarketEventEnvelope {
         protocol_version: PROTOCOL_VERSION,
-        event_id: format!("{generation}:{sequence}"),
+        event_id,
         cursor: Some(v1::EventCursor {
             generation: generation.to_owned(),
             sequence,
@@ -447,19 +456,34 @@ fn event_from_frame(
 fn event_admission(event_kind: &str, document: &serde_json::Value) -> Result<i32, ClientError> {
     let admitted = match event_kind {
         "observation" => {
-            admitted_field(document, "price_admitted", "price")?
-                || admitted_field(document, "volume_admitted", "cumulative_volume")?
+            let price = admitted_field(document, "price_admitted", "price")?;
+            let volume = admitted_field(document, "volume_admitted", "cumulative_volume")?;
+            price || volume
         }
-        "snapshot_observation" => admitted_field(document, "amount_admitted", "cumulative_amount")?,
+        "snapshot_observation" => {
+            let amount = admitted_field(document, "amount_admitted", "cumulative_amount")?;
+            let previous_close =
+                admitted_field(document, "previous_close_admitted", "previous_close")?;
+            let ohlc = admitted_fields(document, "ohlc_admitted", &["open", "high", "low"])?;
+            amount || previous_close || ohlc
+        }
         "analysis" => {
-            if document
+            let admitted = document
                 .get("admitted")
                 .and_then(serde_json::Value::as_bool)
-                == Some(true)
-            {
-                return Err(ClientError::UnadmittedAnalysisClaim);
+                .ok_or(ClientError::InvalidAdmissionMarker("admitted"))?;
+            if admitted {
+                admitted_analysis_event(
+                    document,
+                    document
+                        .get("instrument")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or(ClientError::InvalidAnalysisContract(
+                            "instrument is missing",
+                        ))?,
+                )?;
             }
-            false
+            admitted
         }
         _ => false,
     };
@@ -490,6 +514,90 @@ fn admitted_field(
         return Err(ClientError::AdmittedFieldMissing(value_field));
     }
     Ok(true)
+}
+
+fn admitted_fields(
+    document: &serde_json::Value,
+    admission_field: &'static str,
+    value_fields: &[&'static str],
+) -> Result<bool, ClientError> {
+    let admitted = document
+        .get(admission_field)
+        .and_then(serde_json::Value::as_bool)
+        .ok_or(ClientError::InvalidAdmissionMarker(admission_field))?;
+    if !admitted {
+        return Ok(false);
+    }
+    for value_field in value_fields {
+        if document
+            .get(*value_field)
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+        {
+            return Err(ClientError::AdmittedFieldMissing(value_field));
+        }
+    }
+    Ok(true)
+}
+
+fn admitted_analysis_event(
+    document: &serde_json::Value,
+    instrument_label: &str,
+) -> Result<AnomalyEvent, ClientError> {
+    let update = document
+        .get("update")
+        .and_then(serde_json::Value::as_object)
+        .ok_or(ClientError::InvalidAnalysisContract("update is missing"))?;
+    let family = update
+        .get("family")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(ClientError::InvalidAnalysisContract("family is missing"))?;
+    let rule_version = update
+        .get("rule_version")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or(ClientError::InvalidAnalysisContract(
+            "rule_version is missing",
+        ))?;
+    let event: AnomalyEvent = serde_json::from_value(update.get("anomaly_event").cloned().ok_or(
+        ClientError::InvalidAnalysisContract("anomaly_event is missing"),
+    )?)
+    .map_err(ClientError::AnalysisEventJson)?;
+    let expected_rule = match family {
+        "price" => "local_price_change",
+        "amount" => "local_amount_spike",
+        "volume" => "local_volume_spike",
+        _ => return Err(ClientError::InvalidAnalysisContract("family is invalid")),
+    };
+    if event.rule().id() != expected_rule
+        || u64::from(event.rule().revision()) != rule_version
+        || canonical_equity_label(event.instrument()) != instrument_label
+        || !matches!(
+            event.transition(),
+            AnomalyTransition::Triggered | AnomalyTransition::Rearmed
+        )
+        || document
+            .get("observed_at_utc")
+            .and_then(serde_json::Value::as_str)
+            != Some(event.derived_evidence().observed_at())
+    {
+        return Err(ClientError::InvalidAnalysisContract(
+            "anomaly event identity does not match its monitor update",
+        ));
+    }
+    Ok(event)
+}
+
+fn canonical_equity_label(instrument: &magic_market_core::InstrumentId) -> String {
+    let exchange = match instrument.exchange() {
+        Exchange::Shanghai => "SH",
+        Exchange::Shenzhen => "SZ",
+        Exchange::Beijing => "BJ",
+    };
+    let asset_class = match instrument.asset_class() {
+        AssetClass::Equity => "EQUITY",
+        _ => "INVALID",
+    };
+    format!("{asset_class}:{exchange}:{}", instrument.code())
 }
 
 fn frame_generation(raw: &[u8]) -> Result<Option<u64>, ClientError> {
@@ -562,8 +670,10 @@ pub(crate) enum ClientError {
     InvalidAdmissionMarker(&'static str),
     #[error("monitor frame admitted a field without a value: {0}")]
     AdmittedFieldMissing(&'static str),
-    #[error("local analysis admission remains disabled")]
-    UnadmittedAnalysisClaim,
+    #[error("monitor analysis event is not canonical JSON: {0}")]
+    AnalysisEventJson(serde_json::Error),
+    #[error("monitor analysis contract is invalid: {0}")]
+    InvalidAnalysisContract(&'static str),
     #[error("monitor frame generation is not an unsigned integer")]
     InvalidMonitorGeneration,
 }
@@ -597,10 +707,10 @@ mod tests {
     }
 
     #[test]
-    fn local_analysis_cannot_promote_its_own_admission() {
-        let raw = br#"{"type":"analysis","instrument":"600396.SH","admitted":true}"#;
+    fn local_analysis_requires_a_canonical_core_event_before_admission() {
+        let raw = br#"{"type":"analysis","instrument":"EQUITY:SH:600396","admitted":true}"#;
         let error = event_from_frame("00000000-0000-4000-8000-000000000001", 1, raw).unwrap_err();
-        assert!(matches!(error, ClientError::UnadmittedAnalysisClaim));
+        assert!(matches!(error, ClientError::InvalidAnalysisContract(_)));
 
         let raw = br#"{"type":"analysis","instrument":"600396.SH","admitted":false,"observed_at_utc":"2026-08-15T00:00:01Z","time_basis":"local_observation_time"}"#;
         let event = event_from_frame("00000000-0000-4000-8000-000000000001", 1, raw).unwrap();
@@ -612,10 +722,87 @@ mod tests {
     }
 
     #[test]
+    fn canonical_triggered_analysis_uses_the_core_event_identity() {
+        use magic_market_core::{
+            AnomalyEvent, AnomalyInputEvidence, AnomalyRuleIdentity, AnomalyTransition,
+            ContinuityState, InstrumentId, LocalTerminalObservationEvidence, ObservationTimeBasis,
+            ProviderId, RuleInputDigest, SourceEvidence, StreamContinuity, StreamCursor,
+            StreamGeneration, StreamSequence,
+        };
+
+        let instrument =
+            InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity).unwrap();
+        let generation = StreamGeneration::new("00000000-0000-4000-8000-000000000001").unwrap();
+        let first_cursor = StreamCursor::new(generation.clone(), StreamSequence::new(1).unwrap());
+        let last_cursor = StreamCursor::new(generation.clone(), StreamSequence::new(2).unwrap());
+        let terminal = LocalTerminalObservationEvidence::new(
+            SourceEvidence::new(ProviderId::LocalTerminal, "2026-08-15T00:00:00Z", "batch-1")
+                .unwrap(),
+            SourceEvidence::new(ProviderId::LocalTerminal, "2026-08-15T00:00:01Z", "batch-2")
+                .unwrap(),
+        )
+        .unwrap();
+        let input = AnomalyInputEvidence::new(
+            instrument.clone(),
+            terminal,
+            first_cursor,
+            last_cursor.clone(),
+            ObservationTimeBasis::LocalObservationTime,
+            StreamContinuity::new(ContinuityState::Continuous, ContinuityState::Unknown),
+            RuleInputDigest::from_canonical_fields(&[("change_ratio", b"0.1")]).unwrap(),
+        )
+        .unwrap();
+        let event = AnomalyEvent::new(
+            instrument,
+            AnomalyRuleIdentity::from_canonical_definition(
+                "local_price_change",
+                1,
+                &[("fixture", b"agent-admission")],
+            )
+            .unwrap(),
+            AnomalyTransition::Triggered,
+            last_cursor,
+            input,
+            "2026-08-15T00:00:01Z",
+        )
+        .unwrap();
+        let raw = serde_json::to_vec(&serde_json::json!({
+            "type": "analysis",
+            "instrument": "EQUITY:SH:600396",
+            "observed_at_utc": "2026-08-15T00:00:01Z",
+            "time_basis": "local_observation_time",
+            "admitted": true,
+            "update": {
+                "family": "price",
+                "rule_version": 1,
+                "anomaly_event": event,
+            }
+        }))
+        .unwrap();
+        let envelope = event_from_frame("00000000-0000-4000-8000-000000000001", 2, &raw).unwrap();
+        assert_eq!(envelope.admission, v1::AdmissionState::Admitted as i32);
+        assert_eq!(envelope.provider, "LocalAnalysis");
+        assert_eq!(envelope.event_id, event.event_id().as_str());
+    }
+
+    #[test]
     fn admitted_observation_requires_the_corresponding_value() {
         let raw = br#"{"type":"observation","instrument":"600396.SH","price":null,"cumulative_volume":null,"price_admitted":true,"volume_admitted":false}"#;
         let error = event_from_frame("00000000-0000-4000-8000-000000000001", 1, raw).unwrap_err();
         assert!(matches!(error, ClientError::AdmittedFieldMissing("price")));
+    }
+
+    #[test]
+    fn admitted_snapshot_requires_previous_close_and_every_ohlc_value() {
+        let raw = br#"{"type":"snapshot_observation","instrument":"EQUITY:SH:600396","cumulative_amount":"1","amount_admitted":true,"previous_close":"10","previous_close_admitted":true,"open":"10","high":"11","low":"9","ohlc_admitted":true}"#;
+        let event = event_from_frame("00000000-0000-4000-8000-000000000001", 1, raw).unwrap();
+        assert_eq!(event.admission, v1::AdmissionState::Admitted as i32);
+
+        let missing = br#"{"type":"snapshot_observation","instrument":"EQUITY:SH:600396","cumulative_amount":"1","amount_admitted":true,"previous_close":"10","previous_close_admitted":true,"open":"10","high":"11","low":null,"ohlc_admitted":true}"#;
+        assert!(matches!(
+            event_from_frame("00000000-0000-4000-8000-000000000001", 1, missing),
+            Err(ClientError::AdmittedFieldMissing("low"))
+        ));
     }
 
     #[test]

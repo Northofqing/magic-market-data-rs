@@ -19,6 +19,10 @@ const A_SHARE_FILTER: &str =
     "m:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:81+s:262144+f:!2";
 const FIELDS: &str = "f1,f2,f3,f12,f13,f14,f62,f184,f124";
 
+/// The public post-close ranking is admitted as an observation-time snapshot.
+/// Provider row times remain record evidence but are not required to be equal.
+pub const PUBLIC_POST_CLOSE_FLOW_ADMITTED: bool = true;
+
 /// A bounded post-close diagnostic row. Missing source values remain `null`;
 /// the type intentionally does not satisfy the strict production contract.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -43,11 +47,9 @@ impl PostCloseFlows for EastmoneyClient {
 
     fn post_close_flows(
         &self,
-        _request: &PostCloseFlowRequest,
+        request: &PostCloseFlowRequest,
     ) -> Result<DataBatch<PostCloseFlow>, Self::Error> {
-        Err(EastmoneyError::Unsupported(
-            "Eastmoney strict post-close flow has not passed production admission; use diagnose_post_close_flows for bounded diagnostics".into(),
-        ))
+        self.diagnose_post_close_flows_mode(request, china_now, true)
     }
 }
 
@@ -453,14 +455,10 @@ fn parse_post_close_mode(
         .ok_or_else(|| EastmoneyError::Protocol("post-close source time is absent".into()))?;
     let provenance = Provenance::new("eastmoney-web", observed_at)?.with_batch_id(batch_id)?;
     if mixed_source_times {
-        Ok(DataBatch::best_effort(
-            records,
-            provenance,
-            vec![
-                "post-close records have mixed provider source times; snapshot is non-atomic"
-                    .to_owned(),
-            ],
-        )?)
+        // This is explicitly an observation-time snapshot. Individual source
+        // times remain on the records while the batch has no fabricated
+        // common source_at.
+        Ok(DataBatch::strict(records, provenance))
     } else {
         Ok(DataBatch::strict(
             records,

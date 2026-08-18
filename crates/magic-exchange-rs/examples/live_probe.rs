@@ -1,5 +1,5 @@
 use magic_exchange_rs::{
-    CffexClient, CffexConfig, CffexTlsBackend, HkexClient, SseClient, SzseClient,
+    CffexAccessMode, CffexClient, CffexConfig, HkexClient, SseClient, SzseClient,
 };
 use magic_market_core::{
     Announcements, AssetClass, DataBatch, DragonTigerData, Exchange, FuturesDeliveryRequest,
@@ -17,19 +17,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let delivery_year = env_u32("MAGIC_CFFEX_DELIVERY_YEAR", 2026)?;
     let delivery_month = env_u32("MAGIC_CFFEX_DELIVERY_MONTH", 2)?;
     if std::env::var("MAGIC_EXCHANGE_LIVE_OPERATION").as_deref() == Ok("cffex-delivery") {
-        let tls_backend = std::env::var("MAGIC_CFFEX_TLS_BACKEND")
-            .unwrap_or_else(|_| CffexTlsBackend::Rustls.as_str().into())
-            .parse::<CffexTlsBackend>()?;
-        let cffex = CffexClient::with_config(CffexConfig {
-            tls_backend,
-            ..CffexConfig::default()
-        })?;
+        let access_mode =
+            std::env::var("MAGIC_CFFEX_ACCESS_MODE").unwrap_or_else(|_| "https".into());
+        let config = match access_mode.as_str() {
+            "https" => CffexConfig::default(),
+            "plaintext-diagnostic" => CffexConfig::plaintext_http_diagnostic(),
+            _ => {
+                return Err("MAGIC_CFFEX_ACCESS_MODE must be https or plaintext-diagnostic".into())
+            }
+        };
+        let cffex = CffexClient::with_config(config)?;
         let request = FuturesDeliveryRequest::new(
             PositiveU32::new(delivery_year)?,
             PositiveU32::new(delivery_month)?,
         )?;
         println!("provider=cffex-official");
-        println!("tls_backend={}", cffex.tls_backend().as_str());
+        println!("access_mode={}", cffex.access_mode().as_str());
         println!(
             "calendar_capabilities={:#?}",
             CffexClient::calendar_capabilities()
@@ -40,8 +43,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             4,
             4,
         )?;
-        println!("\ndiagnostic_probe_status=passed");
-        println!("admission_state=diagnostic_complete_unadmitted");
+        match cffex.access_mode() {
+            CffexAccessMode::Https => println!("\nformal_https_probe_status=passed_unadmitted"),
+            CffexAccessMode::PlainHttpDiagnostic => {
+                println!("\ndiagnostic_probe_status=passed");
+                println!("admission_state=diagnostic_complete_unadmitted");
+            }
+        }
         return Ok(());
     }
     let sse_code = std::env::var("MAGIC_EXCHANGE_SSE_CODE").unwrap_or_else(|_| "600396".into());

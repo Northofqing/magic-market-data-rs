@@ -1,7 +1,7 @@
 use super::*;
 use crate::test_support::ScriptedTransport;
 use crate::{EastmoneyClient, EastmoneyTransport};
-use magic_market_core::{IsoDate, PostCloseFlows};
+use magic_market_core::IsoDate;
 
 #[derive(Clone)]
 struct StaticTransport(Vec<u8>);
@@ -111,7 +111,7 @@ fn rejects_mixed_source_snapshots_and_market_identity_mismatch() {
     )
     .unwrap();
     assert_eq!(partial.records().len(), 2);
-    assert!(!partial.quality().is_complete());
+    assert!(partial.quality().is_complete());
     assert!(partial.provenance().source_at().is_none());
     assert_ne!(
         partial.records()[0].evidence().source_at(),
@@ -215,13 +215,17 @@ fn post_close_helpers_preserve_missingness_and_time_boundaries() {
 }
 
 #[test]
-fn public_post_close_provider_is_explicitly_unadmitted() {
+fn public_post_close_provider_uses_local_observation_time() {
     let client = EastmoneyClient::with_transport(StaticTransport(fixture()));
-    assert!(matches!(
-        client.post_close_flows(&request()),
-        Err(EastmoneyError::Unsupported(message))
-            if message.contains("production admission")
-    ));
+    let batch = client
+        .diagnose_post_close_flows_mode(&request(), || Ok("2026-07-24T15:35:00+08:00".into()), true)
+        .unwrap();
+    assert!(batch.quality().is_complete());
+    assert_eq!(
+        batch.provenance().source_at(),
+        Some("2026-07-24T15:00:00+08:00")
+    );
+    assert_eq!(batch.provenance().fetched_at(), "2026-07-24T15:35:00+08:00");
 }
 
 #[test]

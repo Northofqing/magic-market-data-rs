@@ -1,13 +1,17 @@
 use crate::transport::{
-    new_request_gate, validate_minimum_interval, validate_response, validate_timeout,
-    wait_for_request_start, ExchangeTransport, HttpMethod, HttpRequest, HttpsTransport,
-    SharedMediaType, SharedRequestGate, TlsBackend,
+    map_shared_error, new_request_gate, validate_minimum_interval, validate_response,
+    validate_timeout, wait_for_request_start, ExchangeTransport, HttpMethod, HttpRequest,
+    HttpsTransport, SharedMediaType, SharedRequestGate, TlsBackend, MAX_RESPONSE_BYTES,
 };
 use crate::ExchangeError;
 use magic_market_core::{
     CalendarCapabilities, DataBatch, FuturesDeliveryCalendar, FuturesDeliveryEvent,
     FuturesDeliveryMethod, FuturesDeliveryRequest, FuturesProduct, HttpsUrl, IsoDate, NonEmptyText,
     Provenance, ProviderId, SourceEvidence,
+};
+use magic_market_transport::{
+    EndpointPolicy, HttpMethod as SharedHttpMethod, HttpRequest as SharedHttpRequest,
+    HttpTransport as SharedHttpTransport, ReqwestTransport,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -16,11 +20,41 @@ use url::Url;
 
 const HOST: &str = "www.cffex.com.cn";
 const LIST_ENDPOINT: &str = "https://www.cffex.com.cn/cn/jystz.html";
+const PLAIN_HTTP_LIST_ENDPOINT: &str = "http://www.cffex.com.cn/cn/jystz.html";
 const DELIVERY_TITLE: &str = "股指期货和股指期权合约交割的通知";
 const USER_AGENT: &str =
     "Mozilla/5.0 (compatible; magic-exchange-rs/0.2; read-only CFFEX notice parser)";
 
 pub type CffexTlsBackend = TlsBackend;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CffexAccessMode {
+    Https,
+    PlainHttpDiagnostic,
+}
+
+impl CffexAccessMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Https => "https",
+            Self::PlainHttpDiagnostic => "plaintext_http_diagnostic",
+        }
+    }
+
+    const fn scheme(self) -> &'static str {
+        match self {
+            Self::Https => "https",
+            Self::PlainHttpDiagnostic => "http",
+        }
+    }
+
+    const fn port(self) -> u16 {
+        match self {
+            Self::Https => 443,
+            Self::PlainHttpDiagnostic => 80,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct CffexConfig {
@@ -29,6 +63,7 @@ pub struct CffexConfig {
     pub minimum_interval: Duration,
     pub max_pages: u32,
     pub tls_backend: CffexTlsBackend,
+    pub access_mode: CffexAccessMode,
 }
 
 impl Default for CffexConfig {
@@ -39,15 +74,28 @@ impl Default for CffexConfig {
             minimum_interval: Duration::from_secs(1),
             max_pages: 120,
             tls_backend: CffexTlsBackend::Rustls,
+            access_mode: CffexAccessMode::Https,
         }
     }
 }
 
 impl CffexConfig {
+    pub fn plaintext_http_diagnostic() -> Self {
+        Self {
+            list_endpoint: PLAIN_HTTP_LIST_ENDPOINT.into(),
+            access_mode: CffexAccessMode::PlainHttpDiagnostic,
+            ..Self::default()
+        }
+    }
+
     fn validate(&self) -> Result<(), ExchangeError> {
-        if self.list_endpoint != LIST_ENDPOINT {
+        let expected_endpoint = match self.access_mode {
+            CffexAccessMode::Https => LIST_ENDPOINT,
+            CffexAccessMode::PlainHttpDiagnostic => PLAIN_HTTP_LIST_ENDPOINT,
+        };
+        if self.list_endpoint != expected_endpoint {
             return Err(ExchangeError::InvalidRequest(
-                "CFFEX list endpoint must be the exact official HTTPS notice path".into(),
+                "CFFEX list endpoint must exactly match its fixed access mode".into(),
             ));
         }
         validate_timeout(self.timeout)?;
@@ -58,6 +106,106 @@ impl CffexConfig {
             ));
         }
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct PlainHttpTransport {
+    agent: ureq::Agent,
+}
+
+impl PlainHttpTransport {
+    fn new(timeout: Duration) -> Result<Self, ExchangeError> {
+        validate_timeout(timeout)?;
+        Ok(Self {
+            agent: ureq::AgentBuilder::new()
+                .timeout_connect(timeout)
+                .timeout_read(timeout)
+                .timeout_write(timeout)
+                .redirects(0)
+                .try_proxy_from_env(false)
+                .build(),
+        })
+    }
+}
+
+impl ExchangeTransport for PlainHttpTransport {
+    fn execute(
+        &self,
+        request: &HttpRequest,
+    ) -> Result<crate::transport::HttpResponse, ExchangeError> {
+        if request.method != HttpMethod::Get || !request.body.is_empty() {
+            return Err(ExchangeError::InvalidRequest(
+                "CFFEX plaintext transport accepts only bodyless GET requests".into(),
+            ));
+        }
+        let mut wire = self.agent.get(&request.url);
+        for (name, value) in &request.headers {
+            wire = wire.set(name, value);
+        }
+        match wire.call() {
+            Ok(response) => HttpsTransport::collect(response),
+            Err(ureq::Error::Status(_, response)) => HttpsTransport::collect(response),
+            Err(ureq::Error::Transport(error)) => Err(ExchangeError::Transport(error.to_string())),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct SharedCffexHttpsTransport {
+    inner: ReqwestTransport,
+}
+
+impl SharedCffexHttpsTransport {
+    fn new(timeout: Duration) -> Result<Self, ExchangeError> {
+        validate_timeout(timeout)?;
+        let mut paths = Vec::with_capacity(120);
+        paths.push("/cn/jystz.html".to_owned());
+        for page in 2..=120 {
+            paths.push(format!("/cn/jystz_{page}.html"));
+        }
+        paths.push("/cn/jystz/".to_owned());
+        let policy = EndpointPolicy::new(
+            HOST,
+            paths,
+            Vec::new(),
+            vec![SharedMediaType::Html],
+            MAX_RESPONSE_BYTES,
+            timeout,
+        )
+        .map_err(map_shared_error)?;
+        Ok(Self {
+            inner: ReqwestTransport::new(policy).map_err(map_shared_error)?,
+        })
+    }
+}
+
+impl ExchangeTransport for SharedCffexHttpsTransport {
+    fn execute(
+        &self,
+        request: &HttpRequest,
+    ) -> Result<crate::transport::HttpResponse, ExchangeError> {
+        let method = match request.method {
+            HttpMethod::Get => SharedHttpMethod::Get,
+            HttpMethod::Post => SharedHttpMethod::Post,
+        };
+        let shared_request = SharedHttpRequest::new(
+            method,
+            request.url.clone(),
+            request.headers.clone(),
+            request.body.clone(),
+        )
+        .map_err(map_shared_error)?;
+        let response = self
+            .inner
+            .execute(&shared_request)
+            .map_err(map_shared_error)?;
+        Ok(crate::transport::HttpResponse {
+            status: response.status(),
+            final_url: response.final_url().to_owned(),
+            content_type: response.content_type().map(str::to_owned),
+            body: response.body().to_vec(),
+        })
     }
 }
 
@@ -74,6 +222,7 @@ impl std::fmt::Debug for CffexClient {
             .debug_struct("CffexClient")
             .field("config", &self.config)
             .field("tls_backend", &self.config.tls_backend.as_str())
+            .field("access_mode", &self.config.access_mode.as_str())
             .finish_non_exhaustive()
     }
 }
@@ -85,8 +234,20 @@ impl CffexClient {
 
     pub fn with_config(config: CffexConfig) -> Result<Self, ExchangeError> {
         config.validate()?;
-        let transport = HttpsTransport::with_tls_backend(config.timeout, config.tls_backend)?;
-        Self::from_parts(config, Arc::new(transport))
+        let transport: Arc<dyn ExchangeTransport> = match config.access_mode {
+            CffexAccessMode::Https => {
+                if config.tls_backend != CffexTlsBackend::Rustls {
+                    return Err(ExchangeError::Unsupported(
+                        "CFFEX formal HTTPS uses only the shared reqwest/rustls transport".into(),
+                    ));
+                }
+                Arc::new(SharedCffexHttpsTransport::new(config.timeout)?)
+            }
+            CffexAccessMode::PlainHttpDiagnostic => {
+                Arc::new(PlainHttpTransport::new(config.timeout)?)
+            }
+        };
+        Self::from_parts(config, transport)
     }
 
     pub fn with_transport(
@@ -116,6 +277,10 @@ impl CffexClient {
         self.config.tls_backend
     }
 
+    pub const fn access_mode(&self) -> CffexAccessMode {
+        self.config.access_mode
+    }
+
     pub const fn calendar_capabilities() -> CalendarCapabilities {
         CalendarCapabilities {
             economic_releases: false,
@@ -138,35 +303,59 @@ impl CffexClient {
     ) -> Result<DataBatch<FuturesDeliveryEvent>, ExchangeError> {
         let (notice_url, published_date, detail) = self.find_notice(request)?;
         let observed_at = now()?;
-        parse_delivery_notice(&detail, request, &notice_url, &published_date, &observed_at)
+        parse_delivery_notice(
+            &detail,
+            request,
+            &notice_url,
+            &published_date,
+            &observed_at,
+            self.config.access_mode,
+        )
     }
 
     fn get_html(&self, url: &str) -> Result<Vec<u8>, ExchangeError> {
-        validate_cffex_url(url)?;
+        validate_cffex_url(url, self.config.access_mode)?;
+        let referer = format!("{}://{HOST}/", self.config.access_mode.scheme());
         let request = HttpRequest {
             method: HttpMethod::Get,
             url: url.to_owned(),
             headers: vec![
                 ("User-Agent".into(), USER_AGENT.into()),
                 ("Accept".into(), "text/html,application/xhtml+xml".into()),
-                ("Referer".into(), "https://www.cffex.com.cn/".into()),
+                ("Referer".into(), referer),
             ],
             body: Vec::new(),
         };
         let parsed =
             Url::parse(url).map_err(|error| ExchangeError::InvalidRequest(error.to_string()))?;
-        let policy = crate::transport::validate_request(
-            &request,
-            HttpMethod::Get,
-            HOST,
-            parsed.path(),
-            &[],
-            &[SharedMediaType::Html],
-            self.config.timeout,
-        )?;
+        let https_policy = match self.config.access_mode {
+            CffexAccessMode::Https => Some(crate::transport::validate_request(
+                &request,
+                HttpMethod::Get,
+                HOST,
+                parsed.path(),
+                &[],
+                &[SharedMediaType::Html],
+                self.config.timeout,
+            )?),
+            CffexAccessMode::PlainHttpDiagnostic => {
+                validate_plain_http_request(&request)?;
+                None
+            }
+        };
         wait_for_request_start(&self.gate)?;
         let response = self.transport.execute(&request)?;
-        validate_response(&policy, &request, &response)?;
+        match self.config.access_mode {
+            CffexAccessMode::Https => {
+                let policy = https_policy.as_ref().ok_or_else(|| {
+                    ExchangeError::InvalidRequest("CFFEX HTTPS policy is missing".into())
+                })?;
+                validate_response(policy, &request, &response)?;
+            }
+            CffexAccessMode::PlainHttpDiagnostic => {
+                validate_plain_http_response(&request.url, &response)?;
+            }
+        }
         Ok(response.body)
     }
 
@@ -179,7 +368,10 @@ impl CffexClient {
             let page_url = if page == 1 {
                 self.config.list_endpoint.clone()
             } else {
-                format!("https://{HOST}/cn/jystz_{page}.html")
+                format!(
+                    "{}://{HOST}/cn/jystz_{page}.html",
+                    self.config.access_mode.scheme()
+                )
             };
             let body = self.get_html(&page_url)?;
             let html = std::str::from_utf8(&body)
@@ -192,7 +384,7 @@ impl CffexClient {
             }
             for link in &links {
                 if link.title.contains(DELIVERY_TITLE) && link.date.starts_with(&target_month) {
-                    let url = official_notice_url(&link.href)?;
+                    let url = official_notice_url(&link.href, self.config.access_mode)?;
                     let published_date = IsoDate::new(link.date.clone())?;
                     let detail = self.get_html(&url)?;
                     return Ok((url, published_date, detail));
@@ -262,10 +454,9 @@ fn parse_notice_links(html: &str) -> Result<Vec<NoticeLink>, ExchangeError> {
         let title = strip_html(&after_tag[..close]);
         let href = extract_attribute(tag, "href");
         let after_anchor = &after_tag[close + 4..];
-        if let (Some(href), Some(date)) = (
-            href,
-            find_iso_date(&after_anchor[..after_anchor.len().min(240)]),
-        ) {
+        if let (Some(href), Some(date)) =
+            (href, find_iso_date(bounded_utf8_prefix(after_anchor, 240)))
+        {
             if href.contains("/cn/jystz/") && href.ends_with(".html") {
                 links.push(NoticeLink { href, title, date });
             }
@@ -282,6 +473,17 @@ fn parse_notice_links(html: &str) -> Result<Vec<NoticeLink>, ExchangeError> {
         }
     }
     Ok(links)
+}
+
+fn bounded_utf8_prefix(value: &str, maximum_bytes: usize) -> &str {
+    if value.len() <= maximum_bytes {
+        return value;
+    }
+    let mut end = maximum_bytes;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    &value[..end]
 }
 
 fn extract_attribute(tag: &str, name: &str) -> Option<String> {
@@ -304,8 +506,9 @@ fn find_iso_date(value: &str) -> Option<String> {
     })
 }
 
-fn official_notice_url(value: &str) -> Result<String, ExchangeError> {
-    let url = if value.starts_with("https://") {
+fn official_notice_url(value: &str, access_mode: CffexAccessMode) -> Result<String, ExchangeError> {
+    let expected_prefix = format!("{}://", access_mode.scheme());
+    let url = if value.starts_with(&expected_prefix) {
         value.to_owned()
     } else {
         let path = if value.starts_with('/') {
@@ -313,9 +516,9 @@ fn official_notice_url(value: &str) -> Result<String, ExchangeError> {
         } else {
             format!("/cn/jystz/{value}")
         };
-        format!("https://{HOST}{path}")
+        format!("{}://{HOST}{path}", access_mode.scheme())
     };
-    validate_cffex_url(&url)?;
+    validate_cffex_url(&url, access_mode)?;
     if !is_detail_path(
         Url::parse(&url)
             .map_err(|error| ExchangeError::Schema(error.to_string()))?
@@ -328,7 +531,7 @@ fn official_notice_url(value: &str) -> Result<String, ExchangeError> {
     Ok(url)
 }
 
-fn validate_cffex_url(value: &str) -> Result<(), ExchangeError> {
+fn validate_cffex_url(value: &str, access_mode: CffexAccessMode) -> Result<(), ExchangeError> {
     let url =
         Url::parse(value).map_err(|error| ExchangeError::InvalidRequest(error.to_string()))?;
     let path = url.path();
@@ -340,9 +543,9 @@ fn validate_cffex_url(value: &str) -> Result<(), ExchangeError> {
                 page.parse::<u32>()
                     .is_ok_and(|page| (2..=120).contains(&page))
             });
-    if url.scheme() != "https"
+    if url.scheme() != access_mode.scheme()
         || url.host_str() != Some(HOST)
-        || url.port_or_known_default() != Some(443)
+        || url.port_or_known_default() != Some(access_mode.port())
         || url.username() != ""
         || url.password().is_some()
         || url.query().is_some()
@@ -352,6 +555,60 @@ fn validate_cffex_url(value: &str) -> Result<(), ExchangeError> {
         return Err(ExchangeError::InvalidRequest(
             "CFFEX request URL is outside the official bounded notice paths".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_plain_http_request(request: &HttpRequest) -> Result<(), ExchangeError> {
+    validate_cffex_url(&request.url, CffexAccessMode::PlainHttpDiagnostic)?;
+    if request.method != HttpMethod::Get || !request.body.is_empty() {
+        return Err(ExchangeError::InvalidRequest(
+            "CFFEX plaintext diagnostic must be a bodyless GET".into(),
+        ));
+    }
+    if request.headers.iter().any(|(name, _)| {
+        matches!(
+            name.to_ascii_lowercase().as_str(),
+            "cookie" | "authorization"
+        )
+    }) {
+        return Err(ExchangeError::InvalidRequest(
+            "CFFEX plaintext diagnostic cannot send credentials".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_plain_http_response(
+    request_url: &str,
+    response: &crate::transport::HttpResponse,
+) -> Result<(), ExchangeError> {
+    if response.status != 200 {
+        return Err(ExchangeError::HttpStatus(response.status));
+    }
+    if response.final_url != request_url {
+        return Err(ExchangeError::Schema(
+            "CFFEX plaintext diagnostic redirect or final URL mismatch".into(),
+        ));
+    }
+    let content_type = response
+        .content_type
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !content_type
+        .split(';')
+        .next()
+        .is_some_and(|media_type| media_type.trim() == "text/html")
+    {
+        return Err(ExchangeError::Schema(
+            "CFFEX plaintext diagnostic requires text/html".into(),
+        ));
+    }
+    if response.body.len() > MAX_RESPONSE_BYTES {
+        return Err(ExchangeError::Incomplete(format!(
+            "response body exceeds {MAX_RESPONSE_BYTES} bytes"
+        )));
     }
     Ok(())
 }
@@ -376,8 +633,9 @@ fn parse_delivery_notice(
     notice_url: &str,
     published_date: &IsoDate,
     observed_at: &str,
+    access_mode: CffexAccessMode,
 ) -> Result<DataBatch<FuturesDeliveryEvent>, ExchangeError> {
-    validate_cffex_url(notice_url)?;
+    validate_cffex_url(notice_url, access_mode)?;
     let html = std::str::from_utf8(body)
         .map_err(|error| ExchangeError::Decode(format!("CFFEX detail UTF-8: {error}")))?;
     let text = strip_html(html);
@@ -423,8 +681,17 @@ fn parse_delivery_notice(
             delivery_date.as_str()
         )));
     }
-    let batch_id = format!("cffex:{}:{}:{observed_at}", suffix, delivery_date.as_str());
-    let url = HttpsUrl::new(notice_url)?;
+    let batch_id = format!(
+        "cffex:{}:{}:{}:{observed_at}",
+        access_mode.as_str(),
+        suffix,
+        delivery_date.as_str()
+    );
+    let canonical_notice_url = match access_mode {
+        CffexAccessMode::Https => notice_url.to_owned(),
+        CffexAccessMode::PlainHttpDiagnostic => notice_url.replacen("http://", "https://", 1),
+    };
+    let url = HttpsUrl::new(canonical_notice_url)?;
     let mut records = Vec::with_capacity(products.len());
     for (product, prefix) in products {
         let evidence = SourceEvidence::new(ProviderId::Cffex, observed_at, batch_id.clone())?
@@ -439,9 +706,17 @@ fn parse_delivery_notice(
             evidence,
         });
     }
-    let provenance = Provenance::new("cffex-official-notice", observed_at)?
-        .with_source_at(published_date.as_str())?
-        .with_batch_id(batch_id)?;
+    let provenance = Provenance::new(
+        match access_mode {
+            CffexAccessMode::Https => "cffex-official-notice",
+            CffexAccessMode::PlainHttpDiagnostic => {
+                "cffex-official-notice-plaintext-http-diagnostic"
+            }
+        },
+        observed_at,
+    )?
+    .with_source_at(published_date.as_str())?
+    .with_batch_id(batch_id)?;
     Ok(DataBatch::strict(records, provenance))
 }
 
@@ -679,6 +954,42 @@ mod tests {
     }
 
     #[test]
+    fn plaintext_diagnostic_preserves_transport_provenance_and_https_reference() {
+        let list = r#"
+          <a href="/cn/jystz/20260224/46999.html">
+          关于股指期货和股指期权合约交割的通知</a><span>2026-02-23</span>
+        "#;
+        let detail = r#"
+          <h1>关于股指期货和股指期权合约交割的通知</h1>
+          <p>IF2602等合约于2026年2月24日进行交割，各合约的交割结算价具体如下：</p>
+          <p>IF2602 IC2602 IM2602 IH2602 合约交割结算价。</p>
+        "#;
+        let mut config = CffexConfig::plaintext_http_diagnostic();
+        config.minimum_interval = Duration::from_secs(1);
+        let client = CffexClient::with_transport(
+            config,
+            FixtureTransport {
+                responses: Mutex::new(VecDeque::from([response(list), response(detail)])),
+            },
+        )
+        .unwrap();
+
+        let batch = client.probe_futures_delivery_calendar(&request()).unwrap();
+        assert_eq!(
+            batch.provenance().source(),
+            "cffex-official-notice-plaintext-http-diagnostic"
+        );
+        assert!(batch
+            .provenance()
+            .batch_id()
+            .is_some_and(|value| value.contains("plaintext_http_diagnostic")));
+        assert_eq!(
+            batch.records()[0].notice_url.as_str(),
+            "https://www.cffex.com.cn/cn/jystz/20260224/46999.html"
+        );
+    }
+
+    #[test]
     fn rejects_formula_only_or_incomplete_notices() {
         let detail = r#"
           <h1>关于股指期货和股指期权合约交割的通知</h1>
@@ -690,7 +1001,8 @@ mod tests {
             &request(),
             "https://www.cffex.com.cn/cn/jystz/20260220/1.html",
             &IsoDate::new("2026-02-20").unwrap(),
-            "observed"
+            "observed",
+            CffexAccessMode::Https,
         )
         .is_err());
     }
@@ -702,20 +1014,58 @@ mod tests {
           <a href="/cn/jystz/20260224/1.html">重复</a>2026-02-24
         "#;
         assert!(parse_notice_links(list).is_err());
-        assert!(official_notice_url("https://example.com/x").is_err());
+        assert!(official_notice_url("https://example.com/x", CffexAccessMode::Https).is_err());
         for url in [
             "https://www.cffex.com.cn/cn/jystz.html",
             "https://www.cffex.com.cn/cn/jystz_2.html",
             "https://www.cffex.com.cn/cn/jystz/20260224/1.html",
         ] {
-            assert!(validate_cffex_url(url).is_ok(), "{url}");
+            assert!(
+                validate_cffex_url(url, CffexAccessMode::Https).is_ok(),
+                "{url}"
+            );
         }
         for old_or_unbounded in [
             "https://www.cffex.com.cn/jystz/",
             "https://www.cffex.com.cn/jystz/index_2.html",
             "https://www.cffex.com.cn/cn/jystz_121.html",
         ] {
-            assert!(validate_cffex_url(old_or_unbounded).is_err());
+            assert!(validate_cffex_url(old_or_unbounded, CffexAccessMode::Https).is_err());
         }
+    }
+
+    #[test]
+    fn plaintext_mode_accepts_only_fixed_public_notice_paths() {
+        for url in [
+            "http://www.cffex.com.cn/cn/jystz.html",
+            "http://www.cffex.com.cn/cn/jystz_2.html",
+            "http://www.cffex.com.cn/cn/jystz/20260717/48292.html",
+        ] {
+            assert!(
+                validate_cffex_url(url, CffexAccessMode::PlainHttpDiagnostic).is_ok(),
+                "{url}"
+            );
+        }
+        for url in [
+            "https://www.cffex.com.cn/cn/jystz.html",
+            "http://user@www.cffex.com.cn/cn/jystz.html",
+            "http://www.cffex.com.cn:8080/cn/jystz.html",
+            "http://www.cffex.com.cn/cn/jystz.html?query=1",
+            "http://www.cffex.com.cn/cn/jystz.html#fragment",
+            "http://www.cffex.com.cn/cn/jystz_121.html",
+        ] {
+            assert!(
+                validate_cffex_url(url, CffexAccessMode::PlainHttpDiagnostic).is_err(),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn notice_date_window_never_slices_inside_utf8() {
+        let value = format!("{}2026-07-17", "意".repeat(80));
+        let prefix = bounded_utf8_prefix(&value, 240);
+        assert!(std::str::from_utf8(prefix.as_bytes()).is_ok());
+        assert_eq!(prefix.len(), 240);
     }
 }

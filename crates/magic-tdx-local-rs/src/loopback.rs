@@ -36,7 +36,8 @@ impl TqReadMethod {
     }
 }
 
-const MARKET_SNAPSHOT_FIELDS: [&str; 4] = ["Amount", "Now", "Volume", "LastClose"];
+const MARKET_SNAPSHOT_FIELDS: [&str; 7] =
+    ["Amount", "Now", "Volume", "LastClose", "Open", "Max", "Min"];
 
 // The exact decimal converter below uses a checked u128 coefficient. This is
 // a representation limit, not a source or deployment throughput default.
@@ -73,6 +74,73 @@ impl TqInstrument {
         };
         format!("{}.{suffix}", self.instrument.code)
     }
+}
+
+/// One validated single-instrument TQ market snapshot.
+///
+/// `previous_close` is retained separately from the v1 [`SourceObservation`]
+/// so the response-backed diagnostic field cannot be confused with the
+/// independently admitted current-price family.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TqMarketSnapshot {
+    observation: SourceObservation,
+    prices: TqSnapshotPrices,
+}
+
+impl TqMarketSnapshot {
+    pub fn new(
+        observation: SourceObservation,
+        prices: TqSnapshotPrices,
+    ) -> Result<Self, TqLoopbackError> {
+        observation
+            .validate()
+            .map_err(|_| TqLoopbackError::Schema {
+                reason: "mapped market-snapshot observation failed protocol validation",
+            })?;
+        for (field, value) in [
+            ("LastClose", &prices.previous_close),
+            ("Open", &prices.open),
+            ("Max", &prices.high),
+            ("Min", &prices.low),
+        ] {
+            if value.unit != ObservationUnit::CnyPerShare {
+                return Err(TqLoopbackError::Schema {
+                    reason: "market-snapshot OHLC field has an invalid unit",
+                });
+            }
+            validate_decimal(field, &value.value, ObservationUnit::CnyPerShare)?;
+        }
+        Ok(Self {
+            observation,
+            prices,
+        })
+    }
+
+    pub fn observation(&self) -> &SourceObservation {
+        &self.observation
+    }
+
+    pub fn previous_close(&self) -> &DecimalObservation {
+        &self.prices.previous_close
+    }
+
+    pub fn prices(&self) -> &TqSnapshotPrices {
+        &self.prices
+    }
+
+    pub fn into_parts(self) -> (SourceObservation, TqSnapshotPrices) {
+        (self.observation, self.prices)
+    }
+}
+
+/// Response-backed previous-close and OHLC snapshot fields. They remain
+/// independently unadmitted even when the containing amount event is admitted.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TqSnapshotPrices {
+    pub previous_close: DecimalObservation,
+    pub open: DecimalObservation,
+    pub high: DecimalObservation,
+    pub low: DecimalObservation,
 }
 
 /// Bounded evidence returned after a complete all-A-share identity check.
@@ -192,21 +260,60 @@ impl TqLoopbackClient {
         instrument: &TqInstrument,
         observed_at_utc: impl Into<String>,
     ) -> Result<SourceObservation, TqLoopbackError> {
-        validate_poll_request(request_id, bridge_sequence)?;
+        let observations = self.poll_price_volumes(
+            request_id,
+            bridge_sequence,
+            std::slice::from_ref(instrument),
+            observed_at_utc,
+        )?;
+        observations
+            .into_iter()
+            .next()
+            .ok_or(TqLoopbackError::Schema {
+                reason: "single-instrument price-volume response was empty",
+            })
+    }
+
+    /// Performs one bounded single-flight request for the complete requested
+    /// watchlist. The response identity set must match exactly; observations
+    /// retain request order, one local observation time and checked consecutive
+    /// bridge sequences.
+    pub fn poll_price_volumes(
+        &self,
+        request_id: u64,
+        first_bridge_sequence: u64,
+        instruments: &[TqInstrument],
+        observed_at_utc: impl Into<String>,
+    ) -> Result<Vec<SourceObservation>, TqLoopbackError> {
+        if instruments.is_empty() {
+            return Err(TqLoopbackError::InvalidRequest {
+                reason: "price-volume watchlist must be non-empty",
+            });
+        }
+        let symbols = instruments
+            .iter()
+            .map(TqInstrument::wire_symbol)
+            .collect::<Vec<_>>();
+        if symbols.iter().collect::<BTreeSet<_>>().len() != symbols.len() {
+            return Err(TqLoopbackError::InvalidRequest {
+                reason: "price-volume watchlist must not contain duplicates",
+            });
+        }
+        validate_poll_request(request_id, first_bridge_sequence)?;
         let observed_at_utc = validate_observation_time(observed_at_utc.into())?;
         let request = TqRequest {
             id: request_id,
             method: TqReadMethod::PriceVolume.wire_name(),
             params: PriceVolumeParams {
-                stock_list: [instrument.wire_symbol()],
+                stock_list: symbols,
             },
         };
         let response = self.execute(&request)?;
-        parse_price_volume_response(
+        parse_price_volume_responses(
             &response,
             request_id,
-            bridge_sequence,
-            instrument,
+            first_bridge_sequence,
+            instruments,
             observed_at_utc,
         )
     }
@@ -220,7 +327,7 @@ impl TqLoopbackClient {
         bridge_sequence: u64,
         instrument: &TqInstrument,
         observed_at_utc: impl Into<String>,
-    ) -> Result<SourceObservation, TqLoopbackError> {
+    ) -> Result<TqMarketSnapshot, TqLoopbackError> {
         validate_poll_request(request_id, bridge_sequence)?;
         let observed_at_utc = validate_observation_time(observed_at_utc.into())?;
         let request = TqRequest {
@@ -323,7 +430,7 @@ struct TqRequest<P> {
 
 #[derive(Serialize)]
 struct PriceVolumeParams {
-    stock_list: [String; 1],
+    stock_list: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -335,7 +442,7 @@ struct EquityUniverseParams {
 #[derive(Serialize)]
 struct MarketSnapshotParams {
     stock_code: String,
-    field_list: [&'static str; 4],
+    field_list: [&'static str; 7],
 }
 
 /// The vendor may add bounded diagnostic envelope members. Only `id` and
@@ -387,6 +494,12 @@ struct MarketSnapshotResult {
     now: String,
     #[serde(rename = "Volume")]
     volume: String,
+    #[serde(rename = "Open")]
+    open: String,
+    #[serde(rename = "Max")]
+    high: String,
+    #[serde(rename = "Min")]
+    low: String,
 }
 
 #[derive(Deserialize)]
@@ -497,6 +610,7 @@ fn validate_observation_time(value: String) -> Result<String, TqLoopbackError> {
     Ok(value)
 }
 
+#[cfg(test)]
 fn parse_price_volume_response(
     bytes: &[u8],
     expected_id: u64,
@@ -504,6 +618,27 @@ fn parse_price_volume_response(
     expected_instrument: &TqInstrument,
     observed_at_utc: String,
 ) -> Result<SourceObservation, TqLoopbackError> {
+    parse_price_volume_responses(
+        bytes,
+        expected_id,
+        bridge_sequence,
+        std::slice::from_ref(expected_instrument),
+        observed_at_utc,
+    )?
+    .into_iter()
+    .next()
+    .ok_or(TqLoopbackError::Schema {
+        reason: "single-instrument price-volume response was empty",
+    })
+}
+
+fn parse_price_volume_responses(
+    bytes: &[u8],
+    expected_id: u64,
+    first_bridge_sequence: u64,
+    expected_instruments: &[TqInstrument],
+    observed_at_utc: String,
+) -> Result<Vec<SourceObservation>, TqLoopbackError> {
     let json: serde_json::Value = serde_json::from_slice(bytes).map_err(TqLoopbackError::Json)?;
     let envelope: TqResponseEnvelope =
         serde_json::from_value(json).map_err(|_| TqLoopbackError::Schema {
@@ -528,46 +663,58 @@ fn parse_price_volume_response(
     let mut values = result.value.ok_or(TqLoopbackError::Schema {
         reason: "successful price-volume result is missing Value",
     })?;
-    if values.len() != 1 {
+    if values.len() != expected_instruments.len() {
         return Err(TqLoopbackError::Schema {
-            reason: "price-volume result must contain exactly one instrument",
+            reason: "price-volume result cardinality does not match the request",
         });
     }
-    let expected_symbol = expected_instrument.wire_symbol();
-    let row = values
-        .remove(&expected_symbol)
-        .ok_or(TqLoopbackError::Schema {
-            reason: "price-volume result instrument does not match the request",
-        })?;
-
-    validate_decimal("LastClose", &row.last_close, ObservationUnit::CnyPerShare)?;
-    validate_decimal("Now", &row.now, ObservationUnit::CnyPerShare)?;
-    validate_decimal("Volume", &row.volume, ObservationUnit::Lot)?;
-
-    let observation = SourceObservation {
-        protocol_version: PROTOCOL_VERSION,
-        schema_version: SCHEMA_VERSION,
-        bridge_sequence,
-        instrument: expected_instrument.instrument.clone(),
-        observed_at_utc,
-        source_timestamp: None,
-        price: Some(DecimalObservation {
-            value: row.now,
-            unit: ObservationUnit::CnyPerShare,
-        }),
-        cumulative_amount: None,
-        cumulative_volume: Some(DecimalObservation {
-            value: row.volume,
-            unit: ObservationUnit::Lot,
-        }),
-        source_record_count: None,
-    };
-    observation
-        .validate()
-        .map_err(|_| TqLoopbackError::Schema {
-            reason: "mapped observation failed protocol validation",
-        })?;
-    Ok(observation)
+    let mut observations = Vec::with_capacity(expected_instruments.len());
+    for (index, expected_instrument) in expected_instruments.iter().enumerate() {
+        let expected_symbol = expected_instrument.wire_symbol();
+        let row = values
+            .remove(&expected_symbol)
+            .ok_or(TqLoopbackError::Schema {
+                reason: "price-volume result identity set does not match the request",
+            })?;
+        validate_decimal("LastClose", &row.last_close, ObservationUnit::CnyPerShare)?;
+        validate_decimal("Now", &row.now, ObservationUnit::CnyPerShare)?;
+        validate_decimal("Volume", &row.volume, ObservationUnit::Lot)?;
+        let sequence_offset =
+            u64::try_from(index).map_err(|_| TqLoopbackError::InvalidRequest {
+                reason: "price-volume watchlist length is not representable",
+            })?;
+        let bridge_sequence = first_bridge_sequence.checked_add(sequence_offset).ok_or(
+            TqLoopbackError::InvalidRequest {
+                reason: "price-volume bridge sequence range is exhausted",
+            },
+        )?;
+        let observation = SourceObservation {
+            protocol_version: PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION,
+            bridge_sequence,
+            instrument: expected_instrument.instrument.clone(),
+            observed_at_utc: observed_at_utc.clone(),
+            source_timestamp: None,
+            price: Some(DecimalObservation {
+                value: row.now,
+                unit: ObservationUnit::CnyPerShare,
+            }),
+            cumulative_amount: None,
+            cumulative_volume: Some(DecimalObservation {
+                value: row.volume,
+                unit: ObservationUnit::Lot,
+            }),
+            source_record_count: None,
+        };
+        observation
+            .validate()
+            .map_err(|_| TqLoopbackError::Schema {
+                reason: "mapped observation failed protocol validation",
+            })?;
+        observations.push(observation);
+    }
+    debug_assert!(values.is_empty());
+    Ok(observations)
 }
 
 fn parse_market_snapshot_response(
@@ -576,7 +723,7 @@ fn parse_market_snapshot_response(
     bridge_sequence: u64,
     expected_instrument: &TqInstrument,
     observed_at_utc: String,
-) -> Result<SourceObservation, TqLoopbackError> {
+) -> Result<TqMarketSnapshot, TqLoopbackError> {
     let json: serde_json::Value = serde_json::from_slice(bytes).map_err(TqLoopbackError::Json)?;
     let envelope: TqResponseEnvelope =
         serde_json::from_value(json).map_err(|_| TqLoopbackError::Schema {
@@ -613,6 +760,9 @@ fn parse_market_snapshot_response(
     )?;
     validate_decimal("Now", &result.now, ObservationUnit::CnyPerShare)?;
     validate_decimal("Volume", &result.volume, ObservationUnit::Lot)?;
+    validate_decimal("Open", &result.open, ObservationUnit::CnyPerShare)?;
+    validate_decimal("Max", &result.high, ObservationUnit::CnyPerShare)?;
+    validate_decimal("Min", &result.low, ObservationUnit::CnyPerShare)?;
     let amount_cny = ten_thousand_cny_to_cny(&result.amount)?;
 
     let observation = SourceObservation {
@@ -638,12 +788,27 @@ fn parse_market_snapshot_response(
         }),
         source_record_count: None,
     };
-    observation
-        .validate()
-        .map_err(|_| TqLoopbackError::Schema {
-            reason: "mapped market-snapshot observation failed protocol validation",
-        })?;
-    Ok(observation)
+    TqMarketSnapshot::new(
+        observation,
+        TqSnapshotPrices {
+            previous_close: DecimalObservation {
+                value: result.last_close,
+                unit: ObservationUnit::CnyPerShare,
+            },
+            open: DecimalObservation {
+                value: result.open,
+                unit: ObservationUnit::CnyPerShare,
+            },
+            high: DecimalObservation {
+                value: result.high,
+                unit: ObservationUnit::CnyPerShare,
+            },
+            low: DecimalObservation {
+                value: result.low,
+                unit: ObservationUnit::CnyPerShare,
+            },
+        },
+    )
 }
 
 /// Converts exact canonical decimal text from ten-thousand CNY to CNY by
@@ -1093,9 +1258,21 @@ mod tests {
             MARKET_SNAPSHOT_RESPONSE,
         );
         let requested_instrument = instrument();
-        let observation = test_client(endpoint, limits(4096))
+        let snapshot = test_client(endpoint, limits(4096))
             .poll_market_snapshot(7, 1, &requested_instrument, "2026-08-13T01:02:03Z")
             .unwrap();
+        assert_eq!(
+            snapshot.previous_close(),
+            &DecimalObservation {
+                value: "17.18".into(),
+                unit: ObservationUnit::CnyPerShare,
+            }
+        );
+        assert_eq!(snapshot.prices().open.value, "16.80");
+        assert_eq!(snapshot.prices().high.value, "17.66");
+        assert_eq!(snapshot.prices().low.value, "16.80");
+        let (observation, prices) = snapshot.into_parts();
+        assert_eq!(prices.previous_close.value, "17.18");
 
         assert_eq!(
             observation.instrument,
@@ -1133,7 +1310,7 @@ mod tests {
         assert_eq!(value["params"]["stock_code"], "600396.SH");
         assert_eq!(
             value["params"]["field_list"],
-            serde_json::json!(["Amount", "Now", "Volume", "LastClose"])
+            serde_json::json!(["Amount", "Now", "Volume", "LastClose", "Open", "Max", "Min"])
         );
         assert_eq!(value["params"].as_object().unwrap().len(), 2);
         assert_eq!(value.as_object().unwrap().len(), 3);
@@ -1278,6 +1455,78 @@ mod tests {
             serde_json::to_string(&TqLoopbackErrorCategory::CorrelationMismatch).unwrap(),
             r#""correlation_mismatch""#
         );
+    }
+
+    #[test]
+    fn batch_price_volume_is_one_request_with_exact_identity_set_and_request_order() {
+        let body = r#"{"id":7,"result":{"ErrorId":"0","Value":{"000001.SZ":{"LastClose":"10.00","Now":"10.10","Volume":"200"},"600396.SH":{"LastClose":"17.00","Now":"17.18","Volume":"100"}}}}"#;
+        let (endpoint, server) = spawn_server(
+            "200 OK",
+            "Content-Type: application/json; charset=utf-8\r\n",
+            body,
+        );
+        let instruments = [
+            TqInstrument::new(SourceExchange::Shanghai, "600396").unwrap(),
+            TqInstrument::new(SourceExchange::Shenzhen, "000001").unwrap(),
+        ];
+        let observations = test_client(endpoint, limits(4096))
+            .poll_price_volumes(7, 9, &instruments, "2026-08-13T01:02:03Z")
+            .unwrap();
+        assert_eq!(observations.len(), 2);
+        assert_eq!(observations[0].instrument.code, "600396");
+        assert_eq!(observations[0].bridge_sequence, 9);
+        assert_eq!(observations[0].price.as_ref().unwrap().value, "17.18");
+        assert_eq!(observations[1].instrument.code, "000001");
+        assert_eq!(observations[1].bridge_sequence, 10);
+        assert_eq!(observations[1].price.as_ref().unwrap().value, "10.10");
+        assert!(observations
+            .iter()
+            .all(|observation| observation.observed_at_utc == "2026-08-13T01:02:03Z"));
+
+        let request = server.join().unwrap();
+        let value: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(value["method"], "get_pricevol");
+        assert_eq!(
+            value["params"]["stock_list"],
+            serde_json::json!(["600396.SH", "000001.SZ"])
+        );
+    }
+
+    #[test]
+    fn batch_price_volume_rejects_empty_duplicate_and_sequence_exhaustion() {
+        let client = test_client("http://127.0.0.1:9/".into(), limits(4096));
+        let instrument = instrument();
+        assert!(matches!(
+            client.poll_price_volumes(7, 1, &[], "2026-08-13T01:02:03Z"),
+            Err(TqLoopbackError::InvalidRequest { .. })
+        ));
+        assert!(matches!(
+            client.poll_price_volumes(
+                7,
+                1,
+                &[instrument.clone(), instrument],
+                "2026-08-13T01:02:03Z"
+            ),
+            Err(TqLoopbackError::InvalidRequest { .. })
+        ));
+
+        let body = r#"{"id":7,"result":{"ErrorId":"0","Value":{"000001.SZ":{"LastClose":"10","Now":"10","Volume":"2"},"600396.SH":{"LastClose":"17","Now":"17","Volume":"1"}}}}"#;
+        let (endpoint, server) = spawn_server("200 OK", "Content-Type: application/json\r\n", body);
+        let instruments = [
+            TqInstrument::new(SourceExchange::Shanghai, "600396").unwrap(),
+            TqInstrument::new(SourceExchange::Shenzhen, "000001").unwrap(),
+        ];
+        assert!(matches!(
+            test_client(endpoint, limits(4096)).poll_price_volumes(
+                7,
+                u64::MAX,
+                &instruments,
+                "2026-08-13T01:02:03Z"
+            ),
+            Err(TqLoopbackError::InvalidRequest { .. })
+        ));
+        server.join().unwrap();
     }
 
     #[test]

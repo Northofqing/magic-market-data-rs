@@ -8,8 +8,9 @@ use magic_market_monitor::{
 };
 use magic_tdx_local_rs::{
     SourceObservation, TqInstrument, TqLoopbackClient, TqLoopbackError, TqLoopbackErrorCategory,
-    LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED, LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED,
-    LOCAL_TERMINAL_PRICE_ADMITTED,
+    TqMarketSnapshot, LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED,
+    LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED, LOCAL_TERMINAL_OHLC_ADMITTED,
+    LOCAL_TERMINAL_PREVIOUS_CLOSE_ADMITTED, LOCAL_TERMINAL_PRICE_ADMITTED,
 };
 use thiserror::Error;
 use time::format_description::well_known::Rfc3339;
@@ -82,13 +83,13 @@ pub(crate) trait PollPriceVolume {
         instruments: &[TqInstrument],
     ) -> Result<usize, PollFailure>;
 
-    fn poll(
+    fn poll_batch(
         &mut self,
         request_id: u64,
-        sequence: u64,
-        instrument: &TqInstrument,
+        first_sequence: u64,
+        instruments: &[TqInstrument],
         observed_at_utc: &str,
-    ) -> Result<SourceObservation, PollFailure>;
+    ) -> Result<Vec<SourceObservation>, PollFailure>;
 }
 
 struct TqPoller {
@@ -107,15 +108,15 @@ impl PollPriceVolume for TqPoller {
             .map_err(PollFailure::from_loopback)
     }
 
-    fn poll(
+    fn poll_batch(
         &mut self,
         request_id: u64,
-        sequence: u64,
-        instrument: &TqInstrument,
+        first_sequence: u64,
+        instruments: &[TqInstrument],
         observed_at_utc: &str,
-    ) -> Result<SourceObservation, PollFailure> {
+    ) -> Result<Vec<SourceObservation>, PollFailure> {
         self.client
-            .poll_price_volume(request_id, sequence, instrument, observed_at_utc)
+            .poll_price_volumes(request_id, first_sequence, instruments, observed_at_utc)
             .map_err(PollFailure::from_loopback)
     }
 }
@@ -175,7 +176,7 @@ struct SnapshotJob {
 #[derive(Clone, Debug)]
 struct SnapshotResult {
     job: SnapshotJob,
-    observation: Result<SourceObservation, PollFailure>,
+    observation: Result<TqMarketSnapshot, PollFailure>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -220,7 +221,7 @@ impl SnapshotWorker {
 
     fn spawn_with<F>(mut poll: F) -> Result<Self, ServiceError>
     where
-        F: FnMut(&SnapshotJob) -> Result<SourceObservation, PollFailure> + Send + 'static,
+        F: FnMut(&SnapshotJob) -> Result<TqMarketSnapshot, PollFailure> + Send + 'static,
     {
         // At most one job and one result can exist. The public submit invariant
         // additionally forbids a queued job while another request is active.
@@ -617,39 +618,49 @@ where
         let mut first = true;
         let mut fast_samples = Vec::with_capacity(self.watchlist.len());
         let watchlist = self.watchlist.clone();
-        for watched in watchlist {
-            let reading = self.monotonic_reading()?;
-            let request_id = self.take_request_id()?;
-            let sequence = self.take_sequence()?;
-            let observation = match self.poller.poll(
-                request_id,
-                sequence,
-                &watched.source,
-                &reading.observed_at_utc,
-            ) {
-                Ok(observation) => observation,
-                Err(error) => {
-                    eprintln!(
-                        "loopback poll failed for {}: {}",
-                        watched.label, error.message
-                    );
-                    self.output.emit(&ServiceEvent::LoopbackFailure {
-                        generation: self.generation,
-                        instrument: watched.label.clone(),
-                        operation: LoopbackOperation::PriceVolume,
-                        category: error.category,
-                        disposition: error.disposition,
-                        message: error.message.clone(),
-                        amount_window_cleared: false,
-                    })?;
-                    let reason = if error.category == TqLoopbackErrorCategory::Connect {
-                        ResetReason::LoopbackConnectFailed
-                    } else {
-                        ResetReason::LoopbackPollFailed
-                    };
-                    return self.fail_to_waiting(reason, error.message);
-                }
-            };
+        let reading = self.monotonic_reading()?;
+        let request_id = self.take_request_id()?;
+        let first_sequence = self.take_sequences(watchlist.len())?;
+        let instruments = watchlist
+            .iter()
+            .map(|watched| watched.source.clone())
+            .collect::<Vec<_>>();
+        let observations = match self.poller.poll_batch(
+            request_id,
+            first_sequence,
+            &instruments,
+            &reading.observed_at_utc,
+        ) {
+            Ok(observations) if observations.len() == watchlist.len() => observations,
+            Ok(_) => {
+                return self.fail_to_waiting(
+                    ResetReason::LoopbackPollFailed,
+                    "loopback price-volume batch cardinality mismatch".to_owned(),
+                );
+            }
+            Err(error) => {
+                eprintln!("loopback batch poll failed: {}", error.message);
+                self.output.emit(&ServiceEvent::LoopbackFailure {
+                    generation: self.generation,
+                    instrument: "EQUITY_WATCHLIST".to_owned(),
+                    operation: LoopbackOperation::PriceVolume,
+                    category: error.category,
+                    disposition: error.disposition,
+                    message: error.message.clone(),
+                    amount_window_cleared: false,
+                })?;
+                let reason = if error.category == TqLoopbackErrorCategory::Connect {
+                    ResetReason::LoopbackConnectFailed
+                } else {
+                    ResetReason::LoopbackPollFailed
+                };
+                return self.fail_to_waiting(reason, error.message);
+            }
+        };
+        for (index, (watched, observation)) in watchlist.into_iter().zip(observations).enumerate() {
+            let sequence = first_sequence
+                .checked_add(u64::try_from(index).map_err(|_| ServiceError::SequenceExhausted)?)
+                .ok_or(ServiceError::SequenceExhausted)?;
             let values = match validate_observation(
                 &observation,
                 &watched,
@@ -746,15 +757,19 @@ where
             {
                 let admitted = match update.family {
                     crate::analysis::AnalysisFamily::Price => {
-                        LOCAL_TERMINAL_PRICE_ADMITTED && LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED
+                        LOCAL_TERMINAL_PRICE_ADMITTED
+                            && LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED
+                            && update.anomaly_event.is_some()
                     }
                     crate::analysis::AnalysisFamily::Amount => {
                         LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED
                             && LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED
+                            && update.anomaly_event.is_some()
                     }
                     crate::analysis::AnalysisFamily::Volume => {
                         LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED
                             && LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED
+                            && update.anomaly_event.is_some()
                     }
                 };
                 self.output.emit(&ServiceEvent::Analysis {
@@ -763,7 +778,7 @@ where
                     instrument: update.instrument.clone(),
                     observed_at_utc: reading.observed_at_utc.clone(),
                     time_basis: magic_market_core::ObservationTimeBasis::LocalObservationTime,
-                    update,
+                    update: Box::new(update),
                 })?;
             }
             fast_samples.push(FastSample {
@@ -842,8 +857,8 @@ where
             })?;
             return Ok(());
         }
-        let observation = match result.observation {
-            Ok(observation) => observation,
+        let snapshot = match result.observation {
+            Ok(snapshot) => snapshot,
             Err(error) => {
                 let cleared = self.analyzers.reset_amount();
                 self.output.emit(&ServiceEvent::LoopbackFailure {
@@ -858,6 +873,7 @@ where
                 return Ok(());
             }
         };
+        let (observation, prices) = snapshot.into_parts();
         let values = match validate_snapshot(&observation, &result.job) {
             Ok(values) => values,
             Err(message) => {
@@ -881,6 +897,14 @@ where
             cumulative_amount: values.amount_text.clone(),
             cumulative_amount_unit: AmountUnit::Cny,
             snapshot_price: values.price_text.clone(),
+            previous_close: prices.previous_close.value,
+            previous_close_unit: crate::output::PriceUnit::CnyPerShare,
+            previous_close_admitted: LOCAL_TERMINAL_PREVIOUS_CLOSE_ADMITTED,
+            open: prices.open.value,
+            high: prices.high.value,
+            low: prices.low.value,
+            ohlc_unit: crate::output::PriceUnit::CnyPerShare,
+            ohlc_admitted: LOCAL_TERMINAL_OHLC_ADMITTED,
             snapshot_volume: values.volume_text.clone(),
             snapshot_volume_unit: VolumeUnit::Lot,
             price_matches_last_fast_sample: values.price_text == result.job.last_fast_price,
@@ -904,11 +928,12 @@ where
             self.output.emit(&ServiceEvent::Analysis {
                 generation: self.generation,
                 admitted: LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED
-                    && LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED,
+                    && LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED
+                    && update.anomaly_event.is_some(),
                 instrument: update.instrument.clone(),
                 observed_at_utc: result.job.reading.observed_at_utc.clone(),
                 time_basis: magic_market_core::ObservationTimeBasis::LocalObservationTime,
-                update,
+                update: Box::new(update),
             })?;
         }
         Ok(())
@@ -980,10 +1005,14 @@ where
         Ok(value)
     }
 
-    fn take_sequence(&mut self) -> Result<u64, ServiceError> {
+    fn take_sequences(&mut self, count: usize) -> Result<u64, ServiceError> {
+        let count = u64::try_from(count).map_err(|_| ServiceError::SequenceExhausted)?;
+        if count == 0 {
+            return Err(ServiceError::SequenceExhausted);
+        }
         let value = self.next_sequence;
         self.next_sequence = value
-            .checked_add(1)
+            .checked_add(count)
             .ok_or(ServiceError::SequenceExhausted)?;
         Ok(value)
     }
@@ -1273,15 +1302,19 @@ mod tests {
             Ok(5_552)
         }
 
-        fn poll(
+        fn poll_batch(
             &mut self,
             _request_id: u64,
-            _sequence: u64,
-            _instrument: &TqInstrument,
+            _first_sequence: u64,
+            instruments: &[TqInstrument],
             _observed_at_utc: &str,
-        ) -> Result<SourceObservation, PollFailure> {
-            self.calls += 1;
-            self.values.pop_front().expect("scripted poll")
+        ) -> Result<Vec<SourceObservation>, PollFailure> {
+            self.calls += instruments.len();
+            let mut observations = Vec::with_capacity(instruments.len());
+            for _ in instruments {
+                observations.push(self.values.pop_front().expect("scripted poll")?);
+            }
+            Ok(observations)
         }
     }
 
@@ -1349,8 +1382,8 @@ mod tests {
         }
     }
 
-    fn snapshot(job: &SnapshotJob, amount: &str) -> SourceObservation {
-        SourceObservation {
+    fn snapshot(job: &SnapshotJob, amount: &str) -> TqMarketSnapshot {
+        let observation = SourceObservation {
             protocol_version: PROTOCOL_VERSION,
             schema_version: SCHEMA_VERSION,
             bridge_sequence: job.sequence,
@@ -1370,7 +1403,29 @@ mod tests {
                 unit: ObservationUnit::Lot,
             }),
             source_record_count: None,
-        }
+        };
+        TqMarketSnapshot::new(
+            observation,
+            magic_tdx_local_rs::TqSnapshotPrices {
+                previous_close: DecimalObservation {
+                    value: "9.5".to_owned(),
+                    unit: ObservationUnit::CnyPerShare,
+                },
+                open: DecimalObservation {
+                    value: "9.8".to_owned(),
+                    unit: ObservationUnit::CnyPerShare,
+                },
+                high: DecimalObservation {
+                    value: "10.2".to_owned(),
+                    unit: ObservationUnit::CnyPerShare,
+                },
+                low: DecimalObservation {
+                    value: "9.7".to_owned(),
+                    unit: ObservationUnit::CnyPerShare,
+                },
+            },
+        )
+        .unwrap()
     }
 
     fn config(restart_budget: u32) -> Config {
@@ -1731,6 +1786,20 @@ mod tests {
             observation: Ok(snapshot(&job1, "100")),
         });
         runtime.step().unwrap();
+        assert!(runtime.output.0.iter().any(|event| matches!(
+            event,
+            ServiceEvent::SnapshotObservation {
+                previous_close,
+                previous_close_unit: crate::output::PriceUnit::CnyPerShare,
+                previous_close_admitted: true,
+                open,
+                high,
+                low,
+                ohlc_unit: crate::output::PriceUnit::CnyPerShare,
+                ohlc_admitted: true,
+                ..
+            } if previous_close == "9.5" && open == "9.8" && high == "10.2" && low == "9.7"
+        )));
         let job2 = runtime.snapshot.submitted[1].clone();
         runtime.snapshot.results.push_back(SnapshotResult {
             job: job2.clone(),
@@ -1746,19 +1815,20 @@ mod tests {
         assert!(runtime.output.0.iter().any(|event| matches!(
             event,
             ServiceEvent::Analysis {
-                admitted: false,
+                admitted: true,
                 instrument,
                 observed_at_utc,
                 time_basis: magic_market_core::ObservationTimeBasis::LocalObservationTime,
-                update: crate::analysis::AnalysisUpdate {
-                    family: AnalysisFamily::Amount,
-                    transition: crate::analysis::AnalysisTransition::Triggered { value: 70.0 },
-                    value_unit: "cny",
-                    ..
-                },
+                update,
                 ..
             } if instrument == "EQUITY:SH:600000"
                 && observed_at_utc == "2026-08-13T01:02:03Z"
+                && update.family == AnalysisFamily::Amount
+                && matches!(
+                    update.transition,
+                    crate::analysis::AnalysisTransition::Triggered { value: 70.0 }
+                )
+                && update.value_unit == "cny"
         )));
         assert_eq!(runtime.poller.calls, 4);
     }

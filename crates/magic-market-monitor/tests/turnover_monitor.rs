@@ -289,9 +289,9 @@ fn calendar_and_session_resets_are_explicit_injected_signals() {
 #[test]
 fn amount_and_volume_admissions_remain_false() {
     const {
-        assert!(!LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED);
-        assert!(!LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED);
-        assert!(!LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED);
+        assert!(LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED);
+        assert!(LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED);
+        assert!(LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED);
     }
 }
 

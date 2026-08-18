@@ -1,7 +1,7 @@
 use magic_market_core::{
-    verify_admitted_batch, verify_verified_empty, DataBatch, EvidenceTimestamp,
-    ProbeAdmissionError, ProbeAdmissionPolicy, ProbeStatus, Provenance, ProviderId, SourceEvidence,
-    VerifiedEmpty,
+    verify_admitted_batch, verify_admitted_time_series_batch, verify_verified_empty, DataBatch,
+    EvidenceTimestamp, ProbeAdmissionError, ProbeAdmissionPolicy, ProbeStatus, Provenance,
+    ProviderId, SourceEvidence, VerifiedEmpty,
 };
 use std::time::Duration;
 
@@ -167,6 +167,109 @@ fn complete_non_empty_batch_with_matching_evidence_is_admitted() {
     .unwrap();
 
     assert_eq!(status, ProbeStatus::Admitted);
+}
+
+#[test]
+fn ordered_time_series_retains_per_record_times_and_latest_batch_time() {
+    let observed = "2026-07-23T10:01:00+08:00";
+    let batch_id = "eastmoney:fund-flow:1";
+    let records = vec![
+        Record {
+            identity: "09:59",
+            evidence: evidence(
+                ProviderId::Eastmoney,
+                observed,
+                "2026-07-23T09:59:00+08:00",
+                batch_id,
+            ),
+        },
+        Record {
+            identity: "10:00",
+            evidence: evidence(
+                ProviderId::Eastmoney,
+                observed,
+                "2026-07-23T10:00:00+08:00",
+                batch_id,
+            ),
+        },
+    ];
+    let batch = DataBatch::strict(
+        records,
+        provenance(observed, "2026-07-23T10:00:00+08:00", batch_id),
+    );
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney).require_source_at();
+    assert_eq!(
+        verify_admitted_time_series_batch(
+            &batch,
+            &policy,
+            |record| &record.evidence,
+            |record| record.identity.to_owned(),
+        )
+        .unwrap(),
+        ProbeStatus::Admitted
+    );
+}
+
+#[test]
+fn time_series_rejects_backwards_or_non_latest_batch_time() {
+    let observed = "2026-07-23T10:01:00+08:00";
+    let batch_id = "eastmoney:fund-flow:2";
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney).require_source_at();
+    let records = vec![
+        Record {
+            identity: "10:00",
+            evidence: evidence(
+                ProviderId::Eastmoney,
+                observed,
+                "2026-07-23T10:00:00+08:00",
+                batch_id,
+            ),
+        },
+        Record {
+            identity: "09:59",
+            evidence: evidence(
+                ProviderId::Eastmoney,
+                observed,
+                "2026-07-23T09:59:00+08:00",
+                batch_id,
+            ),
+        },
+    ];
+    let backwards = DataBatch::strict(
+        records,
+        provenance(observed, "2026-07-23T09:59:00+08:00", batch_id),
+    );
+    assert!(matches!(
+        verify_admitted_time_series_batch(
+            &backwards,
+            &policy,
+            |record| &record.evidence,
+            |record| record.identity.to_owned(),
+        ),
+        Err(ProbeAdmissionError::NonMonotonicSourceTime { .. })
+    ));
+
+    let ordered = DataBatch::strict(
+        vec![Record {
+            identity: "10:00",
+            evidence: evidence(
+                ProviderId::Eastmoney,
+                observed,
+                "2026-07-23T10:00:00+08:00",
+                batch_id,
+            ),
+        }],
+        provenance(observed, "2026-07-23T09:59:00+08:00", batch_id),
+    );
+    assert!(matches!(
+        verify_admitted_time_series_batch(
+            &ordered,
+            &policy,
+            |record| &record.evidence,
+            |record| record.identity.to_owned(),
+        ),
+        Err(ProbeAdmissionError::SourceAtMismatch { .. })
+    ));
 }
 
 #[test]

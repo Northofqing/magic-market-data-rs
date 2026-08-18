@@ -9,7 +9,7 @@
 | 数据族 | 标准化入口 | 已实现范围 |
 | --- | --- | --- |
 | 研报 | `ResearchReports`、`ResearchDocuments` | 个股、行业研报元数据，以及按精确研报身份下载原始 PDF 正文 |
-| 个股资金流 | `FundFlowSeries` | 分钟与日级主力/超大/大/中/小单净流入 |
+| 个股资金流 | `FundFlowSeries`、gRPC `MoneyFlows` | 生产准入的分钟与日级主力/超大/大/中/小单净流入；`MoneyFlows` 返回单标的最新完整日记录 |
 | 板块资金流 | `BoardFlows` | 行业、概念、地域的涨跌、分档净流入和领涨股 |
 | 龙虎榜 | `DragonTigerData` | 个股上榜明细；席位保守返回一个完整买五/卖五原子组，席位请求 `limit >= 10` |
 | 全市场龙虎榜 | `DragonTigerDiscovery` | 指定交易日完整读取沪深京股票/可转债；每条保留代码、名称和源 `TRADE_ID` |
@@ -17,7 +17,7 @@
 | 资本数据 | `MarginData`、`BlockTrades`、`HolderCounts`、`LockupEvents`、`DividendPlans` | 融资融券、大宗交易、股东户数、限售解禁、分红送转 |
 | 打板 | `LimitPools` | 涨停、炸板、跌停、昨日涨停 |
 | 热度 | `PopularityData` | 当前人气排名，并保留榜单与行情的两份证据 |
-| 严格盘后资金榜诊断 | `EastmoneyClient::diagnose_post_close_flows` | 中国当前交易日 15:35 后，精确 limit、同一源时间、连续排名、代码+名称；production capability 为 false，正式 `PostCloseFlows` 返回 `Unsupported` |
+| 盘后资金榜 | `PostCloseFlows` | 中国当前交易日 15:35 后，精确 limit、连续排名、代码+名称和逐条真实源时间；批次使用当前本地观察时间，混合源时刻时批次 `source_at=None` |
 | Provider Top-N 排名 | `ProviderTopNRankings` + `EastmoneyProviderTopNRankingRouter` | 同日 15:35 后或后续休市日读取最新已结算交易日的单响应页量比/主力净流入 Top-N；上限 100，每行 `f297` 必须严格等于请求交易日；不声明任意历史、全市场覆盖或 `source_at` |
 | 最新财经资讯 | `NewsProvider::global_news` | 东财财经滚动页首屏，最多 20 条；完整列表校验后截断 |
 | 关键词新闻诊断 | `NewsProvider::instrument_news` | 响应无结构化证券身份，capability 为 false 且正式调用返回 `Unsupported` |
@@ -72,11 +72,11 @@ typed error。
   等价重复稳定保留首条，身份相同但内容冲突会拒绝整批。席位请求同时过滤证券、
   日期和 `TRADE_ID`，每项必须恰有买五和卖五，禁止跨原因混组。
 - 全市场龙虎榜在 limit/交易所过滤前验证完整日数据，股票记录必须同时有代码和名称；
-- 15:35 资金榜诊断只接受中国当前日期、捕获时间不早于 15:35、所有行 `f124`
-  完全一致，按 `f62` 非递增且 rank 连续；每条保留 `f14` 名称和 `f184`
-  主力净占比。2026-07-27 实网返回缺失指标和混合 `f124`，因此
-  `CapitalCapabilities.post_close_flow=false`，正式 trait 明确
-  `Unsupported`，只有命名诊断方法会访问网络。
+- 15:35 资金榜只接受中国当前日期、捕获时间不早于 15:35，按 `f62` 非递增且 rank
+  连续；每条保留 `f14` 名称、`f184` 主力净占比和真实 `f124` 源时间。不同证券的
+  `f124` 可以不同，但必须同属请求日期；批次使用当前本地 `observed_at`，只在全部源
+  时间一致时设置 batch `source_at`，否则保持 `None`。该路径不是 BR-033 实时新鲜度
+  合同，也不声明完整市场覆盖。
 - Provider Top-N 是独立能力族，只接受同一次 `clist/get` 响应中按 `f10` 或
   `f62` 非递增排列的最多 100 行。每行必须有代码、名称、请求指标和等于请求日的
   `f297`；批次保留响应后的 `observed_at`，但 `f297`/`f124` 都不得提升为
@@ -87,11 +87,22 @@ typed error。
   采集，但只有响应中全部 `f297` 仍严格等于请求日才可证明最新已结算会话。该路径
   不提供任意历史回放，旧日期会因 `f297` 不匹配而整批失败。
 
+2026-08-17 对固定公开资金流合同完成两次独立 live 和三次串行负载验证。
+两次 live 均返回 `600396.SH` 的 5 条一分钟记录与 5 条日记录，记录级
+`source_at` 分别规范化为带 `+08:00` 的分钟瞬时和 ISO 源日期，所有金额保持
+CNY 元。三次负载请求均成功，实际最小请求起始间隔 1000 ms、最大并发 1。
+因此 `PUBLIC_FUND_FLOW_ADMITTED=true`，gRPC `FundFlowSeries` 与 `MoneyFlows`
+默认使用公开 Eastmoney Provider；配置妙想 Key 不会替换这条正式路径。
+
 2026-08-16 诊断观察到公开排名响应中部分行缺少量比 `f10` 或主力净流入 `f62`，
 因此完整 `MarketRankings` 仍原子失败。gRPC 的显式 UNADMITTED 诊断可返回有字段的
-有界行，但会保留各行不同的 `f124` 时间；同日还取得两条 2026-08-14 盘后资金流
-诊断，其中超大/大单字段为空。它们证明可读性，不证明全市场覆盖、同源时刻或完整
-字段，故不会提升 `MarketRankings`/`PostCloseFlows`。
+有界行，但会保留各行不同的 `f124` 时间；这仍不会提升完整 `MarketRankings`。
+
+2026-08-17 对正式 `PostCloseFlows` 完成两次 live 和三次串行 load。live 分别返回
+20 条和 3 条，load 3/3 成功；每批质量完整、rank 连续、证券身份唯一、逐条源日期与
+请求日相同，实际请求起始间隔最小 1000 ms、最大并发 1。因此
+`PUBLIC_POST_CLOSE_FLOW_ADMITTED=true`。混合证券源时刻不会被伪造成公共 batch
+`source_at`。
 
 ## 探针
 
@@ -133,8 +144,8 @@ cargo run -p magic-eastmoney-rs --example live_probe --release --locked
 
 独立探针只打印标准化证券身份、源 `entry_id`、席位数量、净买额和批次证据，不输出
 原始响应。手动 GitHub Actions 工作流也将源交易日期设为必填输入。
-有界 load probe 支持 `research`、`fund-flow`、`board-flow`、`limit-pool`、
-`popularity`、`news` 和 `mixed`；其中 `news` 是已准入的全局最新资讯：
+有界 load probe 支持 `research`、`fund-flow`、`post-close-ranking`、`board-flow`、
+`limit-pool`、`popularity`、`news` 和 `suite`；其中 `news` 是已准入的全局最新资讯：
 
 ```bash
 MAGIC_EASTMONEY_LOAD_REQUESTS=6 \
@@ -143,10 +154,11 @@ MAGIC_EASTMONEY_LOAD_PACING_MS=1000 \
 cargo run -p magic-eastmoney-rs --example load_probe --release --locked --offline
 ```
 
-高层数据族 attempt 硬上限为 20（一个 attempt 可能包含多个 HTTP 请求），并发必须
-为 1，间隔不得小于 1 秒。`mixed` 只轮转已声明能力并包含 `news`；仅
-`fund-flow` 会输出 `admitted=false`，诊断失败时非零退出，不能将部分成功解释为
-整个 Provider 已验收。
+高层数据族 attempt 硬上限为 21（一个 attempt 可能包含多个 HTTP 请求），并发必须
+为 1，间隔不得小于 1 秒。`suite` 只轮转已声明能力并包含 `fund-flow` 与
+`post-close-ranking`、`news`；盘后操作还要求显式当前交易日。任一正式能力失败都会
+非零退出，不能将部分成功解释为整个 Provider
+已验收。
 
 只测试东财最新资讯：
 

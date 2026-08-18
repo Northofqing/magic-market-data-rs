@@ -11,11 +11,11 @@
 | SZSE | `RealtimeQuotes`、`OrderBooks` | `000858`：Quote + 完整五档 | 数量按源端“手”保留；不推断集合竞价 |
 | SZSE | `DragonTigerData` | `000603 / 2026-07-23`：2 条榜单；首条完整买五卖五 | 完整拉取列表分页，详情按完整席位组返回 |
 | HKEX | `NorthboundDailyStatistics` | `2026-07-22` 沪股通/深股通各 1 条及各自 Top10 | quota 的 `999,999,999` 哨兵保留为 `Unavailable`，不猜测余额 |
-| CFFEX | 诊断 `probe_futures_delivery_calendar`；生产 trait 当前 `Unsupported` | 确定性解析 IF/IH/IC/IM；2026-07-27 Rustls 与 Native TLS 均在官方目录握手失败，未取得 HTTP 响应 | capability 为 false；方式未被通知独立证明时保留 `NotProvided`，不按“第三个周五”推算 |
+| CFFEX | 诊断 `probe_futures_delivery_calendar`；生产 trait 当前 `Unsupported` | 2026-08-16 固定明文 HTTP 通知路径实测 `2026-07` 返回 IF/IH/IC/IM 四条；正式 HTTPS 仍不可达 | capability 为 false；证据明确标记 `plaintext_http_diagnostic`；方式未被通知独立证明时保留 `NotProvided`，不按“第三个周五”推算 |
 
 ## 端点和请求边界
 
-仅允许以下 exact HTTPS 路径：
+SSE、SZSE、HKEX 和 CFFEX 正式路径只允许以下 exact HTTPS 路径：
 
 ```text
 query.sse.com.cn/security/stock/queryCompanyBulletin.do
@@ -28,6 +28,11 @@ www.cffex.com.cn/cn/jystz.html
 www.cffex.com.cn/cn/jystz_<N>.html
 www.cffex.com.cn/cn/jystz/<YYYYMMDD>/<ID>.html
 ```
+
+CFFEX 另有一个 BR-051 限定的诊断例外，只允许 `http://www.cffex.com.cn` 的同组三类
+通知路径。它只发送无 body 的 GET，禁止 Cookie、Authorization、代理、跳转、查询参数、
+fragment、非 80 端口和端点覆盖。请求合同在联网前校验；响应要求状态 200、最终 URL
+精确不变、`text/html` 和 8 MiB 上限。该例外不能用于正式 capability。
 
 公告固定按完整远程页校验后本地截断。SZSE 龙虎榜完整读取源端声明的所有页面，要求
 分页总数不漂移、累计数量精确匹配且 entry ID 全局唯一；席位详情必须同时包含买一至
@@ -49,7 +54,8 @@ CFFEX Provider 在官方交易通知目录中有界扫描最多 120 页，解析
 通知未独立说明最后交易日时该字段留空，未独立说明交割方式时使用 `NotProvided`，
 不会从交割日或交割结算价推导其他事实。节假日顺延由通知原文证明；公式计算或交易
 日历猜测均不准入。BR-009 live 验收通过前 capability 保持 false，生产 trait 返回
-typed `Unsupported`。
+typed `Unsupported`。明文诊断响应中的实际 fetch 模式写入 provenance 和 batch ID；事件的
+`notice_url` 只保存同 host/path 的 canonical HTTPS 引用，不能反向解释为 HTTPS 抓取证据。
 
 ## 传输与部署
 
@@ -57,14 +63,12 @@ typed `Unsupported`。
 JSON/JavaScript media type、8 MiB 上限和 1–60 秒超时。每个客户端 clone 共享串行
 请求门，完整响应读取期间不释放，请求起始至少间隔 1 秒。
 
-CFFEX 诊断 transport 必须由操作方明确选择 `rustls` 或 `native-tls`，默认
-`rustls`，禁止一次请求失败后静默切换 TLS 实现。两种实现共享相同的 official URL、
-超时、无跳转、MIME、body 上限和 pacing 合同。握手/证书类错误携带所选 backend
-作为 typed `ExchangeError::Tls` 返回。默认构建只启用纯 Rust 的 Rustls；Native TLS
-是可选 crate feature，避免默认 Linux 构建引入 `openssl-sys`。未编译该 feature
-却选择 `native-tls` 会在联网前返回 typed `Unsupported`。
+CFFEX 默认/正式 client 仍使用 HTTPS；诊断探针显式构造
+`CffexConfig::plaintext_http_diagnostic()`，不做 TLS fallback，也不读取浏览器状态。历史
+Rustls/Native TLS 失败证据继续保留，以说明为什么正式能力仍未准入。
 
-部署需要下列 443 出站访问：
+部署需要下列 443 出站访问；若主动启用 CFFEX 未准入诊断，还需只对
+`www.cffex.com.cn:80` 放行上述固定路径：
 
 ```text
 query.sse.com.cn
@@ -73,7 +77,8 @@ www.hkex.com.hk
 www.cffex.com.cn
 ```
 
-不读取浏览器 Cookie、账户、交易终端或本地行情文件，不提供 HTTP/旧 TLS 降级。
+不读取浏览器 Cookie、账户、交易终端或本地行情文件。CFFEX 明文 HTTP 是隔离的显式
+诊断模式，不是 HTTPS 请求失败后的自动降级。
 公共端点没有生产 SLA、展示权或再分发授权承诺，使用方应自行确认许可。
 
 ## 验收命令与结果
@@ -96,15 +101,9 @@ CFFEX、避免其他交易所的网络状态阻断时使用：
 ```bash
 MAGIC_EXCHANGE_LIVE_OPERATION=cffex-delivery \
 MAGIC_CFFEX_DELIVERY_YEAR=2026 \
-MAGIC_CFFEX_DELIVERY_MONTH=2 \
-MAGIC_CFFEX_TLS_BACKEND=rustls \
+MAGIC_CFFEX_DELIVERY_MONTH=7 \
 cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
 ```
-
-若要显式诊断系统 TLS backend，将 `MAGIC_CFFEX_TLS_BACKEND` 改为
-`native-tls`，并给 Cargo 增加 `--features native-tls`；其他值会在发起网络请求前
-失败。Linux 使用该可选 feature 时需要系统 OpenSSL 开发库；默认 Rustls 构建没有此
-要求。
 
 该命令只验证诊断实现，不表示生产 capability 已准入。成功标记必须是
 `diagnostic_probe_status=passed` 与
@@ -129,8 +128,21 @@ native-tls:
 2026-08-16 使用独立 release 构建再次请求同一 `2026-07` 范围，Rustls 和启用
 `native-tls` feature 的系统 TLS 均在精确
 `https://www.cffex.com.cn/cn/jystz.html` 建连阶段超时。两次都未取得 HTTP
-状态或响应体，因此仍是上游可达性阻塞，不是解析失败；实现没有改用明文 HTTP、
-浏览器 Cookie、备用域名或另一来源。
+状态或响应体，因此仍是正式 HTTPS 可达性阻塞，不是解析失败。
+
+同日按 BR-051 启用固定明文 HTTP 诊断后，release 探针返回 4 条完整记录：
+
+```text
+IF2607 / IH2607 / IC2607 / IM2607
+delivery_date=2026-07-17 source_at=2026-07-17
+provenance.source=cffex-official-notice-plaintext-http-diagnostic
+diagnostic_probe_status=passed
+admission_state=diagnostic_complete_unadmitted
+```
+
+详情来自 `/cn/jystz/20260717/48292.html`；记录只保留 canonical HTTPS 引用。由于实际
+传输为明文、最后交易日和交割方式仍未被独立证明，`calendar_capabilities.futures_delivery`
+继续为 `false`。
 
 默认测试证券/日期和覆盖变量见
 [`crates/magic-exchange-rs/README.md`](../../crates/magic-exchange-rs/README.md)。

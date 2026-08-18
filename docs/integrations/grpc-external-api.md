@@ -9,8 +9,8 @@
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 60 个操作精确登记；51 个操作有正式 handler；`IndexQuotes`、`IntradayShape`、`OutcomeDailyBars` 与 `UpperLimitPoolReview` 已实盘；`T0Evidence` 只提供显式 opt-in 的 UNADMITTED 诊断；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
-| TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额为生产数据；异动事件仍为 `UNADMITTED` |
+| Unary Provider composition | 60 个操作精确登记；56 个操作有正式 handler；东财公开资金流、盘后资金流、Baidu `TechnicalBars` 与 TDX `T0Evidence` 已正式注册；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
+| TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额、昨收、OHLC 与三类带 Core 证据的 trigger/rearm 事件为生产数据；状态消息仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
 Token 仍属于部署材料而不是稳定公共地址；迁移主机、IP 或证书后必须重新交付连接包。
@@ -271,9 +271,10 @@ admission
 payload
 ```
 
-正式 TDX 原始事件仅包括当前价、累计成交量和累计成交额。`source_at` 为空表示厂商响应
-没有源时间，不能用 `observed_at` 代填。`GetListenerStatus.admitted_event_families` 返回
-当前三个精确 family；`analysis` 事件继续返回 `UNADMITTED`。
+正式 TDX 原始事件包括当前价、累计成交量、累计成交额、昨收与 OHLC。`source_at`
+为空表示厂商响应没有源时间，不能用 `observed_at` 代填。
+`GetListenerStatus.admitted_event_families` 还列出三类 LocalAnalysis 异动；只有带合法
+Core `AnomalyEvent` 的 trigger/rearm 才准入，预热、冷却与 reset 继续返回 `UNADMITTED`。
 
 `analysis` 事件的 `observed_at` 来自监控器生成异动消息时绑定的触发观测时间，原始
 payload 同时声明 `time_basis=local_observation_time`。Agent 接收时间和 gRPC 发送时间
@@ -295,18 +296,20 @@ best-effort：
 
 ### TDX 当前准入状态
 
-TDX `price/cumulative_volume/cumulative_amount` 已为 `ADMITTED`，精确单位分别是
-CNY/share、lot、CNY。它们没有源时间，`source_at` 保持空；不能据此声称 tick freshness。
-本地异动、source-record-count、OHLC/previous-close 仍为 `UNADMITTED`，另一个项目必须
-按每条 envelope 的 admission 隔离。
+TDX `price/cumulative_volume/cumulative_amount/previous_close/ohlc` 已为 `ADMITTED`，
+精确单位分别是 CNY/share、lot、CNY 和 CNY/share。它们没有源时间，`source_at`
+保持空；不能据此声称 tick freshness。`source_record_count` 仍不可用。消费端必须继续
+按每条 envelope、事件类型和字段 admission marker 隔离。
 
 服务端再次解析 admitted payload，只接受带匹配 instrument、schema、字段 admission marker
 和实际值的 `observation`/`snapshot_observation`。Agent 试图提升 `analysis` 或不支持的
 event kind 时会被拒绝，传输层不能自行扩大 repository admission。
 
-2026-08-15 当前部署的双标的 production replay 验证了 846 条 admitted
-`observation` 和 84 条 admitted `snapshot_observation`；Listener Status 同时返回
-`agent_connected_production` 和三个 `admitted_event_families`。
+2026-08-17 当前部署的双标的 production replay 验证了 admitted
+`observation`、`snapshot_observation` 和有界 `analysis` 状态；Listener Status 返回
+`agent_connected_production` 以及五个原始字段族和三个异动事件族。一次有界重放包含
+173 条 admitted 事件和 3 条未准入预热状态，昨收/开/高/低分别观测为
+16.99/16.44/17.28/16.43。
 
 ### 已接入的证券资料请求
 
@@ -359,9 +362,9 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
-  Windows 固定 sibling monitor 重启/转发已实现；价格、累计成交量和累计成交额进入
-  生产事件流，异动仍为影子模式；
-- unary registry 对 60 个操作逐项精确登记：51 个操作绑定证据支持的正式 handler；
+  Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
+  异动 trigger/rearm 进入生产事件流；
+- unary registry 对 60 个操作逐项精确登记：56 个操作绑定证据支持的正式 handler；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council 与 iWencai 外，也可精确选择 TDX 公共协议、Sina、SSE、SZSE、
   CLS、ThePaper、XinhuaFinance、Yicai、SecuritiesTimes、NBS、PBC 与 WorldBank；
@@ -373,14 +376,16 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   [`grpc-derived-products.md`](grpc-derived-products.md)；`IndexQuotes` 已绑定腾讯六指数
   严格 freshness composition，`IntradayShape` 已绑定腾讯完整分钟序列确定性派生，
   `OutcomeDailyBars` 已绑定 TDX-only 精确 through 日线，`UpperLimitPoolReview` 已绑定东财
-  同交易日四池原子组合；`T0Evidence` 只有显式 `allow_unadmitted=true` 才读取现有四族，
-  且因 Quote/盘口无已证明源时间始终返回 `UNADMITTED` 与 `complete=false`；
-- `MoneyFlows`、`FuturesDelivery`、`TechnicalBars`、Baidu `HistoricalBars`、
-  `FundFlowSeries`、`PostCloseFlows`、`MarketRankings` 登记了显式 opt-in 诊断 handler；
+  同交易日四池原子组合；`T0Evidence` 正式读取 TDX Quote、盘口、日 K 和 5 分钟 K，
+  返回当前本地 `observed_at`、保留四份输入证据并在无公共源时间时保持 `source_at=null`；
+- `MoneyFlows`、`FundFlowSeries` 已绑定东财公开资金流正式合同，`TechnicalBars` 已绑定
+  Baidu 未复权源技术日线正式合同；`PostCloseFlows` 已绑定东财当前交易日 15:35 后的
+  本地观察快照；`FuturesDelivery`、Baidu `HistoricalBars`、`MarketRankings` 仍登记显式
+  opt-in 诊断 handler；
   EMQuant bridge 可发现时，其 Quote、日线/日内 K、盘口和资金流也只作为显式诊断来源；配置
-  `EASTMONEY_API_KEY`（兼容别名 `MX_APIKEY`）后，`Auctions` 和 `MarketBreadth` 也登记
-  东财妙想诊断 handler。这 4 个固定模板操作默认即可返回 `UNADMITTED` partial 数据；
-  其他诊断仍只有 `allow_unadmitted=true` 才执行；
+`EASTMONEY_API_KEY`（兼容别名 `MX_APIKEY`）后，`Auctions` 和 `MarketBreadth` 也登记
+  东财妙想诊断 handler。这 4 个固定模板操作和其他诊断一样，只有显式
+  `preferred_provider=EastmoneyMiaoxiang` 且 `allow_unadmitted=true` 才执行；
 - 未配置东财妙想 Key 时，`Auctions` 和 `MarketBreadth` 仍在 I/O 前
   `UNIMPLEMENTED`；配置后也只返回源直接给出的部分字段，不用普通 Quote 冒充竞价，
   不把不完整家数统计提升为完整市场宽度；
@@ -392,17 +397,13 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - 2026-08-14 当前实例通过 `SemanticSearch` + `preferred_provider=Iwencai` 实测返回
   10 条 `Report` 记录；Key 只从服务进程环境加载，不进入请求、日志或证据。
 
-剩余 8 项不是缺少 gRPC 方法，而是生产数据合同尚未满足。已有字段通过显式诊断模式
+剩余 4 项不是缺少 gRPC 方法，而是生产数据合同尚未满足。已有字段通过显式诊断模式
 读取，缺失字段保留 `null`，但不会改变下表状态：
 
 | 操作 | 当前阻塞原因 |
 | --- | --- |
-| `MoneyFlows` | 东财妙想可诊断返回日级主力/超大/大/中/小单净额，但方法学和串行稳定性尚未准入；公共 TDX 成交额不能冒充分单资金流 |
 | `Auctions` | 东财妙想只证明开盘集合竞价成交量（股）和成交额（元）；撮合价、昨收、未匹配买卖量、量比和 Provider 时间仍为空，不满足完整 BR-035 合同 |
-| `FuturesDelivery` | CFFEX 当前 TLS 实测仍在 HTTP 前异常结束，正式能力保持 false |
-| `TechnicalBars` | Baidu 技术 K 线尚缺交易日历和公司行动连续性证据 |
-| `FundFlowSeries` | 东财妙想可诊断返回日级五档净额，但自然语言结果数量可超过请求数，当前只做有界校验/截断；尚未通过正式 load gate |
-| `PostCloseFlows` | 诊断可请求明确的过去日期且逐条校验来源日期；全市场证券源时间仍不一致，不能构成同一盘后原子快照 |
+| `FuturesDelivery` | CFFEX 固定明文 HTTP 通知诊断可返回 IF/IH/IC/IM；实际传输不是 HTTPS，最后交易日/交割方式仍不完整，正式能力保持 false |
 | `MarketRankings` | 诊断只读取首个有界来源页，并返回来源声明总数；不声称完整市场覆盖或源时间原子性 |
 | `MarketBreadth` | 东财妙想只证明上涨/下跌/平盘及涨跌停家数；上市总数、覆盖率、来源时间偏差为空，不能提升为完整市场宽度 |
 
@@ -416,7 +417,7 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 | `FundFlowSeries` | `magic.market.fund_flow_series.request` (`FundFlowRequest`) | `magic.market.fund_flow_point` |
 | `MoneyFlows` | `magic.market.money_flows.request` (`{"instruments":[...]}`，精确 1 个) | `magic.market.money_flow` |
 | `FuturesDelivery` | `magic.market.futures_delivery.request` (`FuturesDeliveryRequest`) | `magic.market.futures_delivery_event` |
-| `PostCloseFlows` | `magic.market.post_close_flows.request` (`PostCloseFlowRequest`) | `magic.market.post_close_flow_diagnostic` |
+| `PostCloseFlows` | `magic.market.post_close_flows.request` (`PostCloseFlowRequest`) | `magic.market.post_close_flow` |
 | `MarketRankings` | `magic.market.market_rankings.request` (`{"kind":...,"limit":...}`) | `magic.market.market_ranking_diagnostic_entry` |
 | `Auctions` | `magic.market.auctions.request` (`{"instrument":...,"trading_date":"YYYY-MM-DD"}`) | `magic.market.opening_auction_diagnostic` |
 | `MarketBreadth` | `magic.market.market_breadth.request` (`{"source_date":"YYYY-MM-DD"}`) | `magic.market.market_breadth_diagnostic` |
@@ -427,14 +428,15 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 {"instrument":{"exchange":"Shanghai","code":"600396","asset_class":"Equity"},"interval":"Day","start":null,"end":null,"limit":20}
 ```
 
-除下述东财妙想默认诊断外，外层 `QueryRequest` 必须同时设置对应的
+所有未准入诊断的外层 `QueryRequest` 都必须同时设置对应的
 `preferred_provider` 和 `allow_unadmitted=true`。MA5/MA10/MA20 及资金流分档等源端未提供的可选字段保持
 `null`，调用方不得补零。盘后资金诊断中的 `super_large_net`、`large_net` 以及来源缺失
 字段同样保持 `null`；排行诊断同时返回 `reported_universe_size` 与 `fetched_count`，不得
 把首个来源页解释为完整市场。
 
-东财妙想无需设置 `preferred_provider` 或 `allow_unadmitted`；服务端在启动时检测 Key
-并默认选择 `EastmoneyMiaoxiang`。Key 只放在服务进程环境，绝不能放入
+东财妙想同样必须设置 `preferred_provider=EastmoneyMiaoxiang` 和
+`allow_unadmitted=true`。服务端启动时检测 Key 只决定固定诊断处理器是否可用，
+不会绕过请求级 opt-in。Key 只放在服务进程环境，绝不能放入
 `QueryRequest`。例如开盘集合竞价诊断：
 
 ```json
@@ -455,9 +457,34 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 | `MarketRankings` | 返回 2 条，`UNADMITTED` | 来源声明总数 5554、首屏抓取 100；两条源时间不同，明确非原子 |
 | `PostCloseFlows` | 返回 2 条，`UNADMITTED` | 显式请求 2026-08-14；`super_large_net`/`large_net` 为 `null` |
 | `FundFlowSeries` | 东财妙想返回记录，`UNADMITTED` | 600396.SH 日级五档净额；服务端有界截断源端多返回日期 |
-| `FuturesDelivery` | 当前 `UNAVAILABLE` | CFFEX Rustls 握手 `unexpected end of file` |
+| `FuturesDelivery` | 返回 4 条，`UNADMITTED` | 2026-07：IF2607/IH2607/IC2607/IM2607，交割日 2026-07-17；provenance 明确标记 `plaintext_http_diagnostic` |
 | `Auctions` | 东财妙想返回部分记录，`UNADMITTED` | 2026-08-14：开盘竞价成交量 2,951,900 股、成交额 53,665,542 元；其他字段为空 |
 | `MarketBreadth` | 东财妙想返回部分记录，`UNADMITTED` | 2026-08-14：上涨 2400、下跌 2970、平盘 170、涨停 64、跌停 13；总数/覆盖率/偏差为空 |
+
+上表是 2026-08-15 的历史诊断证据，不代表当前准入状态。2026-08-17 部署后再次通过
+正式 gRPC 路径验证：`TechnicalBars` 由 Baidu 返回 600396.SH 当日未复权日 K 和
+MA5/10/20，`MoneyFlows` 与 `FundFlowSeries` 由 Eastmoney 返回 600396.SH 当日及近三日
+五档资金净额，三项响应均为 `ADMITTED`。本次本地观察时间变更完成源码与直接
+composition 实测后，2026-08-18 更新的部署实例通过远程 mTLS + Bearer 再验证：能力
+注册表为 60 项操作、56 项正式准入、4 项阻塞；正式 `T0Evidence` 返回
+`complete=true`、`ADMITTED`、当前本地 `+08:00` `observed_at` 和 `source_at=null`。
+
+同日 `PostCloseFlows` 完成 2 次 live 和 3 次串行 load：20/3 条结果均按来源主力净流入
+排序，逐条 `source_at` 保持真实且日期为 2026-08-17，批次使用当前本地
+`observed_at`，混合源时刻使批次 `source_at=null`。`T0Evidence` 完成 2 次 live 和 3 次
+串行读取，每次返回 600396.SH 的 Quote、五档、20 根日 K、20 根 5 分钟 K 和四份输入
+证据，结果 `complete=true`、`repository_admitted=true`，当前本地观察时刻带 `+08:00`，
+公共源时间仍为 `null`。
+
+跨日后的 2026-08-18 00 时段又通过同一远程正式 `PostCloseFlows` RPC 验证本地时间门：
+当天尚未达到 15:35，服务明确拒绝请求并在 Provider I/O 前停止。它没有沿用前一交易日，
+也没有把昨日证据冒充今日数据。2026-08-18 的远程成功样本只能在当天 15:35 后重测；
+这不影响上一段 2026-08-17 已完成的 2 次 live 与 3 次串行 load 证据。
+
+2026-08-17 部署实例对 `FuturesDelivery`、`preferred_provider=Cffex`、
+`allow_unadmitted=true` 实测返回上述 4 条记录，batch ID 含
+`plaintext_http_diagnostic`；相同请求将 `allow_unadmitted` 改为 `false` 时返回
+`UNIMPLEMENTED`，证明诊断路径没有提升或绕过正式准入门。
 
 ## 11. gRPC 错误处理
 

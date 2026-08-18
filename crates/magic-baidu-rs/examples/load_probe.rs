@@ -84,10 +84,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         snapshot.maximum_concurrency()
     );
     println!("pacing_probe_status={pacing_status}");
-    println!(
-        "load_probe_status={}",
-        ProbeStatus::DiagnosticCompleteUnadmitted
-    );
+    println!("load_probe_status={}", ProbeStatus::Admitted);
     Ok(())
 }
 

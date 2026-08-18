@@ -118,7 +118,7 @@ impl HttpsTransport {
         Ok(Self { agent, tls_backend })
     }
 
-    fn collect(response: ureq::Response) -> Result<HttpResponse, ExchangeError> {
+    pub(crate) fn collect(response: ureq::Response) -> Result<HttpResponse, ExchangeError> {
         let status = response.status();
         let final_url = response.get_url().to_owned();
         let content_type = response.header("Content-Type").map(str::to_owned);
@@ -186,7 +186,7 @@ pub(crate) fn wait_for_request_start(gate: &RequestGate) -> Result<(), ExchangeE
     gate.wait_for_turn().map_err(map_shared_error)
 }
 
-fn map_shared_error(error: TransportError) -> ExchangeError {
+pub(crate) fn map_shared_error(error: TransportError) -> ExchangeError {
     match error {
         TransportError::InvalidRequest(message) => ExchangeError::InvalidRequest(message),
         TransportError::Authentication(message) => ExchangeError::InvalidRequest(message),

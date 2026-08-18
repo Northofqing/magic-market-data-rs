@@ -1,7 +1,8 @@
 use magic_market_core::{
-    AnomalyInputEvidence, ContinuityState, CoreError, InstrumentId, LocalAnalysisEventEvidence,
-    LocalTerminalObservationEvidence, Money, ObservationTimeBasis, Price, ProviderId, Quantity,
-    RuleInputDigest, SourceEvidence, StreamContinuity, StreamCursor,
+    AnomalyEvent, AnomalyInputEvidence, AnomalyRuleIdentity, AnomalyTransition, ContinuityState,
+    CoreError, InstrumentId, LocalAnalysisEventEvidence, LocalTerminalObservationEvidence, Money,
+    ObservationTimeBasis, Price, ProviderId, Quantity, RuleInputDigest, SourceEvidence,
+    StreamContinuity, StreamCursor,
 };
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
@@ -52,6 +53,8 @@ pub struct PriceChangeRule {
 }
 
 impl PriceChangeRule {
+    pub const ID: &'static str = "local_price_change";
+
     pub fn new(
         window_millis: u64,
         boundary_tolerance_millis: u64,
@@ -106,6 +109,30 @@ impl PriceChangeRule {
 
     pub fn cooldown_millis(self) -> u64 {
         self.cooldown_millis
+    }
+
+    pub fn core_identity(self, version: u32) -> Result<AnomalyRuleIdentity, CoreError> {
+        let boundary = self.boundary_tolerance_millis.to_be_bytes();
+        let cooldown = self.cooldown_millis.to_be_bytes();
+        let rearm = self.rearm_ratio.to_bits().to_be_bytes();
+        let trigger = self.trigger_ratio.to_bits().to_be_bytes();
+        let window = self.window_millis.to_be_bytes();
+        AnomalyRuleIdentity::from_canonical_definition(
+            Self::ID,
+            version,
+            &[
+                ("accepted_continuity", b"continuous"),
+                ("boundary_tolerance_millis", boundary.as_slice()),
+                ("cooldown_millis", cooldown.as_slice()),
+                ("family", b"price"),
+                ("rearm_ratio_bits", rearm.as_slice()),
+                ("session_reset_policy", b"explicit_injected_signal"),
+                ("time_basis", b"local_observation_time"),
+                ("trigger_ratio_bits", trigger.as_slice()),
+                ("unit", b"cny_per_share"),
+                ("window_millis", window.as_slice()),
+            ],
+        )
     }
 }
 
@@ -656,6 +683,71 @@ impl WindowEndpointEvidence {
         LocalAnalysisEventEvidence::new(self.core_input_evidence()?, derived)
     }
 
+    /// Constructs the replay-stable Core event for a price trigger or rearm.
+    /// Warm-up, cooling and reset transitions are status updates and cannot be
+    /// promoted into anomaly events.
+    pub fn price_core_event(
+        &self,
+        rule: PriceChangeRule,
+        version: u32,
+        transition: MonitorTransition,
+        stream: StreamCursor,
+        continuity: StreamContinuity,
+        derived_observed_at: impl Into<String>,
+    ) -> Result<AnomalyEvent, CoreError> {
+        let (transition, change_ratio) = match transition {
+            MonitorTransition::Triggered { change_ratio } => {
+                (AnomalyTransition::Triggered, change_ratio)
+            }
+            MonitorTransition::Rearmed { change_ratio } => {
+                (AnomalyTransition::Rearmed, change_ratio)
+            }
+            _ => {
+                return Err(CoreError::InvalidRequest(
+                    "price outcome has no public anomaly transition".into(),
+                ))
+            }
+        };
+        let first = self
+            .first_price()
+            .ok_or_else(|| CoreError::InvalidRequest("price window has no first value".into()))?
+            .get()
+            .to_bits()
+            .to_be_bytes();
+        let last = self
+            .last_price()
+            .ok_or_else(|| CoreError::InvalidRequest("price window has no last value".into()))?
+            .get()
+            .to_bits()
+            .to_be_bytes();
+        let ratio = change_ratio.to_bits().to_be_bytes();
+        let first_arrival = self.first_arrival_millis.to_be_bytes();
+        let last_arrival = self.last_arrival_millis.to_be_bytes();
+        let record_count = encode_optional_u64(self.observed_source_record_count());
+        let inputs = RuleInputDigest::from_canonical_fields(&[
+            ("change_ratio_bits", ratio.as_slice()),
+            ("first_arrival_millis", first_arrival.as_slice()),
+            ("first_price_bits", first.as_slice()),
+            ("last_arrival_millis", last_arrival.as_slice()),
+            ("last_price_bits", last.as_slice()),
+            ("observed_source_record_count", record_count.as_slice()),
+            ("unit", b"cny_per_share"),
+        ])?;
+        let input_evidence = self.core_anomaly_input_evidence(
+            ObservationTimeBasis::LocalObservationTime,
+            continuity,
+            inputs,
+        )?;
+        AnomalyEvent::new(
+            self.instrument.clone(),
+            rule.core_identity(version)?,
+            transition,
+            stream,
+            input_evidence,
+            derived_observed_at,
+        )
+    }
+
     pub(crate) fn core_anomaly_input_evidence(
         &self,
         time_basis: ObservationTimeBasis,
@@ -678,6 +770,15 @@ impl WindowEndpointEvidence {
             rule_inputs_digest,
         )
     }
+}
+
+fn encode_optional_u64(value: Option<u64>) -> [u8; 9] {
+    let mut encoded = [0_u8; 9];
+    if let Some(value) = value {
+        encoded[0] = 1;
+        encoded[1..].copy_from_slice(&value.to_be_bytes());
+    }
+    encoded
 }
 
 #[derive(Debug, Clone)]

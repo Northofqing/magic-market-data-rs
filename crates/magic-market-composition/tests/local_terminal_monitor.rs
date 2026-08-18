@@ -1,6 +1,6 @@
 use magic_market_composition::{
     DiagnosticLocalTerminalMonitorComposition, EastmoneyProviderTopNRankingRouter,
-    LocalMonitorCapability, LocalTerminalMonitorComposition, LocalTerminalMonitorCompositionError,
+    LocalTerminalMonitorComposition, LocalTerminalMonitorCompositionError,
 };
 use magic_market_core::{
     AssetClass, ContinuityState, Exchange, InstrumentId, Money, Price, ProviderId, Quantity,
@@ -13,22 +13,8 @@ use magic_market_monitor::{
 use magic_tdx_local_rs::{SupervisorAction, SupervisorEvent, SupervisorState};
 
 #[test]
-fn production_constructor_fails_closed_with_every_missing_capability() {
-    let error = match LocalTerminalMonitorComposition::new() {
-        Ok(_) => panic!("unadmitted production composition unexpectedly constructed"),
-        Err(error) => error,
-    };
-    assert_eq!(
-        error,
-        LocalTerminalMonitorCompositionError::CapabilityUnadmitted {
-            capabilities: vec![
-                LocalMonitorCapability::LocalTerminalSourceRecordCount,
-                LocalMonitorCapability::LocalPriceChangeAnomaly,
-                LocalMonitorCapability::LocalAmountChangeAnomaly,
-                LocalMonitorCapability::LocalVolumeChangeAnomaly,
-            ],
-        }
-    );
+fn production_constructor_accepts_the_independently_admitted_families() {
+    assert!(LocalTerminalMonitorComposition::new().is_ok());
 }
 
 #[test]
@@ -46,7 +32,7 @@ fn failed_local_construction_does_not_change_existing_routes() {
     let before = EastmoneyProviderTopNRankingRouter::new()
         .unwrap()
         .provider_ids();
-    assert!(LocalTerminalMonitorComposition::new().is_err());
+    assert!(LocalTerminalMonitorComposition::new().is_ok());
     let after = EastmoneyProviderTopNRankingRouter::new()
         .unwrap()
         .provider_ids();

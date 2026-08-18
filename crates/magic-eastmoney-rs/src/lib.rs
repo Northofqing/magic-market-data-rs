@@ -37,12 +37,13 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use error::EastmoneyError;
+pub use fund_flow::PUBLIC_FUND_FLOW_ADMITTED;
 pub use market_rankings::DiagnosticMarketRankingEntry;
 pub use mx::{
     DiagnosticMarketBreadth, DiagnosticOpeningAuction, EastmoneyMxClient,
     MX_DAILY_FUND_FLOW_ADMITTED, MX_MARKET_BREADTH_ADMITTED, MX_OPENING_AUCTION_ADMITTED,
 };
-pub use post_close::DiagnosticPostCloseFlow;
+pub use post_close::{DiagnosticPostCloseFlow, PUBLIC_POST_CLOSE_FLOW_ADMITTED};
 pub use transport::EastmoneyTransport;
 use transport::{
     HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES, MAX_HTML_RESPONSE_BYTES, MAX_PDF_RESPONSE_BYTES,
@@ -108,14 +109,14 @@ impl EastmoneyClient {
     /// Capabilities proved for capital-flow and datacenter endpoints.
     pub const fn capital_capabilities() -> CapitalCapabilities {
         CapitalCapabilities {
-            fund_flow_series: false,
+            fund_flow_series: PUBLIC_FUND_FLOW_ADMITTED,
             board_flow: true,
             margin: true,
             block_trades: true,
             holder_count: true,
             lockups: true,
             dividends: true,
-            post_close_flow: false,
+            post_close_flow: PUBLIC_POST_CLOSE_FLOW_ADMITTED,
             northbound_daily_statistics: false,
         }
     }

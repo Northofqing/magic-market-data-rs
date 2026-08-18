@@ -1,6 +1,6 @@
 use magic_market_core::{
-    AssetClass, ContinuityState, Exchange, InstrumentId, Money, Price, ProviderId, Quantity,
-    SourceEvidence, StreamCursor, StreamGeneration, StreamSequence,
+    AnomalyEvent, AssetClass, ContinuityState, Exchange, InstrumentId, Money, Price, ProviderId,
+    Quantity, SourceEvidence, StreamContinuity, StreamCursor, StreamGeneration, StreamSequence,
 };
 use magic_market_monitor::{
     AmountSpikeRule, AmountTransition, DeterministicAmountMonitor, DeterministicPriceMonitor,
@@ -168,6 +168,8 @@ pub(crate) struct AnalysisUpdate {
     pub(crate) transition: AnalysisTransition,
     pub(crate) value_unit: &'static str,
     pub(crate) rule_version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) anomaly_event: Option<AnomalyEvent>,
 }
 
 pub(crate) struct AnalysisInput<'a> {
@@ -262,6 +264,27 @@ impl Analyzers {
                 .map_err(|error| error.to_string())?;
             self.fast_active = true;
             if let Some(transition) = outcome.transition() {
+                let anomaly_event = match transition {
+                    MonitorTransition::Triggered { .. } | MonitorTransition::Rearmed { .. } => {
+                        Some(
+                            self.price
+                                .window_evidence(&instrument)
+                                .ok_or_else(|| {
+                                    "price anomaly transition has no window evidence".to_owned()
+                                })?
+                                .price_core_event(
+                                    self.price_rule.inner,
+                                    self.price_rule.version,
+                                    transition,
+                                    cursor.clone(),
+                                    anomaly_continuity(),
+                                    input.observed_at_utc,
+                                )
+                                .map_err(|error| error.to_string())?,
+                        )
+                    }
+                    _ => None,
+                };
                 updates.push(AnalysisUpdate {
                     family: AnalysisFamily::Price,
                     instrument: input.instrument_label.to_owned(),
@@ -269,14 +292,15 @@ impl Analyzers {
                     transition: price_transition(transition),
                     value_unit: "ratio",
                     rule_version: self.price_rule.version,
+                    anomaly_event,
                 });
             }
         }
         if let Some(value) = input.cumulative_volume_lots {
             let volume = Quantity::new(value).map_err(|error| error.to_string())?;
             let observation = InjectedObservation::from_families(
-                instrument,
-                evidence,
+                instrument.clone(),
+                evidence.clone(),
                 input.arrival_millis,
                 None,
                 None,
@@ -285,13 +309,27 @@ impl Analyzers {
                 ContinuityState::Continuous,
             )
             .map_err(|error| error.to_string())?
-            .with_stream_cursor(cursor);
+            .with_stream_cursor(cursor.clone());
             let outcome = self
                 .volume
                 .process(observation)
                 .map_err(|error| error.to_string())?;
             self.fast_active = true;
             if let Some(transition) = outcome.transition() {
+                let anomaly_event = match transition {
+                    VolumeTransition::Triggered { .. } | VolumeTransition::Rearmed { .. } => Some(
+                        outcome
+                            .core_event(
+                                instrument.clone(),
+                                self.volume_rule.inner,
+                                cursor,
+                                anomaly_continuity(),
+                                input.observed_at_utc,
+                            )
+                            .map_err(|error| error.to_string())?,
+                    ),
+                    _ => None,
+                };
                 updates.push(AnalysisUpdate {
                     family: AnalysisFamily::Volume,
                     instrument: input.instrument_label.to_owned(),
@@ -299,6 +337,7 @@ impl Analyzers {
                     transition: volume_transition(transition),
                     value_unit: "lot",
                     rule_version: self.volume_rule_version,
+                    anomaly_event,
                 });
             }
         }
@@ -323,7 +362,7 @@ impl Analyzers {
         .map_err(|error| error.to_string())?;
         let amount = Money::new(input.cumulative_amount_cny).map_err(|error| error.to_string())?;
         let observation = InjectedObservation::from_families(
-            instrument,
+            instrument.clone(),
             evidence,
             input.arrival_millis,
             None,
@@ -339,16 +378,35 @@ impl Analyzers {
             .process(observation)
             .map_err(|error| error.to_string())?;
         self.amount_active = true;
+        let output_cursor = stream_cursor(input.generation, input.sequence, 1)?;
         Ok(outcome
             .transition()
-            .map(|transition| AnalysisUpdate {
-                family: AnalysisFamily::Amount,
-                instrument: input.instrument_label.to_owned(),
-                state: state(outcome.state()),
-                transition: amount_transition(transition),
-                value_unit: "cny",
-                rule_version: self.amount_rule.version,
+            .map(|transition| {
+                let anomaly_event = match transition {
+                    AmountTransition::Triggered { .. } | AmountTransition::Rearmed { .. } => Some(
+                        outcome
+                            .core_event(
+                                instrument,
+                                self.amount_rule.inner,
+                                output_cursor,
+                                anomaly_continuity(),
+                                input.observed_at_utc,
+                            )
+                            .map_err(|error| error.to_string())?,
+                    ),
+                    _ => None,
+                };
+                Ok::<AnalysisUpdate, String>(AnalysisUpdate {
+                    family: AnalysisFamily::Amount,
+                    instrument: input.instrument_label.to_owned(),
+                    state: state(outcome.state()),
+                    transition: amount_transition(transition),
+                    value_unit: "cny",
+                    rule_version: self.amount_rule.version,
+                    anomaly_event,
+                })
             })
+            .transpose()?
             .into_iter()
             .collect())
     }
@@ -370,6 +428,10 @@ impl Analyzers {
         );
         active
     }
+}
+
+fn anomaly_continuity() -> StreamContinuity {
+    StreamContinuity::new(ContinuityState::Continuous, ContinuityState::Unknown)
 }
 
 fn exchange(value: SourceExchange) -> Exchange {
@@ -554,6 +616,12 @@ mod tests {
             update.transition,
             AnalysisTransition::Triggered { value: 70.0 }
         )));
+        assert!(triggered.iter().any(|update| {
+            update
+                .anomaly_event
+                .as_ref()
+                .is_some_and(|event| event.rule().id() == "local_amount_spike")
+        }));
     }
 
     #[test]
@@ -629,6 +697,20 @@ mod tests {
                 && update.rule_version == 7
                 && update.value_unit == "ratio"
         }));
+        assert!(primary.iter().all(|update| {
+            let is_public = matches!(
+                update.transition,
+                AnalysisTransition::Triggered { .. } | AnalysisTransition::Rearmed { .. }
+            );
+            update.anomaly_event.is_some() == is_public
+        }));
+        assert!(
+            primary
+                .iter()
+                .filter_map(|update| update.anomaly_event.as_ref())
+                .all(|event| event.rule().id() == "local_price_change"
+                    && event.rule().revision() == 7)
+        );
 
         let quiet = [
             (1, 6, 20.0),

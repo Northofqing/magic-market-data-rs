@@ -17,6 +17,14 @@ pub const LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED: bool = true;
 /// Local-terminal source-record-count evidence has not completed admission.
 pub const LOCAL_TERMINAL_SOURCE_RECORD_COUNT_ADMITTED: bool = false;
 
+/// Local-terminal previous close is admitted as an observation-time snapshot
+/// field in exact CNY/share units. It does not claim provider source time.
+pub const LOCAL_TERMINAL_PREVIOUS_CLOSE_ADMITTED: bool = true;
+
+/// Local-terminal open/high/low snapshot fields are admitted as
+/// observation-time CNY/share values from the fixed market-snapshot schema.
+pub const LOCAL_TERMINAL_OHLC_ADMITTED: bool = true;
+
 const PRICE_CAPABILITY: &str = "price";
 const CUMULATIVE_AMOUNT_CAPABILITY: &str = "cumulative_amount";
 const CUMULATIVE_VOLUME_CAPABILITY: &str = "cumulative_volume";
@@ -204,12 +212,14 @@ mod tests {
     }
 
     #[test]
-    fn only_source_record_count_remains_unadmitted() {
+    fn repository_admission_constants_match_the_exact_field_decisions() {
         const {
             assert!(LOCAL_TERMINAL_PRICE_ADMITTED);
             assert!(LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED);
             assert!(LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED);
             assert!(!LOCAL_TERMINAL_SOURCE_RECORD_COUNT_ADMITTED);
+            assert!(LOCAL_TERMINAL_PREVIOUS_CLOSE_ADMITTED);
+            assert!(LOCAL_TERMINAL_OHLC_ADMITTED);
         }
         assert_eq!(
             LocalTerminalAdmission::current(),

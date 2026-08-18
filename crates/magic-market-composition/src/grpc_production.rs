@@ -37,12 +37,12 @@ use magic_market_core::{
     MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsProvider, NonEmptyText,
     NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
     OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks, PolicyDocuments, PolicyRequest,
-    PopularityData, PositiveU32, PostCloseFlowRequest, ProviderId, ProviderTopNRankingRequest,
-    ProviderTopNRankings, Quote, RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest,
-    ResearchDocumentRequest, ResearchDocuments, ResearchReports, ResearchRequest,
-    SecurityMetadataProvider, SecurityProfiles, SemanticSearch, SemanticSearchRequest,
-    SourceEvidence, StatementKind, StrongStockReasons, TargetPriceData, TargetPriceRequest,
-    TechnicalBarsProvider, Trades, TradesRequest,
+    PopularityData, PositiveU32, PostCloseFlowRequest, PostCloseFlows, ProviderId,
+    ProviderTopNRankingRequest, ProviderTopNRankings, Quote, RealtimeQuotes, ReferenceRateProvider,
+    ReferenceRateRequest, ResearchDocumentRequest, ResearchDocuments, ResearchReports,
+    ResearchRequest, SecurityMetadataProvider, SecurityProfiles, SemanticSearch,
+    SemanticSearchRequest, SourceEvidence, StatementKind, StrongStockReasons, TargetPriceData,
+    TargetPriceRequest, TechnicalBarsProvider, Trades, TradesRequest,
 };
 use magic_market_router::{
     quote_source, AcceptancePolicy, AttemptStatus, FailureKind, QuoteRouter, RouterError,
@@ -188,7 +188,7 @@ pub const TECHNICAL_BARS_RECORD_SCHEMA: &str = "magic.market.technical_bar";
 pub const FUND_FLOW_SERIES_REQUEST_SCHEMA: &str = "magic.market.fund_flow_series.request";
 pub const FUND_FLOW_SERIES_RECORD_SCHEMA: &str = "magic.market.fund_flow_point";
 pub const POST_CLOSE_FLOWS_REQUEST_SCHEMA: &str = "magic.market.post_close_flows.request";
-pub const POST_CLOSE_FLOWS_RECORD_SCHEMA: &str = "magic.market.post_close_flow_diagnostic";
+pub const POST_CLOSE_FLOWS_RECORD_SCHEMA: &str = "magic.market.post_close_flow";
 pub const MARKET_RANKINGS_REQUEST_SCHEMA: &str = "magic.market.market_rankings.request";
 pub const MARKET_RANKINGS_RECORD_SCHEMA: &str = "magic.market.market_ranking_diagnostic_entry";
 pub const AUCTIONS_REQUEST_SCHEMA: &str = "magic.market.auctions.request";
@@ -949,26 +949,7 @@ fn register_diagnostic_handlers(
     provider_timeout: Duration,
     maximum_payload_bytes: usize,
 ) -> Result<(), ProductionRegistryError> {
-    let baidu = BaiduClient::with_timeout(provider_timeout)?;
-    let baidu_bars = baidu.clone();
-    registry.register_diagnostic_handler(
-        blocked(
-            Operation::TechnicalBars,
-            "Baidu",
-            "one A-share equity; bounded unadjusted daily OHLCV/amount and optional source MA5/10/20",
-            "trading-calendar, adjacent-session and corporate-action continuity evidence remain unproved",
-        ),
-        move |command| {
-            execute_typed(
-                command,
-                TECHNICAL_BARS_REQUEST_SCHEMA,
-                TECHNICAL_BARS_RECORD_SCHEMA,
-                "Baidu",
-                maximum_payload_bytes,
-                |request: &BarsRequest| baidu.technical_bars(request),
-            )
-        },
-    )?;
+    let baidu_bars = BaiduClient::with_timeout(provider_timeout)?;
     registry.register_diagnostic_handler(
         blocked(
             Operation::HistoricalBars,
@@ -996,7 +977,7 @@ fn register_diagnostic_handlers(
     };
     if let Some(mx) = mx.as_ref() {
         let flow_series = mx.clone();
-        registry.register_default_diagnostic_handler(
+        registry.register_diagnostic_handler(
             blocked(
                 Operation::FundFlowSeries,
                 "EastmoneyMiaoxiang",
@@ -1016,7 +997,7 @@ fn register_diagnostic_handlers(
         )?;
 
         let money_flows = mx.clone();
-        registry.register_default_diagnostic_handler(
+        registry.register_diagnostic_handler(
             blocked(
                 Operation::MoneyFlows,
                 "EastmoneyMiaoxiang",
@@ -1027,7 +1008,7 @@ fn register_diagnostic_handlers(
         )?;
 
         let auctions = mx.clone();
-        registry.register_default_diagnostic_handler(
+        registry.register_diagnostic_handler(
             blocked(
                 Operation::Auctions,
                 "EastmoneyMiaoxiang",
@@ -1050,7 +1031,7 @@ fn register_diagnostic_handlers(
         )?;
 
         let breadth = mx.clone();
-        registry.register_default_diagnostic_handler(
+        registry.register_diagnostic_handler(
             blocked(
                 Operation::MarketBreadth,
                 "EastmoneyMiaoxiang",
@@ -1071,54 +1052,20 @@ fn register_diagnostic_handlers(
                 )
             },
         )?;
-    } else {
-        let flow_series = eastmoney.clone();
-        registry.register_diagnostic_handler(
-            blocked(
-                Operation::FundFlowSeries,
-                "Eastmoney",
-                "one Shanghai/Shenzhen equity; bounded one-minute or daily source fund-flow series with absent values retained as null",
-                "serial live stability admission remains incomplete",
-            ),
-            move |command| {
-                execute_typed(
-                    command,
-                    FUND_FLOW_SERIES_REQUEST_SCHEMA,
-                    FUND_FLOW_SERIES_RECORD_SCHEMA,
-                    "Eastmoney",
-                    maximum_payload_bytes,
-                    |request: &FundFlowRequest| flow_series.fund_flow_series(request),
-                )
-            },
-        )?;
-
-        let money_flows = eastmoney.clone();
-        registry.register_diagnostic_handler(
-            blocked(
-                Operation::MoneyFlows,
-                "Eastmoney",
-                "one Shanghai/Shenzhen equity; latest bounded daily source fund-flow point mapped without using TDX turnover",
-                "source methodology and serial live stability remain repository-unadmitted",
-            ),
-            move |command| {
-                execute_eastmoney_money_flow(&money_flows, command, maximum_payload_bytes)
-            },
-        )?;
     }
 
     let post_close = eastmoney.clone();
-    registry.register_diagnostic_handler(
-        blocked(
+    registry.register_handler(
+        admitted(
             Operation::PostCloseFlows,
             "Eastmoney",
-            "bounded current-day post-close source ranking with per-record source evidence",
-            "mixed source timestamps remain non-atomic and production admission is false",
+            "bounded current-day post-close ranking using local observation time while retaining every row source time",
         ),
         move |command| {
             let request: PostCloseFlowRequest =
                 decode_request(&command, POST_CLOSE_FLOWS_REQUEST_SCHEMA)?;
             let batch = post_close
-                .diagnose_partial_post_close_flows(&request)
+                .post_close_flows(&request)
                 .map_err(|error| map_eastmoney_error(Operation::PostCloseFlows, &error))?;
             provider_query_result(
                 batch,
@@ -1151,17 +1098,15 @@ fn register_diagnostic_handlers(
         },
     )?;
 
-    let cffex_config = CffexConfig {
-        timeout: provider_timeout,
-        ..CffexConfig::default()
-    };
+    let mut cffex_config = CffexConfig::plaintext_http_diagnostic();
+    cffex_config.timeout = provider_timeout;
     let cffex = CffexClient::with_config(cffex_config)?;
     registry.register_diagnostic_handler(
         blocked(
             Operation::FuturesDelivery,
             "Cffex",
-            "official CFFEX equity-index futures delivery notice diagnostic",
-            "official TLS/live evidence remains incomplete and delivery method can be NotProvided",
+            "fixed-path official CFFEX equity-index futures delivery notice diagnostic",
+            "diagnostic acquisition uses plaintext HTTP; formal HTTPS admission remains unavailable and delivery method can be NotProvided",
         ),
         move |command| {
             let request: FuturesDeliveryRequest =
@@ -1322,7 +1267,7 @@ fn execute_eastmoney_money_flow(
     let request: InstrumentsRequest = decode_request(&command, MONEY_FLOWS_REQUEST_SCHEMA)?;
     let [instrument] = request.instruments.as_slice() else {
         return Err(ServiceError::InvalidRequest(
-            "diagnostic money flow requires exactly one instrument".to_owned(),
+            "Eastmoney money flow requires exactly one instrument".to_owned(),
         ));
     };
     let request = FundFlowRequest::new(
@@ -1372,9 +1317,7 @@ fn money_flow_query_result(
     maximum_payload_bytes: usize,
 ) -> Result<QueryResult, ServiceError> {
     let point = batch.records().last().ok_or_else(|| {
-        ServiceError::FailedPrecondition(
-            "Eastmoney fund-flow diagnostic returned no latest point".to_owned(),
-        )
+        ServiceError::FailedPrecondition("Eastmoney fund-flow returned no latest point".to_owned())
     })?;
     let evidence = &point.evidence;
     let complete = point.main_net.is_some()
@@ -1431,6 +1374,25 @@ fn register_additional_providers(
     provider_timeout: Duration,
     maximum_payload_bytes: usize,
 ) -> Result<(), ProductionRegistryError> {
+    let baidu = BaiduClient::with_timeout(provider_timeout)?;
+    registry.register_handler(
+        admitted(
+            Operation::TechnicalBars,
+            "Baidu",
+            "one A-share equity; bounded source-supplied unadjusted daily OHLCV/amount and optional MA5/10/20 without an adjusted-continuity claim",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                TECHNICAL_BARS_REQUEST_SCHEMA,
+                TECHNICAL_BARS_RECORD_SCHEMA,
+                "Baidu",
+                maximum_payload_bytes,
+                |request: &BarsRequest| baidu.technical_bars(request),
+            )
+        },
+    )?;
+
     let jin10 = Jin10Client::with_timeout(provider_timeout)?;
     let calendar = jin10.clone();
     registry.register_handler(
@@ -1799,12 +1761,11 @@ fn register_tdx_public(
         maximum_payload_bytes,
     )?;
     let t0_evidence = client.clone();
-    registry.register_diagnostic_handler(
-        blocked(
+    registry.register_handler(
+        admitted(
             Operation::T0Evidence,
             "Tdx",
-            "bounded TDX-only quote, book, daily-bar and five-minute-bar evidence bundle",
-            "TDX public quote and order-book packets do not expose an admitted source timestamp; the exact available fields are diagnostic-only",
+            "bounded TDX-only quote, book, daily-bar and five-minute-bar bundle using local observation time",
         ),
         move |command| {
             execute_tdx_t0_evidence(
@@ -2160,6 +2121,25 @@ fn register_eastmoney(
     maximum_payload_bytes: usize,
 ) -> Result<(), ProductionRegistryError> {
     let client = EastmoneyClient::with_timeout(provider_timeout)?;
+    register_eastmoney_typed(
+        registry,
+        &client,
+        Operation::FundFlowSeries,
+        FUND_FLOW_SERIES_REQUEST_SCHEMA,
+        FUND_FLOW_SERIES_RECORD_SCHEMA,
+        "one Shanghai or Shenzhen equity; bounded one-minute or daily public fund-flow series with exact CNY values and per-record source time",
+        maximum_payload_bytes,
+        |client, request: &FundFlowRequest| client.fund_flow_series(request),
+    )?;
+    let money_flows = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::MoneyFlows,
+            "Eastmoney",
+            "one Shanghai or Shenzhen equity; latest complete daily public fund-flow point with exact CNY values and source date",
+        ),
+        move |command| execute_eastmoney_money_flow(&money_flows, command, maximum_payload_bytes),
+    )?;
     register_eastmoney_typed(
         registry,
         &client,
@@ -3194,19 +3174,16 @@ fn execute_tdx_t0_evidence(
             ServiceError::Internal(format!("T0Evidence batch digest encoding failed: {error}"))
         })?,
     )?;
-    let observed_at = latest_observed_at(&all_evidence, "T0Evidence")?;
+    let observed_at = current_china_observed_at()?;
     Ok(QueryResult {
         provider: "Tdx".to_owned(),
         batch_id: format!("tdx:t0-evidence:{aggregate_digest}"),
-        complete: false,
+        complete: true,
         observed_at,
         source_at: common_source_at(&all_evidence),
         records: payloads,
-        repository_admitted: false,
-        diagnostic_blocker: Some(
-            "TDX public quote and order-book packets do not expose an admitted source timestamp"
-                .to_owned(),
-        ),
+        repository_admitted: true,
+        diagnostic_blocker: None,
     })
 }
 
@@ -3362,13 +3339,17 @@ fn exact_tdx_record<T: Clone>(
     Ok(record)
 }
 
-fn latest_observed_at(evidence: &[SourceEvidence], family: &str) -> Result<String, ServiceError> {
-    evidence
-        .iter()
-        .map(SourceEvidence::observed_at)
-        .max()
-        .map(str::to_owned)
-        .ok_or_else(|| ServiceError::Internal(format!("{family} has no input evidence")))
+fn current_china_observed_at() -> Result<String, ServiceError> {
+    let offset = UtcOffset::from_hms(8, 0, 0)
+        .map_err(|error| ServiceError::Internal(format!("fixed China offset failed: {error}")))?;
+    let now = OffsetDateTime::now_utc().to_offset(offset);
+    Ok(format!(
+        "{}T{:02}:{:02}:{:02}+08:00",
+        now.date(),
+        now.hour(),
+        now.minute(),
+        now.second()
+    ))
 }
 
 #[derive(Serialize)]
@@ -3985,6 +3966,14 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn t0_observation_clock_is_explicit_local_china_time() {
+        let observed_at = current_china_observed_at().unwrap();
+        assert_eq!(observed_at.len(), 25);
+        assert_eq!(observed_at.as_bytes().get(10), Some(&b'T'));
+        assert!(observed_at.ends_with("+08:00"));
+    }
+
     const QUOTE_RESPONSE: &str = "v_sh600396=\"1~ABC~600396~15.47~14.92~15.30~1775070~821130~950794~15.47~212~15.46~95~15.45~64~15.44~3~15.43~375~15.49~49~15.50~2721~15.51~241~15.52~450~15.53~86~~20260723094907~0.55~3.69~15.88~14.85~15.47/1775070/2729507908~1775070~272951~\";";
     const INDEX_QUOTE_RESPONSE: &str = "v_sh000001=\"1~Shanghai Composite~000001~3560.47~3544.15~3551.30~1775070~821130~950794~3560.47~212~3560.46~95~3560.45~64~3560.44~3~3560.43~375~3560.49~49~3560.50~2721~3560.51~241~3560.52~450~3560.53~86~~20260723094907~16.32~0.46~3568.88~3538.85~3560.47/1775070/2729507908~1775070~272951~\";";
 
@@ -4101,7 +4090,7 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 51);
+        assert_eq!(admitted.len(), 56);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
@@ -4110,27 +4099,22 @@ mod tests {
         assert_eq!(
             blocked,
             vec![
-                Operation::MoneyFlows,
                 Operation::Auctions,
                 Operation::FuturesDelivery,
-                Operation::TechnicalBars,
-                Operation::FundFlowSeries,
-                Operation::PostCloseFlows,
                 Operation::MarketRankings,
                 Operation::MarketBreadth,
-                Operation::T0Evidence,
             ]
         );
         let t0 = capabilities
             .iter()
             .find(|capability| capability.operation == Operation::T0Evidence)
             .unwrap();
-        assert!(!t0.repository_admitted);
-        assert!(!t0.runtime_available);
-        assert!(t0.diagnostic_available);
+        assert!(t0.repository_admitted);
+        assert!(t0.runtime_available);
+        assert!(!t0.diagnostic_available);
         assert!(matches!(
             registry.execute(command_for(Operation::T0Evidence, "wrong.schema", None)),
-            Err(ServiceError::Unsupported { .. })
+            Err(ServiceError::InvalidRequest(_))
         ));
         assert!(matches!(
             registry.execute(
@@ -4145,14 +4129,9 @@ mod tests {
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
         for operation in [
-            Operation::MoneyFlows,
             Operation::FuturesDelivery,
-            Operation::TechnicalBars,
             Operation::HistoricalBars,
-            Operation::FundFlowSeries,
-            Operation::PostCloseFlows,
             Operation::MarketRankings,
-            Operation::T0Evidence,
         ] {
             assert!(diagnostic.contains(&operation));
         }
@@ -4190,7 +4169,12 @@ mod tests {
             (Operation::IndexQuotes, "Tencent"),
             (Operation::IntradayShape, "LocalAnalysis"),
             (Operation::UpperLimitPoolReview, "Eastmoney"),
+            (Operation::FundFlowSeries, "Eastmoney"),
+            (Operation::MoneyFlows, "Eastmoney"),
+            (Operation::PostCloseFlows, "Eastmoney"),
+            (Operation::TechnicalBars, "Baidu"),
             (Operation::OutcomeDailyBars, "Tdx"),
+            (Operation::T0Evidence, "Tdx"),
             (Operation::RealtimeQuotes, "Tdx"),
             (Operation::HistoricalBars, "Tdx"),
             (Operation::MinuteData, "Tdx"),
@@ -4447,11 +4431,7 @@ mod tests {
         let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
         let technical = command_for(Operation::TechnicalBars, "wrong.schema", Some("Baidu"));
         assert!(matches!(
-            registry.execute(technical.clone()),
-            Err(ServiceError::Unsupported { .. })
-        ));
-        assert!(matches!(
-            registry.execute(technical.with_unadmitted_access(true)),
+            registry.execute(technical),
             Err(ServiceError::InvalidRequest(_))
         ));
 

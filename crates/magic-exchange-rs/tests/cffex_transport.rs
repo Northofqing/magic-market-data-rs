@@ -73,14 +73,15 @@ fn tls_backend_is_explicit_and_never_silently_falls_back() {
 
 #[cfg(feature = "native-tls")]
 #[test]
-fn native_tls_backend_is_available_only_when_explicitly_compiled() {
-    let client = CffexClient::with_config(CffexConfig {
-        tls_backend: CffexTlsBackend::NativeTls,
-        ..CffexConfig::default()
-    })
-    .unwrap();
-    assert_eq!(client.tls_backend(), CffexTlsBackend::NativeTls);
-    assert!(format!("{client:?}").contains(CffexTlsBackend::NativeTls.as_str()));
+fn native_tls_backend_cannot_bypass_the_shared_cffex_https_stack() {
+    assert!(matches!(
+        CffexClient::with_config(CffexConfig {
+            tls_backend: CffexTlsBackend::NativeTls,
+            ..CffexConfig::default()
+        }),
+        Err(ExchangeError::Unsupported(message))
+            if message.contains("shared reqwest/rustls")
+    ));
 }
 
 #[cfg(not(feature = "native-tls"))]
@@ -92,7 +93,7 @@ fn native_tls_selection_fails_explicitly_when_feature_is_disabled() {
             ..CffexConfig::default()
         }),
         Err(ExchangeError::Unsupported(message))
-            if message.contains("feature native-tls")
+            if message.contains("shared reqwest/rustls")
     ));
 }
 

@@ -408,16 +408,18 @@ diagnostic must use the `diagnostic_probe_status` and
 
 ## BR-019 Strict 15:35 post-close ranking
 The post-close fund-flow ranking accepts only the current China trading date
-at or after 15:35 Asia/Shanghai. Every row must share the exact source
-timestamp/date, contain code and stock name, preserve main-net amount and
-percentage, use unique source market identities, be strictly non-increasing by
-main-net amount and have contiguous ranks. The Provider and router both require
-exact caller cardinality; stale, pre-window, mixed-snapshot or partial batches
-fail instead of being relabeled as the requested ranking.
-Until a same-day bounded live run passes BR-009 and every condition above, the
-Provider capability remains false, the formal trait returns `Unsupported`, and
-only an explicitly named diagnostic may perform the fetch. Diagnostic success
-must remain unadmitted and may not emit a production-success marker.
+at or after 15:35 Asia/Shanghai. Every row must contain a source instant whose
+calendar date equals the request, code and stock name, main-net amount and
+percentage, a unique source market identity, non-increasing main-net amount and
+contiguous rank. Per-security source instants may differ because the public
+ranking response is a locally observed post-close snapshot rather than one
+provider-declared atomic source instant. One batch therefore uses the current
+local `observed_at`; it sets batch `source_at` only when all record source
+instants are identical and otherwise leaves it absent. Record source instants
+remain unchanged. The Provider and router both require exact caller cardinality;
+pre-window, wrong-date, unordered, duplicate or partial batches fail instead of
+being relabelled as the requested ranking. This contract is not eligible for
+BR-033 realtime freshness and does not prove full-market pagination or breadth.
 
 ## BR-020 Eastmoney rolling finance news
 Eastmoney global latest news is admitted only from the exact first page at
@@ -561,13 +563,12 @@ I/O, and an RPC can never promote an unadmitted capability.
 
 An external query may explicitly opt in to a repository-registered diagnostic
 handler. Opt-in is false by default and cannot select URLs or arbitrary methods.
-A Gate-A-reviewed fixed-template diagnostic may instead be registered as
-default-readable when its response schema preserves every missing field and the
-unadmitted state; this affects access convenience only. Every diagnostic response
-remains `UNADMITTED`, is forced incomplete, and carries the repository blocker. A
-missing diagnostic handler still fails before Provider I/O. Transport success,
-returned records, and optional-field presence never promote repository admission
-or runtime availability.
+There is no default-readable exception: every repository-unadmitted operation
+must fail before Provider I/O unless the request explicitly opts in. Every
+diagnostic response remains `UNADMITTED`, is forced incomplete, and carries the
+repository blocker. A missing diagnostic handler still fails before Provider
+I/O. Transport success, returned records, and optional-field presence never
+promote repository admission or runtime availability.
 
 Blocking Providers execute behind an explicitly bounded blocking-worker gate,
 not on a gRPC/Tokio worker. Every successful response preserves provider, batch,
@@ -612,9 +613,10 @@ empty or zero-filled record.
 
 When the server process has a valid Key, the four fixed-template Miaoxiang
 diagnostics (`MoneyFlows`, `FundFlowSeries`, `Auctions`, `MarketBreadth`) are
-default-readable without request-level Provider selection or unadmitted opt-in.
-This exception does not apply to arbitrary diagnostic providers or queries and
-does not change the response admission, completeness, blocker or null fields.
+registered only as explicit diagnostics. Requests must select
+`EastmoneyMiaoxiang` and set `allow_unadmitted=true`; otherwise they fail before
+Provider I/O. The Key does not create a default-readable exception and does not
+change the response admission, completeness, blocker or null fields.
 
 ## BR-047 TDX dynamic watchlist control
 
@@ -644,14 +646,32 @@ fixed loopback origin and method allowlist, exact decimal/unit conversion,
 bounded serial live evidence, process-generation resets, schema health and
 bounded output behavior defined by BR-043.
 
+The fast `get_pricevol` path sends one non-empty, duplicate-free, bounded
+watchlist in one single-flight request. The response must contain exactly the
+requested identity set; missing, additional, duplicated or malformed rows reject
+the complete batch. Rows are emitted in request order with checked consecutive
+bridge sequences and one shared local observation time. This batching changes
+neither field admission nor source-time/completeness claims. The slower
+single-symbol `get_market_snapshot` amount path remains independently paced.
+
 The source provides neither a source timestamp nor source-record-count semantics.
 Both remain absent; local `observed_at` is never copied into `source_at`, and a
-poll sequence is never called source completeness. Strict source freshness,
-OHLC/previous-close output and source-record count remain unadmitted. LocalAnalysis
-price/amount/volume anomaly events also remain unadmitted until production rule
-thresholds and trading-calendar/session policy are separately approved. An Agent
-may mark only a raw `observation` or `snapshot_observation` admitted, and the gRPC
-server independently validates its exact payload schema, family marker and value.
+poll sequence is never called source completeness. The exact snapshot
+`LastClose`, `Open`, `Max` and `Min` values are independently admitted as
+observation-time CNY/share fields after bounded schema, unit and serial-live
+validation; none is relabelled as the current-price family. Strict source
+freshness and source-record count remain unavailable.
+
+Price, cumulative-amount and cumulative-volume anomaly triggers are admitted
+only when the monitor receives an explicit positive, versioned rule
+configuration. The repository supplies no threshold, window, hysteresis or
+cooldown default. Triggered and rearmed messages must carry a deserializable Core
+`AnomalyEvent` binding the exact rule identity, endpoint evidence, input digest,
+instrument and stream cursor. Warm-up, cooling and reset updates remain
+unadmitted status messages. Calendar-date, session, midday, rollback, gap and
+terminal-generation transitions reset affected state; unknown source continuity
+remains explicit. The Agent and gRPC server independently deserialize and verify
+every admitted event and reject marker-only promotion.
 
 ## BR-049 Transport and normalized-contract hardening
 
@@ -698,11 +718,60 @@ recommendation or strategy score.
 The five RPCs are append-only. A product remains false and returns typed
 `UNIMPLEMENTED` before Provider I/O until its complete composition,
 deterministic contract suite and live admission are registered. `IndexQuotes`,
-`IntradayShape`, `OutcomeDailyBars`, and `UpperLimitPoolReview` meet that gate
+`IntradayShape`, `T0Evidence`, `OutcomeDailyBars`, and `UpperLimitPoolReview` meet that gate
 through bounded deterministic compositions and two live plus three serial
-observations. `T0Evidence` remains false because TDX public Quote and
-order-book packets lack an admitted source timestamp. It may expose the exact
-four-family bundle only through an explicit opt-in diagnostic that stays
-incomplete and unadmitted. Adding an ordinary empty record, fixture result,
-partial bundle or client-selected `allow_unadmitted` path does not satisfy
-production admission.
+observations. `T0Evidence` binds one Quote, one five-level book, the requested
+daily bars and requested five-minute bars from TDX for every exact instrument.
+Its response `observed_at` is the current local Asia/Shanghai observation time;
+the four original evidence objects remain unchanged, and the response
+`source_at` stays absent unless all four source instants are present and equal.
+It is an evidence bundle, not a BR-033 realtime freshness claim. Adding an
+ordinary empty record, fixture result, partial bundle or client-selected
+`allow_unadmitted` path does not satisfy production admission.
+
+## BR-051 CFFEX plaintext notice diagnostic boundary
+
+The CFFEX production `FuturesDeliveryCalendar` capability remains false and its
+formal trait fails before I/O while the official HTTPS notice origin is not
+reachable from the supported runtime. An explicit diagnostic may read only the
+public, credential-free HTTP origin `http://www.cffex.com.cn` and only the exact
+bounded paths `/cn/jystz.html`, `/cn/jystz_<2..=120>.html`, and
+`/cn/jystz/<YYYYMMDD>/<numeric-id>.html`. It sends GET only, no body, cookies,
+authorization, proxy override, redirect, query or fragment; it applies the
+existing positive timeout, 8 MiB response limit and shared minimum one-second
+request-start interval.
+
+Every successful diagnostic preserves `plaintext_http` as acquisition evidence
+in its deterministic batch identity and blocker. The record's `notice_url` is
+the same host/path normalized to the official HTTPS canonical reference only;
+it is not evidence that HTTPS was used to fetch the document. The complete list
+and detail still pass the existing title, publication date, contract-month,
+four-product, delivery-date and settlement-price wording checks. Missing or
+changed fields fail the atomic diagnostic. The response remains incomplete and
+`UNADMITTED`; browser reachability, one successful notice or canonical HTTPS
+normalization cannot promote production admission.
+
+## BR-052 Baidu source technical-bar boundary
+
+The admitted Baidu `TechnicalBars` family is limited to one validated A-share
+equity, daily interval, at most 2,001 source rows, unadjusted OHLCV/amount and
+optional source-supplied MA5/MA10/MA20. Missing source MA values remain absent;
+they are never locally recomputed or filled with zero. Every record preserves
+its source date, Baidu identity, local observation time and atomic batch ID.
+Admission does not claim a complete trading calendar, adjusted-price
+continuity, a corporate-action explanation or a generic Baidu
+`HistoricalBars` route. Those are separate capabilities and remain false.
+
+## BR-053 Local observation-time boundary
+
+When a Provider does not publish one trustworthy source instant, an explicitly
+registered observation-time contract may use the current local Asia/Shanghai
+clock as `observed_at`. It must preserve every available record `source_at`,
+leave a missing or non-common batch `source_at` absent, retain the exact input
+evidence and state that the result is ineligible for BR-033 strict source-time
+freshness. Local time never repairs wrong identity, missing required fields,
+partial coverage, unordered data, stale source dates or licensed-data gaps.
+This boundary currently admits only the exact TDX `T0Evidence` four-family
+bundle and Eastmoney `PostCloseFlows` snapshot specified by BR-019 and BR-050;
+it does not promote `MarketRankings`, `MarketBreadth`, `Auctions`,
+`FuturesDelivery`, CFETS DR007 or IMF data.

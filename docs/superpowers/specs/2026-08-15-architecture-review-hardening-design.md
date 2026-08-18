@@ -74,10 +74,14 @@ unchanged.
   observation time, as required by BR-033. Providers now construct both from the
   same captured instant.
 - The local TDX loopback client remains intentionally single-flight under
-  BR-043/BR-048 evidence. Parallel polling and `Arc<str>` record storage require
-  benchmarks and separate contract review.
+  BR-043/BR-048 evidence. Its documented `get_pricevol` list parameter is used
+  for one bounded atomic watchlist request, avoiding per-symbol round trips
+  without adding parallel calls. Parallel requests and `Arc<str>` record storage
+  still require benchmarks and separate contract review.
 - Event replay/status cloning remains behind an explicitly bounded EventHub;
   lock sharding is deferred until measurement proves contention at the admitted
   replay limits.
-- Eastmoney default-readable Miaoxiang diagnostics remain the narrow BR-045 /
-  BR-046 exception. They never promote repository admission or completeness.
+- Eastmoney Miaoxiang diagnostics follow the same explicit request-level
+  `allow_unadmitted=true` boundary as every other repository-unadmitted
+  operation. A configured Key only makes the fixed diagnostic handler
+  available; it does not make that handler default-readable.

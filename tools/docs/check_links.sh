@@ -11,5 +11,5 @@ while IFS=: read -r file _line link; do
   target=${target%%#*}
   test -z "$target" && continue
   test -e "$file_dir/$target" || test -e "$target" || { echo "$file: missing link target $target" >&2; status=1; }
-done < <(rg -n --with-filename -o -g '*.md' '\[[^]]+\]\([^)]*\)' docs crates || true)
+done < <(rg -n --with-filename -o -g '*.md' '\[[^]]+\]\([^)]*\)' docs crates || true) || true
 exit "$status"

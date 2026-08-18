@@ -43,8 +43,8 @@ fn code_prefix_must_match_declared_and_source_exchange() {
 }
 
 #[test]
-fn unverified_fund_flow_is_not_admitted_as_a_capability() {
-    assert!(!EastmoneyClient::capital_capabilities().fund_flow_series);
+fn verified_public_fund_flow_is_admitted_as_a_capability() {
+    assert!(EastmoneyClient::capital_capabilities().fund_flow_series);
 }
 
 #[test]

@@ -1,15 +1,15 @@
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError};
 use magic_market_core::{
-    verify_admitted_batch, verify_verified_empty, AssetClass, BlockTrades, BoardCategory,
-    BoardFlows, DataBatch, DividendPlans, DragonTigerData, DragonTigerDiscovery,
-    DragonTigerDiscoveryRequest, DragonTigerEntry, Exchange, FlowInterval, FlowScope,
-    FundFlowRequest, FundFlowSeries, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
-    InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents,
-    MarginData, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingEntry,
+    verify_admitted_batch, verify_admitted_time_series_batch, verify_verified_empty, AssetClass,
+    BlockTrades, BoardCategory, BoardFlows, DataBatch, DividendPlans, DragonTigerData,
+    DragonTigerDiscovery, DragonTigerDiscoveryRequest, DragonTigerEntry, Exchange, FlowInterval,
+    FlowScope, FundFlowRequest, FundFlowSeries, HolderCounts, InstrumentDateRangeRequest,
+    InstrumentId, InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools,
+    LockupEvents, MarginData, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingEntry,
     MarketRankingKind, MarketRankings, NewsProvider, PopularityData, PositiveU32,
-    PostCloseFlowRequest, ProbeAdmissionPolicy, ProbeStatus, ProviderId, ProviderTopNRankingEntry,
-    ProviderTopNRankings, ReportScope, ResearchReports, ResearchRequest, SourceEvidence,
-    TargetPriceConsensus, TargetPriceData, TargetPriceRequest,
+    PostCloseFlowRequest, PostCloseFlows, ProbeAdmissionPolicy, ProbeStatus, ProviderId,
+    ProviderTopNRankingEntry, ProviderTopNRankings, ReportScope, ResearchReports, ResearchRequest,
+    SourceEvidence, TargetPriceConsensus, TargetPriceData, TargetPriceRequest,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::error::Error;
@@ -69,6 +69,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         return print_summary(&failures);
     }
+    if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("fund-flow") {
+        let instrument = instrument(Exchange::Shanghai, env("MAGIC_EASTMONEY_CODE", "600396"))?;
+        let limit = PositiveU32::new(env("MAGIC_EASTMONEY_FUND_FLOW_LIMIT", "5").parse::<u32>()?)?;
+        let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney).require_source_at();
+        for interval in [FlowInterval::Minute1, FlowInterval::Day1] {
+            let request =
+                FundFlowRequest::new(FlowScope::Instrument(instrument.clone()), interval, limit)?;
+            probe_fund_flow_candidate(
+                &format!("fund_flow_candidate.{interval:?}"),
+                client.fund_flow_series(&request),
+                &policy,
+                &mut failures,
+            );
+        }
+        return print_summary(&failures);
+    }
     if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("target-price") {
         let target = instrument(
             Exchange::Shanghai,
@@ -87,13 +103,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             IsoDate::new(required_env("MAGIC_EASTMONEY_POST_CLOSE_DATE")?)?,
             PositiveU32::new(env("MAGIC_EASTMONEY_POST_CLOSE_LIMIT", "20").parse::<u32>()?)?,
         )?;
-        probe_unadmitted_batch(
+        probe_post_close(
             "capital.post_close_ranking",
-            client.diagnose_post_close_flows(&request),
+            client.post_close_flows(&request),
+            &mut failures,
         );
-        println!("\n=== diagnostic_summary ===");
-        println!("diagnostic_probe_status=unadmitted");
-        return Ok(());
+        return print_summary(&failures);
     }
     let pool_date = IsoDate::new(required_env("MAGIC_EASTMONEY_POOL_DATE")?)?;
     let dragon_tiger_date = IsoDate::new(required_env("MAGIC_EASTMONEY_DRAGON_TIGER_DATE")?)?;
@@ -644,6 +659,46 @@ fn probe_target_price(
     }
 }
 
+fn probe_post_close(
+    label: &str,
+    result: Result<DataBatch<magic_market_core::PostCloseFlow>, EastmoneyError>,
+    failures: &mut Vec<String>,
+) {
+    let batch = match result {
+        Ok(batch) => batch,
+        Err(error) => {
+            println!("\n=== {label} ===");
+            println!("family={label} status={}", ProbeStatus::Failed);
+            println!("error={error}");
+            failures.push(format!("{label}: {error}"));
+            return;
+        }
+    };
+    let batch_id = batch.provenance().batch_id();
+    let evidence_valid = batch_id.is_some()
+        && batch.quality().is_complete()
+        && !batch.records().is_empty()
+        && batch.records().iter().enumerate().all(|(index, record)| {
+            record.rank().get() == u32::try_from(index + 1).unwrap_or(u32::MAX)
+                && record.evidence().provider() == ProviderId::Eastmoney
+                && record.evidence().source_at().is_some()
+                && record.evidence().observed_at() == batch.provenance().fetched_at()
+                && Some(record.evidence().batch_id()) == batch_id
+        });
+    if !evidence_valid {
+        let failure = format!(
+            "{label}: observation-time batch or record evidence failed admission validation"
+        );
+        println!("\n=== {label} ===");
+        println!("family={label} status={}", ProbeStatus::Failed);
+        println!("error={failure}");
+        failures.push(failure);
+        return;
+    }
+    println!("family={label} status={}", ProbeStatus::Admitted);
+    print_batch(label, &batch);
+}
+
 fn probe_unadmitted_batch<T: Debug, E: std::fmt::Display>(
     label: &str,
     result: Result<DataBatch<T>, E>,
@@ -658,6 +713,37 @@ fn probe_unadmitted_batch<T: Debug, E: std::fmt::Display>(
         Err(error) => {
             println!("status={}", ProbeStatus::Failed);
             println!("error={error}");
+        }
+    }
+}
+
+fn probe_fund_flow_candidate<E: std::fmt::Display>(
+    label: &str,
+    result: Result<DataBatch<magic_market_core::FundFlowPoint>, E>,
+    policy: &ProbeAdmissionPolicy,
+    failures: &mut Vec<String>,
+) {
+    match result {
+        Ok(batch) => match verify_admitted_time_series_batch(
+            &batch,
+            policy,
+            |record| &record.evidence,
+            |record| format!("{:?}:{}", record.interval, record.period_at),
+        ) {
+            Ok(status) => {
+                println!("family={label} status={status}");
+                print_batch(label, &batch);
+            }
+            Err(error) => {
+                println!("family={label} status={}", ProbeStatus::Failed);
+                println!("error={error}");
+                failures.push(format!("{label}: admission rejected: {error}"));
+            }
+        },
+        Err(error) => {
+            println!("family={label} status={}", ProbeStatus::Failed);
+            println!("error={error}");
+            failures.push(format!("{label}: {error}"));
         }
     }
 }

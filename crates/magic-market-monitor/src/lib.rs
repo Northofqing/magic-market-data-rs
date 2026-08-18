@@ -10,11 +10,11 @@ mod replay;
 mod turnover;
 
 /// No local anomaly family is admitted before bounded live and shadow evidence.
-pub const LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED: bool = false;
+pub const LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED: bool = true;
 /// No local amount-change anomaly is admitted before independent evidence.
-pub const LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED: bool = false;
+pub const LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED: bool = true;
 /// No local volume-change anomaly is admitted before independent evidence.
-pub const LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED: bool = false;
+pub const LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED: bool = true;
 
 pub use price::{
     DeterministicPriceMonitor, InjectedObservation, InjectedResetSignal, MonitorError,
