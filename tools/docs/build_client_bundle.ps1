@@ -1,6 +1,6 @@
 param(
     [string]$Destination = "target/runtime/client-bundle",
-    [string]$BundleVersion = "2026-08-19.1",
+    [string]$BundleVersion = "2026-08-19.2",
     [string]$SourceCommit = ""
 )
 
@@ -89,6 +89,14 @@ Public contract files are covered by manifest.sha256. GlobalNews and InstrumentN
 use schema version 2; all other request payload versions remain documented per method.
 TLS client identities and Bearer tokens are deployment-private and are not covered by,
 or copied by, this public contract builder.
+
+Verify the public contract files from this directory:
+
+    sha256sum -c manifest.sha256
+
+On macOS, where sha256sum is not installed by default:
+
+    shasum -a 256 -c manifest.sha256
 "@
 [System.IO.File]::WriteAllText(
     [System.IO.Path]::Combine($destinationPath, "README.md"),
@@ -117,11 +125,13 @@ $manifest = foreach ($name in $manifestFiles) {
     }
     "$hash  $name"
 }
-[System.IO.File]::WriteAllLines(
-    [System.IO.Path]::Combine($destinationPath, "manifest.sha256"),
-    $manifest,
-    [System.Text.Encoding]::ASCII
-)
+$manifestPath = [System.IO.Path]::Combine($destinationPath, "manifest.sha256")
+$manifestText = [string]::Join("`n", $manifest) + "`n"
+[System.IO.File]::WriteAllText($manifestPath, $manifestText, [System.Text.Encoding]::ASCII)
+$manifestBytes = [System.IO.File]::ReadAllBytes($manifestPath)
+if ([Array]::IndexOf($manifestBytes, [byte]13) -ge 0) {
+    throw "manifest.sha256 must contain LF line endings without carriage returns"
+}
 
 [System.Console]::WriteLine("bundle=$destinationPath")
 [System.Console]::WriteLine("version=$BundleVersion")

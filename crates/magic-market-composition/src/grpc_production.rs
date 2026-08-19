@@ -49,8 +49,8 @@ use magic_market_router::{
     SourceError,
 };
 use magic_market_service::{
-    CanonicalPayload, Capability, Operation, OperationRegistry, QueryCommand, QueryResult,
-    ServiceError,
+    CanonicalPayload, Capability, Operation, OperationRegistry, ProviderFailureKind, QueryCommand,
+    QueryResult, ServiceError,
 };
 use magic_nbs_rs::{NbsClient, NbsError};
 use magic_pbc_rs::{PbcClient, PbcError};
@@ -703,12 +703,21 @@ fn register_global_news_parity(
     provider_timeout: Duration,
     maximum_payload_bytes: usize,
 ) -> Result<(), ProductionRegistryError> {
+    let cls = ClsClient::with_timeout(provider_timeout)?;
     register_global_news_provider(
         registry,
-        ClsClient::with_timeout(provider_timeout)?,
+        cls.clone(),
         "Cls",
         ProviderId::Cailianpress,
-        "bounded public CLS financial-news metadata",
+        "bounded public CLS financial-news metadata (legacy selector)",
+        maximum_payload_bytes,
+    )?;
+    register_global_news_provider(
+        registry,
+        cls,
+        "Cailianpress",
+        ProviderId::Cailianpress,
+        "bounded public Cailianpress financial-news metadata",
         maximum_payload_bytes,
     )?;
     register_global_news_provider(
@@ -4014,9 +4023,54 @@ fn map_baidu_error(operation: Operation, error: &BaiduError) -> ServiceError {
 fn map_cls_error(operation: Operation, error: &ClsError) -> ServiceError {
     match error {
         ClsError::InvalidRequest(message) => invalid(message),
-        ClsError::Transport(_) => unavailable(operation, error),
         ClsError::Unsupported(reason) => unsupported(operation, reason),
-        ClsError::Decode(_) | ClsError::Protocol(_) | ClsError::Core(_) => precondition(error),
+        ClsError::Transport(_) => cls_provider_failure(
+            operation,
+            ProviderFailureKind::Unavailable,
+            "category=transport".into(),
+        ),
+        ClsError::HttpStatus(status) => {
+            let kind = match status {
+                401 | 403 => ProviderFailureKind::AuthenticationRejected,
+                429 => ProviderFailureKind::RateLimited,
+                500..=599 => ProviderFailureKind::Unavailable,
+                _ => ProviderFailureKind::QueryRejected,
+            };
+            cls_provider_failure(operation, kind, format!("http_status={status}"))
+        }
+        ClsError::ProviderRejected { errno, message } => cls_provider_failure(
+            operation,
+            ProviderFailureKind::QueryRejected,
+            format!("errno={errno} message={message}"),
+        ),
+        ClsError::Decode(message) => cls_provider_failure(
+            operation,
+            ProviderFailureKind::ResponseInvalid,
+            format!("category=decode message={message}"),
+        ),
+        ClsError::Protocol(message) => cls_provider_failure(
+            operation,
+            ProviderFailureKind::ResponseInvalid,
+            format!("category=protocol message={message}"),
+        ),
+        ClsError::Core(error) => cls_provider_failure(
+            operation,
+            ProviderFailureKind::ResponseInvalid,
+            format!("category=core message={error}"),
+        ),
+    }
+}
+
+fn cls_provider_failure(
+    operation: Operation,
+    kind: ProviderFailureKind,
+    provider_reason: String,
+) -> ServiceError {
+    ServiceError::ProviderFailure {
+        operation,
+        provider: "Cailianpress".into(),
+        kind,
+        provider_reason,
     }
 }
 
@@ -4855,6 +4909,7 @@ mod tests {
         let capabilities = registry.capabilities();
         let expected_admitted = [
             (Operation::GlobalNews, "Cls"),
+            (Operation::GlobalNews, "Cailianpress"),
             (Operation::GlobalNews, "ThePaper"),
             (Operation::GlobalNews, "XinhuaFinance"),
             (Operation::GlobalNews, "Yicai"),
@@ -5209,6 +5264,44 @@ mod tests {
                 operation: Operation::BoardDirectory,
                 ..
             }
+        ));
+        assert!(matches!(
+            provider_error(
+                Operation::GlobalNews,
+                ClsError::ProviderRejected {
+                    errno: 1001,
+                    message: "bad sign".into(),
+                }
+            ),
+            ServiceError::ProviderFailure {
+                operation: Operation::GlobalNews,
+                provider,
+                kind: ProviderFailureKind::QueryRejected,
+                provider_reason,
+            } if provider == "Cailianpress"
+                && provider_reason == "errno=1001 message=bad sign"
+        ));
+        assert!(matches!(
+            provider_error(Operation::GlobalNews, ClsError::HttpStatus(429)),
+            ServiceError::ProviderFailure {
+                provider,
+                kind: ProviderFailureKind::RateLimited,
+                provider_reason,
+                ..
+            } if provider == "Cailianpress" && provider_reason == "http_status=429"
+        ));
+        assert!(matches!(
+            provider_error(
+                Operation::GlobalNews,
+                ClsError::Protocol("telegraph row identity changed".into())
+            ),
+            ServiceError::ProviderFailure {
+                provider,
+                kind: ProviderFailureKind::ResponseInvalid,
+                provider_reason,
+                ..
+            } if provider == "Cailianpress"
+                && provider_reason == "category=protocol message=telegraph row identity changed"
         ));
     }
 }

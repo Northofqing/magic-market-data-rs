@@ -27,12 +27,21 @@ existing gRPC operations.
   upstream payloads, and unbounded Provider text are excluded.
 - Eastmoney continues to fetch only
   `https://roll.eastmoney.com/finance.html`. The exact first-party
-  `futures.eastmoney.com/a/<numeric-id>.html` and
-  `bond.eastmoney.com/a/<numeric-id>.html` hosts are added only to the retained
+  `futures.eastmoney.com/a/<numeric-id>.html`,
+  `bond.eastmoney.com/a/<numeric-id>.html`, and
+  `hk.eastmoney.com/a/<numeric-id>.html` hosts are added only to the retained
   metadata-link allowlist and are never fetched by `GlobalNews`.
 - Jin10 continues to exclude locked rows before reading protected content.
   Source `data.lock=true` is the complete exclusion signal; `vip_level` is not
   required because it is neither stable nor consumed.
+- ThePaper requires both forward flags to be valid and equal. A non-empty
+  external `link` is a stronger exclusion signal even when both flags claim a
+  native row, so external publishers are never relabeled as ThePaper. Its
+  normalized RFC3339 `published_at` preserves the exact millisecond instant of
+  the raw `unix-ms:` evidence string.
+- CLS nonzero `errno` responses use a typed external-query rejection. Clients
+  receive only the stable Provider/reason/retry classification; bounded,
+  control-free Provider reasons are retained in server stderr for correlation.
 - CFFEX production `FuturesDelivery` remains the checked-in BR-051 fixed
   schedule with no runtime I/O. The stale client bundle and documentation are
   refreshed; the plaintext notice reader remains diagnostic only.

@@ -30,10 +30,14 @@ pub enum ClsError {
     InvalidRequest(String),
     #[error("HTTPS transport error: {0}")]
     Transport(String),
+    #[error("CLS returned HTTP status {0}")]
+    HttpStatus(u16),
     #[error("CLS response decoding failed: {0}")]
     Decode(String),
     #[error("CLS protocol error: {0}")]
     Protocol(String),
+    #[error("CLS provider rejected query with errno {errno}: {message}")]
+    ProviderRejected { errno: i64, message: String },
     #[error("unsupported capability: {0}")]
     Unsupported(String),
     #[error("core contract error: {0}")]
@@ -92,9 +96,13 @@ impl ClsTransport for HttpsTransport {
         for (name, value) in request.headers() {
             call = call.set(name, value);
         }
-        let response = call
-            .call()
-            .map_err(|error| ClsError::Transport(error.to_string()))?;
+        let response = match call.call() {
+            Ok(response) => response,
+            Err(ureq::Error::Status(status, _)) => return Err(ClsError::HttpStatus(status)),
+            Err(ureq::Error::Transport(error)) => {
+                return Err(ClsError::Transport(error.to_string()))
+            }
+        };
         let status = response.status();
         let content_type = response.header("Content-Type").map(str::to_owned);
         read_http_response(status, content_type.as_deref(), response.into_reader())
@@ -247,9 +255,7 @@ fn read_http_response(
     reader: impl Read,
 ) -> Result<Vec<u8>, ClsError> {
     if status != 200 {
-        return Err(ClsError::Transport(format!(
-            "unexpected HTTP status {status}"
-        )));
+        return Err(ClsError::HttpStatus(status));
     }
     ensure_json_content_type(content_type)?;
     let mut body = Vec::new();
@@ -292,13 +298,27 @@ fn parse_response(
         .and_then(Value::as_i64)
         .ok_or_else(|| ClsError::Protocol("errno must be an integer".into()))?;
     if errno != 0 {
-        let message = root
-            .get("errmsg")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown CLS error");
-        return Err(ClsError::Protocol(format!(
-            "CLS returned errno {errno}: {message}"
-        )));
+        let message = match root.get("errmsg") {
+            None | Some(Value::Null) => "unspecified".to_owned(),
+            Some(Value::String(value)) => {
+                let message = normalized_text(value);
+                if message.is_empty()
+                    || message.chars().count() > 256
+                    || message.chars().any(char::is_control)
+                {
+                    return Err(ClsError::Protocol(
+                        "CLS rejection message is invalid or exceeds 256 characters".into(),
+                    ));
+                }
+                message
+            }
+            Some(_) => {
+                return Err(ClsError::Protocol(
+                    "CLS rejection errmsg must be a string or null".into(),
+                ))
+            }
+        };
+        return Err(ClsError::ProviderRejected { errno, message });
     }
     let rows = root
         .pointer("/data/roll_data")

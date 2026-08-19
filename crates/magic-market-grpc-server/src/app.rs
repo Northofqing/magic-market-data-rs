@@ -4,7 +4,8 @@ use std::time::Duration;
 use magic_market_grpc_contracts::v1;
 use magic_market_grpc_contracts::{CANONICAL_JSON_CONTENT_TYPE, PROTOCOL_VERSION};
 use magic_market_service::{
-    BlockingQueryGateway, CanonicalPayload, Operation, QueryCommand, ServiceError,
+    BlockingQueryGateway, CanonicalPayload, Operation, ProviderFailureKind, QueryCommand,
+    ServiceError,
 };
 use prost::Message;
 use tokio::sync::Semaphore;
@@ -431,6 +432,63 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             None,
         ),
+        ServiceError::ProviderFailure {
+            operation: rejected_operation,
+            provider,
+            kind,
+            provider_reason,
+        } => {
+            let (code, reason_code, retryable, message) = match kind {
+                ProviderFailureKind::AuthenticationRejected => (
+                    Code::PermissionDenied,
+                    "provider_authentication_rejected",
+                    false,
+                    "provider authentication rejected",
+                ),
+                ProviderFailureKind::RateLimited => (
+                    Code::ResourceExhausted,
+                    "provider_rate_limited",
+                    true,
+                    "provider rate limited the query",
+                ),
+                ProviderFailureKind::QueryRejected => (
+                    Code::FailedPrecondition,
+                    "external_query_rejected",
+                    false,
+                    "provider rejected external query",
+                ),
+                ProviderFailureKind::ResponseInvalid => (
+                    Code::FailedPrecondition,
+                    "provider_response_invalid",
+                    false,
+                    "provider response violated its contract",
+                ),
+                ProviderFailureKind::Unavailable => (
+                    Code::Unavailable,
+                    "provider_unavailable",
+                    true,
+                    "provider is unavailable",
+                ),
+            };
+            eprintln!(
+                "stage={} request_id={:?} operation={} provider={:?} provider_reason={:?}",
+                reason_code,
+                safe_log_value(request_id, 128),
+                rejected_operation.as_str(),
+                safe_log_value(&provider, 64),
+                safe_log_value(&provider_reason, 512),
+            );
+            (
+                code,
+                reason_code,
+                retryable,
+                message.to_owned(),
+                provider,
+                String::new(),
+                String::new(),
+                None,
+            )
+        }
         ServiceError::FailedPrecondition(message) => (
             Code::FailedPrecondition,
             "source_precondition_failed",
@@ -487,6 +545,19 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
         MetadataValue::from_bytes(&detail),
     );
     Status::with_metadata(code, message, metadata)
+}
+
+fn safe_log_value(value: &str, maximum_chars: usize) -> String {
+    let value = value
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(maximum_chars)
+        .collect::<String>();
+    if value.is_empty() {
+        "<empty>".to_owned()
+    } else {
+        value
+    }
 }
 
 #[cfg(test)]
@@ -562,6 +633,103 @@ mod tests {
         assert_eq!(detail.evidence_field, "consensus.mean");
         assert_eq!(detail.record_index, 2);
         assert!(detail.has_record_index);
+    }
+
+    #[test]
+    fn external_query_rejection_is_safe_structured_and_non_retryable() {
+        let status = status_from_error(
+            "request-cls-rejected",
+            Operation::GlobalNews,
+            ServiceError::ProviderFailure {
+                operation: Operation::GlobalNews,
+                provider: "Cailianpress".to_owned(),
+                kind: ProviderFailureKind::QueryRejected,
+                provider_reason: "errno=1001 message=bad sign".to_owned(),
+            },
+        );
+        assert_eq!(status.code(), Code::FailedPrecondition);
+        assert_eq!(status.message(), "provider rejected external query");
+        assert!(!status.message().contains("bad sign"));
+        let detail = v1::ErrorDetail::decode(
+            status
+                .metadata()
+                .get_bin(ERROR_DETAIL_METADATA_KEY)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(detail.reason_code, "external_query_rejected");
+        assert!(!detail.retryable);
+        assert_eq!(detail.admission, v1::AdmissionState::Unadmitted as i32);
+        assert_eq!(detail.provider, "Cailianpress");
+        assert!(detail.evidence_code.is_empty());
+        assert!(detail.evidence_field.is_empty());
+        assert!(!detail.has_record_index);
+        assert_eq!(safe_log_value("bad\r\nsign", 32), "badsign");
+        assert_eq!(safe_log_value("123456", 4), "1234");
+    }
+
+    #[test]
+    fn provider_failure_kinds_have_closed_safe_status_contracts() {
+        let cases = [
+            (
+                ProviderFailureKind::AuthenticationRejected,
+                Code::PermissionDenied,
+                "provider_authentication_rejected",
+                false,
+            ),
+            (
+                ProviderFailureKind::RateLimited,
+                Code::ResourceExhausted,
+                "provider_rate_limited",
+                true,
+            ),
+            (
+                ProviderFailureKind::QueryRejected,
+                Code::FailedPrecondition,
+                "external_query_rejected",
+                false,
+            ),
+            (
+                ProviderFailureKind::ResponseInvalid,
+                Code::FailedPrecondition,
+                "provider_response_invalid",
+                false,
+            ),
+            (
+                ProviderFailureKind::Unavailable,
+                Code::Unavailable,
+                "provider_unavailable",
+                true,
+            ),
+        ];
+        for (kind, expected_code, expected_reason, expected_retryable) in cases {
+            let status = status_from_error(
+                "request-provider-failure",
+                Operation::GlobalNews,
+                ServiceError::ProviderFailure {
+                    operation: Operation::GlobalNews,
+                    provider: "Cailianpress".to_owned(),
+                    kind,
+                    provider_reason: "internal-only reason".to_owned(),
+                },
+            );
+            assert_eq!(status.code(), expected_code);
+            assert!(!status.message().contains("internal-only"));
+            let detail = v1::ErrorDetail::decode(
+                status
+                    .metadata()
+                    .get_bin(ERROR_DETAIL_METADATA_KEY)
+                    .unwrap()
+                    .to_bytes()
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(detail.reason_code, expected_reason);
+            assert_eq!(detail.retryable, expected_retryable);
+            assert_eq!(detail.provider, "Cailianpress");
+        }
     }
 
     #[tokio::test]

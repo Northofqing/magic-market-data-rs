@@ -2,6 +2,8 @@
 
 `magic-cls-rs` 是只读的全球新闻补充 Provider。它实现
 `NewsProvider::global_news`，不读取桌面客户端、Cookie、账号或交易数据。
+gRPC 的正式选择器是 `Cailianpress`；既有 `Cls` 选择器作为 append-only 兼容别名
+保留，两者都要求逐条 `ProviderId::Cailianpress` 证据。
 
 ## 数据源与网络边界
 
@@ -16,6 +18,13 @@ https://www.cls.cn/v1/roll/get_roll_list
 JSON，单响应最多 2 MiB。所有客户端 clone 共享串行请求门，生产请求开始时间至少
 相隔 1 秒，并持有到完整响应读取结束。返回体必须满足 `errno == 0`，记录数不能
 超过请求上限。
+
+非零 `errno` 使用 typed `ProviderRejected`，不会混入普通 schema/protocol 错误。
+gRPC 将 CLS 失败闭合为 `provider_authentication_rejected`、`provider_rate_limited`、
+`provider_unavailable`、`external_query_rejected` 或 `provider_response_invalid`，并保留
+`provider=Cailianpress` 和确定的 retryable 标志，不回传上游原文。服务端 stderr 使用
+对应 reason code 作为 `stage`，记录经过控制字符移除和长度限制的 HTTP status、
+`errno`/`errmsg` 或解析类别，以便按 request ID 闭合 Provider 原因。
 
 请求的 `rn` 最大为 50。load probe 固定并发 1、请求间隔至少 1 秒、最多 3 次，
 不会把公开端点当成高并发生产队列。

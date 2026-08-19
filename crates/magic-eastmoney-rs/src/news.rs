@@ -295,6 +295,7 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
             | "biz.eastmoney.com"
             | "futures.eastmoney.com"
             | "bond.eastmoney.com"
+            | "hk.eastmoney.com"
     ) {
         return Err(EastmoneyError::Protocol(format!(
             "Eastmoney news article host {host:?} is not an admitted global-news host"

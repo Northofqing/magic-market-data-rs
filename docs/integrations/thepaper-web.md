@@ -18,12 +18,19 @@ requires the Next.js route `/channel/[id]`, `pageProps.id == "25951"`, and an ap
 payload status of 200.
 
 Only rows whose `isOutForward` and legacy `isOutForword` fields both equal `"0"` and
-whose `link` is empty or null are normalized. External forwards are omitted, so their
-original publishers are never relabeled as The Paper. Native canonical URLs use:
+whose `link` is empty or null are normalized. A non-empty `link` is the stronger external
+signal and excludes the row even if both forward flags incorrectly equal `"0"`. External
+forwards are omitted, so their original publishers are never relabeled as The Paper.
+Native canonical URLs use:
 
 ```text
 https://www.thepaper.cn/newsDetail_forward_{contId}
 ```
+
+`pubTimeLong` is retained verbatim as `evidence.source_at=unix-ms:<value>`.
+`published_at` is RFC3339 at `+08:00` with the same millisecond precision, so
+the two fields identify exactly the same instant rather than merely the same
+second.
 
 ## Bounds and failure behavior
 

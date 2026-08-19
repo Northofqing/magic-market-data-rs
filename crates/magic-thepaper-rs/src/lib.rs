@@ -419,16 +419,11 @@ fn is_native(row: &Map<String, Value>) -> Result<bool, ThePaperError> {
             ))
         }
     };
-    if forward == "0" {
-        if link.is_some() {
-            return Err(ThePaperError::Protocol(
-                "native The Paper row unexpectedly has an external link".into(),
-            ));
-        }
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+    // The live finance page has emitted rows whose two legacy forward flags
+    // both claim native content while `link` points to an external publisher.
+    // Link presence is the stronger, non-promotable signal: omit the row just
+    // like an explicitly forwarded row and never relabel it as The Paper.
+    Ok(forward == "0" && link.is_none())
 }
 
 fn parse_item(
@@ -443,7 +438,7 @@ fn parse_item(
         .and_then(Value::as_i64)
         .filter(|value| *value > 0)
         .ok_or_else(|| ThePaperError::Protocol("pubTimeLong must be positive".into()))?;
-    let published_at = unix_seconds_to_china_rfc3339(milliseconds.div_euclid(1_000))?;
+    let published_at = unix_milliseconds_to_china_rfc3339(milliseconds)?;
     let evidence = SourceEvidence::new(ProviderId::ThePaper, observed_at, batch_id)?
         .with_source_at(format!("unix-ms:{milliseconds}"))?;
     Ok(NewsItem {
@@ -461,6 +456,16 @@ fn parse_item(
         language: NonEmptyText::new("zh-CN")?,
         evidence,
     })
+}
+
+fn unix_milliseconds_to_china_rfc3339(milliseconds: i64) -> Result<String, ThePaperError> {
+    let seconds = milliseconds.div_euclid(1_000);
+    let subsecond = milliseconds.rem_euclid(1_000);
+    let second_precision = unix_seconds_to_china_rfc3339(seconds)?;
+    let wall_clock = second_precision.strip_suffix("+08:00").ok_or_else(|| {
+        ThePaperError::Protocol("China RFC3339 timestamp has an unexpected offset".into())
+    })?;
+    Ok(format!("{wall_clock}.{subsecond:03}+08:00"))
 }
 
 fn parse_topics(row: &Map<String, Value>) -> Result<Vec<NonEmptyText>, ThePaperError> {
@@ -611,10 +616,16 @@ mod tests {
             item.canonical_url.as_str(),
             "https://www.thepaper.cn/newsDetail_forward_33654589"
         );
-        assert_eq!(item.published_at.as_str(), "2026-07-24T22:28:51+08:00");
+        assert_eq!(item.published_at.as_str(), "2026-07-24T22:28:51.309+08:00");
         assert_eq!(item.topics.len(), 3);
         assert_eq!(item.evidence.provider(), ProviderId::ThePaper);
         assert_eq!(item.evidence.source_at(), Some("unix-ms:1784903331309"));
+        assert_eq!(
+            magic_market_core::EvidenceTimestamp::parse_instant(item.published_at.as_str())
+                .unwrap(),
+            magic_market_core::EvidenceTimestamp::parse_instant(item.evidence.source_at().unwrap())
+                .unwrap()
+        );
         assert_eq!(
             batch.provenance().source_at(),
             Some("unix-ms:1784903331309")
@@ -663,6 +674,21 @@ mod tests {
             parse_response(unknown.as_bytes(), 20, "observed"),
             Err(ThePaperError::Protocol(_))
         ));
+    }
+
+    #[test]
+    fn link_presence_excludes_a_row_even_when_forward_flags_claim_native() {
+        let mislabeled_external = FIXTURE
+            .replace("\"isOutForward\": \"1\"", "\"isOutForward\": \"0\"")
+            .replace("\"isOutForword\": \"1\"", "\"isOutForword\": \"0\"");
+        let batch = parse_response(mislabeled_external.as_bytes(), 20, "observed")
+            .expect("an external link must never be promoted to a native The Paper record");
+
+        assert_eq!(batch.records().len(), 2);
+        assert!(batch.records().iter().all(|record| record
+            .canonical_url
+            .as_str()
+            .starts_with("https://www.thepaper.cn/")));
     }
 
     #[test]

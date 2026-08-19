@@ -354,8 +354,11 @@ Jin10 admission is limited to unlocked public type-0 flashes and type-2
 articles belonging to at least one source news channel 1/2/3; channel-5-only
 promotion slots are excluded. Protected details are never requested or
 decrypted. The Paper admission is limited to native articles on
-finance channel `25951`; externally forwarded rows are omitted rather than
-relabeled. Neither source may infer structured security identity from text.
+finance channel `25951`; any row with a non-empty external `link` is omitted
+even when both forward flags claim native content, and is never relabeled.
+The Paper `published_at` preserves the exact millisecond instant carried by the
+raw `pubTimeLong` evidence. Neither source may infer structured security identity
+from text.
 
 ## BR-013 Full-market discovery completeness
 Full-market announcement and dragon-tiger discovery must read and validate the
@@ -436,9 +439,9 @@ Eastmoney global latest news is admitted only from the exact first page at
 the source `财经` category, use a calendar-valid newest-first minute timestamp,
 have matching attribute/visible titles, and use a unique numeric article ID at
 the canonical `/a/<id>.html` path on exactly `finance.eastmoney.com`,
-`global.eastmoney.com`, `biz.eastmoney.com`, `futures.eastmoney.com`, or
-`bond.eastmoney.com`. These hosts are retained as metadata links only and are not
-fetched by this operation. The public page does
+`global.eastmoney.com`, `biz.eastmoney.com`, `futures.eastmoney.com`,
+`bond.eastmoney.com`, or `hk.eastmoney.com`. These hosts are retained as
+metadata links only and are not fetched by this operation. The public page does
 not provide structured security identity, so records keep an empty instrument
 list and may not be presented as instrument news.
 

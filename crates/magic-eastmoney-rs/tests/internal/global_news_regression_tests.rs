@@ -95,8 +95,12 @@ fn global_news_maps_the_verified_rolling_page() {
 }
 
 #[test]
-fn global_news_accepts_exact_first_party_futures_and_bond_metadata_links() {
-    for host in ["futures.eastmoney.com", "bond.eastmoney.com"] {
+fn global_news_accepts_exact_first_party_metadata_links() {
+    for host in [
+        "futures.eastmoney.com",
+        "bond.eastmoney.com",
+        "hk.eastmoney.com",
+    ] {
         let expected = format!("https://{host}/a/202607253821086055.html");
         let fixture = global_fixture().replace(
             "http://finance.eastmoney.com/a/202607253821086055.html",

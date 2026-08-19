@@ -456,6 +456,8 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council 与 iWencai 外，也可精确选择 TDX 公共协议、Sina、SSE、SZSE、
   CLS、ThePaper、XinhuaFinance、Yicai、SecuritiesTimes、NBS、PBC 与 WorldBank；
+- GlobalNews 的财联社正式选择器为 `Cailianpress`，历史 `Cls` 作为兼容别名保留；
+  两者返回的逐条 evidence provider 都必须是 `Cailianpress`；
 - `InstrumentNews` 是 append-only 的第 55 个操作，只接受 Sina 已验证的沪深 A 股公司新闻
   合同；请求 schema 为 `magic.market.instrument_news.request`，记录 schema 复用
   `magic.market.news_item`；请求和记录版本均为 2，日期范围必须同时提供 start/end 或同时
@@ -594,8 +596,16 @@ admission，以及可选的 `evidence_code`、`evidence_field`、`record_index`�
 证据拒绝固定使用 `reason_code=invalid_evidence`、`retryable=false`。GlobalNews 可用
 `record_index` 定位被拒记录；Consensus 使用安全的结构化字段路径标识 Provider 响应中
 发生冲突的 identity、年度、机构数、最小/均值/最大值或表结构，不回传敏感原文。
+Provider 失败使用闭合的 `provider_authentication_rejected`、`provider_rate_limited`、
+`provider_unavailable`、`external_query_rejected` 或 `provider_response_invalid`，保留安全
+Provider 身份和确定的 retryable 标志。CLS 的原始 HTTP status、`errno`/`errmsg` 或解析
+类别只进入服务端受限结构化日志，不进入 gRPC message 或 detail。
 该自定义 detail 不占用标准 `grpc-status-details-bin`，因此 grpcurl 等标准客户端不会把
 它误解为 `google.rpc.Status`。调用方不得依赖自然语言 message 做程序分支。
+
+client-bundle `2026-08-19.2` 起，`manifest.sha256` 固定使用 ASCII+LF。Linux 可在
+bundle 根目录运行 `sha256sum -c manifest.sha256`，macOS 可运行
+`shasum -a 256 -c manifest.sha256`；两条命令不得要求调用方先转换换行符。
 
 ## 12. 客户端代码生成
 

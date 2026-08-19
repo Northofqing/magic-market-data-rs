@@ -478,6 +478,15 @@ impl BlockingQueryGateway for OperationRegistry {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProviderFailureKind {
+    AuthenticationRejected,
+    RateLimited,
+    QueryRejected,
+    ResponseInvalid,
+    Unavailable,
+}
+
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ServiceError {
     #[error("invalid request: {0}")]
@@ -499,6 +508,13 @@ pub enum ServiceError {
     Unavailable {
         operation: Operation,
         reason: String,
+    },
+    #[error("{provider} provider failure for operation {operation:?}: {kind:?}")]
+    ProviderFailure {
+        operation: Operation,
+        provider: String,
+        kind: ProviderFailureKind,
+        provider_reason: String,
     },
     #[error("source precondition failed: {0}")]
     FailedPrecondition(String),

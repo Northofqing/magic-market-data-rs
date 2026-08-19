@@ -116,7 +116,20 @@ fn errno_and_oversized_page_are_explicit_failures() {
         "observed",
     )
     .expect_err("errno must fail");
-    assert!(matches!(error, ClsError::Protocol(_)));
+    assert!(matches!(
+        error,
+        ClsError::ProviderRejected { errno: 1001, message } if message == "bad sign"
+    ));
+    for body in [
+        br#"{"errno":1001,"errmsg":7}"#.as_slice(),
+        format!(r#"{{"errno":1001,"errmsg":"{}"}}"#, "x".repeat(257)).as_bytes(),
+        br#"{"errno":1001,"errmsg":"bad\u0000sign"}"#.as_slice(),
+    ] {
+        assert!(matches!(
+            parse_response(body, 1, "observed"),
+            Err(ClsError::Protocol(_))
+        ));
+    }
     assert!(ClsClient::with_transport(FixtureTransport {
         response: FIXTURE.as_bytes().to_vec(),
         request: Mutex::new(None),
@@ -312,7 +325,7 @@ fn bounded_http_reader_preserves_status_content_type_size_and_io_failures() {
     );
     assert!(matches!(
         read_http_response(429, Some("application/json"), &b"{}"[..]),
-        Err(ClsError::Transport(_))
+        Err(ClsError::HttpStatus(429))
     ));
     assert!(matches!(
         read_http_response(200, Some("text/html"), &b"{}"[..]),
