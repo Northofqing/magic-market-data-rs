@@ -55,6 +55,7 @@ struct ParsedGlobalNews {
     title: String,
     canonical_url: String,
     published_at: String,
+    source_at: String,
 }
 
 fn parse_global_news(bytes: &[u8], limit: usize) -> Result<DataBatch<NewsItem>, EastmoneyError> {
@@ -69,7 +70,7 @@ fn parse_global_news(bytes: &[u8], limit: usize) -> Result<DataBatch<NewsItem>, 
     }
     let source_at = rows
         .first()
-        .map(|row| row.published_at.as_str())
+        .map(|row| row.source_at.as_str())
         .ok_or_else(|| {
             EastmoneyError::Protocol("Eastmoney rolling page contains no finance rows".into())
         })?;
@@ -89,7 +90,7 @@ fn parse_global_news(bytes: &[u8], limit: usize) -> Result<DataBatch<NewsItem>, 
                 instruments: Vec::new(),
                 topics: vec![NonEmptyText::new("财经")?],
                 language: NonEmptyText::new("zh-CN")?,
-                evidence: context.evidence_at(Some(&row.published_at))?,
+                evidence: context.evidence_at(Some(&row.source_at))?,
             })
         })
         .collect::<Result<Vec<_>, EastmoneyError>>()?;
@@ -244,6 +245,7 @@ fn parse_global_news_row(row: &str) -> Result<ParsedGlobalNews, EastmoneyError> 
         title: visible_title,
         canonical_url,
         published_at,
+        source_at: source_minute,
     })
 }
 
@@ -288,7 +290,11 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
         .ok_or_else(|| EastmoneyError::Protocol("Eastmoney news article URL has no path".into()))?;
     if !matches!(
         host,
-        "finance.eastmoney.com" | "global.eastmoney.com" | "biz.eastmoney.com"
+        "finance.eastmoney.com"
+            | "global.eastmoney.com"
+            | "biz.eastmoney.com"
+            | "futures.eastmoney.com"
+            | "bond.eastmoney.com"
     ) {
         return Err(EastmoneyError::Protocol(format!(
             "Eastmoney news article host {host:?} is not an admitted global-news host"

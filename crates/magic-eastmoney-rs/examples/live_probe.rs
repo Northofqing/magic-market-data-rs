@@ -1,15 +1,16 @@
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError, EastmoneyMxClient};
 use magic_market_core::{
-    verify_admitted_batch, verify_admitted_time_series_batch, verify_verified_empty, AssetClass,
-    BlockTrades, BoardCategory, BoardFlows, DataBatch, DividendPlans, DragonTigerData,
-    DragonTigerDiscovery, DragonTigerDiscoveryRequest, DragonTigerEntry, Exchange, FlowInterval,
-    FlowScope, FundFlowRequest, FundFlowSeries, HolderCounts, InstrumentDateRangeRequest,
-    InstrumentId, InstrumentSignalRequest, IsoDate, LimitPoolKind, LimitPoolRequest, LimitPools,
-    LockupEvents, MarginData, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingEntry,
-    MarketRankingKind, MarketRankings, NewsProvider, PopularityData, PositiveU32,
-    PostCloseFlowRequest, PostCloseFlows, ProbeAdmissionPolicy, ProbeStatus, ProviderId,
-    ProviderTopNRankingEntry, ProviderTopNRankings, ReportScope, ResearchReports, ResearchRequest,
-    SourceEvidence, TargetPriceConsensus, TargetPriceData, TargetPriceRequest,
+    verify_admitted_batch, verify_admitted_newest_first_batch, verify_admitted_time_series_batch,
+    verify_verified_empty, AssetClass, BlockTrades, BoardCategory, BoardFlows, DataBatch,
+    DividendPlans, DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest,
+    DragonTigerEntry, Exchange, FlowInterval, FlowScope, FundFlowRequest, FundFlowSeries,
+    HolderCounts, InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, IsoDate,
+    LimitPoolKind, LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketDragonTigerData,
+    MarketDragonTigerRequest, MarketRankingEntry, MarketRankingKind, MarketRankings, NewsProvider,
+    PopularityData, PositiveU32, PostCloseFlowRequest, PostCloseFlows, ProbeAdmissionPolicy,
+    ProbeStatus, ProviderId, ProviderTopNRankingEntry, ProviderTopNRankings, ReportScope,
+    ResearchReports, ResearchRequest, SourceEvidence, TargetPriceConsensus, TargetPriceData,
+    TargetPriceRequest,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::error::Error;
@@ -160,11 +161,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     if std::env::var("MAGIC_EASTMONEY_LIVE_OPERATION").as_deref() == Ok("global-news") {
-        probe_batch(
+        probe_news_batch(
             "content.global_news",
             client.global_news(PositiveU32::new(5)?),
             &source_policy,
             |record| &record.evidence,
+            |record| record.published_at.as_str(),
             |record| record.item_id.as_str().to_owned(),
             &mut failures,
         );
@@ -398,11 +400,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         |record| instrument_identity(&record.instrument),
         &mut failures,
     );
-    probe_batch(
+    probe_news_batch(
         "content.global_news",
         client.global_news(PositiveU32::new(5)?),
         &source_policy,
         |record| &record.evidence,
+        |record| record.published_at.as_str(),
         |record| record.item_id.as_str().to_owned(),
         &mut failures,
     );
@@ -908,6 +911,45 @@ fn probe_batch<T: Debug, E: std::fmt::Display>(
 ) {
     match result {
         Ok(batch) => match verify_admitted_batch(&batch, policy, evidence_of, identity_of) {
+            Ok(status) => {
+                println!("family={label} status={status}");
+                print_batch(label, &batch);
+            }
+            Err(error) => {
+                let failure = format!("{label}: admission rejected: {error}");
+                println!("\n=== {label} ===");
+                println!("family={label} status={}", ProbeStatus::Failed);
+                println!("error={error}");
+                failures.push(failure);
+            }
+        },
+        Err(error) => {
+            let failure = format!("{label}: {error}");
+            println!("\n=== {label} ===");
+            println!("family={label} status={}", ProbeStatus::Failed);
+            println!("error={error}");
+            failures.push(failure);
+        }
+    }
+}
+
+fn probe_news_batch<T: Debug, E: std::fmt::Display>(
+    label: &str,
+    result: Result<DataBatch<T>, E>,
+    policy: &ProbeAdmissionPolicy,
+    evidence_of: impl Fn(&T) -> &SourceEvidence,
+    normalized_source_at_of: impl Fn(&T) -> &str,
+    identity_of: impl Fn(&T) -> String,
+    failures: &mut Vec<String>,
+) {
+    match result {
+        Ok(batch) => match verify_admitted_newest_first_batch(
+            &batch,
+            policy,
+            evidence_of,
+            normalized_source_at_of,
+            identity_of,
+        ) {
             Ok(status) => {
                 println!("family={label} status={status}");
                 print_batch(label, &batch);

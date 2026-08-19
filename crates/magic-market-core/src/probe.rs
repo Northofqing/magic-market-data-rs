@@ -389,6 +389,8 @@ pub enum ProbeAdmissionError {
     DuplicateIdentity { identity: String },
     #[error("time-series record source_at moved backwards from {previous} to {actual}")]
     NonMonotonicSourceTime { previous: String, actual: String },
+    #[error("newest-first record source_at increased from {previous} to {actual}")]
+    NonDescendingSourceTime { previous: String, actual: String },
     #[error(transparent)]
     Core(#[from] CoreError),
 }
@@ -420,6 +422,126 @@ pub fn verify_admitted_batch<T>(
         if !identities.insert(identity.to_owned()) {
             return Err(ProbeAdmissionError::DuplicateIdentity {
                 identity: identity.to_owned(),
+            });
+        }
+    }
+    Ok(ProbeStatus::Admitted)
+}
+
+/// Verifies a newest-first batch whose records retain their own source times.
+///
+/// Batch provenance identifies the first (newest) record using the Provider's
+/// original source string. `normalized_source_at_of` supplies the equivalent,
+/// unambiguous instant used only for ordering and freshness checks.
+pub fn verify_admitted_newest_first_batch<T>(
+    batch: &DataBatch<T>,
+    policy: &ProbeAdmissionPolicy,
+    evidence_of: impl Fn(&T) -> &SourceEvidence,
+    normalized_source_at_of: impl Fn(&T) -> &str,
+    identity_of: impl Fn(&T) -> String,
+) -> Result<ProbeStatus, ProbeAdmissionError> {
+    if batch.records().is_empty() {
+        return Err(ProbeAdmissionError::EmptyBatch);
+    }
+    if !batch.quality().is_complete() || !batch.quality().issues().is_empty() {
+        return Err(ProbeAdmissionError::IncompleteQuality {
+            issues: batch.quality().issues().to_vec(),
+        });
+    }
+    let provenance = batch.provenance();
+    let batch_id = provenance
+        .batch_id()
+        .ok_or(ProbeAdmissionError::MissingBatchId)?;
+    let batch_source_at = provenance
+        .source_at()
+        .ok_or(ProbeAdmissionError::MissingSourceTime)?;
+    let observed_time =
+        EvidenceTimestamp::parse_instant(provenance.fetched_at()).map_err(|_| {
+            ProbeAdmissionError::InvalidTimestamp {
+                field: "observed_at",
+                value: provenance.fetched_at().to_owned(),
+            }
+        })?;
+    let mut identities = HashSet::with_capacity(batch.records().len());
+    let mut previous: Option<(EvidenceTimestamp, String)> = None;
+    let mut newest_time = None;
+    for (index, record) in batch.records().iter().enumerate() {
+        let evidence = evidence_of(record);
+        if evidence.provider() != policy.expected_provider {
+            return Err(ProbeAdmissionError::ProviderMismatch {
+                expected: policy.expected_provider,
+                actual: evidence.provider(),
+            });
+        }
+        if evidence.observed_at() != provenance.fetched_at() {
+            return Err(ProbeAdmissionError::ObservedAtMismatch {
+                expected: provenance.fetched_at().to_owned(),
+                actual: evidence.observed_at().to_owned(),
+            });
+        }
+        if evidence.batch_id() != batch_id {
+            return Err(ProbeAdmissionError::BatchIdMismatch {
+                expected: batch_id.to_owned(),
+                actual: evidence.batch_id().to_owned(),
+            });
+        }
+        let raw_source_at = evidence
+            .source_at()
+            .ok_or(ProbeAdmissionError::MissingSourceTime)?;
+        if index == 0 && raw_source_at != batch_source_at {
+            return Err(ProbeAdmissionError::SourceAtMismatch {
+                expected: Some(batch_source_at.to_owned()),
+                actual: Some(raw_source_at.to_owned()),
+            });
+        }
+        let normalized_source_at = normalized_source_at_of(record);
+        let source_time = EvidenceTimestamp::parse_instant(normalized_source_at).map_err(|_| {
+            ProbeAdmissionError::InvalidTimestamp {
+                field: "normalized_source_at",
+                value: normalized_source_at.to_owned(),
+            }
+        })?;
+        if observed_time.duration_since(source_time).is_none() {
+            return Err(ProbeAdmissionError::FutureSourceTime {
+                source_at: normalized_source_at.to_owned(),
+                observed_at: provenance.fetched_at().to_owned(),
+            });
+        }
+        if let Some((previous_time, previous_source)) = &previous {
+            if source_time > *previous_time {
+                return Err(ProbeAdmissionError::NonDescendingSourceTime {
+                    previous: previous_source.clone(),
+                    actual: normalized_source_at.to_owned(),
+                });
+            }
+        } else {
+            newest_time = Some((source_time, normalized_source_at.to_owned()));
+        }
+        previous = Some((source_time, normalized_source_at.to_owned()));
+
+        let identity = identity_of(record);
+        let identity = identity.trim();
+        if identity.is_empty() || identity.chars().any(char::is_control) {
+            return Err(ProbeAdmissionError::EmptyIdentity);
+        }
+        if !identities.insert(identity.to_owned()) {
+            return Err(ProbeAdmissionError::DuplicateIdentity {
+                identity: identity.to_owned(),
+            });
+        }
+    }
+    if let Some(maximum) = policy.max_source_age {
+        let (newest_time, newest_source) = newest_time.ok_or(ProbeAdmissionError::EmptyBatch)?;
+        let age = observed_time.duration_since(newest_time).ok_or_else(|| {
+            ProbeAdmissionError::FutureSourceTime {
+                source_at: newest_source.clone(),
+                observed_at: provenance.fetched_at().to_owned(),
+            }
+        })?;
+        if age > maximum {
+            return Err(ProbeAdmissionError::StaleSourceTime {
+                age_nanos: age.as_nanos(),
+                max_age_nanos: maximum.as_nanos(),
             });
         }
     }

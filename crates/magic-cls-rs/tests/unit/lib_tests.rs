@@ -95,10 +95,8 @@ fn signed_request_and_fixture_map_every_contract_field() {
     assert_eq!(item.topics.len(), 2);
     assert_eq!(item.language.as_str(), "zh-CN");
     assert_eq!(item.evidence.provider(), ProviderId::Cailianpress);
-    assert_eq!(
-        batch.provenance().source_at(),
-        Some("2026-07-23T20:28:26+08:00")
-    );
+    assert_eq!(item.evidence.source_at(), Some("1784809706"));
+    assert_eq!(batch.provenance().source_at(), Some("1784809706"));
 }
 
 #[test]

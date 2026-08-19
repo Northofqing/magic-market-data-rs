@@ -353,7 +353,7 @@ fn parse_response(
 
     let source_at = parsed
         .first()
-        .map(|item| item.published_at.as_str())
+        .and_then(|item| item.evidence.source_at())
         .ok_or_else(|| Jin10Error::Protocol("latest Jin10 source time is missing".into()))?;
     let provenance = Provenance::new("jin10-flash-v1", observed_at)?
         .with_source_at(source_at)?
@@ -567,14 +567,7 @@ fn is_locked(row: &Map<String, Value>) -> Result<bool, Jin10Error> {
         .ok_or_else(|| Jin10Error::Protocol("flash data must be an object".into()))?;
     match data.get("lock") {
         None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(false),
-        Some(Value::Bool(true)) => {
-            if data.get("vip_level").and_then(Value::as_i64).is_none() {
-                return Err(Jin10Error::Protocol(
-                    "locked Jin10 flash is missing vip_level".into(),
-                ));
-            }
-            Ok(true)
-        }
+        Some(Value::Bool(true)) => Ok(true),
         Some(_) => Err(Jin10Error::Protocol(
             "flash data.lock must be a boolean when present".into(),
         )),
@@ -631,11 +624,11 @@ fn parse_item(
     let content = optional_text(data.get("content"))
         .ok_or_else(|| Jin10Error::Protocol("public Jin10 news content is empty".into()))?;
     let title = optional_text(data.get("title")).unwrap_or_else(|| content.clone());
-    let published_at = jin10_time(
-        row.get("time")
-            .and_then(Value::as_str)
-            .ok_or_else(|| Jin10Error::Protocol("flash time must be a string".into()))?,
-    )?;
+    let source_at = row
+        .get("time")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Jin10Error::Protocol("flash time must be a string".into()))?;
+    let published_at = jin10_time(source_at)?;
     let source = optional_text(data.get("source"));
     let publisher = source.unwrap_or_else(|| "金十数据".into());
     let canonical_url = if item_type == 2 {
@@ -648,8 +641,8 @@ fn parse_item(
     } else {
         HttpsUrl::new(format!("https://flash.jin10.com/detail/{item_id}"))?
     };
-    let evidence = SourceEvidence::new(ProviderId::Jin10, observed_at, batch_id)?
-        .with_source_at(published_at.clone())?;
+    let evidence =
+        SourceEvidence::new(ProviderId::Jin10, observed_at, batch_id)?.with_source_at(source_at)?;
     Ok(NewsItem {
         item_id: NonEmptyText::new(item_id)?,
         title: NonEmptyText::new(title)?,
@@ -953,6 +946,7 @@ mod tests {
             "https://flash.jin10.com/detail/20260724224037091800"
         );
         assert_eq!(flash.published_at.as_str(), "2026-07-24T22:40:37+08:00");
+        assert_eq!(flash.evidence.source_at(), Some("2026-07-24 22:40:37"));
         assert_eq!(flash.topics.len(), 3);
         assert_eq!(flash.language.as_str(), "zh-CN");
         assert_eq!(flash.evidence.provider(), ProviderId::Jin10);
@@ -960,10 +954,18 @@ mod tests {
             batch.records()[1].canonical_url.as_str(),
             "https://xnews.jin10.com/details/225718"
         );
-        assert_eq!(
-            batch.provenance().source_at(),
-            Some("2026-07-24T22:40:37+08:00")
-        );
+        assert_eq!(batch.provenance().source_at(), Some("2026-07-24 22:40:37"));
+    }
+
+    #[test]
+    fn locked_news_without_unstable_vip_level_is_still_excluded() {
+        let fixture = FIXTURE.replace("            \"vip_level\": 1,\n", "");
+        let batch = parse_response(fixture.as_bytes(), 20, "1784905000.000000000").unwrap();
+        assert_eq!(batch.records().len(), 2);
+        assert!(batch
+            .records()
+            .iter()
+            .all(|record| record.item_id.as_str() != "20260724224012910800"));
     }
 
     #[test]

@@ -109,7 +109,7 @@ HTTP 超时。
 
 ```text
 schema         = 方法登记的请求 schema 名称
-schema_version = 正整数，当前为 1
+schema_version = 正整数；大多数合同为 1，新闻合同按下文使用 2
 content_type   = application/json; charset=utf-8
 data           = UTF-8 JSON 字节
 ```
@@ -117,6 +117,94 @@ data           = UTF-8 JSON 字节
 第一版 gRPC 使用 Protobuf 作为传输和服务合同，现有 Rust Serde JSON 作为每个数据族的
 规范化业务 payload。每个方法的 schema 名称和 JSON 字段在服务端 Provider 接入时
 单独冻结；调用方遇到未知 schema/version 必须停止解析，不能忽略或猜字段。
+
+### 新闻合同 v2
+
+`GlobalNews` 的请求 schema 是 `magic.market.global_news.request`、版本必须为 `2`，业务
+JSON 为 `{"limit":N}`。返回的每个 `magic.market.news_item` 记录同样是版本 `2`，并且
+必须携带该条记录自己的完整 `evidence`。`QueryResponse.source_at` 只表示批次中最新记录
+的来源时间，绝不能用它创建、补齐或覆盖逐条 evidence。
+
+以下是两条发布时间不同的完整响应业务示例；Provider 原始 `source_at` 字符串保持不变，
+而 `published_at` 可以规范化为 RFC3339，但两者必须表示同一时间点：
+
+```json
+{
+  "source_at": "2026-08-19 16:15:37",
+  "records": [
+    {
+      "schema": "magic.market.news_item",
+      "schema_version": 2,
+      "data": {
+        "item_id": "REDACTED_NEWS_001",
+        "title": "redacted title 1",
+        "summary": null,
+        "content": null,
+        "publisher": "Jin10",
+        "url": "https://example.com/redacted/1",
+        "published_at": "2026-08-19T16:15:37+08:00",
+        "instruments": [],
+        "topics": [],
+        "language": "zh-CN",
+        "evidence": {
+          "provider": "Jin10",
+          "source_at": "2026-08-19 16:15:37",
+          "observed_at": "1787127606.533354000",
+          "batch_id": "REDACTED_GLOBAL_NEWS_BATCH"
+        }
+      }
+    },
+    {
+      "schema": "magic.market.news_item",
+      "schema_version": 2,
+      "data": {
+        "item_id": "REDACTED_NEWS_002",
+        "title": "redacted title 2",
+        "summary": null,
+        "content": null,
+        "publisher": "Jin10",
+        "url": "https://example.com/redacted/2",
+        "published_at": "2026-08-19T16:14:00+08:00",
+        "instruments": [],
+        "topics": [],
+        "language": "zh-CN",
+        "evidence": {
+          "provider": "Jin10",
+          "source_at": "2026-08-19 16:14:00",
+          "observed_at": "1787127606.533354000",
+          "batch_id": "REDACTED_GLOBAL_NEWS_BATCH"
+        }
+      }
+    }
+  ]
+}
+```
+
+服务端在序列化任何记录前原子校验完整批次：逐条 Provider 和 batch ID 必须与请求/响应
+一致；`source_at` 必须可按该 Provider 的真实格式解析、不得晚于该记录 `observed_at`，且
+必须与 `published_at` 表示同一时间点；记录必须从新到旧，批次 `source_at` 必须等于首条
+记录的原始来源字符串。缺失、混批、冲突、用批次最新时间冒充较早记录时间时，整批返回
+`FAILED_PRECONDITION`、`reason_code=invalid_evidence`、`retryable=false`，不返回部分记录。
+
+已验证并保留的 GlobalNews 原始时间格式包括：Eastmoney `YYYY-MM-DD HH:MM`；Jin10、
+XinhuaFinance `YYYY-MM-DD HH:MM:SS`；Yicai 的 Provider 本地时间；CLS epoch 秒；
+ThePaper `unix-ms:<毫秒>`；`observed_at` 保留秒/纳秒格式。
+
+`InstrumentNews` 请求 schema 是 `magic.market.instrument_news.request`、版本必须为 `2`：
+
+```json
+{
+  "instrument": {"exchange":"Shanghai","code":"600000","asset_class":"Equity"},
+  "start": "2026-08-19",
+  "end": "2026-08-19",
+  "limit": 20,
+  "captured_through": "2026-08-19T16:15:37+08:00"
+}
+```
+
+`captured_through` 是调用方捕获的精确 RFC3339 截止时刻，不是天数。start/end 必须同时
+提供或同时省略；提供时 end 必须等于截止时刻在 Asia/Shanghai 的日期。服务端会剔除
+任何发布时间晚于该时刻的记录，并从保留后的最新记录重建批次 `source_at`。
 
 ## 6. 通用响应合同
 
@@ -364,13 +452,14 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
   异动 trigger/rearm 进入生产事件流；
-- unary registry 对 60 个操作逐项精确登记：56 个操作绑定证据支持的正式 handler；
+- unary registry 对 60 个操作逐项精确登记；每个操作至少有一个证据支持的正式 handler；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council 与 iWencai 外，也可精确选择 TDX 公共协议、Sina、SSE、SZSE、
   CLS、ThePaper、XinhuaFinance、Yicai、SecuritiesTimes、NBS、PBC 与 WorldBank；
 - `InstrumentNews` 是 append-only 的第 55 个操作，只接受 Sina 已验证的沪深 A 股公司新闻
   合同；请求 schema 为 `magic.market.instrument_news.request`，记录 schema 复用
-  `magic.market.news_item`，日期范围必须同时提供 start/end 或同时省略；
+  `magic.market.news_item`；请求和记录版本均为 2，日期范围必须同时提供 start/end 或同时
+  省略，并且必须携带调用方精确 `captured_through`；
 - `IndexQuotes`、`IntradayShape`、`T0Evidence`、`OutcomeDailyBars` 和
   `UpperLimitPoolReview` 是 append-only 的第 56..60 个操作。其 v1 请求/记录字段见
   [`grpc-derived-products.md`](grpc-derived-products.md)；`IndexQuotes` 已绑定腾讯六指数
@@ -380,8 +469,8 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   返回当前本地 `observed_at`、保留四份输入证据并在无公共源时间时保持 `source_at=null`；
 - `MoneyFlows`、`FundFlowSeries` 已绑定东财公开资金流正式合同，`TechnicalBars` 已绑定
   Baidu 未复权源技术日线正式合同；`PostCloseFlows` 已绑定东财当前交易日 15:35 后的
-  本地观察快照；`FuturesDelivery`、Baidu `HistoricalBars`、`MarketRankings` 仍登记显式
-  opt-in 诊断 handler；
+  本地观察快照；`FuturesDelivery` 已绑定 CFFEX 官方固定交割日历，Baidu
+  `HistoricalBars`、`MarketRankings` 仍登记显式 opt-in 诊断 handler；
   EMQuant bridge 可发现时，其 Quote、日线/日内 K、盘口和资金流也只作为显式诊断来源；配置
 `EASTMONEY_API_KEY`（兼容别名 `MX_APIKEY`）后，`Auctions` 和 `MarketBreadth` 也登记
   东财妙想诊断 handler。这 4 个固定模板操作和其他诊断一样，只有显式
@@ -397,17 +486,16 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - 2026-08-14 当前实例通过 `SemanticSearch` + `preferred_provider=Iwencai` 实测返回
   10 条 `Report` 记录；Key 只从服务进程环境加载，不进入请求、日志或证据。
 
-剩余 4 项不是缺少 gRPC 方法，而是生产数据合同尚未满足。已有字段通过显式诊断模式
+剩余 3 项不是缺少 gRPC 方法，而是特定诊断来源的生产数据合同尚未满足。已有字段通过显式诊断模式
 读取，缺失字段保留 `null`，但不会改变下表状态：
 
 | 操作 | 当前阻塞原因 |
 | --- | --- |
 | `Auctions` | 东财妙想只证明开盘集合竞价成交量（股）和成交额（元）；撮合价、昨收、未匹配买卖量、量比和 Provider 时间仍为空，不满足完整 BR-035 合同 |
-| `FuturesDelivery` | CFFEX 固定明文 HTTP 通知诊断可返回 IF/IH/IC/IM；实际传输不是 HTTPS，最后交易日/交割方式仍不完整，正式能力保持 false |
 | `MarketRankings` | 诊断只读取首个有界来源页，并返回来源声明总数；不声称完整市场覆盖或源时间原子性 |
 | `MarketBreadth` | 东财妙想只证明上涨/下跌/平盘及涨跌停家数；上市总数、覆盖率、来源时间偏差为空，不能提升为完整市场宽度 |
 
-### 诊断请求 schema
+### 相关请求 schema
 
 所有 payload `schema_version=1`：
 
@@ -457,7 +545,7 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 | `MarketRankings` | 返回 2 条，`UNADMITTED` | 来源声明总数 5554、首屏抓取 100；两条源时间不同，明确非原子 |
 | `PostCloseFlows` | 返回 2 条，`UNADMITTED` | 显式请求 2026-08-14；`super_large_net`/`large_net` 为 `null` |
 | `FundFlowSeries` | 东财妙想返回记录，`UNADMITTED` | 600396.SH 日级五档净额；服务端有界截断源端多返回日期 |
-| `FuturesDelivery` | 返回 4 条，`UNADMITTED` | 2026-07：IF2607/IH2607/IC2607/IM2607，交割日 2026-07-17；provenance 明确标记 `plaintext_http_diagnostic` |
+| `FuturesDelivery` | 历史诊断曾返回 4 条，`UNADMITTED` | 该 2026-07 明文通知探测仅是历史证据；当前正式合同改用 CFFEX 固定官方交割日历 |
 | `Auctions` | 东财妙想返回部分记录，`UNADMITTED` | 2026-08-14：开盘竞价成交量 2,951,900 股、成交额 53,665,542 元；其他字段为空 |
 | `MarketBreadth` | 东财妙想返回部分记录，`UNADMITTED` | 2026-08-14：上涨 2400、下跌 2970、平盘 170、涨停 64、跌停 13；总数/覆盖率/偏差为空 |
 
@@ -481,10 +569,10 @@ composition 实测后，2026-08-18 更新的部署实例通过远程 mTLS + Bear
 也没有把昨日证据冒充今日数据。2026-08-18 的远程成功样本只能在当天 15:35 后重测；
 这不影响上一段 2026-08-17 已完成的 2 次 live 与 3 次串行 load 证据。
 
-2026-08-17 部署实例对 `FuturesDelivery`、`preferred_provider=Cffex`、
-`allow_unadmitted=true` 实测返回上述 4 条记录，batch ID 含
-`plaintext_http_diagnostic`；相同请求将 `allow_unadmitted` 改为 `false` 时返回
-`UNIMPLEMENTED`，证明诊断路径没有提升或绕过正式准入门。
+2026-08-17 的 `plaintext_http_diagnostic` 结果是历史诊断材料，不再描述当前发布合同。
+当前 `FuturesDelivery`、`preferred_provider=Cffex` 在 `allow_unadmitted=false` 下正式
+准入，读取 CFFEX 固定官方交割日历；客户端不得继续把旧 bundle 中的
+`provider_unsupported` 解释为当前服务能力。
 
 ## 11. gRPC 错误处理
 
@@ -501,7 +589,11 @@ composition 实测后，2026-08-18 更新的部署实例通过远程 mTLS + Bear
 | `INTERNAL` | 记录 request_id，停止无界重试 |
 
 服务端把安全的 Protobuf `ErrorDetail` 编码在 trailing metadata
-`magic-error-detail-bin` 中：request ID、operation、Provider、reason code 和 retryable。
+`magic-error-detail-bin` 中：request ID、operation、Provider、reason code、retryable、
+admission，以及可选的 `evidence_code`、`evidence_field`、`record_index`。
+证据拒绝固定使用 `reason_code=invalid_evidence`、`retryable=false`。GlobalNews 可用
+`record_index` 定位被拒记录；Consensus 使用安全的结构化字段路径标识 Provider 响应中
+发生冲突的 identity、年度、机构数、最小/均值/最大值或表结构，不回传敏感原文。
 该自定义 detail 不占用标准 `grpc-status-details-bin`，因此 grpcurl 等标准客户端不会把
 它误解为 `google.rpc.Status`。调用方不得依赖自然语言 message 做程序分支。
 
@@ -549,6 +641,11 @@ Go 项目正式接入前可在自己的 Proto 镜像中补 `go_package` 映射�
 - [ ] 日志不输出 Token、完整敏感 payload 或上游凭据。
 
 ## 14. 服务端发布时需要交付给对接方
+
+发布者使用 `tools/docs/build_client_bundle.ps1` 从同一工作树复制 `market.proto`、本文和
+`grpc-derived-products.md`。脚本拒绝 MarketDataService RPC 数不是 60 的 proto，并生成
+`bundle-metadata.json` 与 `manifest.sha256`；对接方必须同时校验 bundle version、source
+commit 和文件摘要，不能混用不同提交的“最新版”文件。
 
 1. `market.proto` 和 descriptor set 摘要；
 2. 服务地址、TLS CA、认证材料；

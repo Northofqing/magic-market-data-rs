@@ -20,7 +20,7 @@
 | 盘后资金榜 | `PostCloseFlows` | 中国当前交易日 15:35 后，精确 limit、连续排名、代码+名称和逐条真实源时间；批次使用当前本地观察时间，混合源时刻时批次 `source_at=None` |
 | Provider Top-N 排名 | `ProviderTopNRankings` + `EastmoneyProviderTopNRankingRouter` | 同日 15:35 后或后续休市日读取最新已结算交易日的单响应页量比/主力净流入 Top-N；上限 100，每行 `f297` 必须严格等于请求交易日；不声明任意历史、全市场覆盖或 `source_at` |
 | 有界市场排名快照 | gRPC `MarketRankings` | 一次 `clist/get` HTTPS 响应中的量比或主力净流入 Top-N；上限 100，严格保留首屏实际行数、源声明总数、代码、名称、指标、单位、连续排名和每行 `f124` 时间；不声明全市场分页完成 |
-| 最新财经资讯 | `NewsProvider::global_news` | 东财财经滚动页首屏，最多 20 条；完整列表校验后截断 |
+| 最新财经资讯 | `NewsProvider::global_news` | 东财财经滚动页首屏，最多 20 条；完整列表校验后截断；逐条保留原始分钟 source_at |
 | 关键词新闻诊断 | `NewsProvider::instrument_news` | 响应无结构化证券身份，capability 为 false 且正式调用返回 `Unsupported` |
 
 未实现的能力不会由相近字段推测；涨停原因 capability 当前仍为 false。
@@ -39,7 +39,13 @@ datacenter-web.eastmoney.com
 emappdata.eastmoney.com
 pdf.dfcfw.com
 roll.eastmoney.com
+futures.eastmoney.com
+bond.eastmoney.com
 ```
+
+`futures.eastmoney.com` 与 `bond.eastmoney.com` 仅允许作为滚动页返回记录的精确
+canonical URL 元数据；适配器
+不会向该主机发起第二次请求，也没有新增 Provider-local HTTP/TLS 依赖。
 
 研报正文只从记录绑定的精确 `pdf.dfcfw.com` HTTPS URL 下载；必须返回
 `application/pdf`、以 `%PDF-` 开头并且不超过 32 MiB。禁止跳转、HTML、身份错配
@@ -49,7 +55,8 @@ roll.eastmoney.com
 `https://roll.eastmoney.com/finance.html`，禁止翻页、查询参数和跳转；响应必须是
 带 UTF-8 charset 的 `text/html` 且不超过 2 MiB。完整 `#artList` 中每条都必须为
 `财经` 分类、分钟时间倒序、标题内外一致，并使用
-`finance.eastmoney.com`、`global.eastmoney.com` 或 `biz.eastmoney.com` 上的
+`finance.eastmoney.com`、`global.eastmoney.com`、`biz.eastmoney.com`、
+`futures.eastmoney.com` 或 `bond.eastmoney.com` 上的
 `/a/<纯数字 ID>.html`。这些地址只作为来源元数据保存，不会抓取文章正文。页面没有证券身份，故
 `NewsItem::instruments` 为空，不得转成个股新闻。
 
@@ -59,6 +66,11 @@ HTTP 客户端禁止重定向，默认超时 12 秒，单响应最多 4 MiB。�
 typed error。
 
 ## 字段、单位和证据
+
+GlobalNews 的 `published_at` 规范化为 RFC3339，逐条 evidence 和批次首条时间保留
+Provider 原始 `YYYY-MM-DD HH:MM`。曾导致持续 `invalid_evidence` 的真实漂移是官方
+滚动页开始返回 `futures.eastmoney.com`、随后又返回 `bond.eastmoney.com` 文章元数据；
+当前只对这些精确 HTTPS 主机和既有纯数字文章路径放行，不借用其他新闻源补齐。
 
 - 成交金额、资金流和市值统一为 CNY 元；
 - 比率保留 `RatioUnit::Percent`，不会混成 0–1 小数；

@@ -34,11 +34,11 @@ use magic_market_core::{
     LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketAnnouncementRequest,
     MarketAnnouncements, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind,
     MarketStatisticsProvider, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
-    NewsProvider, NonEmptyText, NorthboundDailyRequest, NorthboundDailyStatistics,
+    NewsItem, NewsProvider, NonEmptyText, NorthboundDailyRequest, NorthboundDailyStatistics,
     OfficialFxFixingProvider, OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks,
     PolicyDocuments, PolicyRequest, PopularityData, PositiveU32, PostCloseFlowRequest,
-    PostCloseFlows, ProviderId, ProviderTopNRankingRequest, ProviderTopNRankings, Quote,
-    RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest, ResearchDocumentRequest,
+    PostCloseFlows, Provenance, ProviderId, ProviderTopNRankingRequest, ProviderTopNRankings,
+    Quote, RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest, ResearchDocumentRequest,
     ResearchDocuments, ResearchReports, ResearchRequest, SecurityMetadataProvider,
     SecurityProfiles, SemanticSearch, SemanticSearchRequest, SourceEvidence, StatementKind,
     StrongStockReasons, TargetPriceData, TargetPriceRequest, TechnicalBarsProvider, Trades,
@@ -71,9 +71,10 @@ use magic_yonhap_rs::{YonhapChannel, YonhapClient, YonhapError};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use time::{OffsetDateTime, UtcOffset};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset};
 
 pub const SCHEMA_VERSION: u32 = 1;
+pub const NEWS_SCHEMA_VERSION: u32 = 2;
 pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.request";
 pub const REALTIME_QUOTES_RECORD_SCHEMA: &str = "magic.market.quote";
 pub const HISTORICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.historical_bars.request";
@@ -279,6 +280,49 @@ struct InstrumentsRequest {
 #[serde(deny_unknown_fields)]
 struct LimitRequest {
     limit: PositiveU32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstrumentNewsRequestV2 {
+    instrument: InstrumentId,
+    start: Option<IsoDate>,
+    end: Option<IsoDate>,
+    limit: PositiveU32,
+    captured_through: String,
+}
+
+#[derive(Serialize)]
+struct NewsRecordPayloadV2<'a> {
+    item_id: &'a str,
+    title: &'a str,
+    summary: Option<&'a str>,
+    content: Option<&'a str>,
+    publisher: &'a str,
+    url: &'a str,
+    published_at: &'a str,
+    instruments: &'a [InstrumentId],
+    topics: Vec<&'a str>,
+    language: &'a str,
+    evidence: &'a SourceEvidence,
+}
+
+impl<'a> From<&'a NewsItem> for NewsRecordPayloadV2<'a> {
+    fn from(item: &'a NewsItem) -> Self {
+        Self {
+            item_id: item.item_id.as_str(),
+            title: item.title.as_str(),
+            summary: item.summary.as_ref().map(NonEmptyText::as_str),
+            content: item.content.as_ref().map(NonEmptyText::as_str),
+            publisher: item.publisher.as_str(),
+            url: item.canonical_url.as_str(),
+            published_at: item.published_at.as_str(),
+            instruments: &item.instruments,
+            topics: item.topics.iter().map(NonEmptyText::as_str).collect(),
+            language: item.language.as_str(),
+            evidence: &item.evidence,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -561,14 +605,11 @@ fn register_extended_providers(
             "bounded official RSS metadata",
         ),
         move |command| {
-            let request: LimitRequest = decode_request(&command, GLOBAL_NEWS_REQUEST_SCHEMA)?;
-            let batch = news
-                .global_news(request.limit)
-                .map_err(|error| provider_error(Operation::GlobalNews, error))?;
-            provider_query_result(
-                batch,
+            execute_global_news(
+                command,
+                &news,
                 "WallstreetCn",
-                GLOBAL_NEWS_RECORD_SCHEMA,
+                ProviderId::WallstreetCn,
                 maximum_payload_bytes,
             )
         },
@@ -666,6 +707,7 @@ fn register_global_news_parity(
         registry,
         ClsClient::with_timeout(provider_timeout)?,
         "Cls",
+        ProviderId::Cailianpress,
         "bounded public CLS financial-news metadata",
         maximum_payload_bytes,
     )?;
@@ -673,6 +715,7 @@ fn register_global_news_parity(
         registry,
         ThePaperClient::with_timeout(provider_timeout)?,
         "ThePaper",
+        ProviderId::ThePaper,
         "bounded native The Paper finance-channel article metadata",
         maximum_payload_bytes,
     )?;
@@ -680,6 +723,7 @@ fn register_global_news_parity(
         registry,
         XinhuaClient::with_timeout(provider_timeout)?,
         "XinhuaFinance",
+        ProviderId::XinhuaFinance,
         "bounded first-party Xinhua Finance front-page metadata",
         maximum_payload_bytes,
     )?;
@@ -687,6 +731,7 @@ fn register_global_news_parity(
         registry,
         YicaiClient::with_timeout(provider_timeout)?,
         "Yicai",
+        ProviderId::Yicai,
         "bounded first-party Yicai first-page metadata",
         maximum_payload_bytes,
     )?;
@@ -694,6 +739,7 @@ fn register_global_news_parity(
         registry,
         StcnClient::with_timeout(provider_timeout)?,
         "SecuritiesTimes",
+        ProviderId::SecuritiesTimes,
         "bounded first-party Securities Times front-page metadata",
         maximum_payload_bytes,
     )?;
@@ -701,6 +747,7 @@ fn register_global_news_parity(
         registry,
         YonhapClient::for_channel_with_timeout(YonhapChannel::Economy, provider_timeout)?,
         "Yonhap",
+        ProviderId::Yonhap,
         "bounded official Yonhap Economy RSS metadata only",
         maximum_payload_bytes,
     )?;
@@ -711,6 +758,7 @@ fn register_global_news_provider<P>(
     registry: &mut OperationRegistry,
     client: P,
     provider: &'static str,
+    expected_provider: ProviderId,
     scope: &'static str,
     maximum_payload_bytes: usize,
 ) -> Result<(), ServiceError>
@@ -721,14 +769,11 @@ where
     registry.register_handler(
         admitted(Operation::GlobalNews, provider, scope),
         move |command| {
-            let request: LimitRequest = decode_request(&command, GLOBAL_NEWS_REQUEST_SCHEMA)?;
-            let batch = client
-                .global_news(request.limit)
-                .map_err(|error| provider_error(Operation::GlobalNews, error))?;
-            provider_query_result(
-                batch,
+            execute_global_news(
+                command,
+                &client,
                 provider,
-                GLOBAL_NEWS_RECORD_SCHEMA,
+                expected_provider,
                 maximum_payload_bytes,
             )
         },
@@ -904,16 +949,7 @@ fn register_sina_parity(
             "Sina",
             "one Shanghai or Shenzhen A-share equity; bounded official company-news pages and inclusive source-date filter",
         ),
-        move |command| {
-            execute_typed(
-                command,
-                INSTRUMENT_NEWS_REQUEST_SCHEMA,
-                GLOBAL_NEWS_RECORD_SCHEMA,
-                "Sina",
-                maximum_payload_bytes,
-                |request: &InstrumentDateRangeRequest| client.instrument_news(request),
-            )
-        },
+        move |command| execute_instrument_news(command, &client, maximum_payload_bytes),
     )?;
     Ok(())
 }
@@ -1415,14 +1451,11 @@ fn register_additional_providers(
             "bounded public flash-news metadata",
         ),
         move |command| {
-            let request: LimitRequest = decode_request(&command, GLOBAL_NEWS_REQUEST_SCHEMA)?;
-            let batch = jin10
-                .global_news(request.limit)
-                .map_err(|error| provider_error(Operation::GlobalNews, error))?;
-            provider_query_result(
-                batch,
+            execute_global_news(
+                command,
+                &jin10,
                 "Jin10",
-                GLOBAL_NEWS_RECORD_SCHEMA,
+                ProviderId::Jin10,
                 maximum_payload_bytes,
             )
         },
@@ -2354,14 +2387,11 @@ fn register_eastmoney(
             "bounded latest Eastmoney finance-news metadata",
         ),
         move |command| {
-            let request: LimitRequest = decode_request(&command, GLOBAL_NEWS_REQUEST_SCHEMA)?;
-            let batch = news
-                .global_news(request.limit)
-                .map_err(|error| provider_error(Operation::GlobalNews, error))?;
-            provider_query_result(
-                batch,
+            execute_global_news(
+                command,
+                &news,
                 "Eastmoney",
-                GLOBAL_NEWS_RECORD_SCHEMA,
+                ProviderId::Eastmoney,
                 maximum_payload_bytes,
             )
         },
@@ -3552,14 +3582,145 @@ where
     provider_query_result(batch, provider, record_schema, maximum_payload_bytes)
 }
 
+fn execute_global_news<P>(
+    command: QueryCommand,
+    client: &P,
+    provider: &str,
+    expected_provider: ProviderId,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError>
+where
+    P: NewsProvider,
+    P::Error: Error + 'static,
+{
+    let request: LimitRequest =
+        decode_request_version(&command, GLOBAL_NEWS_REQUEST_SCHEMA, NEWS_SCHEMA_VERSION)?;
+    let batch = client
+        .global_news(request.limit)
+        .map_err(|error| provider_error(Operation::GlobalNews, error))?;
+    global_news_query_result(batch, provider, expected_provider, maximum_payload_bytes)
+}
+
+fn execute_instrument_news(
+    command: QueryCommand,
+    client: &SinaClient,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: InstrumentNewsRequestV2 = decode_request_version(
+        &command,
+        INSTRUMENT_NEWS_REQUEST_SCHEMA,
+        NEWS_SCHEMA_VERSION,
+    )?;
+    if request.limit.get() > 200 {
+        return Err(ServiceError::InvalidRequest(
+            "instrument-news limit must be at most 200".into(),
+        ));
+    }
+    let captured_through =
+        OffsetDateTime::parse(&request.captured_through, &Rfc3339).map_err(|_| {
+            ServiceError::InvalidRequest("captured_through must be an RFC3339 instant".into())
+        })?;
+    let china_offset = UtcOffset::from_hms(8, 0, 0)
+        .map_err(|error| ServiceError::Internal(format!("invalid China offset: {error}")))?;
+    let cutoff_date = IsoDate::new(captured_through.to_offset(china_offset).date().to_string())
+        .map_err(|error| ServiceError::Internal(error.to_string()))?;
+    let provider_limit =
+        PositiveU32::new(200).map_err(|error| ServiceError::Internal(error.to_string()))?;
+    let mut provider_request = InstrumentDateRangeRequest::new(request.instrument, provider_limit)
+        .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?;
+    match (request.start, request.end) {
+        (Some(start), Some(end)) => {
+            if end != cutoff_date {
+                return Err(ServiceError::InvalidRequest(format!(
+                    "instrument-news end must equal the Asia/Shanghai date of captured_through ({cutoff_date})"
+                )));
+            }
+            provider_request = provider_request
+                .with_range(start, end)
+                .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?;
+        }
+        (None, None) => {}
+        _ => {
+            return Err(ServiceError::InvalidRequest(
+                "instrument-news start and end must be supplied together".into(),
+            ));
+        }
+    }
+    let batch = client
+        .instrument_news(&provider_request)
+        .map_err(|error| provider_error(Operation::InstrumentNews, error))?;
+    let batch = filter_instrument_news_batch(batch, &request.captured_through, request.limit)?;
+    global_news_query_result(batch, "Sina", ProviderId::Sina, maximum_payload_bytes)
+}
+
+fn filter_instrument_news_batch(
+    batch: DataBatch<NewsItem>,
+    captured_through: &str,
+    limit: PositiveU32,
+) -> Result<DataBatch<NewsItem>, ServiceError> {
+    let cutoff = EvidenceTimestamp::parse_instant(captured_through).map_err(|_| {
+        ServiceError::InvalidRequest("captured_through must be an RFC3339 instant".into())
+    })?;
+    if !batch.quality().is_complete() {
+        return Err(invalid_news_evidence(
+            "Sina",
+            "batch_quality_incomplete",
+            "quality",
+            None,
+        ));
+    }
+    let provenance = batch.provenance();
+    let source = provenance.source().to_owned();
+    let observed_at = provenance.fetched_at().to_owned();
+    let batch_id = provenance.batch_id().map(str::to_owned).ok_or_else(|| {
+        invalid_news_evidence("Sina", "batch_evidence_incomplete", "batch_id", None)
+    })?;
+    let mut retained = Vec::new();
+    for (index, record) in batch.into_records().into_iter().enumerate() {
+        let published =
+            EvidenceTimestamp::parse_instant(record.published_at.as_str()).map_err(|_| {
+                invalid_news_evidence(
+                    "Sina",
+                    "record_published_at_invalid",
+                    "published_at",
+                    u32::try_from(index).ok(),
+                )
+            })?;
+        if published <= cutoff {
+            retained.push(record);
+        }
+    }
+    retained.truncate(limit.get() as usize);
+    let source_at = retained
+        .first()
+        .and_then(|record| record.evidence.source_at())
+        .ok_or_else(|| {
+            invalid_news_evidence("Sina", "instrument_cutoff_empty", "captured_through", None)
+        })?
+        .to_owned();
+    let provenance = Provenance::new(source, observed_at)
+        .and_then(|provenance| provenance.with_source_at(source_at))
+        .and_then(|provenance| provenance.with_batch_id(batch_id))
+        .map_err(|error| ServiceError::Internal(error.to_string()))?;
+    Ok(DataBatch::strict(retained, provenance))
+}
+
 fn decode_request<T: DeserializeOwned>(
     command: &QueryCommand,
     required_schema: &str,
 ) -> Result<T, ServiceError> {
+    decode_request_version(command, required_schema, SCHEMA_VERSION)
+}
+
+fn decode_request_version<T: DeserializeOwned>(
+    command: &QueryCommand,
+    required_schema: &str,
+    required_version: u32,
+) -> Result<T, ServiceError> {
     let payload = command.payload();
-    if payload.schema() != required_schema || payload.schema_version() != SCHEMA_VERSION {
+    if payload.schema() != required_schema || payload.schema_version() != required_version {
         return Err(ServiceError::InvalidRequest(format!(
-            "{} requires schema {required_schema} version {SCHEMA_VERSION}",
+            "{} requires schema {required_schema} version {required_version}",
             command.operation().as_str()
         )));
     }
@@ -3569,6 +3730,204 @@ fn decode_request<T: DeserializeOwned>(
             command.operation().as_str()
         ))
     })
+}
+
+fn global_news_query_result(
+    batch: DataBatch<NewsItem>,
+    provider: &str,
+    expected_provider: ProviderId,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    if !batch.quality().is_complete() {
+        return Err(invalid_news_evidence(
+            provider,
+            "batch_quality_incomplete",
+            "quality",
+            None,
+        ));
+    }
+    if batch.records().is_empty() {
+        return Err(invalid_news_evidence(
+            provider,
+            "batch_records_empty",
+            "records",
+            None,
+        ));
+    }
+    let provenance = batch.provenance();
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        invalid_news_evidence(provider, "batch_evidence_incomplete", "batch_id", None)
+    })?;
+    let batch_source_at = provenance.source_at().ok_or_else(|| {
+        invalid_news_evidence(provider, "batch_evidence_incomplete", "source_at", None)
+    })?;
+    parse_news_source_instant(expected_provider, batch_source_at).map_err(|_| {
+        invalid_news_evidence(provider, "batch_source_at_invalid", "source_at", None)
+    })?;
+    let batch_observed_instant = EvidenceTimestamp::parse_instant(provenance.fetched_at())
+        .map_err(|_| {
+            invalid_news_evidence(provider, "batch_observed_at_invalid", "observed_at", None)
+        })?;
+
+    let mut previous = None;
+    for (index, record) in batch.records().iter().enumerate() {
+        let record_index = u32::try_from(index).ok();
+        let evidence = &record.evidence;
+        if evidence.provider() != expected_provider {
+            return Err(invalid_news_evidence(
+                provider,
+                "record_provider_mismatch",
+                "evidence.provider",
+                record_index,
+            ));
+        }
+        if evidence.batch_id() != batch_id {
+            return Err(invalid_news_evidence(
+                provider,
+                "record_batch_mismatch",
+                "evidence.batch_id",
+                record_index,
+            ));
+        }
+        let source_at = evidence.source_at().ok_or_else(|| {
+            invalid_news_evidence(
+                provider,
+                "record_evidence_incomplete",
+                "evidence.source_at",
+                record_index,
+            )
+        })?;
+        let source_instant =
+            parse_news_source_instant(expected_provider, source_at).map_err(|_| {
+                invalid_news_evidence(
+                    provider,
+                    "record_source_at_invalid",
+                    "evidence.source_at",
+                    record_index,
+                )
+            })?;
+        let published_instant = EvidenceTimestamp::parse_instant(record.published_at.as_str())
+            .map_err(|_| {
+                invalid_news_evidence(
+                    provider,
+                    "record_published_at_invalid",
+                    "published_at",
+                    record_index,
+                )
+            })?;
+        if source_instant != published_instant {
+            return Err(invalid_news_evidence(
+                provider,
+                "record_published_at_mismatch",
+                "published_at",
+                record_index,
+            ));
+        }
+        let observed_instant =
+            EvidenceTimestamp::parse_instant(evidence.observed_at()).map_err(|_| {
+                invalid_news_evidence(
+                    provider,
+                    "record_observed_at_invalid",
+                    "evidence.observed_at",
+                    record_index,
+                )
+            })?;
+        if observed_instant > batch_observed_instant {
+            return Err(invalid_news_evidence(
+                provider,
+                "record_observed_after_batch",
+                "evidence.observed_at",
+                record_index,
+            ));
+        }
+        if source_instant > observed_instant {
+            return Err(invalid_news_evidence(
+                provider,
+                "record_source_after_observation",
+                "evidence.source_at",
+                record_index,
+            ));
+        }
+        if previous.is_some_and(|previous| source_instant > previous) {
+            return Err(invalid_news_evidence(
+                provider,
+                "record_order_invalid",
+                "records",
+                record_index,
+            ));
+        }
+        previous = Some(source_instant);
+        if index == 0 && source_at != batch_source_at {
+            return Err(invalid_news_evidence(
+                provider,
+                "batch_source_at_mismatch",
+                "source_at",
+                record_index,
+            ));
+        }
+    }
+
+    let records = batch
+        .records()
+        .iter()
+        .map(|record| {
+            let data = serde_json::to_vec(&NewsRecordPayloadV2::from(record)).map_err(|error| {
+                ServiceError::Internal(format!("news record serialization failed: {error}"))
+            })?;
+            CanonicalPayload::new(
+                GLOBAL_NEWS_RECORD_SCHEMA,
+                NEWS_SCHEMA_VERSION,
+                data,
+                maximum_payload_bytes,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(QueryResult {
+        provider: provider.to_owned(),
+        batch_id: batch_id.to_owned(),
+        complete: true,
+        observed_at: provenance.fetched_at().to_owned(),
+        source_at: Some(batch_source_at.to_owned()),
+        records,
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
+fn parse_news_source_instant(
+    provider: ProviderId,
+    source_at: &str,
+) -> Result<EvidenceTimestamp, magic_market_core::CoreError> {
+    let normalized = match provider {
+        ProviderId::Eastmoney if source_at.len() == 16 && source_at.as_bytes()[10] == b' ' => {
+            format!("{}T{}:00+08:00", &source_at[..10], &source_at[11..])
+        }
+        ProviderId::Jin10 | ProviderId::XinhuaFinance
+            if source_at.len() == 19 && source_at.as_bytes()[10] == b' ' =>
+        {
+            format!("{}T{}+08:00", &source_at[..10], &source_at[11..])
+        }
+        ProviderId::Yicai if source_at.len() == 19 && source_at.as_bytes()[10] == b'T' => {
+            format!("{source_at}+08:00")
+        }
+        _ => source_at.to_owned(),
+    };
+    EvidenceTimestamp::parse_instant(&normalized)
+}
+
+fn invalid_news_evidence(
+    provider: &str,
+    evidence_code: &str,
+    evidence_field: &str,
+    record_index: Option<u32>,
+) -> ServiceError {
+    ServiceError::InvalidEvidence {
+        provider: provider.to_owned(),
+        evidence_code: evidence_code.to_owned(),
+        evidence_field: evidence_field.to_owned(),
+        record_index,
+        message: "news evidence is incomplete or inconsistent".to_owned(),
+    }
 }
 
 fn provider_query_result<T: Serialize>(
@@ -3900,6 +4259,14 @@ fn map_ths_error(operation: Operation, error: &ThsError) -> ServiceError {
         ThsError::RateLimited => ServiceError::ResourceExhausted(error.to_string()),
         ThsError::Transport(_) => unavailable(operation, error),
         ThsError::HttpStatus(status) if *status >= 500 => unavailable(operation, error),
+        ThsError::Schema(message) | ThsError::Incomplete(message)
+            if operation == Operation::Consensus =>
+        {
+            consensus_invalid_evidence(message)
+        }
+        ThsError::Core(error) if operation == Operation::Consensus => {
+            consensus_invalid_evidence(&error.to_string())
+        }
         ThsError::HttpStatus(_)
         | ThsError::Decode(_)
         | ThsError::Schema(_)
@@ -3907,6 +4274,61 @@ fn map_ths_error(operation: Operation, error: &ThsError) -> ServiceError {
         | ThsError::VerifiedEmpty(_)
         | ThsError::ProbeAdmission(_)
         | ThsError::Core(_) => precondition(error),
+    }
+}
+
+fn consensus_invalid_evidence(message: &str) -> ServiceError {
+    let lower = message.to_ascii_lowercase();
+    let (evidence_code, evidence_field) = if lower.contains("title")
+        || lower.contains("requested code")
+        || lower.contains("identity")
+    {
+        (
+            "consensus_instrument_identity_invalid",
+            "consensus.instrument_identity",
+        )
+    } else if lower.contains("fiscal") || lower.contains("year") {
+        (
+            "consensus_fiscal_year_invalid",
+            "consensus.estimates.fiscal_year",
+        )
+    } else if lower.contains("contributor")
+        || lower.contains("institution")
+        || lower.contains("count")
+    {
+        (
+            "consensus_contributor_count_invalid",
+            "consensus.estimates.contributor_count",
+        )
+    } else if lower.contains("minimum") {
+        ("consensus_minimum_invalid", "consensus.estimates.minimum")
+    } else if lower.contains("maximum") {
+        ("consensus_maximum_invalid", "consensus.estimates.maximum")
+    } else if lower.contains("mean") {
+        ("consensus_mean_invalid", "consensus.estimates.mean")
+    } else if lower.contains("estimate values") {
+        ("consensus_values_missing", "consensus.estimates.values")
+    } else if lower.contains("table")
+        || lower.contains("caption")
+        || lower.contains("header")
+        || lower.contains("row")
+        || lower.contains("cell")
+    {
+        ("consensus_table_invalid", "consensus.estimates.table")
+    } else {
+        (
+            "consensus_provider_response_invalid",
+            "consensus.provider_response",
+        )
+    };
+    ServiceError::InvalidEvidence {
+        provider: "Tonghuashun".into(),
+        evidence_code: evidence_code.into(),
+        evidence_field: evidence_field.into(),
+        record_index: None,
+        message: format!(
+            "Consensus rejected Tonghuashun evidence ({evidence_code} at {evidence_field})"
+        ),
     }
 }
 
@@ -3961,6 +4383,306 @@ mod tests {
     use magic_tencent_rs::SnapshotTransport;
 
     use super::*;
+
+    fn news_record(
+        id: &str,
+        published_at: &str,
+        source_at: Option<&str>,
+        provider: ProviderId,
+        observed_at: &str,
+        batch_id: &str,
+    ) -> NewsItem {
+        let mut evidence = SourceEvidence::new(provider, observed_at, batch_id).unwrap();
+        if let Some(source_at) = source_at {
+            evidence = evidence.with_source_at(source_at).unwrap();
+        }
+        NewsItem {
+            item_id: NonEmptyText::new(id).unwrap(),
+            title: NonEmptyText::new(format!("news {id}")).unwrap(),
+            summary: None,
+            content: None,
+            publisher: NonEmptyText::new("fixture").unwrap(),
+            canonical_url: magic_market_core::HttpsUrl::new(format!("https://example.com/{id}"))
+                .unwrap(),
+            published_at: NonEmptyText::new(published_at).unwrap(),
+            instruments: Vec::new(),
+            topics: Vec::new(),
+            language: NonEmptyText::new("zh-CN").unwrap(),
+            evidence,
+        }
+    }
+
+    fn news_batch(records: Vec<NewsItem>, source_at: &str, batch_id: &str) -> DataBatch<NewsItem> {
+        DataBatch::strict(
+            records,
+            Provenance::new("jin10", "1787127606.533354000")
+                .unwrap()
+                .with_source_at(source_at)
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        )
+    }
+
+    #[test]
+    fn global_news_v2_preserves_two_distinct_record_evidence_times() {
+        let batch_id = "TEST_GLOBAL_NEWS_BATCH";
+        let batch = news_batch(
+            vec![
+                news_record(
+                    "NEWS_001",
+                    "2026-08-19T16:15:37+08:00",
+                    Some("2026-08-19 16:15:37"),
+                    ProviderId::Jin10,
+                    "1787127606.533354000",
+                    batch_id,
+                ),
+                news_record(
+                    "NEWS_002",
+                    "2026-08-19T16:14:00+08:00",
+                    Some("2026-08-19 16:14:00"),
+                    ProviderId::Jin10,
+                    "1787127605.000000000",
+                    batch_id,
+                ),
+            ],
+            "2026-08-19 16:15:37",
+            batch_id,
+        );
+        let result =
+            global_news_query_result(batch, "Jin10", ProviderId::Jin10, 16 * 1024).unwrap();
+        assert_eq!(result.source_at.as_deref(), Some("2026-08-19 16:15:37"));
+        assert!(result
+            .records
+            .iter()
+            .all(|record| record.schema_version() == 2));
+        let rows = result
+            .records
+            .iter()
+            .map(|record| serde_json::from_slice::<serde_json::Value>(record.data()).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows[0]
+                .pointer("/evidence/source_at")
+                .and_then(|v| v.as_str()),
+            Some("2026-08-19 16:15:37")
+        );
+        assert_eq!(
+            rows[1]
+                .pointer("/evidence/source_at")
+                .and_then(|v| v.as_str()),
+            Some("2026-08-19 16:14:00")
+        );
+    }
+
+    #[test]
+    fn global_news_v2_rejects_every_record_evidence_conflict_atomically() {
+        let cases = [
+            (
+                news_record(
+                    "bad-provider",
+                    "2026-08-19T16:15:37+08:00",
+                    Some("2026-08-19 16:15:37"),
+                    ProviderId::Eastmoney,
+                    "1787127606.533354000",
+                    "batch",
+                ),
+                "record_provider_mismatch",
+            ),
+            (
+                news_record(
+                    "bad-batch",
+                    "2026-08-19T16:15:37+08:00",
+                    Some("2026-08-19 16:15:37"),
+                    ProviderId::Jin10,
+                    "1787127606.533354000",
+                    "other-batch",
+                ),
+                "record_batch_mismatch",
+            ),
+            (
+                news_record(
+                    "bad-source",
+                    "2026-08-19T16:14:00+08:00",
+                    Some("2026-08-19 16:15:37"),
+                    ProviderId::Jin10,
+                    "1787127606.533354000",
+                    "batch",
+                ),
+                "record_published_at_mismatch",
+            ),
+            (
+                news_record(
+                    "future-source",
+                    "2026-08-19T16:30:00+08:00",
+                    Some("2026-08-19 16:30:00"),
+                    ProviderId::Jin10,
+                    "1787127606.533354000",
+                    "batch",
+                ),
+                "record_source_after_observation",
+            ),
+            (
+                news_record(
+                    "missing-source",
+                    "2026-08-19T16:15:37+08:00",
+                    None,
+                    ProviderId::Jin10,
+                    "1787127606.533354000",
+                    "batch",
+                ),
+                "record_evidence_incomplete",
+            ),
+            (
+                news_record(
+                    "observed-after-batch",
+                    "2026-08-19T16:15:37+08:00",
+                    Some("2026-08-19 16:15:37"),
+                    ProviderId::Jin10,
+                    "1787127607.000000000",
+                    "batch",
+                ),
+                "record_observed_after_batch",
+            ),
+        ];
+        for (record, expected_code) in cases {
+            let error = global_news_query_result(
+                news_batch(vec![record], "2026-08-19 16:15:37", "batch"),
+                "Jin10",
+                ProviderId::Jin10,
+                16 * 1024,
+            )
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                ServiceError::InvalidEvidence { evidence_code, .. }
+                    if evidence_code == expected_code
+            ));
+        }
+
+        let copied_batch_time = news_batch(
+            vec![
+                news_record(
+                    "newest",
+                    "2026-08-19T16:15:37+08:00",
+                    Some("2026-08-19 16:15:37"),
+                    ProviderId::Jin10,
+                    "1787127606.533354000",
+                    "batch",
+                ),
+                news_record(
+                    "older-with-copied-batch-time",
+                    "2026-08-19T16:14:00+08:00",
+                    Some("2026-08-19 16:15:37"),
+                    ProviderId::Jin10,
+                    "1787127606.533354000",
+                    "batch",
+                ),
+            ],
+            "2026-08-19 16:15:37",
+            "batch",
+        );
+        assert!(matches!(
+            global_news_query_result(
+                copied_batch_time,
+                "Jin10",
+                ProviderId::Jin10,
+                16 * 1024,
+            ),
+            Err(ServiceError::InvalidEvidence { evidence_code, .. })
+                if evidence_code == "record_published_at_mismatch"
+        ));
+    }
+
+    #[test]
+    fn instrument_news_v2_filters_at_the_callers_exact_cutoff() {
+        let batch_id = "TEST_INSTRUMENT_NEWS_BATCH";
+        let batch = news_batch(
+            vec![
+                news_record(
+                    "after-cutoff",
+                    "2026-08-19T16:16:00+08:00",
+                    Some("2026-08-19T16:16:00+08:00"),
+                    ProviderId::Sina,
+                    "1787127606.000000000",
+                    batch_id,
+                ),
+                news_record(
+                    "at-cutoff",
+                    "2026-08-19T16:15:37+08:00",
+                    Some("2026-08-19T16:15:37+08:00"),
+                    ProviderId::Sina,
+                    "1787127605.000000000",
+                    batch_id,
+                ),
+                news_record(
+                    "before-cutoff",
+                    "2026-08-19T16:14:00+08:00",
+                    Some("2026-08-19T16:14:00+08:00"),
+                    ProviderId::Sina,
+                    "1787127604.000000000",
+                    batch_id,
+                ),
+            ],
+            "2026-08-19T16:16:00+08:00",
+            batch_id,
+        );
+
+        let filtered = filter_instrument_news_batch(
+            batch,
+            "2026-08-19T16:15:37+08:00",
+            PositiveU32::new(2).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(filtered.records().len(), 2);
+        assert_eq!(filtered.records()[0].item_id.as_str(), "at-cutoff");
+        assert_eq!(
+            filtered.provenance().source_at(),
+            Some("2026-08-19T16:15:37+08:00")
+        );
+    }
+
+    #[test]
+    fn consensus_schema_failures_keep_safe_structured_field_diagnostics() {
+        let cases = [
+            (
+                "consensus title code 000001 does not match requested 600000",
+                "consensus_instrument_identity_invalid",
+                "consensus.instrument_identity",
+            ),
+            (
+                "invalid EPS fiscal year xyz",
+                "consensus_fiscal_year_invalid",
+                "consensus.estimates.fiscal_year",
+            ),
+            (
+                "EPS mean is above maximum",
+                "consensus_maximum_invalid",
+                "consensus.estimates.maximum",
+            ),
+            (
+                "EPS table has no header and data rows",
+                "consensus_table_invalid",
+                "consensus.estimates.table",
+            ),
+        ];
+        for (message, expected_code, expected_field) in cases {
+            let error = map_ths_error(Operation::Consensus, &ThsError::Schema(message.into()));
+            assert!(matches!(
+                error,
+                ServiceError::InvalidEvidence {
+                    provider,
+                    evidence_code,
+                    evidence_field,
+                    record_index: None,
+                    ..
+                } if provider == "Tonghuashun"
+                    && evidence_code == expected_code
+                    && evidence_field == expected_field
+            ));
+        }
+    }
 
     #[test]
     fn t0_observation_clock_is_explicit_local_china_time() {

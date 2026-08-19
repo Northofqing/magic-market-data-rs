@@ -87,13 +87,24 @@ fn global_news_maps_the_verified_rolling_page() {
         "https://finance.eastmoney.com/a/202607253821086055.html"
     );
     assert_eq!(item.published_at.as_str(), "2026-07-25T08:40:00+08:00");
+    assert_eq!(item.evidence.source_at(), Some("2026-07-25 08:40"));
     assert!(item.instruments.is_empty());
     assert_eq!(item.topics[0].as_str(), "财经");
     assert_eq!(item.language.as_str(), "zh-CN");
-    assert_eq!(
-        batch.provenance().source_at(),
-        Some("2026-07-25T08:40:00+08:00")
-    );
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-25 08:40"));
+}
+
+#[test]
+fn global_news_accepts_exact_first_party_futures_and_bond_metadata_links() {
+    for host in ["futures.eastmoney.com", "bond.eastmoney.com"] {
+        let expected = format!("https://{host}/a/202607253821086055.html");
+        let fixture = global_fixture().replace(
+            "http://finance.eastmoney.com/a/202607253821086055.html",
+            &expected,
+        );
+        let batch = parse_global_news(fixture.as_bytes(), 1).unwrap();
+        assert_eq!(batch.records()[0].canonical_url.as_str(), expected);
+    }
 }
 
 #[test]

@@ -234,8 +234,10 @@ Its local `observed_at` must never be copied into nullable provider `source_at`.
 
 The rebuilt Windows service was then exercised through its real mTLS + Bearer
 endpoint at `10.211.55.3:50051`; the address is deployment evidence, not a
-portable endpoint default. On 2026-08-18 the external capability registry
-reported 60 operations, 56 admitted and four blocked. A formal external
+portable endpoint default. The current source contract and rebuilt client bundle
+contain the same 60 data operations; every operation has at least one formally admitted
+Provider path. The earlier 56/4 snapshot was superseded when the remaining formal paths,
+including CFFEX `FuturesDelivery`, were published. A formal external
 `T0Evidence` request returned `complete=true`, `ADMITTED`, a current local
 `+08:00` `observed_at`, and `source_at=null`. This confirms that deployment uses
 the local observation clock without converting it into provider source time.

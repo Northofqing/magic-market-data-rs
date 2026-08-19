@@ -351,50 +351,134 @@ pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
 }
 
 fn status_from_error(request_id: &str, operation: Operation, error: ServiceError) -> Status {
-    let (code, reason_code, retryable, message) = match error {
-        ServiceError::InvalidRequest(message) => {
-            (Code::InvalidArgument, "invalid_request", false, message)
-        }
-        ServiceError::Unsupported { reason, .. } => {
-            (Code::Unimplemented, "capability_unadmitted", false, reason)
-        }
+    let (
+        code,
+        reason_code,
+        retryable,
+        message,
+        provider,
+        evidence_code,
+        evidence_field,
+        record_index,
+    ) = match error {
+        ServiceError::InvalidRequest(message) => (
+            Code::InvalidArgument,
+            "invalid_request",
+            false,
+            message,
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
+        ),
+        ServiceError::Unsupported { reason, .. } => (
+            Code::Unimplemented,
+            "capability_unadmitted",
+            false,
+            reason,
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
+        ),
         ServiceError::Unauthenticated => (
             Code::Unauthenticated,
             "unauthenticated",
             false,
             "authentication failed".to_owned(),
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
         ),
-        ServiceError::PermissionDenied(message) => {
-            (Code::PermissionDenied, "permission_denied", false, message)
-        }
-        ServiceError::ResourceExhausted(message) => {
-            (Code::ResourceExhausted, "resource_exhausted", true, message)
-        }
-        ServiceError::DeadlineExceeded(message) => {
-            (Code::DeadlineExceeded, "deadline_exceeded", true, message)
-        }
-        ServiceError::Unavailable { reason, .. } => {
-            (Code::Unavailable, "provider_unavailable", true, reason)
-        }
+        ServiceError::PermissionDenied(message) => (
+            Code::PermissionDenied,
+            "permission_denied",
+            false,
+            message,
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
+        ),
+        ServiceError::ResourceExhausted(message) => (
+            Code::ResourceExhausted,
+            "resource_exhausted",
+            true,
+            message,
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
+        ),
+        ServiceError::DeadlineExceeded(message) => (
+            Code::DeadlineExceeded,
+            "deadline_exceeded",
+            true,
+            message,
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
+        ),
+        ServiceError::Unavailable { reason, .. } => (
+            Code::Unavailable,
+            "provider_unavailable",
+            true,
+            reason,
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
+        ),
         ServiceError::FailedPrecondition(message) => (
             Code::FailedPrecondition,
             "source_precondition_failed",
             false,
             message,
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
+        ),
+        ServiceError::InvalidEvidence {
+            provider,
+            evidence_code,
+            evidence_field,
+            record_index,
+            message,
+        } => (
+            Code::FailedPrecondition,
+            "invalid_evidence",
+            false,
+            message,
+            provider,
+            evidence_code,
+            evidence_field,
+            record_index,
         ),
         ServiceError::Internal(_) => (
             Code::Internal,
             "internal",
             false,
             "internal service error".to_owned(),
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
         ),
     };
     let detail = v1::ErrorDetail {
         request_id: request_id.to_owned(),
         operation: grpc_operation(operation) as i32,
-        provider: String::new(),
+        provider,
         reason_code: reason_code.to_owned(),
         retryable,
+        admission: v1::AdmissionState::Unadmitted as i32,
+        evidence_code,
+        evidence_field,
+        record_index: record_index.unwrap_or_default(),
+        has_record_index: record_index.is_some(),
     }
     .encode_to_vec();
     let mut metadata = MetadataMap::new();
@@ -445,6 +529,39 @@ mod tests {
             }),
             allow_unadmitted: false,
         })
+    }
+
+    #[test]
+    fn invalid_evidence_status_has_safe_non_retryable_structured_details() {
+        let status = status_from_error(
+            "request-evidence",
+            Operation::Consensus,
+            ServiceError::InvalidEvidence {
+                provider: "Tonghuashun".to_owned(),
+                evidence_code: "consensus_numeric_order".to_owned(),
+                evidence_field: "consensus.mean".to_owned(),
+                record_index: Some(2),
+                message: "consensus evidence is inconsistent".to_owned(),
+            },
+        );
+        assert_eq!(status.code(), Code::FailedPrecondition);
+        let detail = v1::ErrorDetail::decode(
+            status
+                .metadata()
+                .get_bin(ERROR_DETAIL_METADATA_KEY)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(detail.reason_code, "invalid_evidence");
+        assert!(!detail.retryable);
+        assert_eq!(detail.admission, v1::AdmissionState::Unadmitted as i32);
+        assert_eq!(detail.provider, "Tonghuashun");
+        assert_eq!(detail.evidence_code, "consensus_numeric_order");
+        assert_eq!(detail.evidence_field, "consensus.mean");
+        assert_eq!(detail.record_index, 2);
+        assert!(detail.has_record_index);
     }
 
     #[tokio::test]

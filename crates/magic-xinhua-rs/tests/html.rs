@@ -1,6 +1,6 @@
 use magic_market_core::{
-    verify_admitted_batch, DataBatch, ProbeAdmissionError, ProbeAdmissionPolicy, ProbeStatus,
-    Provenance, ProviderId, SourceEvidence,
+    verify_admitted_newest_first_batch, DataBatch, NonEmptyText, ProbeAdmissionError,
+    ProbeAdmissionPolicy, ProbeStatus, Provenance, ProviderId, SourceEvidence,
 };
 use magic_xinhua_rs::parse_listing;
 use std::time::Duration;
@@ -43,21 +43,23 @@ fn rejects_duplicate_and_unsafe_canonical_links() {
 }
 
 #[test]
-fn uses_the_oldest_returned_time_for_admitted_batch_evidence() {
+fn uses_the_newest_raw_time_for_batch_and_each_records_own_evidence() {
     let batch = parse_listing(FIXTURE, 3).expect("synthetic fixture should parse");
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-29 10:31:05"));
     assert_eq!(
-        batch.provenance().source_at(),
-        Some("2026-07-29T10:29:05+08:00")
+        batch.records()[0].evidence.source_at(),
+        Some("2026-07-29 10:31:05")
     );
-    assert!(batch
-        .records()
-        .iter()
-        .all(|item| { item.evidence.source_at() == batch.provenance().source_at() }));
     assert_eq!(
-        verify_admitted_batch(
+        batch.records()[2].evidence.source_at(),
+        Some("2026-07-29 10:29:05")
+    );
+    assert_eq!(
+        verify_admitted_newest_first_batch(
             &batch,
             &ProbeAdmissionPolicy::new(ProviderId::XinhuaFinance).require_source_at(),
             |item| &item.evidence,
+            |item| item.published_at.as_str(),
             |item| item.item_id.as_str().to_owned(),
         )
         .expect("strict metadata batch should satisfy shared admission"),
@@ -127,6 +129,7 @@ fn strict_probe_policy_rejects_stale_xinhua_news() {
     let observed_at = "2026-07-29T12:00:00+08:00";
     let source_at = "2026-07-20T12:00:00+08:00";
     let batch_id = "xinhua-stale";
+    item.published_at = NonEmptyText::new(source_at).expect("published time");
     item.evidence = SourceEvidence::new(ProviderId::XinhuaFinance, observed_at, batch_id)
         .expect("evidence")
         .with_source_at(source_at)
@@ -141,12 +144,13 @@ fn strict_probe_policy_rejects_stale_xinhua_news() {
             .expect("batch ID"),
     );
     assert!(matches!(
-        verify_admitted_batch(
+        verify_admitted_newest_first_batch(
             &batch,
             &ProbeAdmissionPolicy::new(ProviderId::XinhuaFinance)
                 .with_max_source_age(Duration::from_secs(72 * 60 * 60))
                 .expect("policy"),
             |item| &item.evidence,
+            |item| item.published_at.as_str(),
             |item| item.item_id.as_str().to_owned(),
         ),
         Err(ProbeAdmissionError::StaleSourceTime { .. })

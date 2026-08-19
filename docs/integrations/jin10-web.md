@@ -18,7 +18,8 @@ The provider sends the official public app/version identifiers, `Origin`, `Refer
 `Accept`, and its own `User-Agent`. The `vip=1` query field is part of the public web
 request shape; it does not grant access. Rows whose public payload declares
 `data.lock == true` are omitted, and the provider never requests or decrypts a protected
-detail.
+detail. A locked row is conclusively private from `lock=true`; the source may omit
+`vip_level` on that row and this does not invalidate the surrounding public batch.
 
 Only public type-0 flashes and type-2 linked articles are normalized by
 `NewsProvider::global_news`. They must belong to at least one source news
@@ -53,9 +54,12 @@ may apply an exact source country filter.
 - `instrument_news` is explicitly unsupported because the public stream supplies no
   verified structured security filter.
 
-Each `NewsItem` retains the source row ID, RFC 3339 source time, content, attribution,
-official detail/article URL, language, topics, `ProviderId::Jin10`, observation time, and
-batch ID. Text mentions are not promoted into unverified `InstrumentId` values.
+Each `NewsItem` retains the source row ID, content, attribution, official detail/article
+URL, language, topics, `ProviderId::Jin10`, observation time, and batch ID. `published_at`
+is normalized to RFC3339, while evidence preserves the Provider's original
+`YYYY-MM-DD HH:MM:SS` string. The previous persistent `invalid_evidence` came from
+requiring a redundant `vip_level` on already locked rows; no other source is used to
+fill the field. Text mentions are not promoted into unverified `InstrumentId` values.
 
 ## Operations
 

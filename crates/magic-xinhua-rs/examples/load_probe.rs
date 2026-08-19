@@ -1,6 +1,6 @@
 use magic_market_core::{
-    verify_admitted_batch, verify_serial_load, PositiveU32, ProbeAdmissionPolicy, ProbeStatus,
-    ProviderId,
+    verify_admitted_newest_first_batch, verify_serial_load, PositiveU32, ProbeAdmissionPolicy,
+    ProbeStatus, ProviderId,
 };
 use magic_xinhua_rs::{XinhuaClient, GLOBAL_NEWS_ADMITTED};
 use std::error::Error;
@@ -30,10 +30,11 @@ fn run_probe() -> Result<ProbeStatus, Box<dyn Error>> {
     let mut records = 0;
     for call in 1..=REQUESTS {
         let batch = client.probe_global_news(PositiveU32::new(13)?)?;
-        verify_admitted_batch(
+        verify_admitted_newest_first_batch(
             &batch,
             &policy,
             |item| &item.evidence,
+            |item| item.published_at.as_str(),
             |item| item.item_id.as_str().to_owned(),
         )?;
         records += batch.records().len();

@@ -335,7 +335,7 @@ fn parse_response(
     }
     let source_at = records
         .first()
-        .map(|record| record.published_at.as_str())
+        .and_then(|record| record.evidence.source_at())
         .ok_or_else(|| ClsError::Protocol("latest CLS source time is missing".into()))?;
     let provenance = Provenance::new("cls-v1", observed_at)?
         .with_source_at(source_at)?
@@ -379,7 +379,7 @@ fn parse_item(
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| ClsError::Protocol("telegraph shareurl is missing".into()))?;
     let evidence = SourceEvidence::new(ProviderId::Cailianpress, observed_at, batch_id)?
-        .with_source_at(published_at.clone())?;
+        .with_source_at(ctime.to_string())?;
     Ok(NewsItem {
         item_id: NonEmptyText::new(item_id)?,
         title: NonEmptyText::new(title)?,

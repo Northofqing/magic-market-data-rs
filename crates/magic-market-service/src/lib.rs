@@ -502,6 +502,14 @@ pub enum ServiceError {
     },
     #[error("source precondition failed: {0}")]
     FailedPrecondition(String),
+    #[error("invalid {provider} evidence ({evidence_code}, {evidence_field}): {message}")]
+    InvalidEvidence {
+        provider: String,
+        evidence_code: String,
+        evidence_field: String,
+        record_index: Option<u32>,
+        message: String,
+    },
     #[error("internal service error: {0}")]
     Internal(String),
 }

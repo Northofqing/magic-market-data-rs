@@ -142,6 +142,11 @@ message ErrorDetail {
   string provider = 3;
   string reason_code = 4;
   bool retryable = 5;
+  AdmissionState admission = 6;
+  string evidence_code = 7;
+  string evidence_field = 8;
+  uint32 record_index = 9;
+  bool has_record_index = 10;
 }
 
 message EventCursor {

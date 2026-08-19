@@ -27,6 +27,7 @@ struct ParsedRow {
     publisher: String,
     canonical_url: String,
     published_at: String,
+    source_at: String,
     epoch: i64,
 }
 
@@ -69,15 +70,15 @@ pub fn parse_listing(html: &str, limit: u32) -> Result<DataBatch<NewsItem>, Yica
     let batch_id = format!("yicai:{observed_at}");
     let returned = parsed.into_iter().take(limit as usize).collect::<Vec<_>>();
     let source_at = returned
-        .last()
+        .first()
         .ok_or_else(|| protocol("firstlist is empty"))?
-        .published_at
+        .source_at
         .clone();
     let mut records = Vec::with_capacity(returned.len());
     for row in returned {
         let evidence =
             SourceEvidence::new(ProviderId::Yicai, observed_at.clone(), batch_id.clone())?
-                .with_source_at(source_at.clone())?;
+                .with_source_at(row.source_at.clone())?;
         records.push(NewsItem {
             item_id: NonEmptyText::new(row.id)?,
             title: NonEmptyText::new(row.title)?,
@@ -447,6 +448,7 @@ fn parse_row(row: SourceRow) -> Result<ParsedRow, YicaiError> {
         publisher,
         canonical_url: format!("https://www.yicai.com{expected_path}"),
         published_at,
+        source_at: row.CreateDate,
         epoch,
     })
 }

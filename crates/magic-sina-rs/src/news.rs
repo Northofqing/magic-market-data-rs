@@ -97,7 +97,6 @@ impl NewsProvider for SinaClient {
                     .first()
                     .map(|record| record.published_at.clone());
             }
-
             if let (Some(previous), Some(current)) = (
                 previous_oldest,
                 parsed.records.first().map(|record| record.published_unix),
@@ -154,8 +153,6 @@ impl NewsProvider for SinaClient {
         selected.truncate(limit);
         let observed_at = final_observed_at
             .ok_or_else(|| SinaError::Protocol("news observation time is missing".into()))?;
-        let source_at = newest_source_at
-            .ok_or_else(|| SinaError::Protocol("news source time is missing".into()))?;
         let batch_id = format!("{SOURCE_NAME}:{symbol}:{observed_at}:pages-{pages_read}");
         let mut records = Vec::with_capacity(selected.len());
         for index in selected {
@@ -165,6 +162,12 @@ impl NewsProvider for SinaClient {
                 &batch_id,
             )?);
         }
+        let source_at = records
+            .first()
+            .and_then(|record| record.evidence.source_at())
+            .or(newest_source_at.as_deref())
+            .ok_or_else(|| SinaError::Protocol("news source time is missing".into()))?
+            .to_owned();
         let provenance = Provenance::new(SOURCE_NAME, &observed_at)?
             .with_source_at(source_at)?
             .with_batch_id(batch_id)?;

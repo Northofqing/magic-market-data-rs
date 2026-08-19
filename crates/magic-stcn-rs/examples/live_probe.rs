@@ -1,5 +1,5 @@
 use magic_market_core::{
-    verify_admitted_batch, PositiveU32, ProbeAdmissionPolicy, ProbeStatus, ProviderId,
+    verify_admitted_newest_first_batch, PositiveU32, ProbeAdmissionPolicy, ProbeStatus, ProviderId,
 };
 use magic_stcn_rs::{StcnClient, GLOBAL_NEWS_ADMITTED};
 use std::error::Error;
@@ -26,11 +26,12 @@ fn run_probe() -> Result<ProbeStatus, Box<dyn Error>> {
     let capabilities = StcnClient::content_capabilities();
     println!("provider=securities-times capabilities={capabilities:?}");
     let batch = client.probe_global_news(PositiveU32::new(30)?)?;
-    let verified = verify_admitted_batch(
+    let verified = verify_admitted_newest_first_batch(
         &batch,
         &ProbeAdmissionPolicy::new(ProviderId::SecuritiesTimes)
             .with_max_source_age(MAX_SOURCE_AGE)?,
         |item| &item.evidence,
+        |item| item.published_at.as_str(),
         |item| item.item_id.as_str().to_owned(),
     )?;
     if batch

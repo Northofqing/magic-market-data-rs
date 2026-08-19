@@ -125,6 +125,7 @@ struct ParsedRow {
     publisher: String,
     canonical_url: String,
     published_at: String,
+    source_at: String,
     epoch_millis: i64,
     epoch_seconds: i64,
 }
@@ -212,9 +213,9 @@ pub fn parse_quick_news(body: &[u8], limit: u32) -> Result<DataBatch<NewsItem>, 
     let batch_id = format!("securities-times:{observed_at}");
     let returned = parsed.into_iter().take(limit as usize).collect::<Vec<_>>();
     let source_at = returned
-        .last()
+        .first()
         .ok_or_else(|| protocol("quick-news data is empty"))?
-        .published_at
+        .source_at
         .clone();
     let mut records = Vec::with_capacity(returned.len());
     for row in returned {
@@ -223,7 +224,7 @@ pub fn parse_quick_news(body: &[u8], limit: u32) -> Result<DataBatch<NewsItem>, 
             observed_at.clone(),
             batch_id.clone(),
         )?
-        .with_source_at(source_at.clone())?;
+        .with_source_at(row.source_at.clone())?;
         records.push(NewsItem {
             item_id: NonEmptyText::new(row.id)?,
             title: NonEmptyText::new(row.title)?,
@@ -275,6 +276,7 @@ fn parse_row(row: Row) -> Result<ParsedRow, StcnError> {
         publisher,
         canonical_url: absolute,
         published_at,
+        source_at: row.show_time,
         epoch_millis: row.time,
         epoch_seconds: show_time,
     })

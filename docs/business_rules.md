@@ -436,8 +436,9 @@ Eastmoney global latest news is admitted only from the exact first page at
 the source `财经` category, use a calendar-valid newest-first minute timestamp,
 have matching attribute/visible titles, and use a unique numeric article ID at
 the canonical `/a/<id>.html` path on exactly `finance.eastmoney.com`,
-`global.eastmoney.com`, or `biz.eastmoney.com`. These hosts are retained as
-metadata links only and are not fetched by this operation. The public page does
+`global.eastmoney.com`, `biz.eastmoney.com`, `futures.eastmoney.com`, or
+`bond.eastmoney.com`. These hosts are retained as metadata links only and are not
+fetched by this operation. The public page does
 not provide structured security identity, so records keep an empty instrument
 list and may not be presented as instrument news.
 
@@ -786,6 +787,24 @@ leave a missing or non-common batch `source_at` absent, retain the exact input
 evidence and state that the result is ineligible for BR-033 strict source-time
 freshness. Local time never repairs wrong identity, missing required fields,
 partial coverage, unordered data, stale source dates or licensed-data gaps.
+
+## BR-054 gRPC news record evidence and caller cutoff
+
+`GlobalNews` schema version 2 returns every record's complete original
+`SourceEvidence`. Record provider, batch ID and observation time must agree with
+the selected Provider and response batch; record `source_at` must identify the
+same instant as normalized `published_at`, must not exceed `observed_at`, and
+must remain in its original Provider format. Records are strictly newest first,
+and response `source_at` is exactly the newest record's source string. A batch
+source time is never used to construct an older record's evidence. Any missing,
+mixed, conflicting, future, unordered or substituted record evidence rejects
+the entire batch as non-retryable `invalid_evidence`.
+
+`InstrumentNews` schema version 2 additionally requires the caller's exact,
+unambiguous `captured_through` instant. The service may use its China calendar
+date as the Provider's inclusive end date but must exclude records later than
+the exact cutoff after validating complete Provider pages. It never replaces
+the cutoff with the server's current date or observation time.
 This boundary also applies to the bounded Eastmoney ranking response, Miaoxiang
 auction/breadth responses and fixed CFFEX schedule: local time is observation
 evidence only. It does not promote complete multi-page rankings, complete

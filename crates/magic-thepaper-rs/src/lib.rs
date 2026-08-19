@@ -341,7 +341,7 @@ fn parse_response(
 
     let source_at = parsed
         .first()
-        .map(|item| item.published_at.as_str())
+        .and_then(|item| item.evidence.source_at())
         .ok_or_else(|| ThePaperError::Protocol("latest source time is missing".into()))?;
     let provenance = Provenance::new("thepaper-finance-v1", observed_at)?
         .with_source_at(source_at)?
@@ -445,7 +445,7 @@ fn parse_item(
         .ok_or_else(|| ThePaperError::Protocol("pubTimeLong must be positive".into()))?;
     let published_at = unix_seconds_to_china_rfc3339(milliseconds.div_euclid(1_000))?;
     let evidence = SourceEvidence::new(ProviderId::ThePaper, observed_at, batch_id)?
-        .with_source_at(published_at.clone())?;
+        .with_source_at(format!("unix-ms:{milliseconds}"))?;
     Ok(NewsItem {
         item_id: NonEmptyText::new(item_id.clone())?,
         title: NonEmptyText::new(title)?,
@@ -614,9 +614,10 @@ mod tests {
         assert_eq!(item.published_at.as_str(), "2026-07-24T22:28:51+08:00");
         assert_eq!(item.topics.len(), 3);
         assert_eq!(item.evidence.provider(), ProviderId::ThePaper);
+        assert_eq!(item.evidence.source_at(), Some("unix-ms:1784903331309"));
         assert_eq!(
             batch.provenance().source_at(),
-            Some("2026-07-24T22:28:51+08:00")
+            Some("unix-ms:1784903331309")
         );
         assert_eq!(batch.records()[1].topics.len(), 2);
     }
