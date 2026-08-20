@@ -32,6 +32,27 @@
 [准入注册表](docs/integrations/admissions.tsv) 为准；gRPC 请求与响应见
 [外部对接文档](docs/integrations/grpc-external-api.md)。
 
+## gRPC 新闻证据合同
+
+`GlobalNews` 的每条 `records[].data` 都携带自己的 `evidence.provider`、原始
+`evidence.source_at`、`evidence.observed_at` 和 `evidence.batch_id`。批次
+`QueryResponse.source_at` 只表示最新记录的来源时间，不能用来构造或覆盖逐条 evidence。
+记录 evidence 缺失、混批或与 `published_at` 冲突时，整批以类型化
+`invalid_evidence` 拒绝，不返回部分成功。
+
+`InstrumentNews` schema v2 使用调用方给出的精确 RFC3339 `captured_through`。服务端先
+校验完整 Sina 上游批次，再过滤晚于截止时刻的记录；合法 cutoff-empty 返回
+`ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
+批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
+
+当前新闻合同交付基线为 client-bundle `2026-08-20.1`，来源提交
+`a5c8347f4c22150776a6853bb32dc1bb1914b9b0`，发布 tag
+`grpc-instrument-news-cutoff-empty-2026-08-20.1`。本次修正不改变 protobuf wire 字段；
+完整逐条 evidence、空批次和失败分类合同以
+[gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
+[`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用
+LF 格式的 `manifest.sha256` 做跨平台校验。
+
 ## 明确边界
 
 本项目只处理市场数据，不提供：
