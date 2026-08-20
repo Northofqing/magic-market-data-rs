@@ -807,7 +807,10 @@ the entire batch as non-retryable `invalid_evidence`.
 unambiguous `captured_through` instant. The service may use its China calendar
 date as the Provider's inclusive end date but must exclude records later than
 the exact cutoff after validating complete Provider pages. It never replaces
-the cutoff with the server's current date or observation time.
+the cutoff with the server's current date or observation time. A complete,
+fully evidenced Provider batch that retains no record at or before the cutoff
+is an admitted verified-empty response: records are empty, batch `source_at` is
+absent, and the real upstream batch ID and observation time remain intact.
 This boundary also applies to the bounded Eastmoney ranking response, Miaoxiang
 auction/breadth responses and fixed CFFEX schedule: local time is observation
 evidence only. It does not promote complete multi-page rankings, complete

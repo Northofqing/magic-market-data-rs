@@ -179,6 +179,10 @@ Sina host、无凭据和显式端口后，把 scheme 改为 `https`，host/path/
 日期范围按来源日期闭区间过滤，limit 在验证和去重后应用。有效非空来源页经范围过滤
 后可以形成 complete 的零记录批次；provenance 仍保留页面观测时间、batch ID 和本次
 读取到的最新来源记录时间。缺失/空 `datelist` 则是协议失败，不是 verified-empty。
+gRPC InstrumentNews v2 会在验证该完整 Provider 批次后再应用调用方精确
+`captured_through`。若截止过滤后为空，响应保持 ADMITTED/complete，保留上游 batch ID
+与 observed_at，但不携带 batch source_at，因为响应内不存在可作为“最新记录”的记录；
+该状态不得映射为 `invalid_evidence`。
 旧 `feed.mix` pageid=155 已实证失效，pageid=153 会忽略证券代码，两者均不是 fallback。
 
 ## ETF 期权

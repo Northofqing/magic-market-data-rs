@@ -3607,7 +3607,7 @@ where
     let batch = client
         .global_news(request.limit)
         .map_err(|error| provider_error(Operation::GlobalNews, error))?;
-    global_news_query_result(batch, provider, expected_provider, maximum_payload_bytes)
+    global_news_query_result(&batch, provider, expected_provider, maximum_payload_bytes)
 }
 
 fn execute_instrument_news(
@@ -3658,8 +3658,98 @@ fn execute_instrument_news(
     let batch = client
         .instrument_news(&provider_request)
         .map_err(|error| provider_error(Operation::InstrumentNews, error))?;
-    let batch = filter_instrument_news_batch(batch, &request.captured_through, request.limit)?;
-    global_news_query_result(batch, "Sina", ProviderId::Sina, maximum_payload_bytes)
+    instrument_news_query_result(
+        batch,
+        &request.captured_through,
+        request.limit,
+        maximum_payload_bytes,
+    )
+}
+
+fn instrument_news_query_result(
+    batch: DataBatch<NewsItem>,
+    captured_through: &str,
+    limit: PositiveU32,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    if batch.records().is_empty() {
+        return source_proven_empty_instrument_news_result(&batch, captured_through);
+    }
+    // Validate the complete upstream batch before applying the caller cutoff,
+    // so malformed evidence cannot be hidden by filtering.
+    let mut validated =
+        global_news_query_result(&batch, "Sina", ProviderId::Sina, maximum_payload_bytes)?;
+    let filtered = filter_instrument_news_batch(batch, captured_through, limit)?;
+    if filtered.records().is_empty() {
+        validated.source_at = None;
+        validated.records.clear();
+        return Ok(validated);
+    }
+    global_news_query_result(&filtered, "Sina", ProviderId::Sina, maximum_payload_bytes)
+}
+
+fn source_proven_empty_instrument_news_result(
+    batch: &DataBatch<NewsItem>,
+    captured_through: &str,
+) -> Result<QueryResult, ServiceError> {
+    EvidenceTimestamp::parse_instant(captured_through).map_err(|_| {
+        ServiceError::InvalidRequest("captured_through must be an RFC3339 instant".into())
+    })?;
+    if !batch.quality().is_complete() {
+        return Err(invalid_news_evidence(
+            "Sina",
+            "batch_quality_incomplete",
+            "quality",
+            None,
+        ));
+    }
+    let provenance = batch.provenance();
+    if provenance.source() != "sina-company-news" {
+        return Err(invalid_news_evidence(
+            "Sina",
+            "batch_source_mismatch",
+            "source",
+            None,
+        ));
+    }
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        invalid_news_evidence("Sina", "batch_evidence_incomplete", "batch_id", None)
+    })?;
+    if !batch_id.starts_with("sina-company-news:") {
+        return Err(invalid_news_evidence(
+            "Sina",
+            "batch_identity_invalid",
+            "batch_id",
+            None,
+        ));
+    }
+    let source_at = provenance.source_at().ok_or_else(|| {
+        invalid_news_evidence("Sina", "batch_evidence_incomplete", "source_at", None)
+    })?;
+    let source_instant = EvidenceTimestamp::parse_instant(source_at)
+        .map_err(|_| invalid_news_evidence("Sina", "batch_source_at_invalid", "source_at", None))?;
+    let observed_instant =
+        EvidenceTimestamp::parse_instant(provenance.fetched_at()).map_err(|_| {
+            invalid_news_evidence("Sina", "batch_observed_at_invalid", "observed_at", None)
+        })?;
+    if source_instant > observed_instant {
+        return Err(invalid_news_evidence(
+            "Sina",
+            "batch_source_after_observation",
+            "source_at",
+            None,
+        ));
+    }
+    Ok(QueryResult {
+        provider: "Sina".to_owned(),
+        batch_id: batch_id.to_owned(),
+        complete: true,
+        observed_at: provenance.fetched_at().to_owned(),
+        source_at: None,
+        records: Vec::new(),
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
 }
 
 fn filter_instrument_news_batch(
@@ -3703,14 +3793,16 @@ fn filter_instrument_news_batch(
     let source_at = retained
         .first()
         .and_then(|record| record.evidence.source_at())
-        .ok_or_else(|| {
-            invalid_news_evidence("Sina", "instrument_cutoff_empty", "captured_through", None)
-        })?
-        .to_owned();
+        .map(str::to_owned);
     let provenance = Provenance::new(source, observed_at)
-        .and_then(|provenance| provenance.with_source_at(source_at))
         .and_then(|provenance| provenance.with_batch_id(batch_id))
         .map_err(|error| ServiceError::Internal(error.to_string()))?;
+    let provenance = match source_at {
+        Some(source_at) => provenance
+            .with_source_at(source_at)
+            .map_err(|error| ServiceError::Internal(error.to_string()))?,
+        None => provenance,
+    };
     Ok(DataBatch::strict(retained, provenance))
 }
 
@@ -3742,7 +3834,7 @@ fn decode_request_version<T: DeserializeOwned>(
 }
 
 fn global_news_query_result(
-    batch: DataBatch<NewsItem>,
+    batch: &DataBatch<NewsItem>,
     provider: &str,
     expected_provider: ProviderId,
     maximum_payload_bytes: usize,
@@ -4504,7 +4596,7 @@ mod tests {
             batch_id,
         );
         let result =
-            global_news_query_result(batch, "Jin10", ProviderId::Jin10, 16 * 1024).unwrap();
+            global_news_query_result(&batch, "Jin10", ProviderId::Jin10, 16 * 1024).unwrap();
         assert_eq!(result.source_at.as_deref(), Some("2026-08-19 16:15:37"));
         assert!(result
             .records
@@ -4601,7 +4693,7 @@ mod tests {
         ];
         for (record, expected_code) in cases {
             let error = global_news_query_result(
-                news_batch(vec![record], "2026-08-19 16:15:37", "batch"),
+                &news_batch(vec![record], "2026-08-19 16:15:37", "batch"),
                 "Jin10",
                 ProviderId::Jin10,
                 16 * 1024,
@@ -4638,7 +4730,7 @@ mod tests {
         );
         assert!(matches!(
             global_news_query_result(
-                copied_batch_time,
+                &copied_batch_time,
                 "Jin10",
                 ProviderId::Jin10,
                 16 * 1024,
@@ -4695,6 +4787,165 @@ mod tests {
             filtered.provenance().source_at(),
             Some("2026-08-19T16:15:37+08:00")
         );
+    }
+
+    #[test]
+    fn instrument_news_v2_preserves_a_truthful_cutoff_empty_batch() {
+        let batch_id = "TEST_INSTRUMENT_NEWS_CUTOFF_EMPTY";
+        let batch = news_batch(
+            vec![
+                news_record(
+                    "after-cutoff-1",
+                    "2026-08-19T16:16:00+08:00",
+                    Some("2026-08-19T16:16:00+08:00"),
+                    ProviderId::Sina,
+                    "1787127606.000000000",
+                    batch_id,
+                ),
+                news_record(
+                    "after-cutoff-2",
+                    "2026-08-19T16:15:38+08:00",
+                    Some("2026-08-19T16:15:38+08:00"),
+                    ProviderId::Sina,
+                    "1787127605.000000000",
+                    batch_id,
+                ),
+            ],
+            "2026-08-19T16:16:00+08:00",
+            batch_id,
+        );
+
+        let result = instrument_news_query_result(
+            batch,
+            "2026-08-19T16:15:37+08:00",
+            PositiveU32::new(5).unwrap(),
+            16 * 1024,
+        )
+        .expect("a valid cutoff-empty result must remain admitted");
+
+        assert!(result.repository_admitted);
+        assert!(result.complete);
+        assert!(result.records.is_empty());
+        assert_eq!(result.provider, "Sina");
+        assert_eq!(result.batch_id, batch_id);
+        assert_eq!(result.source_at, None);
+        assert_eq!(result.observed_at, "1787127606.533354000");
+        assert_eq!(result.diagnostic_blocker, None);
+    }
+
+    #[test]
+    fn instrument_news_v2_cutoff_cannot_hide_invalid_upstream_evidence() {
+        let batch_id = "TEST_INSTRUMENT_NEWS_INVALID_AFTER_CUTOFF";
+        let batch = news_batch(
+            vec![news_record(
+                "invalid-after-cutoff",
+                "2026-08-19T16:16:00+08:00",
+                Some("2026-08-19T16:16:00+08:00"),
+                ProviderId::Eastmoney,
+                "1787127606.000000000",
+                batch_id,
+            )],
+            "2026-08-19T16:16:00+08:00",
+            batch_id,
+        );
+
+        assert!(matches!(
+            instrument_news_query_result(
+                batch,
+                "2026-08-19T16:15:37+08:00",
+                PositiveU32::new(5).unwrap(),
+                16 * 1024,
+            ),
+            Err(ServiceError::InvalidEvidence {
+                evidence_code,
+                record_index: Some(0),
+                ..
+            }) if evidence_code == "record_provider_mismatch"
+        ));
+    }
+
+    #[test]
+    fn instrument_news_v2_preserves_a_source_proven_empty_range() {
+        let batch_id = "sina-company-news:sh600000:1787127606.533354000:pages-1";
+        let batch = DataBatch::strict(
+            Vec::new(),
+            Provenance::new("sina-company-news", "1787127606.533354000")
+                .unwrap()
+                .with_source_at("2026-08-19T16:16:00+08:00")
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        );
+
+        let result = instrument_news_query_result(
+            batch,
+            "2026-08-19T16:15:37+08:00",
+            PositiveU32::new(5).unwrap(),
+            16 * 1024,
+        )
+        .expect("a source-proven empty date range must remain admitted");
+
+        assert!(result.repository_admitted);
+        assert!(result.complete);
+        assert!(result.records.is_empty());
+        assert_eq!(result.provider, "Sina");
+        assert_eq!(result.batch_id, batch_id);
+        assert_eq!(result.source_at, None);
+        assert_eq!(result.observed_at, "1787127606.533354000");
+    }
+
+    #[test]
+    fn instrument_news_v2_rejects_unproved_empty_ranges() {
+        let cases = [
+            (
+                Provenance::new("other-source", "1787127606.533354000")
+                    .unwrap()
+                    .with_source_at("2026-08-19T16:16:00+08:00")
+                    .unwrap()
+                    .with_batch_id("sina-company-news:sh600000:1787127606.533354000:pages-1")
+                    .unwrap(),
+                "batch_source_mismatch",
+            ),
+            (
+                Provenance::new("sina-company-news", "1787127606.533354000")
+                    .unwrap()
+                    .with_batch_id("sina-company-news:sh600000:1787127606.533354000:pages-1")
+                    .unwrap(),
+                "batch_evidence_incomplete",
+            ),
+            (
+                Provenance::new("sina-company-news", "1787127606.533354000")
+                    .unwrap()
+                    .with_source_at("2026-08-19T16:16:00+08:00")
+                    .unwrap()
+                    .with_batch_id("foreign-batch")
+                    .unwrap(),
+                "batch_identity_invalid",
+            ),
+            (
+                Provenance::new("sina-company-news", "2026-08-19T16:15:00+08:00")
+                    .unwrap()
+                    .with_source_at("2026-08-19T16:16:00+08:00")
+                    .unwrap()
+                    .with_batch_id("sina-company-news:sh600000:2026-08-19T16:15:00+08:00:pages-1")
+                    .unwrap(),
+                "batch_source_after_observation",
+            ),
+        ];
+
+        for (provenance, expected_code) in cases {
+            let batch = DataBatch::<NewsItem>::strict(Vec::new(), provenance);
+            assert!(matches!(
+                instrument_news_query_result(
+                    batch,
+                    "2026-08-19T16:15:37+08:00",
+                    PositiveU32::new(5).unwrap(),
+                    16 * 1024,
+                ),
+                Err(ServiceError::InvalidEvidence { evidence_code, .. })
+                    if evidence_code == expected_code
+            ));
+        }
     }
 
     #[test]

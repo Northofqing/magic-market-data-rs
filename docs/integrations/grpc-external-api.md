@@ -204,7 +204,10 @@ ThePaper `unix-ms:<毫秒>`；`observed_at` 保留秒/纳秒格式。
 
 `captured_through` 是调用方捕获的精确 RFC3339 截止时刻，不是天数。start/end 必须同时
 提供或同时省略；提供时 end 必须等于截止时刻在 Asia/Shanghai 的日期。服务端会剔除
-任何发布时间晚于该时刻的记录，并从保留后的最新记录重建批次 `source_at`。
+任何发布时间晚于该时刻的记录，并从保留后的最新记录重建批次 `source_at`。服务端在
+过滤前验证完整上游批次，不能用 cutoff 隐藏错误 evidence。若合法截止后无记录，返回
+`ADMITTED`、`complete=true`、`records=[]`，保留真实上游 `batch_id` 与 `observed_at`，并将
+批次 `source_at` 留空；该 verified-empty 不是 `invalid_evidence`。
 
 ## 6. 通用响应合同
 
@@ -606,6 +609,7 @@ Provider 身份和确定的 retryable 标志。CLS 的原始 HTTP status、`errn
 client-bundle `2026-08-19.2` 起，`manifest.sha256` 固定使用 ASCII+LF。Linux 可在
 bundle 根目录运行 `sha256sum -c manifest.sha256`，macOS 可运行
 `shasum -a 256 -c manifest.sha256`；两条命令不得要求调用方先转换换行符。
+`2026-08-20.1` 修正 InstrumentNews 的合法 cutoff-empty 分类；protobuf wire 字段未变化。
 
 ## 12. 客户端代码生成
 

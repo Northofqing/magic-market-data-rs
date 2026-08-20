@@ -21,7 +21,11 @@ existing gRPC operations.
   `captured_through` instant. Sina still receives the exact inclusive source
   date range; after complete page validation, the gRPC composition includes
   only records at or before the caller cutoff and rebuilds batch provenance
-  from the newest retained record. No server-current date supplies the cutoff.
+  from the newest retained record. If the complete, fully validated upstream
+  batch has no record at or before the cutoff, the response is a truthful
+  admitted empty batch with `records=[]`, no `source_at`, and the real upstream
+  `batch_id`/`observed_at`. No server-current date supplies the cutoff, and
+  filtering never hides invalid upstream record evidence.
 - `ErrorDetail` receives append-only evidence fields. They expose only a stable
   Provider name, evidence code, field, and optional record index; credentials,
   upstream payloads, and unbounded Provider text are excluded.
