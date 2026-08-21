@@ -659,6 +659,13 @@ fixed loopback origin and method allowlist, exact decimal/unit conversion,
 bounded serial live evidence, process-generation resets, schema health and
 bounded output behavior defined by BR-043.
 
+Each raw field's admission marker is frame-local and may be true only when that
+same frame carries its validated value. A missing or source-unavailable price or
+volume remains absent and unadmitted without demoting an independent valid
+family. A contradictory local frame is rejected before external forwarding and
+forces a new monitor generation; no window or continuity state crosses that
+restart.
+
 The fast `get_pricevol` path sends one non-empty, duplicate-free, bounded
 watchlist in one single-flight request. The response must contain exactly the
 requested identity set; missing, additional, duplicated or malformed rows reject
@@ -694,6 +701,13 @@ uncompressed size, must decode to that exact size. Async connect, read, write an
 response waits are bounded; the connection-pool mutex is never held while
 waiting for a response. A transport failure may rebuild the configured pool,
 but it may not reorder historical bars or bypass board-code preflight checks.
+
+The local-terminal Agent reconnects only transient gRPC and command-stream
+failures. Malformed or contradictory monitor frames and monitor-output closure
+restart the monitor with a new generation after the configured delay. Permanent
+authentication/configuration failures, server stop instructions and sequence
+contradictions remain explicit terminal failures rather than retry loops.
+
 TDX financial archives use the bounded report protocol and never fall back to
 unauthenticated HTTP.
 

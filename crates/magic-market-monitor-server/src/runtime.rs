@@ -734,8 +734,9 @@ where
                 price: values.price_text.clone(),
                 cumulative_volume: values.volume_text.clone(),
                 cumulative_volume_unit: VolumeUnit::Lot,
-                price_admitted: LOCAL_TERMINAL_PRICE_ADMITTED,
-                volume_admitted: LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED,
+                price_admitted: LOCAL_TERMINAL_PRICE_ADMITTED && values.price.is_some(),
+                volume_admitted: LOCAL_TERMINAL_CUMULATIVE_VOLUME_ADMITTED
+                    && values.volume.is_some(),
                 amount_admitted: LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED,
                 amount: FieldAvailability::Unavailable,
                 source_record_count: FieldAvailability::Unavailable,
@@ -1920,6 +1921,47 @@ mod tests {
                 skipped_without_advancing: true,
                 ..
             }
+        )));
+        assert!(runtime.output.0.iter().any(|event| matches!(
+            event,
+            ServiceEvent::Observation {
+                instrument,
+                price: None,
+                cumulative_volume: Some(volume),
+                price_admitted: false,
+                volume_admitted: true,
+                ..
+            } if instrument == "EQUITY:SH:600000" && volume == "100"
+        )));
+    }
+
+    #[test]
+    fn missing_volume_marks_only_volume_unadmitted() {
+        let mut missing_volume = observation(1, "10.0", "100");
+        missing_volume.cumulative_volume = None;
+        let mut runtime = runtime(
+            vec![DiscoveryOutcome::Candidate(candidate(42))],
+            vec![Ok(missing_volume)],
+            1,
+        );
+        assert_eq!(runtime.step().unwrap(), Step::PollAgain);
+        assert!(runtime.output.0.iter().any(|event| matches!(
+            event,
+            ServiceEvent::FamilyUnavailable {
+                family: AnalysisFamily::Volume,
+                skipped_without_advancing: true,
+                ..
+            }
+        )));
+        assert!(runtime.output.0.iter().any(|event| matches!(
+            event,
+            ServiceEvent::Observation {
+                price: Some(price),
+                cumulative_volume: None,
+                price_admitted: true,
+                volume_admitted: false,
+                ..
+            } if price == "10.0"
         )));
     }
 

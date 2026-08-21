@@ -179,10 +179,18 @@ impl AgentClient {
                     accepted_sequence = 0;
                     tokio::time::sleep(self.reconnect_delay).await;
                 }
-                Ok(SessionEnd::Reconnect) | Err(ClientError::Transport(_)) => {
+                Ok(SessionEnd::Reconnect) => {
                     tokio::time::sleep(self.reconnect_delay).await;
                 }
-                Err(error) => return Err(error),
+                Err(error) => match error.disposition() {
+                    ErrorDisposition::ReconnectSession => {
+                        tokio::time::sleep(self.reconnect_delay).await;
+                    }
+                    ErrorDisposition::RestartMonitor => {
+                        return Ok(ForwardOutcome::RestartMonitor(error.to_string()));
+                    }
+                    ErrorDisposition::Fatal => return Err(error),
+                },
             }
         }
     }
@@ -622,6 +630,14 @@ enum SessionEnd {
 pub(crate) enum ForwardOutcome {
     FramesComplete,
     Reconfigure(v1::AgentConfigureWatchlist),
+    RestartMonitor(String),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ErrorDisposition {
+    ReconnectSession,
+    RestartMonitor,
+    Fatal,
 }
 
 #[derive(Debug, Error)]
@@ -676,6 +692,48 @@ pub(crate) enum ClientError {
     InvalidAnalysisContract(&'static str),
     #[error("monitor frame generation is not an unsigned integer")]
     InvalidMonitorGeneration,
+}
+
+impl ClientError {
+    fn disposition(&self) -> ErrorDisposition {
+        match self {
+            Self::InvalidEndpoint(_)
+            | Self::OutgoingStopped
+            | Self::CommandTimeout
+            | Self::CommandStreamClosed => ErrorDisposition::ReconnectSession,
+            Self::Transport(status) | Self::Status(status)
+                if matches!(
+                    status.code(),
+                    tonic::Code::Cancelled
+                        | tonic::Code::Unknown
+                        | tonic::Code::DeadlineExceeded
+                        | tonic::Code::ResourceExhausted
+                        | tonic::Code::Unavailable
+                ) =>
+            {
+                ErrorDisposition::ReconnectSession
+            }
+            Self::FrameJson(_)
+            | Self::MissingEventType
+            | Self::InvalidAdmissionMarker(_)
+            | Self::AdmittedFieldMissing(_)
+            | Self::AnalysisEventJson(_)
+            | Self::InvalidAnalysisContract(_)
+            | Self::InvalidMonitorGeneration => ErrorDisposition::RestartMonitor,
+            Self::InvalidAuthorization
+            | Self::TlsFile { .. }
+            | Self::TlsFileSize(_)
+            | Self::Transport(_)
+            | Self::Status(_)
+            | Self::Stopped(_)
+            | Self::InvalidAcknowledgement
+            | Self::InvalidWatchlist(_)
+            | Self::StaleWatchlistRevision { .. }
+            | Self::WatchlistRevisionContradiction(_)
+            | Self::SequenceExhausted
+            | Self::SequenceContradiction { .. } => ErrorDisposition::Fatal,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -790,6 +848,46 @@ mod tests {
         let raw = br#"{"type":"observation","instrument":"600396.SH","price":null,"cumulative_volume":null,"price_admitted":true,"volume_admitted":false}"#;
         let error = event_from_frame("00000000-0000-4000-8000-000000000001", 1, raw).unwrap_err();
         assert!(matches!(error, ClientError::AdmittedFieldMissing("price")));
+    }
+
+    #[test]
+    fn monitor_contract_errors_restart_only_the_monitor_generation() {
+        assert_eq!(
+            ClientError::AdmittedFieldMissing("price").disposition(),
+            ErrorDisposition::RestartMonitor
+        );
+        assert_eq!(
+            ClientError::InvalidAdmissionMarker("price_admitted").disposition(),
+            ErrorDisposition::RestartMonitor
+        );
+        assert_eq!(
+            ClientError::CommandTimeout.disposition(),
+            ErrorDisposition::ReconnectSession
+        );
+        assert_eq!(
+            ClientError::Status(tonic::Status::unavailable("temporary")).disposition(),
+            ErrorDisposition::ReconnectSession
+        );
+        assert_eq!(
+            ClientError::Status(tonic::Status::permission_denied("permanent")).disposition(),
+            ErrorDisposition::Fatal
+        );
+        assert_eq!(
+            ClientError::Transport(tonic::Status::unavailable("temporary")).disposition(),
+            ErrorDisposition::ReconnectSession
+        );
+        assert_eq!(
+            ClientError::Transport(tonic::Status::permission_denied("permanent")).disposition(),
+            ErrorDisposition::Fatal
+        );
+        assert_eq!(
+            ClientError::SequenceContradiction {
+                local: 1,
+                server: 2,
+            }
+            .disposition(),
+            ErrorDisposition::Fatal
+        );
     }
 
     #[test]

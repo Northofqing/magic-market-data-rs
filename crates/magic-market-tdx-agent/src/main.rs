@@ -43,10 +43,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reader.abort();
         monitor.terminate(config.shutdown_timeout).await?;
         match outcome {
-            None | Some(Ok(ForwardOutcome::FramesComplete)) => return Ok(()),
+            None => return Ok(()),
+            Some(Ok(ForwardOutcome::FramesComplete)) => {
+                eprintln!("monitor output closed; restarting monitor generation");
+                tokio::time::sleep(config.reconnect_delay).await;
+            }
             Some(Ok(ForwardOutcome::Reconfigure(configuration))) => {
                 watchlist_revision = configuration.revision;
                 watchlist = configuration.instruments;
+            }
+            Some(Ok(ForwardOutcome::RestartMonitor(reason))) => {
+                eprintln!("monitor frame rejected; restarting monitor generation: {reason}");
+                tokio::time::sleep(config.reconnect_delay).await;
             }
             Some(Err(error)) => {
                 return Err(Box::new(error) as Box<dyn std::error::Error>);

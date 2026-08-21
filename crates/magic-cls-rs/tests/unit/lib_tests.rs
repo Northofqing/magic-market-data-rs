@@ -233,6 +233,38 @@ fn associated_instruments_preserve_verified_asset_classes() {
 }
 
 #[test]
+fn official_suffix_stock_ids_normalize_and_deduplicate() {
+    let rows = serde_json::json!([
+        {"StockID": "sh600000"},
+        {"StockID": "sz000001"},
+        {"StockID": "bj920403"},
+        {"StockID": "920403.BJ"},
+        {"StockID": "920344.BJ"}
+    ]);
+    let instruments = parse_instruments(Some(&rows)).expect("official CLS identities parse");
+    assert_eq!(instruments.len(), 4);
+    assert_eq!(instruments[0].exchange(), Exchange::Shanghai);
+    assert_eq!(instruments[0].code(), "600000");
+    assert_eq!(instruments[1].exchange(), Exchange::Shenzhen);
+    assert_eq!(instruments[1].code(), "000001");
+    assert_eq!(instruments[2].exchange(), Exchange::Beijing);
+    assert_eq!(instruments[2].code(), "920403");
+    assert_eq!(instruments[3].exchange(), Exchange::Beijing);
+    assert_eq!(instruments[3].code(), "920344");
+
+    for invalid in [
+        "600000.SH",
+        "000001.SZ",
+        "920403.SH",
+        "920403.HK",
+        "920403.bj",
+        "92040.BJ",
+    ] {
+        assert!(parse_instruments(Some(&serde_json::json!([{"StockID": invalid}]))).is_err());
+    }
+}
+
+#[test]
 fn cloned_clients_share_a_gate_held_through_the_complete_transport_call() {
     let (starts_tx, starts_rx) = mpsc::channel();
     let (releases_tx, releases_rx) = mpsc::channel();

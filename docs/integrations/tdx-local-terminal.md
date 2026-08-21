@@ -234,6 +234,21 @@ framing, not JSON Lines. The versioned frame codec in `magic-tdx-local-rs`
 remains a protocol/test primitive and is not a claim that production market
 data flows through the discovery helper.
 
+Raw-field admission is evaluated independently for every frame. The price or
+cumulative-volume admission marker is true only when that same frame contains
+the corresponding validated value. A source zero that means unavailable emits
+the typed family-unavailable event and an observation with that field absent and
+unadmitted; another valid family in the same observation remains available.
+The monitor never emits an admitted marker beside a missing value.
+
+The Agent rejects malformed or contradictory monitor frames without forwarding
+them. It terminates that monitor process, waits the configured reconnect delay,
+and starts a new monitor generation; an unexpected monitor stdout close follows
+the same generation-restart path. Transient gRPC status and command-stream
+failures reconnect the outbound session. Permanent authentication/configuration
+errors, server stop instructions and sequence contradictions remain fatal and
+cannot be converted into retries or partial events.
+
 ## Monitor server and package boundary
 
 `magic-market-monitor-server` sends the validated watchlist through one bounded,

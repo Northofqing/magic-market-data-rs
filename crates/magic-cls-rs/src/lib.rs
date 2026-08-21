@@ -450,17 +450,7 @@ fn parse_instruments(value: Option<&Value>) -> Result<Vec<InstrumentId>, ClsErro
             .ok_or_else(|| {
                 ClsError::Protocol("telegraph stock_list StockID must be a non-empty string".into())
             })?;
-        let (exchange, code) = if let Some(code) = stock_id.strip_prefix("sh") {
-            (Exchange::Shanghai, code)
-        } else if let Some(code) = stock_id.strip_prefix("sz") {
-            (Exchange::Shenzhen, code)
-        } else if let Some(code) = stock_id.strip_prefix("bj") {
-            (Exchange::Beijing, code)
-        } else {
-            return Err(ClsError::Protocol(format!(
-                "telegraph StockID has an unsupported exchange prefix: {stock_id}"
-            )));
-        };
+        let (exchange, code) = parse_stock_identity(stock_id)?;
         if code.len() != 6 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
             return Err(ClsError::Protocol(format!(
                 "telegraph StockID has an invalid security code: {stock_id}"
@@ -472,6 +462,22 @@ fn parse_instruments(value: Option<&Value>) -> Result<Vec<InstrumentId>, ClsErro
         }
     }
     Ok(instruments)
+}
+
+fn parse_stock_identity(stock_id: &str) -> Result<(Exchange, &str), ClsError> {
+    if let Some(code) = stock_id.strip_prefix("sh") {
+        Ok((Exchange::Shanghai, code))
+    } else if let Some(code) = stock_id.strip_prefix("sz") {
+        Ok((Exchange::Shenzhen, code))
+    } else if let Some(code) = stock_id.strip_prefix("bj") {
+        Ok((Exchange::Beijing, code))
+    } else if let Some(code) = stock_id.strip_suffix(".BJ") {
+        Ok((Exchange::Beijing, code))
+    } else {
+        Err(ClsError::Protocol(format!(
+            "telegraph StockID has an unsupported exchange format: {stock_id}"
+        )))
+    }
 }
 
 fn classify_associated_asset(exchange: Exchange, code: &str) -> Result<AssetClass, ClsError> {
