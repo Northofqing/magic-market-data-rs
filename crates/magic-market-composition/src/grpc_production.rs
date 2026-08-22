@@ -20,10 +20,14 @@ use magic_exchange_rs::{
 use magic_fred_rs::{FredClient, FredError};
 use magic_gov_rs::{GovClient, GovError};
 use magic_hithink_rs::{
-    HithinkClient, HithinkError, HISTORICAL_BARS_ADMITTED as HITHINK_HISTORICAL_BARS_ADMITTED,
+    HithinkClient, HithinkError, AUCTIONS_ADMITTED as HITHINK_AUCTIONS_ADMITTED,
+    CORPORATE_ACTIONS_ADMITTED as HITHINK_CORPORATE_ACTIONS_ADMITTED,
+    FINANCIAL_STATEMENTS_ADMITTED as HITHINK_FINANCIAL_STATEMENTS_ADMITTED,
+    HISTORICAL_BARS_ADMITTED as HITHINK_HISTORICAL_BARS_ADMITTED,
     LIMIT_POOLS_ADMITTED as HITHINK_LIMIT_POOLS_ADMITTED,
     MARKET_STATISTICS_ADMITTED as HITHINK_MARKET_STATISTICS_ADMITTED,
     POPULARITY_ADMITTED as HITHINK_POPULARITY_ADMITTED,
+    SECURITY_METADATA_ADMITTED as HITHINK_SECURITY_METADATA_ADMITTED,
 };
 use magic_iwencai_rs::{IwencaiClient, IwencaiError, SEMANTIC_SEARCH_ADMITTED};
 use magic_jin10_rs::{Jin10Client, Jin10Error};
@@ -84,10 +88,14 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset};
 pub const SCHEMA_VERSION: u32 = 1;
 pub const NEWS_SCHEMA_VERSION: u32 = 2;
 const EMQUANT_DAILY_BARS_SCOPE: &str = "Shanghai/Shenzhen equities; explicit inclusive start/end; unadjusted completed daily CSD OHLCV/amount; at most 800 returned rows";
-const HITHINK_HISTORICAL_BARS_SCOPE: &str = "Shanghai/Shenzhen/Beijing six-digit equities; explicit inclusive range of at most ten years; official Fuyao unadjusted completed Day bars; most recent caller limit after complete bounded response validation";
+const HITHINK_HISTORICAL_BARS_SCOPE: &str = "six-digit A-share equities and standard exchange indices with explicit inclusive range of at most ten years, plus Shanghai/Shenzhen ETFs at most five years; official Fuyao unadjusted completed Day bars; most recent caller limit after complete bounded response validation";
 const HITHINK_MARKET_STATISTICS_SCOPE: &str = "1..=100 unique Shanghai/Shenzhen/Beijing equities; official Fuyao PE TTM, PE MRQ and PB MRQ with source nulls preserved";
 const HITHINK_LIMIT_POOLS_SCOPE: &str = "official Fuyao Upper, Lower or Broken pool for one explicit Shanghai trading date; all declared pages validated before applying caller limit; PreviousUpper unsupported";
 const HITHINK_POPULARITY_SCOPE: &str = "official Fuyao current 24-hour hot-stock ranking; at most 100 rows with exact identity, rank, heat and response source time";
+const HITHINK_FINANCIAL_STATEMENTS_SCOPE: &str = "1..=8 unique A-share equities; most recent 20 quarterly consolidated income, balance or cash-flow statements; source nulls and per-report publication evidence preserved";
+const HITHINK_CORPORATE_ACTIONS_SCOPE: &str = "one A-share equity; optional exact inclusive date range; official Fuyao implemented cash-dividend and bonus-share ex-date events; endpoint source-time absence preserved";
+const HITHINK_SECURITY_METADATA_SCOPE: &str = "1..=32 unique A-share equities, standard exchange indices or exchange-traded funds; exact Fuyao thscode/name/currency identity with unpublished board, listing and price-limit fields explicitly unavailable";
+const HITHINK_AUCTIONS_SCOPE: &str = "1..=100 unique A-share equities; current official Fuyao stage=final closed auction snapshot diagnostic; provider response assembly time is observed_at while trading date, source_at and directional unmatched queues remain absent";
 pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.request";
 pub const REALTIME_QUOTES_RECORD_SCHEMA: &str = "magic.market.quote";
 pub const HISTORICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.historical_bars.request";
@@ -206,7 +214,11 @@ pub const POST_CLOSE_FLOWS_RECORD_SCHEMA: &str = "magic.market.post_close_flow";
 pub const MARKET_RANKINGS_REQUEST_SCHEMA: &str = "magic.market.market_rankings.request";
 pub const MARKET_RANKINGS_RECORD_SCHEMA: &str = "magic.market.market_ranking_diagnostic_entry";
 pub const AUCTIONS_REQUEST_SCHEMA: &str = "magic.market.auctions.request";
+pub const HITHINK_CURRENT_AUCTIONS_REQUEST_SCHEMA: &str =
+    "magic.market.hithink_current_auctions.request";
 pub const AUCTIONS_RECORD_SCHEMA: &str = "magic.market.opening_auction_diagnostic";
+pub const HITHINK_CURRENT_AUCTIONS_RECORD_SCHEMA: &str =
+    "magic.market.hithink_current_auction_snapshot";
 pub const MARKET_BREADTH_REQUEST_SCHEMA: &str = "magic.market.market_breadth.request";
 pub const MARKET_BREADTH_RECORD_SCHEMA: &str = "magic.market.market_breadth_diagnostic";
 const TENCENT_PROVIDER: &str = "Tencent";
@@ -1216,6 +1228,26 @@ fn register_hithink(
                     HITHINK_POPULARITY_ADMITTED,
                     HITHINK_POPULARITY_SCOPE,
                 ),
+                (
+                    Operation::FinancialStatements,
+                    HITHINK_FINANCIAL_STATEMENTS_ADMITTED,
+                    HITHINK_FINANCIAL_STATEMENTS_SCOPE,
+                ),
+                (
+                    Operation::CorporateActions,
+                    HITHINK_CORPORATE_ACTIONS_ADMITTED,
+                    HITHINK_CORPORATE_ACTIONS_SCOPE,
+                ),
+                (
+                    Operation::SecurityMetadata,
+                    HITHINK_SECURITY_METADATA_ADMITTED,
+                    HITHINK_SECURITY_METADATA_SCOPE,
+                ),
+                (
+                    Operation::Auctions,
+                    HITHINK_AUCTIONS_ADMITTED,
+                    HITHINK_AUCTIONS_SCOPE,
+                ),
             ] {
                 let capability = if admitted_by_repository {
                     runtime_unavailable(operation, "HithinkFinance", scope, &blocker)
@@ -1289,6 +1321,95 @@ fn register_hithink(
                 "HithinkFinance",
                 maximum_payload_bytes,
                 |request: &LimitPoolRequest| pools.limit_pool(request),
+            )
+        },
+    )?;
+
+    let financials = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::FinancialStatements,
+            "HithinkFinance",
+            HITHINK_FINANCIAL_STATEMENTS_SCOPE,
+        ),
+        move |command| {
+            let request: FinancialStatementsRequest =
+                decode_request(&command, FINANCIAL_STATEMENTS_REQUEST_SCHEMA)?;
+            let batch = financials
+                .financial_statements(&request.instruments, request.kind)
+                .map_err(|error| provider_error(Operation::FinancialStatements, error))?;
+            provider_query_result(
+                batch,
+                "HithinkFinance",
+                FINANCIAL_STATEMENTS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let actions = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::CorporateActions,
+            "HithinkFinance",
+            HITHINK_CORPORATE_ACTIONS_SCOPE,
+        ),
+        move |command| {
+            let request: CorporateActionRequest =
+                decode_request(&command, CORPORATE_ACTIONS_REQUEST_SCHEMA)?;
+            let response = actions
+                .corporate_actions(&request)
+                .map_err(|error| provider_error(Operation::CorporateActions, error))?;
+            provider_query_result(
+                response.into_batch(),
+                "HithinkFinance",
+                CORPORATE_ACTIONS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let metadata = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::SecurityMetadata,
+            "HithinkFinance",
+            HITHINK_SECURITY_METADATA_SCOPE,
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, SECURITY_METADATA_REQUEST_SCHEMA)?;
+            let batch = metadata
+                .security_metadata(&request.instruments)
+                .map_err(|error| provider_error(Operation::SecurityMetadata, error))?;
+            provider_query_result(
+                batch,
+                "HithinkFinance",
+                SECURITY_METADATA_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let auctions = client.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::Auctions,
+            "HithinkFinance",
+            HITHINK_AUCTIONS_SCOPE,
+            "Fuyao current auction snapshots omit the exact trading date, provider source time and directional unmatched bid/ask quantities",
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, HITHINK_CURRENT_AUCTIONS_REQUEST_SCHEMA)?;
+            let batch = auctions
+                .probe_auction_snapshots(&request.instruments)
+                .map_err(|error| provider_error(Operation::Auctions, error))?;
+            provider_query_result(
+                batch,
+                "HithinkFinance",
+                HITHINK_CURRENT_AUCTIONS_RECORD_SCHEMA,
+                maximum_payload_bytes,
             )
         },
     )?;
@@ -5511,6 +5632,9 @@ mod tests {
             Operation::MarketStatistics,
             Operation::LimitPools,
             Operation::Popularity,
+            Operation::FinancialStatements,
+            Operation::CorporateActions,
+            Operation::SecurityMetadata,
         ] {
             let hithink = capabilities
                 .iter()
@@ -5522,6 +5646,20 @@ mod tests {
             assert_eq!(hithink.runtime_available, hithink_key_is_configured());
             assert!(!hithink.diagnostic_available);
         }
+
+        let hithink_auctions = capabilities
+            .iter()
+            .find(|capability| {
+                capability.operation == Operation::Auctions
+                    && capability.provider == "HithinkFinance"
+            })
+            .expect("missing official HITHINK Fuyao auction diagnostic registration");
+        assert!(!hithink_auctions.repository_admitted);
+        assert!(!hithink_auctions.runtime_available);
+        assert_eq!(
+            hithink_auctions.diagnostic_available,
+            hithink_key_is_configured()
+        );
 
         for (operation, provider) in [
             (Operation::HistoricalBars, "Baidu"),

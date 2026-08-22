@@ -860,13 +860,16 @@ fixtures or commits. One clone-shared gate spaces request starts by at least
 paths/query keys, non-JSON responses and bodies over four MiB fail closed.
 
 Production `HistoricalBars` accepts one six-digit Shanghai, Shenzhen or Beijing
-equity, `Day`, an explicit inclusive range no longer than ten years, and always
-requests `adjust=none`. The complete bounded response is validated before the
-most recent caller limit is applied. The response `thscode`, `interval` and
-`adjust` must echo the request, bar dates must be unique Shanghai-midnight dates
-inside the range, the response timestamp must identify the latest returned bar,
-volume converts source shares to Core lots by dividing by 100, and amount stays
-in source currency units. No completed row may be filled or inferred.
+equity, one standard `.SH`/`.SZ` index, or one Shanghai/Shenzhen exchange-traded
+fund. All require `Day` and an explicit inclusive range; equities and indices
+are bounded to ten years and ETFs to five. Equity requests always send
+`adjust=none`; index and ETF paths send no adjustment parameter. The complete
+bounded response is validated before the most recent caller limit is applied.
+The response `thscode`, `interval` and asset-specific `adjust` state must echo
+the request, bar dates must be unique Shanghai-midnight dates inside the range,
+the response timestamp must identify the latest returned bar, volume converts
+source shares to Core lots by dividing by 100, and amount stays in source
+currency units. No completed row may be filled or inferred.
 
 Production `MarketStatistics` accepts one through 100 unique A-share equities
 and requires exactly one response row in request order. It maps only `pe_ttm`,
@@ -886,9 +889,42 @@ identity, unique rank, heat, rank change and response source time. The live API
 currently emits `heat` as either a JSON number or a strict finite numeric
 string; no other string coercion is allowed.
 
+Production `FinancialStatements` accepts one through eight unique A-share
+equities and one of `Income`, `Balance` or `CashFlow`. It requests the most
+recent twenty quarterly consolidated periods per instrument. Every documented
+line is retained, including explicit `null`; `period_end_ms` becomes the report
+period and `report_date_ms` becomes both `announced_on` and that record's raw
+`unix-ms:` source evidence. The response `timestamp` must equal its latest
+`period_end_ms`; it is not a publication timestamp. Batch `source_at` is the
+latest record publication time and must not be copied over older records.
+
+Production `CorporateActions` accepts one A-share equity and an optional exact
+inclusive range whose end is not later than the current Shanghai date. It maps
+only source-published positive cash-per-share and
+bonus-per-share terms as implemented distribution events on the exact ex-date.
+The endpoint publishes no batch source timestamp, so response and record
+evidence keep `source_at` absent; local observation time never fills it. A
+negative term, an all-zero event, duplicate ex-date, identity conflict or event
+outside coverage rejects the whole response.
+
+Production `SecurityMetadata` accepts one through 32 unique A-share equities,
+standard exchange indices or exchange-traded funds. Exact `thscode`, exchange,
+asset type, name and currency are validated. The response does not publish
+board, ST state, listing date or price-limit rules, so those fields stay absent
+and each record has `DataStatus::Unavailable` even though the returned batch is
+complete. Standard indices may expose a provider-native ticker such as
+`1B0300`; only exact `thscode` is mapped to the Core identity and the auxiliary
+ticker is validated but not rewritten into the record.
+
 Fuyao realtime quote responses with explicit `thscodes` have no source
-timestamp, and the auction response has neither directional unmatched bid/ask
-quantities nor a record source time. Those families remain unadmitted. Key
+timestamp, and the auction response has no exact trading date, directional
+unmatched bid/ask quantities or record source time. Realtime quotes remain
+unimplemented. Auctions are available only through the provider-specific
+`magic.market.hithink_current_auctions.request` diagnostic: it fixes
+`stage=final`, validates the complete response, converts source lots to shares,
+uses the response assembly timestamp only as `observed_at`, and leaves
+`source_at` and both directional queues absent. It remains repository-unadmitted
+and cannot satisfy or be substituted for an exact-date auction request. Key
 absence, expiry, authentication/permission denial, rate limiting, upstream
 unavailability, query rejection and invalid provider responses are distinct
 typed terminal outcomes. None may return records, synthesize timestamps, or

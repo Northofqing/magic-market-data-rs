@@ -27,8 +27,9 @@
   不依赖运行时明文 HTTP，也不会用日期公式扩展到其他年份。
 - 通过官方 EMQuant/Choice SDK 提供沪深股票的显式日期范围、未复权完成日线；权限到期、
   当日字段未完成或 SDK 不可用时返回无 records 的类型化失败，不填零、不回退旧数据。
-- 通过官方同花顺扶摇 Financial API 提供沪深北股票的未复权完成日线、估值子集、显式日期
-  涨停/跌停/炸板池和当前热股榜；Key 缺失、到期或无权限时返回类型化失败，不回退网页源。
+- 通过官方同花顺扶摇 Financial API 提供沪深北股票、标准指数和 ETF 的未复权完成日线，
+  以及估值子集、显式日期涨停/跌停/炸板池、当前热股榜、A 股财务三表、现金/送股公司行动
+  和字段级可用性明确的证券元数据；Key 缺失、到期或无权限时返回类型化失败，不回退网页源。
 - 为每条记录保留 Provider、批次、源时间（源能够证明时）、本地观测时间、质量状态和
   完整性证据。
 
@@ -49,9 +50,11 @@
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前对接合同交付基线为 client-bundle `2026-08-22.1`，发布 tag
-`grpc-hithink-emquant-2026-08-22.1`。该版本加入官方 HITHINK 扶摇四项生产能力和
-EMQuant 正式日线，不改变 protobuf wire 字段；完整逐条 evidence、空批次和失败分类合同以
+当前对接合同交付基线为 client-bundle `2026-08-22.2`，发布 tag
+`grpc-hithink-emquant-2026-08-22.2`。该版本扩展官方 HITHINK 扶摇为七项生产 operation
+（含指数/ETF 日线、财务三表、公司行动和元数据），另实现一项必须显式 opt-in 的当前
+最终集合竞价诊断，并保留 EMQuant 正式日线，不改变
+protobuf wire 字段；完整逐条 evidence、空批次和失败分类合同以
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用
 LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle 内
@@ -71,7 +74,9 @@ LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle
 账户合同。完整 Level-2、DR007 和 IMF 合同继续保留为不可用；已有的 CFETS Shibor、
 LPR 和官方汇率能力不受 DR007 授权缺口影响。窄版 `Auctions` 只返回同一妙想响应明确
 提供的竞价成交量和成交额，匹配价、昨收、未匹配买卖队列、量比和 Provider 源时刻均
-保持 `null`，不会从普通行情推导。
+保持 `null`，不会从普通行情推导。同花顺扶摇的当前最终竞价诊断另行返回源直接给出的成交价、
+昨收、成交量（严格从手换算为股）、成交额和量比；因源未给交易日、逐条源时刻和方向化
+未匹配队列，它保持 repository-unadmitted，只能显式 `allow_unadmitted=true` 调用。
 
 `MarketBreadth` 的上市总数、涨跌平、涨跌停和覆盖率来自同一个妙想响应；这证明采集
 原子性，但 Provider 没有给每个字段源时刻，因此 `maximum_source_skew_millis` 保持

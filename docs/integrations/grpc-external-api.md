@@ -479,9 +479,10 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   `HistoricalBars`、`MarketRankings` 仍登记显式 opt-in 诊断 handler；
   EMQuant `HistoricalBars` 已绑定沪深股票显式区间的完成日线生产合同；其 Quote、日内 K、
   盘口和资金流仍只作为显式诊断来源；配置
-`EASTMONEY_API_KEY`（兼容别名 `MX_APIKEY`）后，`Auctions` 和 `MarketBreadth` 也登记
-  东财妙想诊断 handler。这 4 个固定模板操作和其他诊断一样，只有显式
-  `preferred_provider=EastmoneyMiaoxiang` 且 `allow_unadmitted=true` 才执行；
+`EASTMONEY_API_KEY`（兼容别名 `MX_APIKEY`）后，东财妙想 `Auctions` 和
+  `MarketBreadth` 登记已准入的窄版生产 handler；其 `FundFlowSeries` 和 `MoneyFlows`
+  变体仍是显式诊断，要求 `preferred_provider=EastmoneyMiaoxiang` 且
+  `allow_unadmitted=true`；
 - 未配置东财妙想 Key 时，`Auctions` 和 `MarketBreadth` 仍在 I/O 前
   `UNIMPLEMENTED`；配置后也只返回源直接给出的部分字段，不用普通 Quote 冒充竞价，
   不把不完整家数统计提升为完整市场宽度；
@@ -514,14 +515,57 @@ EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.requ
 `provider=Eastmoney`、源日期、观测时间和批次 ID。
 
 官方同花顺扶摇 Provider 的选择器是 `HithinkFinance`，运行时 Key 只从
-`HITHINK_FINANCE_API_KEY` 加载。当前正式准入四项现有 operation，不增加或改写 Protobuf：
+`HITHINK_FINANCE_API_KEY` 加载。当前正式准入七项现有 operation，不增加或改写 Protobuf：
 
 | operation | 精确范围 |
 | --- | --- |
-| `HistoricalBars` | 沪深北六位股票、`Day`、显式 inclusive 起止日期（最长十年）、固定 `adjust=none`，完整响应校验后取最新 caller limit |
+| `HistoricalBars` | 沪深北六位股票和标准 `.SH`/`.SZ` 指数最长十年、沪深 ETF 最长五年；`Day`、显式 inclusive 起止日期、未复权，完整响应校验后取最新 caller limit |
 | `MarketStatistics` | 1..=100 个唯一沪深北股票；只映射 `pe_ttm`、`pe_mrq`、`pb_mrq`，负值和 `null` 保留 |
 | `LimitPools` | 显式上海交易日的 `Upper`、`Lower`、`Broken`；取完并校验所有声明页后才应用 limit；`PreviousUpper` 不支持 |
 | `Popularity` | 官方 `period=day` 24 小时热股榜，最多 100 条，保留排名、热度、排名变化和响应源时刻 |
+| `FinancialStatements` | 1..=8 个唯一 A 股；`Income`/`Balance`/`CashFlow` 最近 20 个季度，逐条保留 `report_date_ms` 源证据和显式 `null` |
+| `CorporateActions` | 单只 A 股、可选且不晚于当前上海日期的 inclusive 范围；只映射官方现金/送股每股条款和除权日；源未给批次时间时 `source_at=null` |
+| `SecurityMetadata` | 1..=32 个 A 股、标准指数或场内基金；精确身份/名称/币种，未发布的板块/上市日/涨跌停规则保持缺失并标为 `Unavailable` |
+
+此外，`Auctions` 已实现同花顺当前最终快照的显式诊断，但不属于上述七项生产准入。
+请求必须使用 `schema=magic.market.hithink_current_auctions.request`、
+`preferred_provider=HithinkFinance`、`allow_unadmitted=true`：
+
+```json
+{"instruments":[{"exchange":"Shanghai","code":"600519","asset_class":"Equity"}]}
+```
+
+服务端固定发送 `stage=final`，只接受实测的 `auction_phase=closed`、
+`data_status=final` 和完整精确身份。响应中的竞价量单位“手”严格乘 100 写入“股”，成交价、
+昨收、涨幅、成交额和量比按源语义映射。实测单一 `auction_unmatched` 可以为负，但源合同没有
+定义其符号到 bid/ask 的映射，故只校验为有限值，两个方向字段均保持 `null`。
+`data.timestamp` 是响应组装时间，只能写入 `observed_at`；源未提供交易日和
+逐条源时刻，因此不得写入 `trading_date` 或 `source_at`，也不能用批次时间、本地时间或其他
+Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精确日期合同。
+其 gRPC 外层固定为 `admission=UNADMITTED`、`complete=false` 并携带 blocker；records
+仅供显式诊断消费，不能被客户端提升为生产成功。
+
+2026-08-22 脱敏真实 record 示例（仅替换 `batch_id`）：
+
+```json
+{
+  "instrument": {"exchange":"Shanghai","code":"600519","asset_class":"Equity"},
+  "name": "贵州茅台",
+  "matched_price": 1291.5,
+  "previous_close": 1291.5,
+  "change_percent": {"value":0.0,"unit":"Percent"},
+  "matched_quantity": 16700.0,
+  "matched_amount": 21568050.0,
+  "unmatched_bid_quantity": null,
+  "unmatched_ask_quantity": null,
+  "volume_ratio": {"value":0.4718,"unit":"Decimal"},
+  "status": "Unavailable",
+  "source_at": null,
+  "observed_at": "unix-ms:1787388432543",
+  "provider": "Tonghuashun",
+  "batch_id": "HITHINK_AUCTION_REQUEST_ID"
+}
+```
 
 例如扶摇未复权日线请求使用现有 v1 schema：
 
@@ -541,23 +585,50 @@ EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.requ
 {"kind":"Upper","trading_date":"2026-08-21","limit":10}
 ```
 
-调用方必须设置 `preferred_provider=HithinkFinance` 和 `allow_unadmitted=false`。响应顶层
+财务三表、公司行动和元数据继续使用现有 v1 业务 JSON：
+
+```json
+{"instruments":[{"exchange":"Shanghai","code":"600519","asset_class":"Equity"}],"kind":"Income"}
+```
+
+```json
+{"instrument":{"exchange":"Shanghai","code":"600519","asset_class":"Equity"},"start":"2025-01-01","end":"2026-08-21"}
+```
+
+```json
+{"instruments":[
+  {"exchange":"Shanghai","code":"600519","asset_class":"Equity"},
+  {"exchange":"Shanghai","code":"000300","asset_class":"Index"},
+  {"exchange":"Shanghai","code":"510300","asset_class":"Fund"}
+]}
+```
+
+上述七项生产调用必须设置 `preferred_provider=HithinkFinance` 和
+`allow_unadmitted=false`。响应顶层
 `provider=HithinkFinance` 表示官方扶摇接入，当前 Core 记录 evidence 使用
 `provider=Tonghuashun`；两者不是跨源拼接。日线逐条 `source_at` 是各自交易日；估值响应
 时间只表示本批固定五项指标中的最新有效上游时间，因此只放在批次 provenance，不能复制
-成每条估值记录的共同指标时刻。扶摇 Key 缺失或到期、认证/权限拒绝、限流、查询拒绝、
-上游不可用和响应冲突都返回闭合 typed failure 和零 records，不回退 `magic-ths-rs` 网页源。
-扶摇显式代码实时快照没有 source timestamp，竞价也缺少未匹配买卖方向与记录源时刻；这两类
-不以 `HithinkFinance` 注册生产 handler，客户端不得从本地时间或其他 Provider 补齐。
+成每条估值记录的共同指标时刻。财务记录各自的 `source_at` 是原始
+`report_date_ms`；批次时间是最新报告发布日期，不能覆盖较早报告。公司行动端点没有来源
+时间，因此批次和逐条 `source_at` 都保持 `null`，不得用除权日或本地时间冒充。
+`SecurityMetadata` 返回完整的“身份解析批次”，但记录状态为 `Unavailable`，因为板块、ST、
+上市日和涨跌停规则并未由该端点发布。标准指数的 provider-native ticker（实测
+`000300.SH` 对应 `1B0300`）不替换 Core 的精确 `thscode` 身份。
 
-剩余 3 项不是缺少 gRPC 方法，而是特定诊断来源的生产数据合同尚未满足。已有字段通过显式诊断模式
-读取，缺失字段保留 `null`，但不会改变下表状态：
+扶摇 Key 缺失或到期、认证/权限拒绝、限流、查询拒绝、
+上游不可用和响应冲突都返回闭合 typed failure 和零 records，不回退 `magic-ths-rs` 网页源。
+扶摇显式代码实时快照没有 source timestamp，因此不以 `HithinkFinance` 注册 handler。
+集合竞价只注册上文的当前快照诊断，不注册生产 handler；客户端不得从本地时间或其他
+Provider 补齐其交易日、`source_at` 或未匹配方向。
+
+以下特定来源变体不是缺少 gRPC 方法，而是该来源的生产数据合同尚未满足。已有字段通过显式
+诊断模式读取，缺失字段保留 `null`，但不会改变下表状态：
 
 | 操作 | 当前阻塞原因 |
 | --- | --- |
-| `Auctions` | 东财妙想只证明开盘集合竞价成交量（股）和成交额（元）；撮合价、昨收、未匹配买卖量、量比和 Provider 时间仍为空，不满足完整 BR-035 合同 |
 | `MarketRankings` | 诊断只读取首个有界来源页，并返回来源声明总数；不声称完整市场覆盖或源时间原子性 |
-| `MarketBreadth` | 东财妙想只证明上涨/下跌/平盘及涨跌停家数；上市总数、覆盖率、来源时间偏差为空，不能提升为完整市场宽度 |
+| `FundFlowSeries` / `MoneyFlows`（东财妙想） | 自然语言查询的结果基数、来源方法和串行稳定性仍未完成独立准入；不影响东财公开接口的正式资金流路由 |
+| `Auctions`（同花顺扶摇） | 当前最终快照缺少精确交易日、方向化未匹配队列和 Provider 源时刻，只能使用 provider-specific 诊断 schema |
 
 ### 相关请求 schema
 
@@ -571,7 +642,8 @@ EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.requ
 | `FuturesDelivery` | `magic.market.futures_delivery.request` (`FuturesDeliveryRequest`) | `magic.market.futures_delivery_event` |
 | `PostCloseFlows` | `magic.market.post_close_flows.request` (`PostCloseFlowRequest`) | `magic.market.post_close_flow` |
 | `MarketRankings` | `magic.market.market_rankings.request` (`{"kind":...,"limit":...}`) | `magic.market.market_ranking_diagnostic_entry` |
-| `Auctions` | `magic.market.auctions.request` (`{"instrument":...,"trading_date":"YYYY-MM-DD"}`) | `magic.market.opening_auction_diagnostic` |
+| `Auctions` / `EastmoneyMiaoxiang` | `magic.market.auctions.request` (`{"instrument":...,"trading_date":"YYYY-MM-DD"}`) | `magic.market.opening_auction_diagnostic` |
+| `Auctions` / `HithinkFinance` diagnostic | `magic.market.hithink_current_auctions.request` (`{"instruments":[...]}`) | `magic.market.hithink_current_auction_snapshot` |
 | `MarketBreadth` | `magic.market.market_breadth.request` (`{"source_date":"YYYY-MM-DD"}`) | `magic.market.market_breadth_diagnostic` |
 
 例如技术日 K 诊断的业务 JSON 为：
@@ -586,17 +658,17 @@ EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.requ
 字段同样保持 `null`；排行诊断同时返回 `reported_universe_size` 与 `fetched_count`，不得
 把首个来源页解释为完整市场。
 
-东财妙想同样必须设置 `preferred_provider=EastmoneyMiaoxiang` 和
-`allow_unadmitted=true`。服务端启动时检测 Key 只决定固定诊断处理器是否可用，
-不会绕过请求级 opt-in。Key 只放在服务进程环境，绝不能放入
-`QueryRequest`。例如开盘集合竞价诊断：
+东财妙想资金流诊断必须设置 `preferred_provider=EastmoneyMiaoxiang` 和
+`allow_unadmitted=true`。窄版集合竞价与市场宽度已独立准入，应使用同一精确 Provider 和
+`allow_unadmitted=false`。服务端启动时检测 Key 只决定处理器是否运行时可用；Key 只放在
+服务进程环境，绝不能放入 `QueryRequest`。例如开盘集合竞价请求：
 
 ```json
 {"instrument":{"exchange":"Shanghai","code":"600396","asset_class":"Equity"},"trading_date":"2026-08-14"}
 ```
 
 返回记录中 `matched_quantity_shares` 和 `matched_amount_cny` 有源值，其余未证明竞价字段
-为 `null`，`status="Unavailable"`。市场宽度请求为
+为 `null`；这是证据边界明确的窄版已准入记录，不宣称完整 Level-2。市场宽度请求为
 `{"source_date":"2026-08-14"}`，只消费五个已证明家数；`listed_total`、`coverage` 和
 `maximum_source_skew_millis` 保持 `null`。
 
@@ -671,6 +743,10 @@ bundle 根目录运行 `sha256sum -c manifest.sha256`，macOS 可运行
 `2026-08-20.1` 修正 InstrumentNews 的合法 cutoff-empty 分类；protobuf wire 字段未变化。
 `2026-08-22.1` 加入官方 `HithinkFinance` 四项生产 handler 和 EMQuant 正式日线；仍不改变
 protobuf wire 字段，精确来源提交写入同一 bundle 的 `bundle-metadata.json`。
+`2026-08-22.2` 把 `HithinkFinance` 扩展为七项生产 operation：日线新增标准指数/ETF，
+并新增财务三表、公司行动和证券元数据；同时增加 provider-specific 当前最终集合竞价诊断，
+不伪造交易日、`source_at` 或未匹配方向。该版本还修正财务 `data.timestamp` 与逐条发布日期
+证据、指数 provider-native ticker 及炸板 `open_times=null` 语义，protobuf wire 字段仍未变化。
 
 ## 12. 客户端代码生成
 

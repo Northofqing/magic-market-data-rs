@@ -4,11 +4,11 @@
 //! without inventing values or record timestamps.
 
 use magic_market_core::{
-    Adjustment, AssetClass, Bar, BarInterval, BarsRequest, DataBatch, Exchange, FiniteNumber,
-    HistoricalBars, InstrumentId, IsoDate, LimitPoolEntry, LimitPoolKind, LimitPoolRequest,
-    LimitPools, LoadProbeSnapshot, MarketStatistics, MarketStatisticsProvider, Money, NonEmptyText,
-    PopularityData, PopularityRank, PositiveU32, Price, ProbeRequestTracker, Provenance,
-    ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
+    Adjustment, AssetClass, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, DataBatch,
+    Exchange, FiniteNumber, HistoricalBars, InstrumentId, IsoDate, LimitPoolEntry, LimitPoolKind,
+    LimitPoolRequest, LimitPools, LoadProbeSnapshot, MarketStatistics, MarketStatisticsProvider,
+    Money, NonEmptyText, PopularityData, PopularityRank, PositiveU32, Price, ProbeRequestTracker,
+    Provenance, ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
 };
 use magic_market_transport::{
     EndpointPolicy, HttpMethod, HttpRequest, HttpResponse, HttpTransport, MediaType, RequestGate,
@@ -26,18 +26,34 @@ use url::Url;
 const BASE_URL: &str = "https://fuyao.aicubes.cn";
 const HOST: &str = "fuyao.aicubes.cn";
 const HISTORICAL_PATH: &str = "/api/a-share/prices/historical";
+const INDEX_HISTORICAL_PATH: &str = "/api/a-share-index/prices/historical";
+const FUND_HISTORICAL_PATH: &str = "/api/fund/market/historical";
 const VALUATIONS_PATH: &str = "/api/a-share/valuations/snapshot";
+const ADJUSTMENT_FACTORS_PATH: &str = "/api/a-share/corporate-actions/adjustment-factors";
+const INCOME_STATEMENTS_PATH: &str = "/api/a-share/financials/income-statements";
+const BALANCE_SHEETS_PATH: &str = "/api/a-share/financials/balance-sheets";
+const CASH_FLOW_STATEMENTS_PATH: &str = "/api/a-share/financials/cash-flow-statements";
+const TICKER_SEARCH_PATH: &str = "/api/meta/tickers/search";
 const LIMIT_UP_PATH: &str = "/api/a-share/special-data/limit-up-pool";
 const LIMIT_DOWN_PATH: &str = "/api/a-share/special-data/limit-down-pool";
 const LIMIT_BREAK_PATH: &str = "/api/a-share/special-data/limit-break-pool";
 const HOT_STOCK_PATH: &str = "/api/a-share/special-data/hot-stock-list";
-const EXACT_PATHS: [&str; 6] = [
+const AUCTION_PATH: &str = "/api/a-share/auction/snapshot";
+const EXACT_PATHS: [&str; 14] = [
     HISTORICAL_PATH,
+    INDEX_HISTORICAL_PATH,
+    FUND_HISTORICAL_PATH,
     VALUATIONS_PATH,
+    ADJUSTMENT_FACTORS_PATH,
+    INCOME_STATEMENTS_PATH,
+    BALANCE_SHEETS_PATH,
+    CASH_FLOW_STATEMENTS_PATH,
+    TICKER_SEARCH_PATH,
     LIMIT_UP_PATH,
     LIMIT_DOWN_PATH,
     LIMIT_BREAK_PATH,
     HOT_STOCK_PATH,
+    AUCTION_PATH,
 ];
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(500);
@@ -50,6 +66,7 @@ const MAX_POPULARITY_ROWS: usize = 500;
 const MAX_POPULARITY_LIMIT: u32 = 100;
 const MAX_VALUATION_INSTRUMENTS: usize = 100;
 const MAX_TEN_YEAR_DAYS: i64 = 3_653;
+const MAX_FIVE_YEAR_DAYS: i64 = 1_827;
 
 /// Production admission is enabled only after deterministic, live, and serial probes pass.
 pub const HISTORICAL_BARS_ADMITTED: bool = true;
@@ -59,6 +76,21 @@ pub const MARKET_STATISTICS_ADMITTED: bool = true;
 pub const LIMIT_POOLS_ADMITTED: bool = true;
 /// Production admission is enabled only after deterministic, live, and serial probes pass.
 pub const POPULARITY_ADMITTED: bool = true;
+/// Production admission is enabled only after deterministic, live, and serial probes pass.
+pub const CORPORATE_ACTIONS_ADMITTED: bool = true;
+/// Production admission is enabled only after deterministic, live, and serial probes pass.
+pub const FINANCIAL_STATEMENTS_ADMITTED: bool = true;
+/// Production admission is enabled only after deterministic, live, and serial probes pass.
+pub const SECURITY_METADATA_ADMITTED: bool = true;
+/// The current snapshot is implemented for diagnostics, but remains unadmitted because the
+/// provider does not return an exact trading date, a record source timestamp, or directional
+/// unmatched bid/ask quantities.
+pub const AUCTIONS_ADMITTED: bool = false;
+
+mod auctions;
+mod corporate_actions;
+mod financials;
+mod metadata;
 
 #[derive(Debug, Error)]
 pub enum HithinkError {
@@ -175,7 +207,7 @@ impl HithinkClient {
         let start_date = parse_date(start)?;
         let end_date = parse_date(end)?;
         let thscode = instrument_to_thscode(request.instrument())?;
-        let query = [
+        let common_query = [
             ("thscode", thscode),
             ("interval", "1d".to_owned()),
             (
@@ -191,12 +223,31 @@ impl HithinkClient {
                 )?
                 .to_string(),
             ),
-            ("adjust", "none".to_owned()),
-            ("offset", "0".to_owned()),
         ];
-        let response: Success<HistoricalData> =
-            self.get(HISTORICAL_PATH, query.iter().map(pair_ref))?;
-        normalize_historical(request, response, start_date, end_date)
+        let (expected_adjust, response) = match request.instrument().asset_class() {
+            AssetClass::Equity => {
+                let mut query = common_query.to_vec();
+                query.push(("adjust", "none".to_owned()));
+                query.push(("offset", "0".to_owned()));
+                let response = self.get(HISTORICAL_PATH, query.iter().map(pair_ref))?;
+                (Some("none"), response)
+            }
+            AssetClass::Index => {
+                let response =
+                    self.get(INDEX_HISTORICAL_PATH, common_query.iter().map(pair_ref))?;
+                (None, response)
+            }
+            AssetClass::Fund => {
+                let response = self.get(FUND_HISTORICAL_PATH, common_query.iter().map(pair_ref))?;
+                (None, response)
+            }
+            _ => {
+                return Err(HithinkError::Unsupported(
+                    "Fuyao historical prices support A-share equities, standard exchange indices and exchange-traded funds only".into(),
+                ));
+            }
+        };
+        normalize_historical(request, response, start_date, end_date, expected_adjust)
     }
 
     /// Diagnostic path used before the capability is promoted into routing.
@@ -212,6 +263,11 @@ impl HithinkClient {
         let mut seen = HashSet::with_capacity(instruments.len());
         let mut thscodes = Vec::with_capacity(instruments.len());
         for instrument in instruments {
+            if instrument.asset_class() != AssetClass::Equity {
+                return Err(HithinkError::Unsupported(
+                    "Fuyao valuations support A-share equities only".into(),
+                ));
+            }
             let thscode = instrument_to_thscode(instrument)?;
             if !seen.insert(thscode.clone()) {
                 return Err(HithinkError::InvalidRequest(
@@ -371,6 +427,23 @@ impl MarketStatisticsProvider for HithinkClient {
     }
 }
 
+impl Auctions for HithinkClient {
+    type Error = HithinkError;
+
+    fn auction_snapshots(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<AuctionSnapshot>, Self::Error> {
+        if AUCTIONS_ADMITTED {
+            self.probe_auction_snapshots(instruments)
+        } else {
+            Err(HithinkError::Unsupported(
+                "HITHINK current auction snapshots await production admission".into(),
+            ))
+        }
+    }
+}
+
 impl LimitPools for HithinkClient {
     type Error = HithinkError;
 
@@ -422,7 +495,8 @@ struct Envelope<T> {
 struct HistoricalData {
     thscode: String,
     interval: String,
-    adjust: String,
+    #[serde(default)]
+    adjust: Option<String>,
     timestamp: i64,
     item: Vec<HistoricalItem>,
 }
@@ -516,7 +590,7 @@ struct LimitBreakItem {
     name: String,
     last_price: f64,
     price_change_ratio_pct: f64,
-    open_times: u32,
+    open_times: Option<u32>,
     turnover_ratio_pct: f64,
     turnover: f64,
 }
@@ -567,6 +641,13 @@ fn endpoint_policy(timeout: Duration) -> Result<EndpointPolicy, HithinkError> {
             "sort_field",
             "sort_dir",
             "period",
+            "from",
+            "to",
+            "limit",
+            "q",
+            "exchange",
+            "asset_type",
+            "stage",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -655,6 +736,21 @@ fn validate_historical_request(request: &BarsRequest) -> Result<(), HithinkError
             "Fuyao historical prices support only Day bars".into(),
         ));
     }
+    if !matches!(
+        (
+            request.instrument().asset_class(),
+            request.instrument().exchange()
+        ),
+        (AssetClass::Equity, _)
+            | (
+                AssetClass::Index | AssetClass::Fund,
+                Exchange::Shanghai | Exchange::Shenzhen
+            )
+    ) {
+        return Err(HithinkError::Unsupported(
+            "Fuyao index and fund historical bars require a Shanghai or Shenzhen identity".into(),
+        ));
+    }
     let start = request
         .start()
         .ok_or_else(|| HithinkError::InvalidRequest("explicit start date is required".into()))?;
@@ -662,9 +758,14 @@ fn validate_historical_request(request: &BarsRequest) -> Result<(), HithinkError
         .end()
         .ok_or_else(|| HithinkError::InvalidRequest("explicit end date is required".into()))?;
     let days = (parse_date(end)? - parse_date(start)?).whole_days();
-    if days > MAX_TEN_YEAR_DAYS {
+    let maximum_days = if request.instrument().asset_class() == AssetClass::Fund {
+        MAX_FIVE_YEAR_DAYS
+    } else {
+        MAX_TEN_YEAR_DAYS
+    };
+    if days > maximum_days {
         return Err(HithinkError::InvalidRequest(
-            "historical date range must not exceed ten years".into(),
+            "historical date range exceeds the Fuyao contract for this asset class".into(),
         ));
     }
     instrument_to_thscode(request.instrument())?;
@@ -676,11 +777,12 @@ fn normalize_historical(
     response: Success<HistoricalData>,
     start: Date,
     end: Date,
+    expected_adjust: Option<&str>,
 ) -> Result<DataBatch<Bar>, HithinkError> {
     let expected_thscode = instrument_to_thscode(request.instrument())?;
     if response.data.thscode != expected_thscode
         || response.data.interval != "1d"
-        || response.data.adjust != "none"
+        || response.data.adjust.as_deref() != expected_adjust
     {
         return Err(HithinkError::Protocol(
             "historical response context contradicts the request".into(),
@@ -1039,7 +1141,7 @@ fn normalize_limit_break(
         sealed_amount: None,
         first_seal_at: None,
         last_seal_at: None,
-        break_count: Some(item.open_times),
+        break_count: item.open_times,
         streak: None,
         industry: None,
         board_name: None,
@@ -1101,12 +1203,14 @@ fn normalize_popularity(
 }
 
 fn instrument_to_thscode(instrument: &InstrumentId) -> Result<String, HithinkError> {
-    if instrument.asset_class() != AssetClass::Equity
-        || instrument.code().len() != 6
+    if !matches!(
+        instrument.asset_class(),
+        AssetClass::Equity | AssetClass::Index | AssetClass::Fund
+    ) || instrument.code().len() != 6
         || !instrument.code().bytes().all(|byte| byte.is_ascii_digit())
     {
         return Err(HithinkError::Unsupported(
-            "Fuyao provider accepts six-digit A-share equities only".into(),
+            "Fuyao provider accepts six-digit A-share, standard index or exchange-traded fund identities only".into(),
         ));
     }
     let suffix = match instrument.exchange() {
@@ -1332,4 +1436,4 @@ fn tracker_error(message: &str) -> HithinkError {
 
 #[cfg(test)]
 #[path = "lib/tests.rs"]
-mod tests;
+pub(crate) mod tests;

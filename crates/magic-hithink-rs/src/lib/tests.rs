@@ -3,13 +3,13 @@ use serde_json::json;
 use std::collections::VecDeque;
 
 #[derive(Clone, Default)]
-struct FixtureTransport {
+pub(crate) struct FixtureTransport {
     responses: Arc<Mutex<VecDeque<Vec<u8>>>>,
     requests: Arc<Mutex<Vec<HttpRequest>>>,
 }
 
 impl FixtureTransport {
-    fn new(responses: Vec<serde_json::Value>) -> Self {
+    pub(crate) fn new(responses: Vec<serde_json::Value>) -> Self {
         Self {
             responses: Arc::new(Mutex::new(
                 responses
@@ -19,6 +19,15 @@ impl FixtureTransport {
             )),
             requests: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub(crate) fn requested_urls(&self) -> Vec<String> {
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|request| request.url().to_owned())
+            .collect()
     }
 }
 
@@ -40,7 +49,7 @@ impl HttpTransport for FixtureTransport {
     }
 }
 
-fn success(request_id: &str, data: serde_json::Value) -> serde_json::Value {
+pub(crate) fn success(request_id: &str, data: serde_json::Value) -> serde_json::Value {
     json!({
         "code": 0,
         "message": "success",
@@ -153,6 +162,53 @@ fn historical_bars_preserve_distinct_dates_and_convert_shares_to_lots() {
         batch.provenance().source_at(),
         Some(format!("unix-ms:{second}").as_str())
     );
+}
+
+#[test]
+fn historical_bars_route_standard_indices_and_etfs_to_exact_endpoints() {
+    let day = shanghai_millis(parse_date("2026-08-19").unwrap(), Time::MIDNIGHT).unwrap();
+    for (asset_class, code, path, adjust) in [
+        (
+            AssetClass::Index,
+            "000300",
+            INDEX_HISTORICAL_PATH,
+            Some(serde_json::Value::Null),
+        ),
+        (AssetClass::Fund, "510300", FUND_HISTORICAL_PATH, None),
+    ] {
+        let mut data = json!({
+            "thscode": format!("{code}.SH"),
+            "interval": "1d",
+            "timestamp": day,
+            "item": [{
+                "date_ms": day,
+                "open_price": 4.0,
+                "high_price": 4.1,
+                "low_price": 3.9,
+                "close_price": 4.05,
+                "volume": 10000.0,
+                "turnover": 40500.0
+            }]
+        });
+        if let Some(adjust) = adjust {
+            data.as_object_mut()
+                .unwrap()
+                .insert("adjust".to_owned(), adjust);
+        }
+        let transport = FixtureTransport::new(vec![success("history-asset", data)]);
+        let observed = transport.clone();
+        let client = HithinkClient::with_transport("test_key", transport).unwrap();
+        let instrument = InstrumentId::new(Exchange::Shanghai, code, asset_class).unwrap();
+        let request = BarsRequest::new(instrument.clone(), BarInterval::Day, 1)
+            .unwrap()
+            .with_range("2026-08-19", "2026-08-19")
+            .unwrap();
+        let batch = client.probe_historical_bars(&request).unwrap();
+        assert_eq!(batch.records().len(), 1);
+        assert_eq!(batch.records()[0].instrument(), &instrument);
+        assert!(observed.requested_urls()[0].contains(path));
+        assert!(!observed.requested_urls()[0].contains("adjust="));
+    }
 }
 
 #[test]
@@ -402,6 +458,40 @@ fn limit_pool_reads_every_declared_page_before_applying_caller_limit() {
 }
 
 #[test]
+fn broken_pool_preserves_null_open_times_as_field_level_absence() {
+    let client = HithinkClient::with_transport(
+        "test_key",
+        FixtureTransport::new(vec![success(
+            "broken-null-open-times",
+            json!({
+                "timestamp": 1787367878853_i64,
+                "pagination": {"total": 1, "pages": 1, "size": 200, "page": 1},
+                "item": [{
+                    "thscode": "600519.SH",
+                    "ticker": "600519",
+                    "name": "贵州茅台",
+                    "last_price": 10.0,
+                    "price_change_ratio_pct": 5.0,
+                    "open_times": null,
+                    "turnover_ratio_pct": 2.0,
+                    "turnover": 1000.0
+                }]
+            }),
+        )]),
+    )
+    .unwrap();
+    let request = LimitPoolRequest::new(
+        LimitPoolKind::Broken,
+        IsoDate::new("2026-08-21").unwrap(),
+        PositiveU32::new(10).unwrap(),
+    )
+    .unwrap();
+    let batch = client.probe_limit_pool(&request).unwrap();
+    assert_eq!(batch.records().len(), 1);
+    assert_eq!(batch.records()[0].break_count, None);
+}
+
+#[test]
 fn popularity_preserves_source_timestamp_and_bj_identity() {
     let timestamp = 1787302800000_i64;
     let client = HithinkClient::with_transport(
@@ -493,6 +583,20 @@ fn unsupported_families_and_shapes_fail_before_transport() {
         client.probe_market_statistics(&[index]),
         Err(HithinkError::Unsupported(_))
     ));
+    for asset_class in [AssetClass::Index, AssetClass::Fund] {
+        let request = BarsRequest::new(
+            InstrumentId::new(Exchange::Beijing, "920403", asset_class).unwrap(),
+            BarInterval::Day,
+            1,
+        )
+        .unwrap()
+        .with_range("2026-08-18", "2026-08-19")
+        .unwrap();
+        assert!(matches!(
+            client.probe_historical_bars(&request),
+            Err(HithinkError::Unsupported(_))
+        ));
+    }
     let previous = LimitPoolRequest::new(
         LimitPoolKind::PreviousUpper,
         IsoDate::new("2026-08-21").unwrap(),
