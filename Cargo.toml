@@ -16,6 +16,7 @@ members = [
     "crates/magic-stcn-rs",
     "crates/magic-tdx-rs",
     "crates/magic-emquant-rs",
+    "crates/magic-hithink-rs",
     "crates/magic-tencent-rs",
     "crates/magic-sina-rs",
     "crates/magic-market-analysis",

@@ -10,7 +10,7 @@ use magic_market_core::{
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -18,6 +18,13 @@ use std::time::{Duration, Instant};
 
 const DEFAULT_BRIDGE_TIMEOUT: Duration = Duration::from_secs(30);
 const BRIDGE_ENV: &str = "MAGIC_EMQUANT_BRIDGE";
+const MAX_BRIDGE_STDOUT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_BRIDGE_STDERR_BYTES: usize = 64 * 1024;
+
+/// Production admission is limited to explicit-range completed daily CSD bars.
+pub const EMQUANT_DAILY_BARS_ADMITTED: bool = true;
+/// Maximum caller-visible rows in the admitted daily-bar contract.
+pub const MAX_EMQUANT_DAILY_BARS: u16 = 800;
 
 #[cfg(windows)]
 const BRIDGE_FILENAME: &str = "emquant-snapshot.exe";
@@ -49,6 +56,28 @@ struct BridgeRecord {
     date: String,
     code: String,
     values: HashMap<String, Value>,
+}
+
+struct BoundedOutput {
+    bytes: Vec<u8>,
+    overflowed: bool,
+}
+
+fn read_bounded(mut reader: impl Read, maximum_bytes: usize) -> io::Result<BoundedOutput> {
+    let mut bytes = Vec::with_capacity(maximum_bytes.min(8 * 1024));
+    let mut buffer = [0_u8; 8 * 1024];
+    let mut overflowed = false;
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        let remaining = maximum_bytes.saturating_sub(bytes.len());
+        let retained = remaining.min(count);
+        bytes.extend_from_slice(&buffer[..retained]);
+        overflowed |= retained != count;
+    }
+    Ok(BoundedOutput { bytes, overflowed })
 }
 
 /// Read-only provider backed by `tools/emquant/snapshot_bridge.cpp`.
@@ -124,16 +153,8 @@ impl EmQuantClient {
             .stderr
             .take()
             .ok_or_else(|| EmQuantError::Bridge("unable to capture bridge stderr".into()))?;
-        let stdout_reader = thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let mut stdout = stdout;
-            stdout.read_to_end(&mut bytes).map(|_| bytes)
-        });
-        let stderr_reader = thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let mut stderr = stderr;
-            stderr.read_to_end(&mut bytes).map(|_| bytes)
-        });
+        let stdout_reader = thread::spawn(move || read_bounded(stdout, MAX_BRIDGE_STDOUT_BYTES));
+        let stderr_reader = thread::spawn(move || read_bounded(stderr, MAX_BRIDGE_STDERR_BYTES));
         let started = Instant::now();
         let status = loop {
             if let Some(status) = child
@@ -162,15 +183,25 @@ impl EmQuantClient {
             .join()
             .map_err(|_| EmQuantError::Bridge("stderr reader panicked".into()))?
             .map_err(|error| EmQuantError::Bridge(error.to_string()))?;
+        if stdout.overflowed {
+            return Err(EmQuantError::InvalidResponse(format!(
+                "bridge stdout exceeds {MAX_BRIDGE_STDOUT_BYTES} bytes"
+            )));
+        }
+        if stderr.overflowed {
+            return Err(EmQuantError::Bridge(format!(
+                "bridge stderr exceeds {MAX_BRIDGE_STDERR_BYTES} bytes"
+            )));
+        }
         if !status.success() {
-            let message = String::from_utf8_lossy(&stderr).trim().to_owned();
+            let message = String::from_utf8_lossy(&stderr.bytes).trim().to_owned();
             return Err(EmQuantError::Bridge(if message.is_empty() {
                 format!("exit status {status}")
             } else {
                 message
             }));
         }
-        serde_json::from_slice(&stdout)
+        serde_json::from_slice(&stdout.bytes)
             .map_err(|error| EmQuantError::InvalidResponse(error.to_string()))
     }
 
@@ -1266,5 +1297,13 @@ mod tests {
             client.trades(&request),
             Err(EmQuantError::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn bridge_output_reader_is_memory_bounded() {
+        let input = vec![b'x'; MAX_BRIDGE_STDOUT_BYTES + 1];
+        let output = read_bounded(std::io::Cursor::new(input), MAX_BRIDGE_STDOUT_BYTES).unwrap();
+        assert_eq!(output.bytes.len(), MAX_BRIDGE_STDOUT_BYTES);
+        assert!(output.overflowed);
     }
 }

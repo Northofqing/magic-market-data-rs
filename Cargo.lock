@@ -962,6 +962,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-hithink-rs"
+version = "0.2.0"
+dependencies = [
+ "magic-market-core",
+ "magic-market-transport",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "url",
+]
+
+[[package]]
 name = "magic-imf-rs"
 version = "0.2.0"
 dependencies = [
@@ -1014,6 +1027,7 @@ dependencies = [
  "magic-exchange-rs",
  "magic-fred-rs",
  "magic-gov-rs",
+ "magic-hithink-rs",
  "magic-iwencai-rs",
  "magic-jin10-rs",
  "magic-market-core",

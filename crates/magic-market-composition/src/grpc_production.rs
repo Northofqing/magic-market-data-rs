@@ -11,12 +11,20 @@ use magic_cfets_rs::{CfetsClient, CfetsError};
 use magic_cls_rs::{ClsClient, ClsError};
 use magic_cninfo_rs::{CninfoClient, CninfoError};
 use magic_eastmoney_rs::{EastmoneyClient, EastmoneyError, EastmoneyMxClient};
-use magic_emquant_rs::{EmQuantClient, EmQuantError};
+use magic_emquant_rs::{
+    EmQuantClient, EmQuantError, EMQUANT_DAILY_BARS_ADMITTED, MAX_EMQUANT_DAILY_BARS,
+};
 use magic_exchange_rs::{
     CffexClient, ExchangeError, HkexClient, SseClient, SseConfig, SzseClient, SzseConfig,
 };
 use magic_fred_rs::{FredClient, FredError};
 use magic_gov_rs::{GovClient, GovError};
+use magic_hithink_rs::{
+    HithinkClient, HithinkError, HISTORICAL_BARS_ADMITTED as HITHINK_HISTORICAL_BARS_ADMITTED,
+    LIMIT_POOLS_ADMITTED as HITHINK_LIMIT_POOLS_ADMITTED,
+    MARKET_STATISTICS_ADMITTED as HITHINK_MARKET_STATISTICS_ADMITTED,
+    POPULARITY_ADMITTED as HITHINK_POPULARITY_ADMITTED,
+};
 use magic_iwencai_rs::{IwencaiClient, IwencaiError, SEMANTIC_SEARCH_ADMITTED};
 use magic_jin10_rs::{Jin10Client, Jin10Error};
 use magic_market_core::{
@@ -75,6 +83,11 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const NEWS_SCHEMA_VERSION: u32 = 2;
+const EMQUANT_DAILY_BARS_SCOPE: &str = "Shanghai/Shenzhen equities; explicit inclusive start/end; unadjusted completed daily CSD OHLCV/amount; at most 800 returned rows";
+const HITHINK_HISTORICAL_BARS_SCOPE: &str = "Shanghai/Shenzhen/Beijing six-digit equities; explicit inclusive range of at most ten years; official Fuyao unadjusted completed Day bars; most recent caller limit after complete bounded response validation";
+const HITHINK_MARKET_STATISTICS_SCOPE: &str = "1..=100 unique Shanghai/Shenzhen/Beijing equities; official Fuyao PE TTM, PE MRQ and PB MRQ with source nulls preserved";
+const HITHINK_LIMIT_POOLS_SCOPE: &str = "official Fuyao Upper, Lower or Broken pool for one explicit Shanghai trading date; all declared pages validated before applying caller limit; PreviousUpper unsupported";
+const HITHINK_POPULARITY_SCOPE: &str = "official Fuyao current 24-hour hot-stock ranking; at most 100 rows with exact identity, rank, heat and response source time";
 pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.request";
 pub const REALTIME_QUOTES_RECORD_SCHEMA: &str = "magic.market.quote";
 pub const HISTORICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.historical_bars.request";
@@ -1163,11 +1176,146 @@ fn register_extended_handlers(
             )
         },
     )?;
-    register_emquant_diagnostics(registry, provider_timeout, maximum_payload_bytes)?;
+    register_emquant(registry, provider_timeout, maximum_payload_bytes)?;
+    register_hithink(registry, provider_timeout, maximum_payload_bytes)?;
     Ok(())
 }
 
-fn register_emquant_diagnostics(
+fn register_hithink(
+    registry: &mut OperationRegistry,
+    provider_timeout: Duration,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    let client = env::var("HITHINK_FINANCE_API_KEY")
+        .map_err(|_| {
+            HithinkError::InvalidRequest("HITHINK_FINANCE_API_KEY is not configured".into())
+        })
+        .and_then(|key| HithinkClient::with_timeout(key, provider_timeout));
+    let client = match client {
+        Ok(client) => Arc::new(client),
+        Err(error) => {
+            let blocker = format!("official HITHINK Fuyao API is not runtime-configured: {error}");
+            for (operation, admitted_by_repository, scope) in [
+                (
+                    Operation::HistoricalBars,
+                    HITHINK_HISTORICAL_BARS_ADMITTED,
+                    HITHINK_HISTORICAL_BARS_SCOPE,
+                ),
+                (
+                    Operation::MarketStatistics,
+                    HITHINK_MARKET_STATISTICS_ADMITTED,
+                    HITHINK_MARKET_STATISTICS_SCOPE,
+                ),
+                (
+                    Operation::LimitPools,
+                    HITHINK_LIMIT_POOLS_ADMITTED,
+                    HITHINK_LIMIT_POOLS_SCOPE,
+                ),
+                (
+                    Operation::Popularity,
+                    HITHINK_POPULARITY_ADMITTED,
+                    HITHINK_POPULARITY_SCOPE,
+                ),
+            ] {
+                let capability = if admitted_by_repository {
+                    runtime_unavailable(operation, "HithinkFinance", scope, &blocker)
+                } else {
+                    blocked(
+                        operation,
+                        "HithinkFinance",
+                        scope,
+                        "HITHINK capability has not passed repository admission",
+                    )
+                };
+                registry.register_unavailable(capability)?;
+            }
+            return Ok(());
+        }
+    };
+
+    let bars = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::HistoricalBars,
+            "HithinkFinance",
+            HITHINK_HISTORICAL_BARS_SCOPE,
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                HISTORICAL_BARS_REQUEST_SCHEMA,
+                HISTORICAL_BARS_RECORD_SCHEMA,
+                "HithinkFinance",
+                maximum_payload_bytes,
+                |request: &BarsRequest| bars.historical_bars(request),
+            )
+        },
+    )?;
+
+    let statistics = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::MarketStatistics,
+            "HithinkFinance",
+            HITHINK_MARKET_STATISTICS_SCOPE,
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, MARKET_STATISTICS_REQUEST_SCHEMA)?;
+            let batch = statistics
+                .market_statistics(&request.instruments)
+                .map_err(|error| provider_error(Operation::MarketStatistics, error))?;
+            provider_query_result(
+                batch,
+                "HithinkFinance",
+                MARKET_STATISTICS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let pools = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::LimitPools,
+            "HithinkFinance",
+            HITHINK_LIMIT_POOLS_SCOPE,
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                LIMIT_POOLS_REQUEST_SCHEMA,
+                LIMIT_POOLS_RECORD_SCHEMA,
+                "HithinkFinance",
+                maximum_payload_bytes,
+                |request: &LimitPoolRequest| pools.limit_pool(request),
+            )
+        },
+    )?;
+
+    registry.register_handler(
+        admitted(
+            Operation::Popularity,
+            "HithinkFinance",
+            HITHINK_POPULARITY_SCOPE,
+        ),
+        move |command| {
+            let request: LimitRequest = decode_request(&command, POPULARITY_REQUEST_SCHEMA)?;
+            let batch = client
+                .popularity(request.limit)
+                .map_err(|error| provider_error(Operation::Popularity, error))?;
+            provider_query_result(
+                batch,
+                "HithinkFinance",
+                POPULARITY_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn register_emquant(
     registry: &mut OperationRegistry,
     provider_timeout: Duration,
     maximum_payload_bytes: usize,
@@ -1177,17 +1325,27 @@ fn register_emquant_diagnostics(
     {
         Ok(client) => Arc::new(client),
         Err(error) => {
-            let blocker = format!(
-                "EMQuant read-only bridge is not runtime-discoverable or admitted: {error}"
-            );
+            let blocker = format!("EMQuant read-only bridge is not runtime-discoverable: {error}");
+            let bars = if EMQUANT_DAILY_BARS_ADMITTED {
+                runtime_unavailable(
+                    Operation::HistoricalBars,
+                    "EmQuant",
+                    EMQUANT_DAILY_BARS_SCOPE,
+                    &blocker,
+                )
+            } else {
+                blocked(
+                    Operation::HistoricalBars,
+                    "EmQuant",
+                    EMQUANT_DAILY_BARS_SCOPE,
+                    "EMQuant daily bars have not passed repository admission",
+                )
+            };
+            registry.register_unavailable(bars)?;
             for (operation, scope) in [
                 (
                     Operation::RealtimeQuotes,
                     "runtime-entitled EMQuant quote snapshot diagnostic",
-                ),
-                (
-                    Operation::HistoricalBars,
-                    "runtime-entitled EMQuant daily or intraday bar diagnostic",
                 ),
                 (
                     Operation::OrderBooks,
@@ -1227,25 +1385,37 @@ fn register_emquant_diagnostics(
         },
     )?;
 
-    let bars = client.clone();
-    registry.register_diagnostic_handler(
-        blocked(
-            Operation::HistoricalBars,
-            "EmQuant",
-            "runtime-entitled EMQuant daily or intraday bar diagnostic",
-            "EMQuant bridge availability and product entitlement do not constitute repository admission",
-        ),
-        move |command| {
-            execute_typed(
-                command,
-                HISTORICAL_BARS_REQUEST_SCHEMA,
-                HISTORICAL_BARS_RECORD_SCHEMA,
+    if EMQUANT_DAILY_BARS_ADMITTED {
+        let bars = client.clone();
+        registry.register_handler(
+            admitted(
+                Operation::HistoricalBars,
                 "EmQuant",
-                maximum_payload_bytes,
-                |request: &BarsRequest| bars.historical_bars(request),
-            )
-        },
-    )?;
+                EMQUANT_DAILY_BARS_SCOPE,
+            ),
+            move |command| execute_emquant_daily_bars(&bars, command, maximum_payload_bytes),
+        )?;
+    } else {
+        let bars = client.clone();
+        registry.register_diagnostic_handler(
+            blocked(
+                Operation::HistoricalBars,
+                "EmQuant",
+                "runtime-entitled EMQuant daily-bar diagnostic",
+                "EMQuant daily bars have not passed repository admission",
+            ),
+            move |command| {
+                execute_typed(
+                    command,
+                    HISTORICAL_BARS_REQUEST_SCHEMA,
+                    HISTORICAL_BARS_RECORD_SCHEMA,
+                    "EmQuant",
+                    maximum_payload_bytes,
+                    |request: &BarsRequest| bars.historical_bars(request),
+                )
+            },
+        )?;
+    }
 
     let books = client.clone();
     registry.register_diagnostic_handler(
@@ -1294,10 +1464,62 @@ fn register_emquant_diagnostics(
     Ok(())
 }
 
+fn validate_emquant_daily_bars_request(request: &BarsRequest) -> Result<(), ServiceError> {
+    if request.interval() != BarInterval::Day {
+        return Err(invalid(
+            "EmQuant production bars require interval=Day; other intervals remain unadmitted",
+        ));
+    }
+    if request.start().is_none() || request.end().is_none() {
+        return Err(invalid(
+            "EmQuant production bars require explicit start and end dates that exclude an unfinished source day",
+        ));
+    }
+    if request.limit() > MAX_EMQUANT_DAILY_BARS {
+        return Err(invalid(format!(
+            "EmQuant production daily bars accept at most {MAX_EMQUANT_DAILY_BARS} rows"
+        )));
+    }
+    if request.instrument().asset_class() != magic_market_core::AssetClass::Equity
+        || !matches!(
+            request.instrument().exchange(),
+            magic_market_core::Exchange::Shanghai | magic_market_core::Exchange::Shenzhen
+        )
+    {
+        return Err(invalid(
+            "EmQuant production daily bars require a Shanghai or Shenzhen equity",
+        ));
+    }
+    Ok(())
+}
+
+fn execute_emquant_daily_bars(
+    client: &EmQuantClient,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: BarsRequest = decode_request(&command, HISTORICAL_BARS_REQUEST_SCHEMA)?;
+    validate_emquant_daily_bars_request(&request)?;
+    let batch = client
+        .historical_bars(&request)
+        .map_err(|error| provider_error(Operation::HistoricalBars, error))?;
+    provider_query_result(
+        batch,
+        "EmQuant",
+        HISTORICAL_BARS_RECORD_SCHEMA,
+        maximum_payload_bytes,
+    )
+}
+
 fn eastmoney_mx_key_is_configured() -> bool {
     ["EASTMONEY_API_KEY", "MX_APIKEY"]
         .iter()
         .any(|name| env::var_os(name).is_some_and(|value| !value.is_empty()))
+}
+
+#[cfg(test)]
+fn hithink_key_is_configured() -> bool {
+    env::var_os("HITHINK_FINANCE_API_KEY").is_some_and(|value| !value.is_empty())
 }
 
 fn execute_eastmoney_money_flow(
@@ -4082,6 +4304,7 @@ fn provider_error(operation: Operation, error: impl Error + 'static) -> ServiceE
     map_known!(ExchangeError, map_exchange_error);
     map_known!(FredError, map_fred_error);
     map_known!(GovError, map_gov_error);
+    map_known!(HithinkError, map_hithink_error);
     map_known!(IwencaiError, map_iwencai_error);
     map_known!(Jin10Error, map_jin10_error);
     map_known!(NbsError, map_nbs_error);
@@ -4360,6 +4583,47 @@ fn map_gov_error(operation: Operation, error: &GovError) -> ServiceError {
         GovError::InvalidRequest(message) => invalid(message),
         GovError::Transport(_) => unavailable(operation, error),
         GovError::Decode(_) | GovError::Protocol(_) | GovError::Core(_) => precondition(error),
+    }
+}
+
+fn map_hithink_error(operation: Operation, error: &HithinkError) -> ServiceError {
+    let (kind, provider_reason) = match error {
+        HithinkError::InvalidRequest(message) => return invalid(message),
+        HithinkError::Unsupported(reason) => return unsupported(operation, reason),
+        HithinkError::Authentication { code, request_id } => (
+            ProviderFailureKind::AuthenticationRejected,
+            format!("code={code} request_id={request_id}"),
+        ),
+        HithinkError::RateLimited { request_id } => (
+            ProviderFailureKind::RateLimited,
+            format!("code=4001 request_id={request_id}"),
+        ),
+        HithinkError::Business { code, request_id } => {
+            let kind = match code {
+                1001..=1004 | 3001 | 3004 => ProviderFailureKind::QueryRejected,
+                3002 | 5001..=5003 => ProviderFailureKind::Unavailable,
+                _ => ProviderFailureKind::ResponseInvalid,
+            };
+            (kind, format!("code={code} request_id={request_id}"))
+        }
+        HithinkError::Transport(_) => (
+            ProviderFailureKind::Unavailable,
+            "category=transport".into(),
+        ),
+        HithinkError::Decode(_) => (
+            ProviderFailureKind::ResponseInvalid,
+            "category=decode".into(),
+        ),
+        HithinkError::Protocol(_) | HithinkError::Core(_) => (
+            ProviderFailureKind::ResponseInvalid,
+            "category=protocol".into(),
+        ),
+    };
+    ServiceError::ProviderFailure {
+        operation,
+        provider: "HithinkFinance".into(),
+        kind,
+        provider_reason,
     }
 }
 
@@ -5228,10 +5492,40 @@ mod tests {
             assert!(!capability.diagnostic_available);
         }
 
+        let emquant_bars = capabilities
+            .iter()
+            .find(|capability| {
+                capability.operation == Operation::HistoricalBars
+                    && capability.provider == "EmQuant"
+            })
+            .expect("missing EmQuant daily-bar registration");
+        assert!(emquant_bars.repository_admitted);
+        assert_eq!(
+            emquant_bars.runtime_available,
+            EmQuantClient::discover().is_ok()
+        );
+        assert!(!emquant_bars.diagnostic_available);
+
+        for operation in [
+            Operation::HistoricalBars,
+            Operation::MarketStatistics,
+            Operation::LimitPools,
+            Operation::Popularity,
+        ] {
+            let hithink = capabilities
+                .iter()
+                .find(|capability| {
+                    capability.operation == operation && capability.provider == "HithinkFinance"
+                })
+                .expect("missing official HITHINK Fuyao registration");
+            assert!(hithink.repository_admitted);
+            assert_eq!(hithink.runtime_available, hithink_key_is_configured());
+            assert!(!hithink.diagnostic_available);
+        }
+
         for (operation, provider) in [
             (Operation::HistoricalBars, "Baidu"),
             (Operation::RealtimeQuotes, "EmQuant"),
-            (Operation::HistoricalBars, "EmQuant"),
             (Operation::OrderBooks, "EmQuant"),
             (Operation::MoneyFlows, "EmQuant"),
             (Operation::EconomicSeries, "Imf"),
@@ -5246,6 +5540,36 @@ mod tests {
                 operation.as_str()
             );
         }
+    }
+
+    #[test]
+    fn emquant_production_scope_requires_daily_explicit_range() {
+        let instrument = InstrumentId::new(
+            magic_market_core::Exchange::Shanghai,
+            "600396",
+            AssetClass::Equity,
+        )
+        .unwrap();
+        let valid = BarsRequest::new(instrument.clone(), BarInterval::Day, 5)
+            .unwrap()
+            .with_range("2026-08-14", "2026-08-20")
+            .unwrap();
+        assert!(validate_emquant_daily_bars_request(&valid).is_ok());
+
+        let missing_range = BarsRequest::new(instrument.clone(), BarInterval::Day, 5).unwrap();
+        assert!(validate_emquant_daily_bars_request(&missing_range).is_err());
+
+        let weekly = BarsRequest::new(instrument.clone(), BarInterval::Week, 5)
+            .unwrap()
+            .with_range("2026-07-01", "2026-08-20")
+            .unwrap();
+        assert!(validate_emquant_daily_bars_request(&weekly).is_err());
+
+        let oversized = BarsRequest::new(instrument, BarInterval::Day, 801)
+            .unwrap()
+            .with_range("2020-01-01", "2026-08-20")
+            .unwrap();
+        assert!(validate_emquant_daily_bars_request(&oversized).is_err());
     }
 
     #[test]
@@ -5492,6 +5816,46 @@ mod tests {
 
     #[test]
     fn provider_failures_preserve_retry_and_precondition_categories() {
+        assert!(matches!(
+            provider_error(
+                Operation::MarketStatistics,
+                HithinkError::Business {
+                    code: 3002,
+                    request_id: "hithink-request".into()
+                }
+            ),
+            ServiceError::ProviderFailure {
+                provider,
+                kind: ProviderFailureKind::Unavailable,
+                provider_reason,
+                ..
+            } if provider == "HithinkFinance"
+                && provider_reason == "code=3002 request_id=hithink-request"
+        ));
+        assert!(matches!(
+            provider_error(
+                Operation::Popularity,
+                HithinkError::Authentication {
+                    code: 2003,
+                    request_id: "hithink-auth".into()
+                }
+            ),
+            ServiceError::ProviderFailure {
+                kind: ProviderFailureKind::AuthenticationRejected,
+                provider_reason,
+                ..
+            } if provider_reason == "code=2003 request_id=hithink-auth"
+        ));
+        assert!(matches!(
+            provider_error(
+                Operation::HistoricalBars,
+                EmQuantError::Bridge("10001004 EQERR_ACCESS_EXPIRE".into())
+            ),
+            ServiceError::Unavailable {
+                operation: Operation::HistoricalBars,
+                ..
+            }
+        ));
         assert!(matches!(
             provider_error(
                 Operation::GlobalIndices,

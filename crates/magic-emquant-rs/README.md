@@ -21,6 +21,7 @@ Windows x64:
 ```powershell
 tools\emquant\build_snapshot_bridge_windows.cmd C:\path\to\EMQuantAPI_CPP
 cargo run -p magic-emquant-rs --example live_probe --release
+cargo run -p magic-emquant-rs --example daily_bars_probe --release --locked --offline
 ```
 
 The builder always resolves paths relative to this repository and writes the
@@ -83,10 +84,21 @@ token beside `ServerList.json.e`; no username/password variables are needed.
 `MAGIC_EMQUANT_USERNAME` and `MAGIC_EMQUANT_PASSWORD` remain optional and must
 be supplied together only for legacy SDK compatibility.
 
-On 2026-08-16, Choice terminal 9.14.0.1 and the official Windows C++ SDK
-2.7.5.0 were installed on the Windows development host. The bridge compiled,
-loaded the signed vendor runtime and completed device activation, but every
-read family failed at login with `10001004 (EQERR_ACCESS_EXPIRE)`. Therefore no
-Windows data family is admitted from that account until Choice restores its
-EMQuant API entitlement. Desktop terminal login and successful device
-activation do not override this server-side permission gate.
+On 2026-08-21, a restored 15-day API entitlement completed two focused probes
+and four serial SDK requests for `600396.SH` and `000001.SZ`. The admitted
+production scope is deliberately narrow: Shanghai/Shenzhen equities,
+`interval=Day`, explicit inclusive start/end dates, unadjusted completed `csd`
+rows and at most 800 returned rows. Every returned row must contain valid OHLC,
+volume, amount, date, provider, observation time and batch evidence.
+
+Quote, five-level book and minute history still fail with `10001012`; the
+current money-flow response contains instrument rows but no admitted numeric
+fields. Those families remain diagnostic only. Repository admission does not
+extend the temporary account entitlement: after it expires, the SDK error is
+returned as a typed unavailable failure with no records. The adapter never
+turns permission expiry into a successful empty market batch and never fills
+zero, cached data or another provider.
+
+The focused admission probe accepts optional
+`MAGIC_EMQUANT_DAILY_CODES`, `MAGIC_EMQUANT_DAILY_START`,
+`MAGIC_EMQUANT_DAILY_END` and `MAGIC_EMQUANT_DAILY_LIMIT` overrides.

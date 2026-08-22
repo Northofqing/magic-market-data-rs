@@ -23,12 +23,13 @@ SDK 版权声明要求授权使用；构建脚本只把本机动态库复制到 
 
 | 项目契约 | EMQuant API | 状态 |
 | --- | --- | --- |
-| 实时 Quote | `csqsnapshot` | Rust 适配完成；历史 macOS 字段权限 `10001012`；当前 Windows 账号总门 `10001004` |
-| 日/周/月/年 K 线 | `csd` | macOS 日线历史实盘通过；当前 Windows 账号总门 `10001004` |
-| 1/5/15/30/60 分钟线 | `chmc` + Rust 聚合 | Rust 适配完成；历史 macOS 服务权限 `10001012`；当前 Windows 账号总门 `10001004` |
+| 实时 Quote | `csqsnapshot` | Rust 适配完成；2026-08-21 Windows 实测仍为字段权限 `10001012`，未准入 |
+| 完成日线 | `csd` | 2026-08-21 Windows 两次 focused probe、四次串行请求通过；精确范围生产准入 |
+| 周/月/年 K 线 | `csd` | 代码可用但未独立完成当前授权实测，未准入 |
+| 1/5/15/30/60 分钟线 | `chmc` + Rust 聚合 | Rust 适配完成；2026-08-21 Windows 实测仍为服务权限 `10001012`，未准入 |
 | 逐笔 | `chq` | 字段与分页尚未验证，显式 `Unsupported` |
-| 盘口/Level-2 | `csqsnapshot` 五档指标 | Rust 适配完成；历史 macOS 字段权限 `10001012`；当前 Windows 账号总门 `10001004` |
-| 日级资金流 | `css` 大/中/小单流入流出指标 | macOS 历史实盘通过；当前 Windows 账号总门 `10001004` |
+| 盘口/Level-2 | `csqsnapshot` 五档指标 | Rust 适配完成；2026-08-21 Windows 实测仍为字段权限 `10001012`，未准入 |
+| 日级资金流 | `css` 大/中/小单流入流出指标 | 2026-08-21 返回证券行但全部分档值为空，未准入 |
 | 开盘集合竞价 | 未找到完整可验证字段集 | 显式 `Unsupported` |
 | 证券元数据 | 未完成字段与源时间验证 | 显式 `Unsupported` |
 
@@ -83,6 +84,7 @@ Rust 适配层和实盘探针：
 
 ```text
 cargo run -p magic-emquant-rs --example live_probe --release
+cargo run -p magic-emquant-rs --example daily_bars_probe --release --locked --offline
 ```
 
 构建脚本无论从哪个目录调用，都会把桥接程序放到仓库固定路径
@@ -110,17 +112,30 @@ macOS 激活器依赖 GTK 3，界面使用账号绑定手机号与短信验证�
 该结果不是字段名、Windows loader 或解析器失败。必须由 Choice 量化接口后台或客户
 经理恢复 EMQuant API 权限后重跑；Choice 桌面终端登录不能绕过此门。
 
+2026-08-21 恢复 15 天 API 权限后，focused probe 对 `600396.SH`、`000001.SZ` 完成
+两轮、共四次串行 `csd` 请求，显式区间 `2026-08-18..2026-08-20` 均返回三条完整、
+严格递增的未复权日线，OHLC、成交量、成交额、日期和批次证据全部通过。因此仅将
+沪深股票 `interval=Day`、显式起止日期、最多 800 条完成日线提升为生产
+`HistoricalBars(provider=EmQuant)`。日线记录中的真实来源身份仍为 `Eastmoney`；
+`EmQuant` 是 gRPC 的 SDK 接入选择名，不会重标来源 evidence。
+
+同一次授权窗口内，Quote、五档和 `chmc` 仍返回
+`10001012 (EQERR_ACCESS_INSUFFICIENCE)`，`css` 虽返回证券行但资金流字段全为空，
+因此均保持未准入。权限到期、激活失效或运行时缺失时，生产日线返回无 records 的
+类型化 unavailable；不得把权限失败解释成 verified-empty，也不得填 0、旧日数据或
+其他 Provider 数据。显式区间包含尚未完成且字段为空的当日时，同样整批失败。
+
 本机在 2026-07-23 再次完成短信激活并开通 Choice 权限后，关闭激活器的干净 SDK
 进程已成功登录。真实 `css` 取得华电辽能、平安银行的完整日级资金流，真实 `csd`
 取得华电辽能最近五根日线。SDK 返回的日线日期采用 `YYYY/M/D`；Rust 适配层已经
 增加补零标准化和回归测试，输出统一为 `YYYY-MM-DD`。
 
-同一账号的 Quote、五档和 `chmc` 分钟线查询返回
+历史账号的 Quote、五档和 `chmc` 分钟线查询同样返回过
 `10001012 (EQERR_ACCESS_INSUFFICIENCE)`。本机官方 `EmQuantAPI.h` 将其定义为权限
 不足：账号和 API 登录已经有效，但当前产品没有覆盖这些数据服务或字段集。需要在
 Choice/QuantAPI 后台追加并确认 Quote、Level-2 和分钟历史的实际权限，再分别重跑
-probe；不能用日线或资金流成功推断其他数据族也有权限。bridge 已对无权限、权限
-不足、权限过期、Level-2 无权限、登录数上限、设备不一致和令牌过期输出可操作诊断。
+probe；不能用日线成功推断其他数据族也有权限。bridge 已对无权限、权限不足、权限
+过期、Level-2 无权限、登录数上限、设备不一致和令牌过期输出可操作诊断。
 
 默认查询 `600396.SH,000001.SZ`（华电辽能、平安银行），也可通过
 `MAGIC_EMQUANT_CODES` 修改。输出包含

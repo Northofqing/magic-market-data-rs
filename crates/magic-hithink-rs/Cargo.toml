@@ -1,0 +1,19 @@
+[package]
+name = "magic-hithink-rs"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bounded Rust client for the official HITHINK Fuyao Financial API"
+
+[dependencies]
+magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
+magic-market-transport = { path = "../magic-market-transport", version = "=0.2.0" }
+serde = { workspace = true }
+serde_json = "1"
+thiserror = { workspace = true }
+time = { version = "=0.3.54", default-features = false, features = ["macros", "parsing", "std"] }
+url = "=2.5.4"
+
+[lints]
+workspace = true

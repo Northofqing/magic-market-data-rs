@@ -829,3 +829,67 @@ This boundary also applies to the bounded Eastmoney ranking response, Miaoxiang
 auction/breadth responses and fixed CFFEX schedule: local time is observation
 evidence only. It does not promote complete multi-page rankings, complete
 Level-2 auctions, CFETS DR007 or IMF data.
+
+## BR-055 EMQuant completed daily-bar admission
+
+The production EMQuant `HistoricalBars` scope is limited to Shanghai and
+Shenzhen equities, `interval=Day`, an explicit inclusive start/end range and at
+most 800 returned unadjusted `csd` rows. Every row requires source OHLC, volume,
+amount, a calendar-valid source date, Eastmoney provider identity, local
+observation time and the shared non-empty batch identity. The complete source
+response is validated in strictly increasing date order before caller-limit
+projection. An omitted range, intraday/weekly/monthly/yearly interval, Beijing
+or non-equity identity, missing current-day field, malformed row, partial
+response or oversized bridge output fails before a production result.
+
+Repository admission and runtime entitlement remain independent. Missing SDK
+runtime state is advertised as runtime-unavailable. Expired or insufficient
+account entitlement is a typed Provider failure with no records; it is never a
+verified-empty market batch and no zero, previous-day value or alternate
+Provider fills it. Quote, order-book, minute-bar and money-flow EMQuant families
+remain unadmitted until their own complete field contracts pass bounded live
+and serial-load evidence.
+
+## BR-056 Official HITHINK Fuyao admission
+
+The official HITHINK Fuyao Provider uses only `https://fuyao.aicubes.cn`, the
+`X-api-key` header and the exact versioned GET paths registered by Gate A. The
+API key is process configuration: it must not enter requests, logs, evidence,
+fixtures or commits. One clone-shared gate spaces request starts by at least
+500 milliseconds. Redirects, proxies, compressed response bodies, unknown
+paths/query keys, non-JSON responses and bodies over four MiB fail closed.
+
+Production `HistoricalBars` accepts one six-digit Shanghai, Shenzhen or Beijing
+equity, `Day`, an explicit inclusive range no longer than ten years, and always
+requests `adjust=none`. The complete bounded response is validated before the
+most recent caller limit is applied. The response `thscode`, `interval` and
+`adjust` must echo the request, bar dates must be unique Shanghai-midnight dates
+inside the range, the response timestamp must identify the latest returned bar,
+volume converts source shares to Core lots by dividing by 100, and amount stays
+in source currency units. No completed row may be filled or inferred.
+
+Production `MarketStatistics` accepts one through 100 unique A-share equities
+and requires exactly one response row in request order. It maps only `pe_ttm`,
+`pe_mrq` and `pb_mrq`; `null` and negative values are preserved. The batch
+timestamp is the newest valid time among the response metrics and must not be
+copied into record evidence as though all metrics shared that instant. Source
+`ps_ttm` and `pcf_ttm` are validated but remain absent from the frozen Core v1
+record until a versioned contract adds them.
+
+Production `LimitPools` supports only explicit-date `Upper`, `Lower` and
+`Broken`. Every declared page is fetched and checked for stable timestamp,
+total, page count, page size and unique instrument identity before a caller
+limit is applied. Empty non-trading dates remain truthful empty batches.
+`PreviousUpper` is unsupported because Fuyao exposes no exact equivalent.
+Production `Popularity` maps the official 24-hour hot-stock response and keeps
+identity, unique rank, heat, rank change and response source time. The live API
+currently emits `heat` as either a JSON number or a strict finite numeric
+string; no other string coercion is allowed.
+
+Fuyao realtime quote responses with explicit `thscodes` have no source
+timestamp, and the auction response has neither directional unmatched bid/ask
+quantities nor a record source time. Those families remain unadmitted. Key
+absence, expiry, authentication/permission denial, rate limiting, upstream
+unavailability, query rejection and invalid provider responses are distinct
+typed terminal outcomes. None may return records, synthesize timestamps, or
+fall through inside the selected `HithinkFinance` request.

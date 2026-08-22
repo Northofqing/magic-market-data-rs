@@ -457,7 +457,8 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   异动 trigger/rearm 进入生产事件流；
 - unary registry 对 60 个操作逐项精确登记；每个操作至少有一个证据支持的正式 handler；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
-  HKEX、THS、State Council 与 iWencai 外，也可精确选择 TDX 公共协议、Sina、SSE、SZSE、
+  HKEX、THS、State Council、iWencai 与官方 `HithinkFinance` 扶摇 API 外，也可精确选择
+  TDX 公共协议、Sina、SSE、SZSE、
   CLS、ThePaper、XinhuaFinance、Yicai、SecuritiesTimes、NBS、PBC 与 WorldBank；
 - GlobalNews 的财联社正式选择器为 `Cailianpress`，历史 `Cls` 作为兼容别名保留；
   两者返回的逐条 evidence provider 都必须是 `Cailianpress`；
@@ -476,7 +477,8 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   Baidu 未复权源技术日线正式合同；`PostCloseFlows` 已绑定东财当前交易日 15:35 后的
   本地观察快照；`FuturesDelivery` 已绑定 CFFEX 官方固定交割日历，Baidu
   `HistoricalBars`、`MarketRankings` 仍登记显式 opt-in 诊断 handler；
-  EMQuant bridge 可发现时，其 Quote、日线/日内 K、盘口和资金流也只作为显式诊断来源；配置
+  EMQuant `HistoricalBars` 已绑定沪深股票显式区间的完成日线生产合同；其 Quote、日内 K、
+  盘口和资金流仍只作为显式诊断来源；配置
 `EASTMONEY_API_KEY`（兼容别名 `MX_APIKEY`）后，`Auctions` 和 `MarketBreadth` 也登记
   东财妙想诊断 handler。这 4 个固定模板操作和其他诊断一样，只有显式
   `preferred_provider=EastmoneyMiaoxiang` 且 `allow_unadmitted=true` 才执行；
@@ -486,10 +488,67 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - `preferred_provider` 非空时必须精确选择已登记来源；空值选择该操作第一个可用登记。
   当前不会在一次请求内部隐藏切源，上游失败会原样形成 typed gRPC error，调用方可根据
   capabilities 和业务路由策略发起有界重试；
-- FRED、SEC EDGAR、iWencai 和东财妙想还要求对应运行时环境身份；缺失时 capability 保留
+- FRED、SEC EDGAR、iWencai、`HithinkFinance` 和东财妙想还要求对应运行时环境身份；缺失时 capability 保留
   repository admission、但 `runtime_available=false`，请求会在 I/O 前失败。
+- EMQuant 日线还要求官方 SDK、激活文件和有效账号权限。权限到期或不足时返回类型化
+  unavailable 且无 records，不是 `ADMITTED` 空批次，也不会回退到其他 Provider。
 - 2026-08-14 当前实例通过 `SemanticSearch` + `preferred_provider=Iwencai` 实测返回
   10 条 `Report` 记录；Key 只从服务进程环境加载，不进入请求、日志或证据。
+
+EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.request`、
+`schema_version=1`、`preferred_provider=EmQuant`、`allow_unadmitted=false`，payload 示例：
+
+```json
+{
+  "instrument": {"exchange":"Shanghai","code":"600396","asset_class":"Equity"},
+  "interval": "Day",
+  "start": "2026-08-18",
+  "end": "2026-08-20",
+  "limit": 5
+}
+```
+
+生产范围只包含沪深股票、显式 inclusive 起止日期、未复权完成 `csd` 日线且最多 800 条。
+省略日期、其他周期、北交所/非股票、未完成当日空字段、部分响应或证据冲突都会整批失败。
+响应顶层 `provider=EmQuant` 表示所选 SDK 接入；逐条日线证据保留真实
+`provider=Eastmoney`、源日期、观测时间和批次 ID。
+
+官方同花顺扶摇 Provider 的选择器是 `HithinkFinance`，运行时 Key 只从
+`HITHINK_FINANCE_API_KEY` 加载。当前正式准入四项现有 operation，不增加或改写 Protobuf：
+
+| operation | 精确范围 |
+| --- | --- |
+| `HistoricalBars` | 沪深北六位股票、`Day`、显式 inclusive 起止日期（最长十年）、固定 `adjust=none`，完整响应校验后取最新 caller limit |
+| `MarketStatistics` | 1..=100 个唯一沪深北股票；只映射 `pe_ttm`、`pe_mrq`、`pb_mrq`，负值和 `null` 保留 |
+| `LimitPools` | 显式上海交易日的 `Upper`、`Lower`、`Broken`；取完并校验所有声明页后才应用 limit；`PreviousUpper` 不支持 |
+| `Popularity` | 官方 `period=day` 24 小时热股榜，最多 100 条，保留排名、热度、排名变化和响应源时刻 |
+
+例如扶摇未复权日线请求使用现有 v1 schema：
+
+```json
+{
+  "instrument": {"exchange":"Beijing","code":"920403","asset_class":"Equity"},
+  "interval": "Day",
+  "start": "2026-08-18",
+  "end": "2026-08-21",
+  "limit": 10
+}
+```
+
+显式日期涨停池请求为：
+
+```json
+{"kind":"Upper","trading_date":"2026-08-21","limit":10}
+```
+
+调用方必须设置 `preferred_provider=HithinkFinance` 和 `allow_unadmitted=false`。响应顶层
+`provider=HithinkFinance` 表示官方扶摇接入，当前 Core 记录 evidence 使用
+`provider=Tonghuashun`；两者不是跨源拼接。日线逐条 `source_at` 是各自交易日；估值响应
+时间只表示本批固定五项指标中的最新有效上游时间，因此只放在批次 provenance，不能复制
+成每条估值记录的共同指标时刻。扶摇 Key 缺失或到期、认证/权限拒绝、限流、查询拒绝、
+上游不可用和响应冲突都返回闭合 typed failure 和零 records，不回退 `magic-ths-rs` 网页源。
+扶摇显式代码实时快照没有 source timestamp，竞价也缺少未匹配买卖方向与记录源时刻；这两类
+不以 `HithinkFinance` 注册生产 handler，客户端不得从本地时间或其他 Provider 补齐。
 
 剩余 3 项不是缺少 gRPC 方法，而是特定诊断来源的生产数据合同尚未满足。已有字段通过显式诊断模式
 读取，缺失字段保留 `null`，但不会改变下表状态：

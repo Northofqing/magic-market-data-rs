@@ -20,6 +20,11 @@ magic-xinhua-rs	XinhuaFinance	GLOBAL_NEWS_ADMITTED	true	docs/integrations/xinhua
 magic-yicai-rs	Yicai	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yicai-news.md	admitted	2026-07-29	2	3	-
 magic-yonhap-rs	Yonhap	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yonhap-rss.md	admitted	2026-08-16	2	3	-
 magic-baidu-rs	Baidu	TECHNICAL_BARS_ADMITTED	true	docs/integrations/baidu-web.md	admitted	2026-08-17	2	3	-
+magic-emquant-rs	EmQuant	EMQUANT_DAILY_BARS_ADMITTED	true	docs/integrations/eastmoney-emquant.md	admitted	2026-08-21	2	4	-
+magic-hithink-rs	HithinkFinance	HISTORICAL_BARS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-
+magic-hithink-rs	HithinkFinance	MARKET_STATISTICS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-
+magic-hithink-rs	HithinkFinance	LIMIT_POOLS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-
+magic-hithink-rs	HithinkFinance	POPULARITY_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-
 magic-exchange-rs	Cffex	CFFEX_2026_FUTURES_DELIVERY_ADMITTED	true	docs/integrations/exchange-official.md	admitted	2026-08-18	2	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_PRICE_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	15	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	4	3	-

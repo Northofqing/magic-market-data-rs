@@ -15,6 +15,7 @@ magic-eastmoney-rs = { path = "../magic-eastmoney-rs", version = "=0.2.0" }
 magic-emquant-rs = { path = "../magic-emquant-rs", version = "=0.2.0" }
 magic-fred-rs = { path = "../magic-fred-rs", version = "=0.2.0" }
 magic-gov-rs = { path = "../magic-gov-rs", version = "=0.2.0" }
+magic-hithink-rs = { path = "../magic-hithink-rs", version = "=0.2.0" }
 magic-iwencai-rs = { path = "../magic-iwencai-rs", version = "=0.2.0" }
 magic-jin10-rs = { path = "../magic-jin10-rs", version = "=0.2.0" }
 magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }

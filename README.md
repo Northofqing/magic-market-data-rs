@@ -25,6 +25,10 @@
   排名不冒充完整市场分页，竞价的 Level-2 专属字段保持空值，妙想能力需要运行时 Key。
 - 提供版本化的 2026 CFFEX IF/IH/IC/IM 月度交割日历；正式调用使用仓库内固定表，
   不依赖运行时明文 HTTP，也不会用日期公式扩展到其他年份。
+- 通过官方 EMQuant/Choice SDK 提供沪深股票的显式日期范围、未复权完成日线；权限到期、
+  当日字段未完成或 SDK 不可用时返回无 records 的类型化失败，不填零、不回退旧数据。
+- 通过官方同花顺扶摇 Financial API 提供沪深北股票的未复权完成日线、估值子集、显式日期
+  涨停/跌停/炸板池和当前热股榜；Key 缺失、到期或无权限时返回类型化失败，不回退网页源。
 - 为每条记录保留 Provider、批次、源时间（源能够证明时）、本地观测时间、质量状态和
   完整性证据。
 
@@ -163,6 +167,8 @@ cargo build -p magic-market-grpc-server --release --locked
 cargo run -p magic-tdx-rs --example live_probe --release --locked
 cargo run -p magic-tencent-rs --example live_probe --release --locked
 cargo run -p magic-sina-rs --example live_probe --release --locked
+cargo run -p magic-emquant-rs --example daily_bars_probe --release --locked --offline
+cargo run -p magic-hithink-rs --example live_probe --release --locked
 ```
 
 真实探针会访问外部数据源，不属于离线测试。部分 Provider 需要运行时凭据或厂商授权；
@@ -249,6 +255,7 @@ bash tools/release/package.sh
 - [gRPC 组合数据产品](docs/integrations/grpc-derived-products.md)
 - [TDX 能力矩阵](docs/TDX_CAPABILITIES.md)
 - [TDX 本地终端监听](docs/integrations/tdx-local-terminal.md)
+- [同花顺扶摇 Financial API](docs/integrations/hithink-fuyao.md)
 - [Provider 准入注册表](docs/integrations/admissions.tsv)
 - [HTTP 传输注册表](docs/integrations/http-transports.tsv)
 - [异步调用阻塞 Provider 指南](docs/integrations/async-blocking.md)
