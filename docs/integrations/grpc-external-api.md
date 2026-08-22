@@ -669,6 +669,8 @@ client-bundle `2026-08-19.2` 起，`manifest.sha256` 固定使用 ASCII+LF。Lin
 bundle 根目录运行 `sha256sum -c manifest.sha256`，macOS 可运行
 `shasum -a 256 -c manifest.sha256`；两条命令不得要求调用方先转换换行符。
 `2026-08-20.1` 修正 InstrumentNews 的合法 cutoff-empty 分类；protobuf wire 字段未变化。
+`2026-08-22.1` 加入官方 `HithinkFinance` 四项生产 handler 和 EMQuant 正式日线；仍不改变
+protobuf wire 字段，精确来源提交写入同一 bundle 的 `bundle-metadata.json`。
 
 ## 12. 客户端代码生成
 

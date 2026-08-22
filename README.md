@@ -49,13 +49,13 @@
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前新闻合同交付基线为 client-bundle `2026-08-20.1`，来源提交
-`a5c8347f4c22150776a6853bb32dc1bb1914b9b0`，发布 tag
-`grpc-instrument-news-cutoff-empty-2026-08-20.1`。本次修正不改变 protobuf wire 字段；
-完整逐条 evidence、空批次和失败分类合同以
+当前对接合同交付基线为 client-bundle `2026-08-22.1`，发布 tag
+`grpc-hithink-emquant-2026-08-22.1`。该版本加入官方 HITHINK 扶摇四项生产能力和
+EMQuant 正式日线，不改变 protobuf wire 字段；完整逐条 evidence、空批次和失败分类合同以
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用
-LF 格式的 `manifest.sha256` 做跨平台校验。
+LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle 内
+`bundle-metadata.json` 的 `source_commit` 为准。
 
 ## 明确边界
 
