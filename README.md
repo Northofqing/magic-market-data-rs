@@ -35,7 +35,9 @@
 
 精确到数据族和 Provider 的当前状态以
 [准入注册表](docs/integrations/admissions.tsv) 为准；gRPC 请求与响应见
-[外部对接文档](docs/integrations/grpc-external-api.md)。
+[外部对接文档](docs/integrations/grpc-external-api.md)。当前 8 条未准入
+Provider×operation 路径、已发现的官方接口及显式替代范围见
+[未准入路径与显式替代矩阵](docs/integrations/unadmitted-provider-routes.md)。
 
 ## gRPC 新闻证据合同
 
@@ -75,8 +77,9 @@ LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle
 LPR 和官方汇率能力不受 DR007 授权缺口影响。窄版 `Auctions` 只返回同一妙想响应明确
 提供的竞价成交量和成交额，匹配价、昨收、未匹配买卖队列、量比和 Provider 源时刻均
 保持 `null`，不会从普通行情推导。同花顺扶摇的当前最终竞价诊断另行返回源直接给出的成交价、
-昨收、成交量（严格从手换算为股）、成交额和量比；因源未给交易日、逐条源时刻和方向化
-未匹配队列，它保持 repository-unadmitted，只能显式 `allow_unadmitted=true` 调用。
+昨收、成交量（严格从手换算为股）、成交额和量比；因快照本身未给交易日、逐条源时刻和
+方向化未匹配队列，它保持 repository-unadmitted，只能显式 `allow_unadmitted=true` 调用。
+同花顺交易日历和竞价短线基准虽然包含日期，但日期不与该快照记录绑定，不能跨响应补证据。
 
 `MarketBreadth` 的上市总数、涨跌平、涨跌停和覆盖率来自同一个妙想响应；这证明采集
 原子性，但 Provider 没有给每个字段源时刻，因此 `maximum_source_skew_millis` 保持
@@ -262,6 +265,7 @@ bash tools/release/package.sh
 - [TDX 本地终端监听](docs/integrations/tdx-local-terminal.md)
 - [同花顺扶摇 Financial API](docs/integrations/hithink-fuyao.md)
 - [Provider 准入注册表](docs/integrations/admissions.tsv)
+- [未准入 Provider 路径与显式替代](docs/integrations/unadmitted-provider-routes.md)
 - [HTTP 传输注册表](docs/integrations/http-transports.tsv)
 - [异步调用阻塞 Provider 指南](docs/integrations/async-blocking.md)
 

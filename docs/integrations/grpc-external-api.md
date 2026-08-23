@@ -489,6 +489,10 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - `preferred_provider` 非空时必须精确选择已登记来源；空值选择该操作第一个可用登记。
   当前不会在一次请求内部隐藏切源，上游失败会原样形成 typed gRPC error，调用方可根据
   capabilities 和业务路由策略发起有界重试；
+- 当前 8 条未准入 Provider×operation 路径及可显式选择的准入 operation 路由见
+  [`unadmitted-provider-routes.md`](unadmitted-provider-routes.md)。这些路由只表示相同
+  operation 下的独立来源，不表示数据集或 Provider 等价；例如 NBS/PBC/WorldBank
+  不能重标为 IMF，Hithink 竞价快照也不能用其它响应的日期补齐；
 - FRED、SEC EDGAR、iWencai、`HithinkFinance` 和东财妙想还要求对应运行时环境身份；缺失时 capability 保留
   repository admission、但 `runtime_available=false`，请求会在 I/O 前失败。
 - EMQuant 日线还要求官方 SDK、激活文件和有效账号权限。权限到期或不足时返回类型化

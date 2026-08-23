@@ -96,6 +96,7 @@ const HITHINK_FINANCIAL_STATEMENTS_SCOPE: &str = "1..=8 unique A-share equities;
 const HITHINK_CORPORATE_ACTIONS_SCOPE: &str = "one A-share equity; optional exact inclusive date range; official Fuyao implemented cash-dividend and bonus-share ex-date events; endpoint source-time absence preserved";
 const HITHINK_SECURITY_METADATA_SCOPE: &str = "1..=32 unique A-share equities, standard exchange indices or exchange-traded funds; exact Fuyao thscode/name/currency identity with unpublished board, listing and price-limit fields explicitly unavailable";
 const HITHINK_AUCTIONS_SCOPE: &str = "1..=100 unique A-share equities; current official Fuyao stage=final closed auction snapshot diagnostic; provider response assembly time is observed_at while trading date, source_at and directional unmatched queues remain absent";
+const HITHINK_AUCTIONS_BLOCKER: &str = "Fuyao current auction snapshots omit the exact trading date, provider source time and directional unmatched bid/ask quantities; separate benchmark and calendar dates are not bound to snapshot records";
 pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.request";
 pub const REALTIME_QUOTES_RECORD_SCHEMA: &str = "magic.market.quote";
 pub const HISTORICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.historical_bars.request";
@@ -1107,6 +1108,18 @@ fn register_extended_handlers(
         )?;
     } else {
         for capability in [
+            blocked(
+                Operation::FundFlowSeries,
+                "EastmoneyMiaoxiang",
+                "one Shanghai/Shenzhen equity; bounded daily main/super-large/large/medium/small net flow in CNY",
+                "EASTMONEY_API_KEY or MX_APIKEY is not configured; natural-language result cardinality and serial live stability remain repository-unadmitted",
+            ),
+            blocked(
+                Operation::MoneyFlows,
+                "EastmoneyMiaoxiang",
+                "one Shanghai/Shenzhen equity; latest bounded daily main/super-large/large/medium/small net flow in CNY",
+                "EASTMONEY_API_KEY or MX_APIKEY is not configured; source methodology and serial live stability remain repository-unadmitted",
+            ),
             runtime_unavailable(
                 Operation::Auctions,
                 "EastmoneyMiaoxiang",
@@ -1251,6 +1264,8 @@ fn register_hithink(
             ] {
                 let capability = if admitted_by_repository {
                     runtime_unavailable(operation, "HithinkFinance", scope, &blocker)
+                } else if operation == Operation::Auctions {
+                    blocked(operation, "HithinkFinance", scope, HITHINK_AUCTIONS_BLOCKER)
                 } else {
                     blocked(
                         operation,
@@ -1397,7 +1412,7 @@ fn register_hithink(
             Operation::Auctions,
             "HithinkFinance",
             HITHINK_AUCTIONS_SCOPE,
-            "Fuyao current auction snapshots omit the exact trading date, provider source time and directional unmatched bid/ask quantities",
+            HITHINK_AUCTIONS_BLOCKER,
         ),
         move |command| {
             let request: InstrumentsRequest =
@@ -5661,13 +5676,24 @@ mod tests {
             hithink_key_is_configured()
         );
 
-        for (operation, provider) in [
-            (Operation::HistoricalBars, "Baidu"),
-            (Operation::RealtimeQuotes, "EmQuant"),
-            (Operation::OrderBooks, "EmQuant"),
-            (Operation::MoneyFlows, "EmQuant"),
-            (Operation::EconomicSeries, "Imf"),
-        ] {
+        let unadmitted_with_operation_route = [
+            (Operation::Auctions, "HithinkFinance", "EastmoneyMiaoxiang"),
+            (Operation::EconomicSeries, "Imf", "WorldBank"),
+            (Operation::FundFlowSeries, "EastmoneyMiaoxiang", "Eastmoney"),
+            (Operation::HistoricalBars, "Baidu", "Tencent"),
+            (Operation::MoneyFlows, "EastmoneyMiaoxiang", "Eastmoney"),
+            (Operation::MoneyFlows, "EmQuant", "Eastmoney"),
+            (Operation::OrderBooks, "EmQuant", "Tencent"),
+            (Operation::RealtimeQuotes, "EmQuant", "Tencent"),
+        ];
+        assert_eq!(
+            capabilities
+                .iter()
+                .filter(|capability| !capability.repository_admitted)
+                .count(),
+            unadmitted_with_operation_route.len()
+        );
+        for (operation, provider, admitted_operation_provider) in unadmitted_with_operation_route {
             assert!(
                 capabilities.iter().any(|capability| {
                     capability.operation == operation
@@ -5675,6 +5701,15 @@ mod tests {
                         && !capability.repository_admitted
                 }),
                 "missing fail-closed {provider} {} registration",
+                operation.as_str()
+            );
+            assert!(
+                capabilities.iter().any(|capability| {
+                    capability.operation == operation
+                        && capability.provider == admitted_operation_provider
+                        && capability.repository_admitted
+                }),
+                "missing explicit admitted operation route {admitted_operation_provider} for {}",
                 operation.as_str()
             );
         }

@@ -28,7 +28,7 @@ magic-hithink-rs	HithinkFinance	POPULARITY_ADMITTED	true	docs/integrations/hithi
 magic-hithink-rs	HithinkFinance	FINANCIAL_STATEMENTS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-
 magic-hithink-rs	HithinkFinance	CORPORATE_ACTIONS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-
 magic-hithink-rs	HithinkFinance	SECURITY_METADATA_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-
-magic-hithink-rs	HithinkFinance	AUCTIONS_ADMITTED	false	docs/integrations/hithink-fuyao.md	blocked	2026-08-22	2	0	Fuyao current auction snapshot omits trading date, provider source time and directional unmatched bid/ask quantities; response timestamp is assembly time only
+magic-hithink-rs	HithinkFinance	AUCTIONS_ADMITTED	false	docs/integrations/hithink-fuyao.md	blocked	2026-08-22	2	0	Fuyao current auction snapshot omits trading date, provider source time and directional unmatched bid/ask quantities; separate benchmark/calendar dates are not bound to snapshot records
 magic-exchange-rs	Cffex	CFFEX_2026_FUTURES_DELIVERY_ADMITTED	true	docs/integrations/exchange-official.md	admitted	2026-08-18	2	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_PRICE_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	15	3	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	4	3	-

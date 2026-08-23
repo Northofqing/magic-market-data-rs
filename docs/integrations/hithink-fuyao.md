@@ -167,6 +167,15 @@ shape distinct from the Eastmoney exact-date diagnostic. This prevents a current
 snapshot from being misrepresented as evidence for a caller-selected trading
 date.
 
+The official API also has `/api/a-share/auction/short-term-benchmark`, whose
+response contains the resolved query `date`, and
+`/api/a-share/calendar/trading-days`. They are separate contracts: neither
+response identifies the auction snapshot batch or binds a date to any snapshot
+record. The benchmark explicitly keeps a caller-selected non-trading date rather
+than rolling it back. These paths therefore cannot be joined to manufacture the
+snapshot's missing `trading_date` or `source_at`, and are not registered as
+auction transport dependencies.
+
 ## Official API coverage boundary
 
 The inspected official capability map contains 59 endpoints across A-share,
@@ -231,6 +240,12 @@ row with `auction_phase=closed`, `data_status=final` and a positive response
 assembly timestamp. Those calls prove the diagnostic wire shape and identity,
 not a trading date or source time, and therefore do not promote auction
 admission.
+
+A separate bounded check on Saturday 2026-08-22 made the missing linkage
+observable: the snapshot still returned one `600519.SH` row as `closed/final`,
+while the short-term benchmark resolved `date=2026-08-22` and returned an empty
+item list. The date-bearing endpoint therefore cannot prove that the snapshot
+belongs to that date or to the previous trading day.
 
 A separate three-call serial probe covered every newly admitted endpoint and
 completed 30 request starts, zero active requests at exit, maximum concurrency

@@ -929,3 +929,9 @@ absence, expiry, authentication/permission denial, rate limiting, upstream
 unavailability, query rejection and invalid provider responses are distinct
 typed terminal outcomes. None may return records, synthesize timestamps, or
 fall through inside the selected `HithinkFinance` request.
+
+Fuyao's separate auction benchmark may return a resolved query `date`, and its
+calendar returns trading days. Neither contract binds its date to an auction
+snapshot record or batch. A benchmark/calendar date must not be joined to the
+snapshot as `trading_date` or `source_at`; an operation-level alternative must
+retain its own Provider identity and requires a separate caller-selected request.

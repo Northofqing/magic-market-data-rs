@@ -682,6 +682,91 @@ mod tests {
     }
 
     #[test]
+    fn default_skips_diagnostic_and_explicit_diagnostic_never_falls_through() {
+        let diagnostic_calls = Arc::new(AtomicUsize::new(0));
+        let admitted_calls = Arc::new(AtomicUsize::new(0));
+        let seen_diagnostic = diagnostic_calls.clone();
+        let seen_admitted = admitted_calls.clone();
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_diagnostic_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: false,
+                    runtime_available: false,
+                    provider: "EmQuant".to_owned(),
+                    exact_scope: "entitlement-dependent quote diagnostic".to_owned(),
+                    blocker: Some("quote entitlement is unproved".to_owned()),
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    seen_diagnostic.fetch_add(1, Ordering::SeqCst);
+                    Ok(QueryResult {
+                        provider: "EmQuant".to_owned(),
+                        batch_id: "emquant-diagnostic".to_owned(),
+                        complete: true,
+                        observed_at: "2026-08-22T00:00:00Z".to_owned(),
+                        source_at: None,
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Tencent".to_owned(),
+                    exact_scope: "A-share quote".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    seen_admitted.fetch_add(1, Ordering::SeqCst);
+                    Ok(QueryResult {
+                        provider: "Tencent".to_owned(),
+                        batch_id: "tencent-admitted".to_owned(),
+                        complete: true,
+                        observed_at: "2026-08-22T00:00:00Z".to_owned(),
+                        source_at: Some("2026-08-22T00:00:00Z".to_owned()),
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        let default_result = registry
+            .execute(command(Operation::RealtimeQuotes, None))
+            .unwrap();
+        assert_eq!(default_result.provider, "Tencent");
+        assert_eq!(diagnostic_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(admitted_calls.load(Ordering::SeqCst), 1);
+
+        let diagnostic = command(Operation::RealtimeQuotes, Some("EmQuant"));
+        assert!(matches!(
+            registry.execute(diagnostic.clone()),
+            Err(ServiceError::Unsupported { .. })
+        ));
+        assert_eq!(diagnostic_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(admitted_calls.load(Ordering::SeqCst), 1);
+
+        let diagnostic_result = registry
+            .execute(diagnostic.with_unadmitted_access(true))
+            .unwrap();
+        assert_eq!(diagnostic_result.provider, "EmQuant");
+        assert!(!diagnostic_result.repository_admitted);
+        assert!(!diagnostic_result.complete);
+        assert_eq!(diagnostic_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(admitted_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
     fn diagnostic_handler_requires_explicit_opt_in_and_never_promotes_admission() {
         let calls = Arc::new(AtomicUsize::new(0));
         let seen = calls.clone();
