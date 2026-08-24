@@ -23,6 +23,10 @@ const MAX_PAGE_SIZE: u32 = 20;
 const MAX_SOURCE_ROWS: usize = 21;
 const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 
+/// The public flash window is useful for diagnostics but is not a complete
+/// economic-calendar contract after Jin10 retired its free calendar/API embed.
+pub const ECONOMIC_CALENDAR_ADMITTED: bool = false;
+
 /// Jin10 adapter failures. Protected or malformed upstream data is never
 /// converted into an empty successful batch.
 #[derive(Debug, Error)]

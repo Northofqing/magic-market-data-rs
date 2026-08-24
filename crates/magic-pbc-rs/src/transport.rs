@@ -1,6 +1,9 @@
 use crate::{PbcError, PbcTableDescriptor, REGIONAL_SOCIAL_FINANCING_URL};
 use magic_market_transport::{HttpMethod, HttpRequest, HttpResponse, HttpTransport};
 
+const PBC_USER_AGENT: &str =
+    "Mozilla/5.0 (compatible; magic-market-data-rs/0.2; +https://github.com/Northofqing/magic-market-data-rs)";
+
 pub(crate) fn fetch_table(
     transport: &dyn HttpTransport,
     descriptor: &PbcTableDescriptor,
@@ -8,7 +11,10 @@ pub(crate) fn fetch_table(
     let request = HttpRequest::new(
         HttpMethod::Get,
         descriptor.canonical_url(),
-        vec![("Accept".into(), "text/html".into())],
+        vec![
+            ("Accept".into(), "text/html".into()),
+            ("User-Agent".into(), PBC_USER_AGENT.into()),
+        ],
         Vec::new(),
     )?;
     transport.execute(&request).map_err(PbcError::from)

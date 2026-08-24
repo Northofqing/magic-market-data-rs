@@ -2,7 +2,9 @@
 
 ## Capability state
 
-The Securities Times quick-news global admission is true.
+The Securities Times quick-news global admission is false. The bounded parser
+remains available only through explicit diagnostic access while the live source
+contract is re-audited.
 
 ## Official host and paths
 
@@ -38,6 +40,12 @@ On 2026-07-29, two consecutive bounded live probes each returned and verified
 30 current rows. The three-call serial load probe returned 90 verified records,
 observed one active request at a time, and measured a minimum actual
 request-start gap of 1,001 ms.
+
+On 2026-08-24, the live endpoint returned source attribution that failed the
+non-empty/unpadded safety contract. The provider now fails closed and is no
+longer production-admitted. It must not synthesize, trim, or relabel unsafe
+attribution to recover admission; a fresh upstream audit and live/load evidence
+are required before `GLOBAL_NEWS_ADMITTED` can become true again.
 
 ## Explicit unsupported operations
 

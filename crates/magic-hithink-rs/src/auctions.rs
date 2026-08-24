@@ -91,6 +91,11 @@ fn normalize(
     let observed_at = source_millis(response.data.timestamp)?;
     validate_safe_text("auction_phase", &response.data.auction_phase)?;
     validate_safe_text("data_status", &response.data.data_status)?;
+    if response.data.auction_phase == "closed" && response.data.data_status == "not_ready" {
+        return Err(HithinkError::NotReady {
+            request_id: response.request_id,
+        });
+    }
     if response.data.auction_phase != "closed" || response.data.data_status != "final" {
         return Err(HithinkError::Protocol(
             "auction response is not a final closed snapshot".into(),
@@ -328,6 +333,29 @@ mod tests {
         assert!(matches!(
             client.probe_auction_snapshots(&[instrument("600519")]),
             Err(HithinkError::Protocol(_))
+        ));
+    }
+
+    #[test]
+    fn closed_not_ready_state_is_a_typed_terminal_without_records() {
+        let client = HithinkClient::with_transport(
+            "test_key",
+            FixtureTransport::new(vec![success(
+                "auction-not-ready",
+                json!({
+                    "timestamp": 1787386686058_i64,
+                    "auction_phase": "closed",
+                    "data_status": "not_ready",
+                    "total": 1,
+                    "item": [item("600519.SH", "600519")]
+                }),
+            )]),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            client.probe_auction_snapshots(&[instrument("600519")]),
+            Err(HithinkError::NotReady { request_id }) if request_id == "auction-not-ready"
         ));
     }
 

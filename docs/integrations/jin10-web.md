@@ -25,18 +25,27 @@ Only public type-0 flashes and type-2 linked articles are normalized by
 `NewsProvider::global_news`. They must belong to at least one source news
 channel 1, 2 or 3; source rows belonging only to channel 5 are promotional
 slots and are omitted. Missing, empty or non-integral channel arrays remain
-protocol failures. Public unlocked type-1 economic rows are handled separately
-by `EconomicCalendarProvider`; the two contracts are never mixed.
+protocol failures. Public unlocked type-1 economic rows can be inspected
+separately through the diagnostic `EconomicCalendarProvider`; the two contracts
+are never mixed.
 
-## Economic calendar
+## Economic-calendar diagnostic
+
+Jin10 ended its free calendar and associated API embedding service on
+2025-12-01, and the current calendar page requires an authenticated session.
+The remaining public flash endpoint is only a rolling latest-item window. It
+cannot prove a complete calendar result for a requested date range, so
+`ECONOMIC_CALENDAR_ADMITTED` is `false` and production routing never selects it.
+The parser remains reachable only through explicit unadmitted diagnostic access.
 
 The calendar adapter preserves the source event/indicator identity, country, name,
 period, scheduled and released times, previous/consensus/actual/revised values, unit,
 importance and impact direction. A source value of numeric zero remains the text value
 `"0"` and is never converted to absence. Locked rows, duplicate identities, missing
 required fields, malformed timestamps, importance outside the admitted range or an
-oversized/empty eligible batch fail explicitly. Requests accept 1 through 20 rows and
-may apply an exact source country filter.
+oversized/empty eligible batch fail explicitly. Diagnostic requests accept 1
+through 20 rows and may apply an exact source country filter. An empty eligible
+flash window is a typed failure, never a verified-empty calendar.
 
 ## Bounds and failure behavior
 
@@ -73,7 +82,9 @@ MAGIC_JIN10_LOAD_REQUESTS=2 \
 ```
 
 The default live probe validates public news. Set
-`MAGIC_JIN10_LIVE_INCLUDE_CALENDAR=1` to additionally require a current economic
-release; this mode can correctly fail when the rolling public window contains no
-eligible type-1 row. The load probe defaults to two requests, accepts at most three,
-uses concurrency one, and reports failures and latency percentiles.
+`MAGIC_JIN10_LIVE_INCLUDE_CALENDAR=1` to run the explicit unadmitted diagnostic
+and require a current economic release; this mode can correctly fail when the
+rolling public window contains no eligible type-1 row. It is not admission
+evidence for a complete calendar. The load probe defaults to two requests,
+accepts at most three, uses concurrency one, and reports failures and latency
+percentiles.

@@ -6,6 +6,7 @@ magic-cfets-rs	Cfets	OFFICIAL_FX_ADMITTED	true	docs/integrations/cfets-official.
 magic-fred-rs	Fred	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/fred-api.md	admitted	2026-08-13	2	3	-
 magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-08-13	0	0	DataMapper returns HTTP 403; replacement SDMX Swagger requires beta portal login and a documented API contract
 magic-iwencai-rs	Iwencai	SEMANTIC_SEARCH_ADMITTED	true	docs/integrations/iwencai-api.md	admitted	2026-08-14	2	3	-
+magic-jin10-rs	Jin10	ECONOMIC_CALENDAR_ADMITTED	false	docs/integrations/jin10-web.md	blocked	2026-08-24	0	0	Jin10 ended its free calendar and API embedding service on 2025-12-01; the latest public flash window cannot prove a complete economic calendar
 magic-nbs-rs	Nbs	NATIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-
 magic-nbs-rs	Nbs	REGIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-
 magic-pbc-rs	Pbc	MONEY_SUPPLY_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-07-29	2	3	-
@@ -13,7 +14,7 @@ magic-pbc-rs	Pbc	SOCIAL_FINANCING_ADMITTED	true	docs/integrations/pbc-official.m
 magic-pbc-rs	Pbc	REGIONAL_SERIES_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-
 magic-sec-rs	SecEdgar	FILING_METADATA_ADMITTED	true	docs/integrations/sec-edgar.md	admitted	2026-08-13	2	3	-
 magic-tdx-rs	Tdx	SECURITY_PROFILES_ADMITTED	true	docs/integrations/tdx-public-security-profile.md	admitted	2026-08-14	2	3	-
-magic-stcn-rs	SecuritiesTimes	GLOBAL_NEWS_ADMITTED	true	docs/integrations/securities-times.md	admitted	2026-07-29	2	3	-
+magic-stcn-rs	SecuritiesTimes	GLOBAL_NEWS_ADMITTED	false	docs/integrations/securities-times.md	blocked	2026-08-24	0	0	The live source contains blank or unsafe source attribution; the provider must be re-audited before production admission
 magic-wallstreetcn-rs	WallstreetCn	GLOBAL_NEWS_ADMITTED	true	docs/integrations/wallstreetcn-rss.md	admitted	2026-07-29	2	3	-
 magic-worldbank-rs	WorldBank	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/worldbank-indicators.md	admitted	2026-08-13	2	3	-
 magic-xinhua-rs	XinhuaFinance	GLOBAL_NEWS_ADMITTED	true	docs/integrations/xinhua-finance.md	admitted	2026-07-29	2	3	-

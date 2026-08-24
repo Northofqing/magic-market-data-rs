@@ -102,6 +102,8 @@ pub enum HithinkError {
     RateLimited { request_id: String },
     #[error("HITHINK business failure code {code}; request_id={request_id}")]
     Business { code: i64, request_id: String },
+    #[error("HITHINK data is not ready; request_id={request_id}")]
+    NotReady { request_id: String },
     #[error(transparent)]
     Transport(#[from] TransportError),
     #[error("HITHINK response decoding failed: {0}")]

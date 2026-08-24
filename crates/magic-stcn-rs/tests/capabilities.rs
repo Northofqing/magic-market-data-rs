@@ -106,16 +106,12 @@ fn initial_probe_uses_exact_xhr_headers_and_omits_cursors() {
 }
 
 #[test]
-fn admitted_formal_global_news_uses_the_same_bounded_path() {
+fn unadmitted_formal_global_news_fails_before_io() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let client = StcnClient::with_transport(RecordingTransport(requests.clone())).expect("client");
-    assert_eq!(
-        client
-            .global_news(PositiveU32::new(1).expect("limit"))
-            .expect("admitted fixture response")
-            .records()
-            .len(),
-        1
-    );
-    assert_eq!(requests.lock().expect("request lock").len(), 1);
+    assert!(matches!(
+        client.global_news(PositiveU32::new(1).expect("limit")),
+        Err(StcnError::Unsupported(_))
+    ));
+    assert!(requests.lock().expect("request lock").is_empty());
 }

@@ -353,7 +353,9 @@ The observable steady-state invariant is `total == idle + active`.
 Jin10 admission is limited to unlocked public type-0 flashes and type-2
 articles belonging to at least one source news channel 1/2/3; channel-5-only
 promotion slots are excluded. Protected details are never requested or
-decrypted. The Paper admission is limited to native articles on
+decrypted. Jin10 economic-calendar parsing is diagnostic-only: the provider
+retired its free calendar/API embedding service on 2025-12-01, and a rolling
+flash window must never be represented as a complete calendar. The Paper admission is limited to native articles on
 finance channel `25951`; any row with a non-empty external `link` is omitted
 even when both forward flags claim native content, and is never relabeled.
 The Paper `published_at` preserves the exact millisecond instant carried by the
@@ -439,8 +441,8 @@ Eastmoney global latest news is admitted only from the exact first page at
 the source `财经` category, use a calendar-valid newest-first minute timestamp,
 have matching attribute/visible titles, and use a unique numeric article ID at
 the canonical `/a/<id>.html` path on exactly `finance.eastmoney.com`,
-`global.eastmoney.com`, `biz.eastmoney.com`, `futures.eastmoney.com`,
-`bond.eastmoney.com`, or `hk.eastmoney.com`. These hosts are retained as
+`global.eastmoney.com`, `biz.eastmoney.com`, `stock.eastmoney.com`,
+`futures.eastmoney.com`, `bond.eastmoney.com`, or `hk.eastmoney.com`. These hosts are retained as
 metadata links only and are not fetched by this operation. The public page does
 not provide structured security identity, so records keep an empty instrument
 list and may not be presented as instrument news.

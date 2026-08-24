@@ -1,4 +1,4 @@
-use magic_jin10_rs::Jin10Client;
+use magic_jin10_rs::{Jin10Client, ECONOMIC_CALENDAR_ADMITTED};
 use magic_market_core::EconomicCalendarProvider;
 
 fn assert_economic_calendar<T: EconomicCalendarProvider>() {}
@@ -15,4 +15,5 @@ fn advertises_only_verified_global_news() {
     let calendar = Jin10Client::calendar_capabilities();
     assert!(calendar.economic_releases);
     assert!(!calendar.futures_delivery);
+    const { assert!(!ECONOMIC_CALENDAR_ADMITTED) };
 }

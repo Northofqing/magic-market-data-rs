@@ -41,6 +41,10 @@ struct FixtureTransport {
 impl HttpTransport for FixtureTransport {
     fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, TransportError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        assert!(request
+            .headers()
+            .iter()
+            .any(|(name, value)| name == "User-Agent" && !value.trim().is_empty()));
         let (body, _, had_errors) = GB18030.encode(include_str!("fixtures/money-supply-2024.html"));
         assert!(!had_errors);
         Ok(HttpResponse::new(

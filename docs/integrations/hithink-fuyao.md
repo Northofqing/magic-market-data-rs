@@ -167,6 +167,12 @@ shape distinct from the Eastmoney exact-date diagnostic. This prevents a current
 snapshot from being misrepresented as evidence for a caller-selected trading
 date.
 
+Outside the provider's completed snapshot window, an exact
+`auction_phase=closed` plus `data_status=not_ready` response is returned as the
+typed, retryable `provider_unavailable` terminal with zero records. It is not
+misclassified as a malformed provider response and its partial item is never
+promoted into auction evidence.
+
 The official API also has `/api/a-share/auction/short-term-benchmark`, whose
 response contains the resolved query `date`, and
 `/api/a-share/calendar/trading-days`. They are separate contracts: neither

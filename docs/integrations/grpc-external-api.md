@@ -9,7 +9,7 @@
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 60 个操作精确登记；56 个操作有正式 handler；东财公开资金流、盘后资金流、Baidu `TechnicalBars` 与 TDX `T0Evidence` 已正式注册；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
+| Unary Provider composition | 60 个操作精确登记；59 个操作至少有一个正式 handler；`EconomicCalendar` 因金十免费日历/API 已退役而仅保留显式诊断路径；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
 | TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额、昨收、OHLC 与三类带 Core 证据的 trigger/rearm 事件为生产数据；状态消息仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
@@ -455,7 +455,7 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
   异动 trigger/rearm 进入生产事件流；
-- unary registry 对 60 个操作逐项精确登记；每个操作至少有一个证据支持的正式 handler；
+- unary registry 对 60 个操作逐项精确登记；除 `EconomicCalendar` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，仅保留显式诊断路径；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council、iWencai 与官方 `HithinkFinance` 扶摇 API 外，也可精确选择
   TDX 公共协议、Sina、SSE、SZSE、
@@ -543,6 +543,8 @@ EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.requ
 `data_status=final` 和完整精确身份。响应中的竞价量单位“手”严格乘 100 写入“股”，成交价、
 昨收、涨幅、成交额和量比按源语义映射。实测单一 `auction_unmatched` 可以为负，但源合同没有
 定义其符号到 bid/ask 的映射，故只校验为有限值，两个方向字段均保持 `null`。
+`auction_phase=closed,data_status=not_ready` 明确返回零 records 的
+`provider_unavailable`（`retryable=true`），不会冒充 malformed response 或部分成功。
 `data.timestamp` 是响应组装时间，只能写入 `observed_at`；源未提供交易日和
 逐条源时刻，因此不得写入 `trading_date` 或 `source_at`，也不能用批次时间、本地时间或其他
 Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精确日期合同。

@@ -23,8 +23,10 @@ const MAX_RETURNED_ITEMS: u32 = 30;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Admitted after two bounded live probes and the three-call serial load probe.
-pub const GLOBAL_NEWS_ADMITTED: bool = true;
+/// Disabled after the live source contract began returning blank or unsafe
+/// attribution fields. `probe_global_news` remains available for explicit
+/// diagnostics while the upstream contract is re-audited.
+pub const GLOBAL_NEWS_ADMITTED: bool = false;
 
 #[derive(Debug, Error)]
 pub enum StcnError {

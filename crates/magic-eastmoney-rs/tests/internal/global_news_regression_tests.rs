@@ -164,7 +164,7 @@ fn global_news_rejects_duplicate_id_url_and_noncanonical_urls() {
     let duplicate = global_fixture().replacen("202607253821081234", "202607253821086055", 1);
     assert!(parse_global_news(duplicate.as_bytes(), 2).is_err());
     for invalid in [
-        "https://stock.eastmoney.com/a/202607253821086055.html",
+        "https://news.eastmoney.com/a/202607253821086055.html",
         "https://finance.eastmoney.com/b/202607253821086055.html",
         "https://finance.eastmoney.com/a/not-digits.html",
         "https://finance.eastmoney.com/a/202607253821086055.html?x=1",
@@ -180,6 +180,7 @@ fn global_news_accepts_exact_official_hosts_and_preserves_them_in_canonical_url(
         "finance.eastmoney.com",
         "global.eastmoney.com",
         "biz.eastmoney.com",
+        "stock.eastmoney.com",
     ] {
         let input = format!("http://{host}/a/202607253821086055.html");
         let (item_id, canonical_url) = normalize_global_article_url(&input).unwrap();

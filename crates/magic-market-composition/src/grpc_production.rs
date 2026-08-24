@@ -30,7 +30,7 @@ use magic_hithink_rs::{
     SECURITY_METADATA_ADMITTED as HITHINK_SECURITY_METADATA_ADMITTED,
 };
 use magic_iwencai_rs::{IwencaiClient, IwencaiError, SEMANTIC_SEARCH_ADMITTED};
-use magic_jin10_rs::{Jin10Client, Jin10Error};
+use magic_jin10_rs::{Jin10Client, Jin10Error, ECONOMIC_CALENDAR_ADMITTED};
 use magic_market_core::{
     Announcements, Bar, BarInterval, BarsRequest, BlockTrades, BoardCategory,
     BoardConstituentProvider, BoardConstituentRequest, BoardDirectoryProvider,
@@ -68,7 +68,7 @@ use magic_nbs_rs::{NbsClient, NbsError};
 use magic_pbc_rs::{PbcClient, PbcError};
 use magic_sec_rs::{SecEdgarClient, SecEdgarError};
 use magic_sina_rs::{SinaClient, SinaError};
-use magic_stcn_rs::{StcnClient, StcnError};
+use magic_stcn_rs::{StcnClient, StcnError, GLOBAL_NEWS_ADMITTED as STCN_GLOBAL_NEWS_ADMITTED};
 use magic_tdx_rs::{
     BlockService, TdxBoardProvider, TdxError, TdxSecurityProfileProvider, TdxSmartClient,
 };
@@ -770,14 +770,27 @@ fn register_global_news_parity(
         "bounded first-party Yicai first-page metadata",
         maximum_payload_bytes,
     )?;
-    register_global_news_provider(
-        registry,
-        StcnClient::with_timeout(provider_timeout)?,
-        "SecuritiesTimes",
-        ProviderId::SecuritiesTimes,
-        "bounded first-party Securities Times front-page metadata",
-        maximum_payload_bytes,
-    )?;
+    let stcn = StcnClient::with_timeout(provider_timeout)?;
+    if STCN_GLOBAL_NEWS_ADMITTED {
+        register_global_news_provider(
+            registry,
+            stcn,
+            "SecuritiesTimes",
+            ProviderId::SecuritiesTimes,
+            "bounded first-party Securities Times front-page metadata",
+            maximum_payload_bytes,
+        )?;
+    } else {
+        registry.register_diagnostic_handler(
+            blocked(
+                Operation::GlobalNews,
+                "SecuritiesTimes",
+                "bounded diagnostic of first-party Securities Times front-page metadata",
+                "the live source currently contains blank or unsafe source attribution and must be re-audited before production admission",
+            ),
+            move |command| execute_stcn_global_news(command, &stcn, maximum_payload_bytes),
+        )?;
+    }
     register_global_news_provider(
         registry,
         YonhapClient::for_channel_with_timeout(YonhapChannel::Economy, provider_timeout)?,
@@ -1794,23 +1807,44 @@ fn register_additional_providers(
 
     let jin10 = Jin10Client::with_timeout(provider_timeout)?;
     let calendar = jin10.clone();
-    registry.register_handler(
-        admitted(
-            Operation::EconomicCalendar,
-            "Jin10",
-            "bounded public economic-release calendar; an empty eligible set remains a typed source failure",
-        ),
-        move |command| {
-            execute_typed(
-                command,
-                ECONOMIC_CALENDAR_REQUEST_SCHEMA,
-                ECONOMIC_CALENDAR_RECORD_SCHEMA,
+    if ECONOMIC_CALENDAR_ADMITTED {
+        registry.register_handler(
+            admitted(
+                Operation::EconomicCalendar,
                 "Jin10",
-                maximum_payload_bytes,
-                |request: &EconomicCalendarRequest| calendar.economic_calendar(request),
-            )
-        },
-    )?;
+                "bounded public economic-release calendar",
+            ),
+            move |command| {
+                execute_typed(
+                    command,
+                    ECONOMIC_CALENDAR_REQUEST_SCHEMA,
+                    ECONOMIC_CALENDAR_RECORD_SCHEMA,
+                    "Jin10",
+                    maximum_payload_bytes,
+                    |request: &EconomicCalendarRequest| calendar.economic_calendar(request),
+                )
+            },
+        )?;
+    } else {
+        registry.register_diagnostic_handler(
+            blocked(
+                Operation::EconomicCalendar,
+                "Jin10",
+                "bounded diagnostic over economic releases in the latest public flash window",
+                "Jin10 ended its free calendar and API embedding service on 2025-12-01; the latest public flash window cannot prove a complete economic calendar",
+            ),
+            move |command| {
+                execute_typed(
+                    command,
+                    ECONOMIC_CALENDAR_REQUEST_SCHEMA,
+                    ECONOMIC_CALENDAR_RECORD_SCHEMA,
+                    "Jin10",
+                    maximum_payload_bytes,
+                    |request: &EconomicCalendarRequest| calendar.economic_calendar(request),
+                )
+            },
+        )?;
+    }
     registry.register_handler(
         admitted(
             Operation::GlobalNews,
@@ -3968,6 +4002,24 @@ where
     global_news_query_result(&batch, provider, expected_provider, maximum_payload_bytes)
 }
 
+fn execute_stcn_global_news(
+    command: QueryCommand,
+    client: &StcnClient,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: LimitRequest =
+        decode_request_version(&command, GLOBAL_NEWS_REQUEST_SCHEMA, NEWS_SCHEMA_VERSION)?;
+    let batch = client
+        .probe_global_news(request.limit)
+        .map_err(|error| provider_error(Operation::GlobalNews, error))?;
+    global_news_query_result(
+        &batch,
+        "SecuritiesTimes",
+        ProviderId::SecuritiesTimes,
+        maximum_payload_bytes,
+    )
+}
+
 fn execute_instrument_news(
     command: QueryCommand,
     client: &SinaClient,
@@ -4742,6 +4794,10 @@ fn map_hithink_error(operation: Operation, error: &HithinkError) -> ServiceError
             };
             (kind, format!("code={code} request_id={request_id}"))
         }
+        HithinkError::NotReady { request_id } => (
+            ProviderFailureKind::Unavailable,
+            format!("category=not_ready request_id={request_id}"),
+        ),
         HithinkError::Transport(_) => (
             ProviderFailureKind::Unavailable,
             "category=transport".into(),
@@ -5513,13 +5569,13 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 60);
+        assert_eq!(admitted.len(), 59);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
             .filter(|operation| !admitted.contains(operation))
             .collect::<Vec<_>>();
-        assert!(blocked.is_empty());
+        assert_eq!(blocked, vec![Operation::EconomicCalendar]);
         let t0 = capabilities
             .iter()
             .find(|capability| capability.operation == Operation::T0Evidence)
@@ -5544,6 +5600,7 @@ mod tests {
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
         assert!(diagnostic.contains(&Operation::HistoricalBars));
+        assert!(diagnostic.contains(&Operation::EconomicCalendar));
         for operation in [
             Operation::Auctions,
             Operation::FuturesDelivery,
@@ -5564,7 +5621,6 @@ mod tests {
             (Operation::GlobalNews, "ThePaper"),
             (Operation::GlobalNews, "XinhuaFinance"),
             (Operation::GlobalNews, "Yicai"),
-            (Operation::GlobalNews, "SecuritiesTimes"),
             (Operation::GlobalNews, "Yonhap"),
             (Operation::EconomicSeries, "Nbs"),
             (Operation::EconomicSeries, "Pbc"),
@@ -5685,13 +5741,14 @@ mod tests {
             (Operation::MoneyFlows, "EmQuant", "Eastmoney"),
             (Operation::OrderBooks, "EmQuant", "Tencent"),
             (Operation::RealtimeQuotes, "EmQuant", "Tencent"),
+            (Operation::GlobalNews, "SecuritiesTimes", "Cls"),
         ];
         assert_eq!(
             capabilities
                 .iter()
                 .filter(|capability| !capability.repository_admitted)
                 .count(),
-            unadmitted_with_operation_route.len()
+            unadmitted_with_operation_route.len() + 1
         );
         for (operation, provider, admitted_operation_provider) in unadmitted_with_operation_route {
             assert!(
@@ -5713,6 +5770,48 @@ mod tests {
                 operation.as_str()
             );
         }
+    }
+
+    #[test]
+    fn jin10_economic_calendar_is_diagnostic_after_public_calendar_retirement() {
+        let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
+        let calendar = registry
+            .capabilities()
+            .into_iter()
+            .find(|capability| {
+                capability.operation == Operation::EconomicCalendar
+                    && capability.provider == "Jin10"
+            })
+            .unwrap();
+
+        assert!(!calendar.repository_admitted);
+        assert!(!calendar.runtime_available);
+        assert!(calendar.diagnostic_available);
+        assert!(calendar
+            .blocker
+            .as_deref()
+            .is_some_and(|blocker| blocker.contains("2025-12-01")));
+    }
+
+    #[test]
+    fn securities_times_global_news_is_diagnostic_after_source_contract_drift() {
+        let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
+        let news = registry
+            .capabilities()
+            .into_iter()
+            .find(|capability| {
+                capability.operation == Operation::GlobalNews
+                    && capability.provider == "SecuritiesTimes"
+            })
+            .unwrap();
+
+        assert!(!news.repository_admitted);
+        assert!(!news.runtime_available);
+        assert!(news.diagnostic_available);
+        assert!(news
+            .blocker
+            .as_deref()
+            .is_some_and(|blocker| blocker.contains("source")));
     }
 
     #[test]
@@ -6018,6 +6117,19 @@ mod tests {
                 provider_reason,
                 ..
             } if provider_reason == "code=2003 request_id=hithink-auth"
+        ));
+        assert!(matches!(
+            provider_error(
+                Operation::Auctions,
+                HithinkError::NotReady {
+                    request_id: "hithink-not-ready".into()
+                }
+            ),
+            ServiceError::ProviderFailure {
+                kind: ProviderFailureKind::Unavailable,
+                provider_reason,
+                ..
+            } if provider_reason == "category=not_ready request_id=hithink-not-ready"
         ));
         assert!(matches!(
             provider_error(
