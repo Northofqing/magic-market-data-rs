@@ -111,6 +111,23 @@ fn source_bar() -> SecurityBar {
     }
 }
 
+fn source_intraday_bar(hour: u32, minute: u32) -> SecurityBar {
+    SecurityBar {
+        open: 10.0,
+        close: 11.0,
+        high: 12.0,
+        low: 9.0,
+        vol: 100.0,
+        amount: 1_000.0,
+        year: 2026,
+        month: 8,
+        day: 24,
+        hour,
+        minute,
+        datetime: format!("2026-08-24 {hour:02}:{minute:02}"),
+    }
+}
+
 fn indexed_daily_bar(index: usize) -> SecurityBar {
     let year = 2020 + index / (12 * 28);
     let month = 1 + (index / 28) % 12;
@@ -395,6 +412,68 @@ fn blocking_bar_seam_uses_decoded_records_and_exact_request_parameters() {
     assert_eq!(batch.records().len(), 5);
     assert_eq!(batch.provenance().source(), "tdx");
     assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+}
+
+#[test]
+fn blocking_intraday_bars_replace_one_bounded_future_placeholder_with_older_source_row() {
+    let query = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(vec![
+                source_intraday_bar(11, 25),
+                source_intraday_bar(13, 0),
+            ]),
+            Ok(vec![source_intraday_bar(11, 20)]),
+        ])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Minute5, 2).unwrap();
+
+    let batch = historical_bars_with_observed_at(
+        &query,
+        "tdx",
+        &request,
+        "1787543520", // 2026-08-24 11:52:00 +08:00
+    )
+    .unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![
+            (KLINE_5MIN, 1, "600396".into(), 0, 2, 0),
+            (KLINE_5MIN, 1, "600396".into(), 2, 1, 0),
+        ]
+    );
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.records()[0].bar_start(), "2026-08-24 11:20:00");
+    assert_eq!(batch.records()[1].bar_start(), "2026-08-24 11:25:00");
+    assert_eq!(batch.provenance().source_at(), Some("2026-08-24 11:25"));
+    assert_eq!(batch.provenance().fetched_at(), "1787543520");
+}
+
+#[test]
+fn blocking_intraday_bars_reject_unbounded_future_source_row_without_projection() {
+    let mut corrupt = source_intraday_bar(13, 0);
+    corrupt.year = 2099;
+    corrupt.datetime = "2099-08-24 13:00".into();
+    let query = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([Ok(vec![corrupt])])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Minute5, 1).unwrap();
+
+    let failure = historical_bars_with_observed_at(
+        &query,
+        "tdx",
+        &request,
+        "1787543520", // 2026-08-24 11:52:00 +08:00
+    );
+
+    assert!(matches!(
+        failure,
+        Err(TdxError::InvalidData(message))
+            if message.contains("outside the bounded current intraday placeholder contract")
+    ));
+    assert_eq!(query.calls.borrow().len(), 1);
 }
 
 #[test]
@@ -889,6 +968,37 @@ async fn async_bar_seam_uses_decoded_records_and_exact_source_label() {
     );
     assert_eq!(batch.provenance().source(), "tdx-async");
     assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+}
+
+#[tokio::test]
+async fn async_intraday_bars_replace_one_bounded_future_placeholder_atomically() {
+    let query = ScriptedAsyncBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(vec![
+                source_intraday_bar(11, 25),
+                source_intraday_bar(13, 0),
+            ]),
+            Ok(vec![source_intraday_bar(11, 20)]),
+        ])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Minute5, 2).unwrap();
+
+    let batch = historical_bars_async_with_observed_at(&query, "tdx-async", &request, "1787543520")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![
+            (KLINE_5MIN, 1, "600396".into(), 0, 2, 0),
+            (KLINE_5MIN, 1, "600396".into(), 2, 1, 0),
+        ]
+    );
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.records()[0].bar_start(), "2026-08-24 11:20:00");
+    assert_eq!(batch.records()[1].bar_start(), "2026-08-24 11:25:00");
+    assert_eq!(batch.provenance().source(), "tdx-async");
 }
 
 #[tokio::test]

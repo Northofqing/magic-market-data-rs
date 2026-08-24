@@ -472,9 +472,10 @@ fn server_row_cap_and_sequential_client_pacing_are_enforced() {
     client
         .technical_bars(&request(1))
         .expect("first fixture request");
-    let second_started = Instant::now();
     client
         .technical_bars(&request(1))
         .expect("second fixture request");
-    assert!(second_started.elapsed() >= interval);
+    let snapshot = client.load_probe_snapshot().expect("probe snapshot");
+    assert_eq!(snapshot.request_starts(), 2);
+    assert!(snapshot.minimum_start_gap().expect("two request starts") >= interval);
 }

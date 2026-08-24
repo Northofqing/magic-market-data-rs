@@ -1,6 +1,6 @@
 param(
     [string]$Destination = "target/runtime/client-bundle",
-    [string]$BundleVersion = "2026-08-22.2",
+    [string]$BundleVersion = "2026-08-24.2",
     [string]$SourceCommit = ""
 )
 
@@ -34,7 +34,9 @@ if ($SourceCommit -notmatch '^[0-9a-f]{7,40}$') {
 $publicFiles = @(
     @("market.proto", "crates/magic-market-grpc-contracts/proto/magic/market/v1/market.proto"),
     @("grpc-external-api.md", "docs/integrations/grpc-external-api.md"),
-    @("grpc-derived-products.md", "docs/integrations/grpc-derived-products.md")
+    @("grpc-derived-products.md", "docs/integrations/grpc-derived-products.md"),
+    @("tdx-public-security-profile.md", "docs/integrations/tdx-public-security-profile.md"),
+    @("unadmitted-provider-routes.md", "docs/integrations/unadmitted-provider-routes.md")
 )
 
 $null = [System.IO.Directory]::CreateDirectory($destinationPath)
@@ -44,6 +46,37 @@ foreach ($entry in $publicFiles) {
         [System.IO.Path]::Combine($destinationPath, $entry[0]),
         $true
     )
+}
+
+$destinationRoot = [System.IO.Path]::GetFullPath($destinationPath)
+$destinationPrefix = $destinationRoot.TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar
+) + [System.IO.Path]::DirectorySeparatorChar
+foreach ($entry in $publicFiles) {
+    if (-not $entry[0].EndsWith(".md", [System.StringComparison]::OrdinalIgnoreCase)) {
+        continue
+    }
+    $documentPath = [System.IO.Path]::Combine($destinationRoot, $entry[0])
+    $document = [System.IO.File]::ReadAllText($documentPath)
+    foreach ($match in [regex]::Matches(
+        $document,
+        '\]\((?<target>[^):#?]+\.md)(?:#[^)]*)?\)'
+    )) {
+        $target = $match.Groups['target'].Value.Replace(
+            '/',
+            [System.IO.Path]::DirectorySeparatorChar
+        )
+        $resolved = [System.IO.Path]::GetFullPath(
+            [System.IO.Path]::Combine($destinationRoot, $target)
+        )
+        if (-not $resolved.StartsWith(
+            $destinationPrefix,
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -or -not [System.IO.File]::Exists($resolved)) {
+            throw "$($entry[0]) links to missing bundle document $target"
+        }
+    }
 }
 
 $proto = [System.IO.File]::ReadAllText(
@@ -108,6 +141,8 @@ $manifestFiles = @(
     "market.proto",
     "grpc-external-api.md",
     "grpc-derived-products.md",
+    "tdx-public-security-profile.md",
+    "unadmitted-provider-routes.md",
     "bundle-metadata.json",
     "README.md"
 )

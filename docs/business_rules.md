@@ -198,6 +198,19 @@ amount is preserved in CNY yuan, and every record must carry
 `ProviderId::Tdx`, the exact source timestamp and the same non-empty batch
 identity as batch provenance.
 
+TDX may expose one newest in-progress intraday K-line row whose source label is
+later than the local observation, including the morning-close placeholder
+labelled `13:00`. The normalized operation may exclude that row and fetch one
+additional older row only when the candidate is the sole newest future row, is
+on the same Asia/Shanghai calendar date, uses a valid A-share session label,
+and is no farther ahead than the lunch break plus one requested interval. The
+discarded row must still pass timestamp and numeric structure validation. The
+replacement remains an exact older TDX source row; it is never synthesized,
+retimed or copied from another Provider. Multiple, unordered, cross-date,
+out-of-session or farther-future rows reject the complete request. Blocking,
+Smart, Direct and async normalized paths share this rule and still return the
+exact caller cardinality in source order.
+
 ## BR-023 TDX normalized current-session admission
 Raw TDX current-minute and current-transaction packets are diagnostic evidence
 only until the normalized provider or gateway verifies an active A-share
@@ -239,9 +252,13 @@ at most five official AllNewsStock HTTPS page URLs from the exact
 exchange-prefixed symbol and never follows a page-supplied URL. Every page must
 repeat that exact symbol in its server-rendered `page_symbol`, contain the
 requested page marker, use the verified GBK-family HTML MIME, and expose a
-non-empty company-news `datelist`. Records remain in source newest-first order;
-start/end filtering is an inclusive source-date filter and limit is applied
-only after validation and deduplication. Canonical URL is the business
+non-empty company-news `datelist`. Every page remains source newest-first. Sina
+may repeat an overlapping time window at a page boundary; the newest and oldest
+extrema of successive page windows must still be non-increasing. Valid overlap
+is deduplicated and stably sorted by original publication time before the
+inclusive start/end filter and limit are finalized. Pagination may stop for a
+limit only after the current page's newest timestamp proves that no later page
+can outrank the retained limit. Canonical URL is the business
 identity: fully equivalent duplicates are stably collapsed to the first source
 occurrence, while title or published-time conflicts fail the atomic batch.
 Equivalent duplicate comparison uses source facts only; different local
@@ -347,6 +364,10 @@ tagged with an opaque pool generation; a guard from a generation invalidated
 by `close_all` is closed and removed, never reinserted. Failed connect or
 handshake attempts must release their pre-I/O reservation. Pool counter
 transitions are checked so guard destruction cannot panic or poison the mutex.
+A send, response-header, response-body, or decompression failure invalidates
+the borrowed connection, marks the client disconnected, and rotates the next
+bounded retry to a different eligible TDX endpoint. A failed transport must
+never return to the idle pool or cause all retries to replay on the same node.
 The observable steady-state invariant is `total == idle + active`.
 
 ## BR-012 Public financial-news access boundary

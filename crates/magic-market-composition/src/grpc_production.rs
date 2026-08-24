@@ -4953,6 +4953,9 @@ fn map_tdx_error(operation: Operation, error: &TdxError) -> ServiceError {
         | TdxError::SetupFailed(_)
         | TdxError::Disconnected
         | TdxError::RetryExhausted(_) => unavailable(operation, error),
+        TdxError::Coded(coded) if (2001..=2006).contains(&coded.code.code()) => {
+            unavailable(operation, error)
+        }
         TdxError::Unsupported(reason) => unsupported(operation, reason),
         _ => precondition(error),
     }
@@ -6046,6 +6049,25 @@ mod tests {
             )),
             Err(ServiceError::InvalidRequest(_))
         ));
+    }
+
+    #[test]
+    fn coded_tdx_connectivity_errors_are_retryable_provider_outages() {
+        for value in 2001..=2006 {
+            let error = magic_tdx_rs::error_codes::ErrorCode::from_code(value)
+                .unwrap()
+                .err("transport fixture");
+            assert!(
+                matches!(
+                    map_tdx_error(Operation::SecurityProfiles, &error),
+                    ServiceError::Unavailable {
+                        operation: Operation::SecurityProfiles,
+                        ..
+                    }
+                ),
+                "TDX connectivity error E{value} must remain retryable"
+            );
+        }
     }
 
     #[test]

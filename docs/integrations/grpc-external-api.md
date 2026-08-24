@@ -489,7 +489,7 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - `preferred_provider` 非空时必须精确选择已登记来源；空值选择该操作第一个可用登记。
   当前不会在一次请求内部隐藏切源，上游失败会原样形成 typed gRPC error，调用方可根据
   capabilities 和业务路由策略发起有界重试；
-- 当前 8 条未准入 Provider×operation 路径及可显式选择的准入 operation 路由见
+- 当前 10 条未准入 Provider×operation 路径及可显式选择的准入 operation 路由见
   [`unadmitted-provider-routes.md`](unadmitted-provider-routes.md)。这些路由只表示相同
   operation 下的独立来源，不表示数据集或 Provider 等价；例如 NBS/PBC/WorldBank
   不能重标为 IMF，Hithink 竞价快照也不能用其它响应的日期补齐；
@@ -753,6 +753,18 @@ protobuf wire 字段，精确来源提交写入同一 bundle 的 `bundle-metadat
 并新增财务三表、公司行动和证券元数据；同时增加 provider-specific 当前最终集合竞价诊断，
 不伪造交易日、`source_at` 或未匹配方向。该版本还修正财务 `data.timestamp` 与逐条发布日期
 证据、指数 provider-native ticker 及炸板 `open_times=null` 语义，protobuf wire 字段仍未变化。
+`2026-08-24.2` 同步当前 10 条未准入 Provider×operation 注册，保留 Jin10 日历与证券时报
+新闻的显式 fail-closed 诊断，并把 TDX E2001..E2006 连接类错误稳定分类为可重试的
+`provider_unavailable`。同版还允许 Sina InstrumentNews 的合法跨页时间窗口重叠：逐页端点仍须
+单调不前移，合并结果在 cutoff 前按原始发布时间稳定排序；冲突重复或窗口整体前移仍整批
+拒绝。TDX 失败连接会从池中移除，同一请求的重试不会重复选择已经失败的公共节点。
+TDX 日内 K 线还会排除上游唯一、最新、同日且受限的未完成占位行
+（包括午休前出现的 `13:00` 标签），并从同一 TDX 源补取一条更早的真实完成 K 线；不会
+重写时间，也不会容忍多条、跨日、越界或无效未来行。Eastmoney 滚动财经页返回的官方
+`fund.eastmoney.com/a/<纯数字>.html` 元数据已加入精确 allowlist，仍不抓取文章正文，也不
+接受任意其它子域或后缀伪装。bundle 同时收录本文直接引用的 TDX
+SecurityProfiles 与未准入路由合同，所有文件由同一 LF `manifest.sha256` 覆盖；protobuf wire
+字段仍未变化。
 
 ## 12. 客户端代码生成
 
@@ -799,10 +811,12 @@ Go 项目正式接入前可在自己的 Proto 镜像中补 `go_package` 映射�
 
 ## 14. 服务端发布时需要交付给对接方
 
-发布者使用 `tools/docs/build_client_bundle.ps1` 从同一工作树复制 `market.proto`、本文和
-`grpc-derived-products.md`。脚本拒绝 MarketDataService RPC 数不是 60 的 proto，并生成
-`bundle-metadata.json` 与 `manifest.sha256`；对接方必须同时校验 bundle version、source
-commit 和文件摘要，不能混用不同提交的“最新版”文件。
+发布者使用 `tools/docs/build_client_bundle.ps1` 从同一工作树复制 `market.proto`、本文、
+`grpc-derived-products.md`、`tdx-public-security-profile.md` 和
+`unadmitted-provider-routes.md`。脚本拒绝 MarketDataService RPC 数不是 60 的 proto、拒绝
+bundle 内任一 Markdown 相对链接缺失，并生成 `bundle-metadata.json` 与
+`manifest.sha256`；对接方必须同时校验 bundle version、source commit 和文件摘要，不能
+混用不同提交的“最新版”文件。
 
 1. `market.proto` 和 descriptor set 摘要；
 2. 服务地址、TLS CA、认证材料；

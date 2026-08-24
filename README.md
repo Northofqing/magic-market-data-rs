@@ -35,7 +35,7 @@
 
 精确到数据族和 Provider 的当前状态以
 [准入注册表](docs/integrations/admissions.tsv) 为准；gRPC 请求与响应见
-[外部对接文档](docs/integrations/grpc-external-api.md)。当前 8 条未准入
+[外部对接文档](docs/integrations/grpc-external-api.md)。当前 10 条未准入
 Provider×operation 路径、已发现的官方接口及显式替代范围见
 [未准入路径与显式替代矩阵](docs/integrations/unadmitted-provider-routes.md)。
 
@@ -52,11 +52,11 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前对接合同交付基线为 client-bundle `2026-08-22.2`，发布 tag
-`grpc-hithink-emquant-2026-08-22.2`。该版本扩展官方 HITHINK 扶摇为七项生产 operation
-（含指数/ETF 日线、财务三表、公司行动和元数据），另实现一项必须显式 opt-in 的当前
-最终集合竞价诊断，并保留 EMQuant 正式日线，不改变
-protobuf wire 字段；完整逐条 evidence、空批次和失败分类合同以
+当前对接合同交付基线为 client-bundle `2026-08-24.2`，发布 tag
+`grpc-provider-readiness-2026-08-24.2`。该版本保留官方 HITHINK 扶摇七项生产 operation
+和 EMQuant 正式日线，修正新闻 Provider 准入、TDX 连接类错误分类及未准入路径清单，
+并把外部文档直接引用的合同文件全部纳入同一 checksum manifest；不改变 protobuf wire
+字段。完整逐条 evidence、空批次和失败分类合同以
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用
 LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle 内

@@ -40,12 +40,13 @@ emappdata.eastmoney.com
 pdf.dfcfw.com
 roll.eastmoney.com
 stock.eastmoney.com
+fund.eastmoney.com
 futures.eastmoney.com
 bond.eastmoney.com
 hk.eastmoney.com
 ```
 
-`stock.eastmoney.com`、`futures.eastmoney.com`、`bond.eastmoney.com` 与
+`stock.eastmoney.com`、`fund.eastmoney.com`、`futures.eastmoney.com`、`bond.eastmoney.com` 与
 `hk.eastmoney.com` 仅允许作为
 滚动页返回记录的精确 canonical URL 元数据；适配器
 不会向该主机发起第二次请求，也没有新增 Provider-local HTTP/TLS 依赖。
@@ -59,7 +60,7 @@ hk.eastmoney.com
 带 UTF-8 charset 的 `text/html` 且不超过 2 MiB。完整 `#artList` 中每条都必须为
 `财经` 分类、分钟时间倒序、标题内外一致，并使用
 `finance.eastmoney.com`、`global.eastmoney.com`、`biz.eastmoney.com`、
-`stock.eastmoney.com`、`futures.eastmoney.com`、`bond.eastmoney.com` 或
+`stock.eastmoney.com`、`fund.eastmoney.com`、`futures.eastmoney.com`、`bond.eastmoney.com` 或
 `hk.eastmoney.com` 上的
 `/a/<纯数字 ID>.html`。这些地址只作为来源元数据保存，不会抓取文章正文。页面没有证券身份，故
 `NewsItem::instruments` 为空，不得转成个股新闻。
@@ -73,7 +74,7 @@ typed error。
 
 GlobalNews 的 `published_at` 规范化为 RFC3339，逐条 evidence 和批次首条时间保留
 Provider 原始 `YYYY-MM-DD HH:MM`。曾导致持续 `invalid_evidence` 的真实漂移是官方
-滚动页开始依次返回 `stock.eastmoney.com`、`futures.eastmoney.com`、
+滚动页开始依次返回 `stock.eastmoney.com`、`fund.eastmoney.com`、`futures.eastmoney.com`、
 `bond.eastmoney.com` 和 `hk.eastmoney.com` 文章元数据；当前只对这些精确 HTTPS 主机和既有纯数字文章路径
 放行，不借用其他新闻源补齐。
 

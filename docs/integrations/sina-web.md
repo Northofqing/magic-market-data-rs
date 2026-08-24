@@ -176,9 +176,12 @@ Sina host、无凭据和显式端口后，把 scheme 改为 `https`，host/path/
 保持不变。规范化后的 HTTPS URL 是业务身份；来源标题或发布时间冲突使整批失败。
 页面请求的本地观测时间不参与重复来源事实比较。
 
-日期范围按来源日期闭区间过滤，limit 在验证和去重后应用。有效非空来源页经范围过滤
-后可以形成 complete 的零记录批次；provenance 仍保留页面观测时间、batch ID 和本次
-读取到的最新来源记录时间。缺失/空 `datelist` 则是协议失败，不是 verified-empty。
+日期范围按来源日期闭区间过滤，limit 在验证、跨页去重和稳定时间排序后应用。新浪可能
+在分页边界重复一个时间窗口；每一页内部仍须从新到旧，后续页的 newest/oldest 窗口端点
+都不得向前移动。只有当前页 newest 已低于保留 limit 的时间水位后才允许因 limit 停止，
+因此不会把跨页重叠误判为逆序，也不会遗漏能进入结果的较新记录。有效非空来源页经范围
+过滤后可以形成 complete 的零记录批次；provenance 仍保留页面观测时间、batch ID 和
+本次读取到的最新来源记录时间。缺失/空 `datelist` 则是协议失败，不是 verified-empty。
 gRPC InstrumentNews v2 会在验证该完整 Provider 批次后再应用调用方精确
 `captured_through`。若截止过滤后为空，响应保持 ADMITTED/complete，保留上游 batch ID
 与 observed_at，但不携带 batch source_at，因为响应内不存在可作为“最新记录”的记录；

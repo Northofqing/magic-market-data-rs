@@ -4,7 +4,8 @@
 
 `magic-tdx-rs::TdxSecurityProfileProvider` admits only one to eight unique
 Shanghai or Shenzhen equities. It combines two existing public TDX protocol
-families on the same verified endpoint:
+families on one selected endpoint from the verified public TDX pool per
+attempt:
 
 - normalized security metadata supplies exact identity, source name and the
   optional finance-backed listing date;
@@ -58,6 +59,12 @@ MAGIC_TDX_SECURITY_PROFILE_REQUESTS=3 \
 This admission does not cover Beijing, arbitrary F10 sections, inferred
 fundamentals, realtime freshness or a redistribution right beyond the
 deployment operator's use of the public protocol.
+
+Transport failures discard the borrowed TCP connection and clear connected
+state before retry. Each bounded retry rotates away from the failed endpoint;
+it does not put the failed socket back into the pool or reconnect all attempts
+to the same node. Provider identity and record evidence remain `Tdx` across
+endpoint failover.
 
 ## Release gRPC verification
 

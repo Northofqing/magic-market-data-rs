@@ -150,6 +150,14 @@ non-empty `input_evidence`, `algorithm_id=magic.t0_evidence`, positive
 refer to the same instrument and one bounded capture; mixed Provider data is
 rejected.
 
+The five-minute input contains the requested number of completed, oldest-to-
+newest TDX source rows. If TDX includes its single bounded newest in-progress
+placeholder (for example a `13:00` source label during the lunch break), the
+Provider adapter excludes that row and obtains one additional older row from
+the same TDX request sequence. It preserves every returned source timestamp and
+never substitutes `observed_at`. Multiple, cross-date, out-of-session or
+unbounded future rows fail the whole product as invalid Provider evidence.
+
 The formal handler performs the four TDX reads without fallback or
 `allow_unadmitted`. Two live requests and a separate three-request serial run on
 2026-08-17 for 600396.SH each returned one Quote, one five-level book, 20 daily

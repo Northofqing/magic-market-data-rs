@@ -315,6 +315,111 @@ fn range_filter_and_limit_run_after_stable_cross_page_deduplication() {
 }
 
 #[test]
+fn overlapping_page_windows_are_merged_and_stably_sorted_before_limit() {
+    let one = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";
+    let two = "https://finance.sina.com.cn/roll/2026-07-24/doc-two.shtml";
+    let three = "https://finance.sina.com.cn/roll/2026-07-24/doc-three.shtml";
+    let four = "https://finance.sina.com.cn/roll/2026-07-24/doc-four.shtml";
+    let transport = FixtureTransport::new(HashMap::from([
+        (
+            url(1),
+            response(page(
+                "sh600396",
+                1,
+                &[
+                    row("2026-07-24 22:35", one, "一"),
+                    row("2026-07-24 22:30", three, "三"),
+                ],
+                true,
+            )),
+        ),
+        (
+            url(2),
+            response_at(
+                page(
+                    "sh600396",
+                    2,
+                    &[
+                        row("2026-07-24 22:34", two, "二"),
+                        row("2026-07-24 22:29", four, "四"),
+                    ],
+                    false,
+                ),
+                OBSERVED_UNIX + 1,
+            ),
+        ),
+    ]));
+    let client = SinaClient::with_transport(transport.clone());
+
+    let batch = client.instrument_news(&request(3)).unwrap();
+
+    assert_eq!(transport.requested(), vec![url(1), url(2)]);
+    assert_eq!(
+        batch
+            .records()
+            .iter()
+            .map(|record| record.canonical_url.as_str())
+            .collect::<Vec<_>>(),
+        vec![one, two, three]
+    );
+}
+
+#[test]
+fn later_page_window_extrema_cannot_move_forward() {
+    let first = &[
+        row(
+            "2026-07-24 22:35",
+            "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml",
+            "一",
+        ),
+        row(
+            "2026-07-24 22:30",
+            "https://finance.sina.com.cn/roll/2026-07-24/doc-two.shtml",
+            "二",
+        ),
+    ];
+    let invalid_pages = [
+        vec![
+            row(
+                "2026-07-24 22:36",
+                "https://finance.sina.com.cn/roll/2026-07-24/doc-three.shtml",
+                "三",
+            ),
+            row(
+                "2026-07-24 22:29",
+                "https://finance.sina.com.cn/roll/2026-07-24/doc-four.shtml",
+                "四",
+            ),
+        ],
+        vec![
+            row(
+                "2026-07-24 22:34",
+                "https://finance.sina.com.cn/roll/2026-07-24/doc-five.shtml",
+                "五",
+            ),
+            row(
+                "2026-07-24 22:31",
+                "https://finance.sina.com.cn/roll/2026-07-24/doc-six.shtml",
+                "六",
+            ),
+        ],
+    ];
+
+    for invalid in invalid_pages {
+        let client = SinaClient::with_transport(FixtureTransport::new(HashMap::from([
+            (url(1), response(page("sh600396", 1, first, true))),
+            (url(2), response(page("sh600396", 2, &invalid, false))),
+        ])));
+
+        assert!(matches!(
+            client.instrument_news(&request(3)),
+            Err(SinaError::Protocol(message))
+                if message.contains("news page window increased across pages")
+        ));
+    }
+}
+
+#[test]
 fn valid_filtered_empty_is_complete_but_malformed_empty_page_fails() {
     let canonical = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";
     let valid_client = SinaClient::with_transport(FixtureTransport::new(HashMap::from([(

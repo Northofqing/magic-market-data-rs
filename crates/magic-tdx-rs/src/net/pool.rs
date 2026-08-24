@@ -244,6 +244,12 @@ impl ConnectionPool {
         }
     }
 
+    fn discard_connection(&self, mut pooled: PooledConnection) {
+        let mut inner = crate::sync::lock_recover(&self.inner, "connection pool");
+        Self::settle_return_state(&mut inner, &pooled.generation, false, self.config.max_size);
+        pooled.conn.close();
+    }
+
     fn settle_return_state(
         inner: &mut PoolInner,
         returned_generation: &Arc<()>,
@@ -318,6 +324,13 @@ impl<'a> PooledConnGuard<'a> {
     /// 获取服务器信息
     pub fn server(&self) -> &(String, u16) {
         &self.conn.as_ref().unwrap().server
+    }
+
+    /// Prevents a failed transport from being returned to the idle pool.
+    pub(crate) fn discard(&mut self) {
+        if let Some(pooled) = self.conn.take() {
+            self.pool.discard_connection(pooled);
+        }
     }
 }
 

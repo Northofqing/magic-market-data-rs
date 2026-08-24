@@ -294,6 +294,7 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
             | "global.eastmoney.com"
             | "biz.eastmoney.com"
             | "stock.eastmoney.com"
+            | "fund.eastmoney.com"
             | "futures.eastmoney.com"
             | "bond.eastmoney.com"
             | "hk.eastmoney.com"

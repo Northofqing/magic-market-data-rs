@@ -185,10 +185,126 @@ fn normalized_bar_time(
     Ok((expected_source_at, bar_time, source_epoch))
 }
 
+fn intraday_interval_seconds(interval: BarInterval) -> Option<i64> {
+    match interval {
+        BarInterval::Minute1 => Some(60),
+        BarInterval::Minute5 => Some(5 * 60),
+        BarInterval::Minute15 => Some(15 * 60),
+        BarInterval::Minute30 => Some(30 * 60),
+        BarInterval::Hour1 => Some(60 * 60),
+        BarInterval::Day | BarInterval::Week | BarInterval::Month | BarInterval::Year => None,
+    }
+}
+
+fn validate_discarded_intraday_placeholder(
+    request: &BarsRequest,
+    record: &SecurityBar,
+    bar_time: &str,
+    source_at: &str,
+) -> Result<(), TdxError> {
+    if !record.amount.is_finite() || record.amount < 0.0 {
+        return Err(TdxError::InvalidData(format!(
+            "TDX bar amount is invalid at {source_at}"
+        )));
+    }
+    if record.vol > 0.0 && record.amount == 0.0 {
+        return Err(TdxError::InvalidData(format!(
+            "TDX bar has positive volume with zero amount at {source_at}"
+        )));
+    }
+    Bar::new(
+        request.instrument().clone(),
+        request.interval(),
+        bar_time,
+        bar_time,
+        Price::new(record.open)?,
+        Price::new(record.high)?,
+        Price::new(record.low)?,
+        Price::new(record.close)?,
+        Quantity::new(record.vol / SHARES_PER_LOT)?,
+        Some(Money::new(record.amount)?),
+        Adjustment::Unadjusted,
+        ProviderId::Tdx,
+        "tdx-intraday-placeholder-validation",
+    )?;
+    Ok(())
+}
+
+fn has_bounded_future_intraday_placeholder(
+    request: &BarsRequest,
+    records: &[SecurityBar],
+    observed_at: &str,
+) -> Result<bool, TdxError> {
+    let Some(interval_seconds) = intraday_interval_seconds(request.interval()) else {
+        return Ok(false);
+    };
+    let observed_epoch = observed_at.parse::<i64>().map_err(|error| {
+        TdxError::InvalidData(format!("invalid TDX observation timestamp: {error}"))
+    })?;
+    let mut future = None;
+    for (index, record) in records.iter().enumerate() {
+        let (source_at, bar_time, source_epoch) = normalized_bar_time(request.interval(), record)?;
+        if source_epoch <= observed_epoch {
+            continue;
+        }
+        if future
+            .replace((index, source_at, bar_time, source_epoch))
+            .is_some()
+        {
+            return Err(TdxError::InvalidData(
+                "TDX intraday bars contain more than one future source row".into(),
+            ));
+        }
+    }
+    let Some((index, source_at, bar_time, source_epoch)) = future else {
+        return Ok(false);
+    };
+    if index + 1 != records.len() {
+        return Err(TdxError::InvalidData(format!(
+            "TDX future intraday row {source_at} is not the newest source row"
+        )));
+    }
+
+    const CHINA_OFFSET_SECONDS: i64 = 8 * 60 * 60;
+    const SECONDS_PER_DAY: i64 = 24 * 60 * 60;
+    let observed_china = observed_epoch
+        .checked_add(CHINA_OFFSET_SECONDS)
+        .ok_or_else(|| TdxError::InvalidData("TDX observation timestamp overflow".into()))?;
+    let source_china = source_epoch
+        .checked_add(CHINA_OFFSET_SECONDS)
+        .ok_or_else(|| TdxError::InvalidData("TDX bar timestamp overflow".into()))?;
+    let source_day_seconds = source_china.rem_euclid(SECONDS_PER_DAY);
+    let valid_session_label = (9 * 3_600 + 30 * 60..=11 * 3_600 + 30 * 60)
+        .contains(&source_day_seconds)
+        || (13 * 3_600..=15 * 3_600).contains(&source_day_seconds);
+    let maximum_forward_seconds = 90 * 60 + interval_seconds;
+    if observed_china.div_euclid(SECONDS_PER_DAY) != source_china.div_euclid(SECONDS_PER_DAY)
+        || !valid_session_label
+        || source_epoch - observed_epoch > maximum_forward_seconds
+    {
+        return Err(TdxError::InvalidData(format!(
+            "TDX bar source time {source_at} is newer than observation {observed_at} outside the bounded current intraday placeholder contract"
+        )));
+    }
+    validate_discarded_intraday_placeholder(request, &records[index], &bar_time, &source_at)?;
+    Ok(true)
+}
+
+#[cfg(test)]
 pub(crate) fn normalize_bars(
     source: &str,
     request: &BarsRequest,
     records: Vec<SecurityBar>,
+) -> Result<DataBatch<Bar>, TdxError> {
+    let observed_at = fetched_at()?;
+    normalize_bars_at(source, request, records, &observed_at)
+}
+
+fn normalize_bars_at(
+    source: &str,
+    request: &BarsRequest,
+    records: Vec<SecurityBar>,
+    observed_at: &str,
 ) -> Result<DataBatch<Bar>, TdxError> {
     if records.len() != usize::from(request.limit()) {
         return Err(TdxError::HistoricalBarCardinality {
@@ -205,7 +321,6 @@ pub(crate) fn normalize_bars(
         )));
     }
 
-    let observed_at = fetched_at()?;
     let observed_epoch = observed_at.parse::<i64>().map_err(|error| {
         TdxError::InvalidData(format!("invalid TDX observation timestamp: {error}"))
     })?;
@@ -243,7 +358,7 @@ pub(crate) fn normalize_bars(
         .last()
         .map(|(source_at, _)| source_at.clone())
         .ok_or_else(|| TdxError::InvalidData("TDX bar batch has no source time".into()))?;
-    let provenance = magic_market_core::Provenance::new(source, observed_at.clone())?
+    let provenance = magic_market_core::Provenance::new(source, observed_at)?
         .with_source_at(latest_source_at)?;
     let batch_id = provenance
         .batch_id()
@@ -267,7 +382,7 @@ pub(crate) fn normalize_bars(
             batch_id.clone(),
         )?
         .with_source_at(source_at)?
-        .with_observed_at(&observed_at)?;
+        .with_observed_at(observed_at)?;
         normalized.push(bar);
     }
     Ok(DataBatch::strict(normalized, provenance))
@@ -725,6 +840,15 @@ fn historical_bars_with(
     source: &str,
     request: &BarsRequest,
 ) -> Result<DataBatch<Bar>, TdxError> {
+    historical_bars_with_clock(query, source, request, fetched_at)
+}
+
+fn historical_bars_with_clock(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &BarsRequest,
+    mut observe: impl FnMut() -> Result<String, TdxError>,
+) -> Result<DataBatch<Bar>, TdxError> {
     reject_unsupported_bar_range(request)?;
     let category = category(request.interval())?;
     let market = market(request.instrument())?;
@@ -740,14 +864,62 @@ fn historical_bars_with(
         )?;
         pagination.accept_page(page)?;
     }
-    let records = pagination.finish()?;
-    normalize_bars(source, request, records)
+    let mut records = pagination.finish()?;
+    let selection_observed_at = observe()?;
+    let replace_placeholder =
+        has_bounded_future_intraday_placeholder(request, &records, &selection_observed_at)?;
+    let observed_at = if replace_placeholder {
+        let mut older = query.security_bars(
+            category,
+            market,
+            request.instrument().code(),
+            u32::from(request.limit()),
+            1,
+            0,
+        )?;
+        if older.len() != 1 {
+            return Err(TdxError::HistoricalBarCardinality {
+                offset: u32::from(request.limit()),
+                actual: older.len(),
+                expected_page: 1,
+                requested_total: request.limit(),
+            });
+        }
+        records.pop().ok_or_else(|| {
+            TdxError::InvalidData("TDX intraday placeholder projection is empty".into())
+        })?;
+        older.append(&mut records);
+        records = older;
+        observe()?
+    } else {
+        selection_observed_at
+    };
+    normalize_bars_at(source, request, records, &observed_at)
+}
+
+#[cfg(test)]
+fn historical_bars_with_observed_at(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    request: &BarsRequest,
+    observed_at: &str,
+) -> Result<DataBatch<Bar>, TdxError> {
+    historical_bars_with_clock(query, source, request, || Ok(observed_at.to_owned()))
 }
 
 async fn historical_bars_async_with(
     query: &impl AsyncTdxQuery,
     source: &str,
     request: &BarsRequest,
+) -> Result<DataBatch<Bar>, TdxError> {
+    historical_bars_async_with_clock(query, source, request, fetched_at).await
+}
+
+async fn historical_bars_async_with_clock(
+    query: &impl AsyncTdxQuery,
+    source: &str,
+    request: &BarsRequest,
+    mut observe: impl FnMut() -> Result<String, TdxError>,
 ) -> Result<DataBatch<Bar>, TdxError> {
     reject_unsupported_bar_range(request)?;
     let category = category(request.interval())?;
@@ -766,8 +938,49 @@ async fn historical_bars_async_with(
             .await?;
         pagination.accept_page(page)?;
     }
-    let records = pagination.finish()?;
-    normalize_bars(source, request, records)
+    let mut records = pagination.finish()?;
+    let selection_observed_at = observe()?;
+    let replace_placeholder =
+        has_bounded_future_intraday_placeholder(request, &records, &selection_observed_at)?;
+    let observed_at = if replace_placeholder {
+        let mut older = query
+            .security_bars(
+                category,
+                market,
+                request.instrument().code(),
+                u32::from(request.limit()),
+                1,
+                0,
+            )
+            .await?;
+        if older.len() != 1 {
+            return Err(TdxError::HistoricalBarCardinality {
+                offset: u32::from(request.limit()),
+                actual: older.len(),
+                expected_page: 1,
+                requested_total: request.limit(),
+            });
+        }
+        records.pop().ok_or_else(|| {
+            TdxError::InvalidData("TDX intraday placeholder projection is empty".into())
+        })?;
+        older.append(&mut records);
+        records = older;
+        observe()?
+    } else {
+        selection_observed_at
+    };
+    normalize_bars_at(source, request, records, &observed_at)
+}
+
+#[cfg(test)]
+async fn historical_bars_async_with_observed_at(
+    query: &impl AsyncTdxQuery,
+    source: &str,
+    request: &BarsRequest,
+    observed_at: &str,
+) -> Result<DataBatch<Bar>, TdxError> {
+    historical_bars_async_with_clock(query, source, request, || Ok(observed_at.to_owned())).await
 }
 
 async fn realtime_quotes_async_with(

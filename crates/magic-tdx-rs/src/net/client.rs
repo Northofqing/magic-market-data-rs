@@ -550,11 +550,13 @@ impl TdxHqClient {
         // 限流
         limiter.wait();
 
+        let mut failed_servers = Vec::new();
+
         // 第一次尝试
         match self.try_send_and_recv(packet) {
             Ok(body) => return Ok(body),
             Err(e) if !self.auto_retry.load(Ordering::SeqCst) => return Err(e),
-            Err(_) => {}
+            Err(_) => self.remember_last_server(&mut failed_servers),
         }
 
         // 重试
@@ -568,13 +570,15 @@ impl TdxHqClient {
             );
             std::thread::sleep(Duration::from_secs_f64(interval));
 
-            // 尝试重连
-            self.reconnect_if_needed();
+            // The preceding request invalidated its transport. Rotate away
+            // from that endpoint instead of reconnecting to the same server
+            // and replaying every retry on an already-failing path.
+            self.reconnect_to_another_server(&failed_servers);
 
             // 重试请求
             match self.try_send_and_recv(packet) {
                 Ok(body) => return Ok(body),
-                Err(_) => continue,
+                Err(_) => self.remember_last_server(&mut failed_servers),
             }
         }
 
@@ -595,33 +599,48 @@ impl TdxHqClient {
         let pool = Arc::clone(&*sync::lock(&self.pool, "connection pool handle")?);
         let mut guard = pool.borrow(&server)?;
 
-        let conn = guard.conn();
+        let result = (|| {
+            let conn = guard.conn();
 
-        // Send
-        conn.send(packet)?;
+            // Send
+            conn.send(packet)?;
 
-        // Read response header
-        let head_buf = conn.recv(RSP_HEADER_LEN)?;
-        let header = ResponseHeader::parse(&head_buf)?;
+            // Read response header
+            let head_buf = conn.recv(RSP_HEADER_LEN)?;
+            let header = ResponseHeader::parse(&head_buf)?;
 
-        // Read body
-        let zip_size = header.zip_size as usize;
-        let mut body_buf = Vec::with_capacity(zip_size);
-        while body_buf.len() < zip_size {
-            let remaining = zip_size - body_buf.len();
-            let chunk = conn.recv(remaining)?;
-            body_buf.extend_from_slice(&chunk);
+            // Read body
+            let zip_size = header.zip_size as usize;
+            let mut body_buf = Vec::with_capacity(zip_size);
+            while body_buf.len() < zip_size {
+                let remaining = zip_size - body_buf.len();
+                let chunk = conn.recv(remaining)?;
+                body_buf.extend_from_slice(&chunk);
+            }
+
+            if body_buf.is_empty() {
+                return Err(ErrorCode::DISCONNECTED.err("empty response body"));
+            }
+
+            // Decompress if needed
+            if header.zip_size != header.unzip_size {
+                utils::decompress_zlib_exact(&body_buf, header.unzip_size)
+            } else {
+                Ok(body_buf)
+            }
+        })();
+        if result.is_err() {
+            guard.discard();
+            self.connected.store(false, Ordering::SeqCst);
         }
+        result
+    }
 
-        if body_buf.is_empty() {
-            return Err(ErrorCode::DISCONNECTED.err("empty response body"));
-        }
-
-        // Decompress if needed
-        if header.zip_size != header.unzip_size {
-            utils::decompress_zlib_exact(&body_buf, header.unzip_size)
-        } else {
-            Ok(body_buf)
+    fn remember_last_server(&self, failed_servers: &mut Vec<(String, u16)>) {
+        if let Some(server) = sync::lock_recover(&self.last_server, "last server").clone() {
+            if !failed_servers.contains(&server) {
+                failed_servers.push(server);
+            }
         }
     }
 
@@ -650,75 +669,6 @@ impl TdxHqClient {
     /// ```
     pub fn send_raw_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
         self.send_and_recv(packet)
-    }
-
-    /// 尝试重连
-    ///
-    /// 策略: 先试上次服务器 (可能临时故障已恢复)，失败则跳过它尝试替代服务器。
-    /// 心跳线程可能已经重连成功 (更新了 pool 和 connected)，此时直接返回。
-    fn reconnect_if_needed(&self) {
-        if self.connected.load(Ordering::SeqCst) {
-            return;
-        }
-
-        logw!("hq", "connection lost, attempting reconnect...");
-
-        let last = sync::lock_recover(&self.last_server, "last server").clone();
-
-        // 1) 先试上次服务器 (可能临时故障已恢复)
-        if let Some((ref ip, port)) = last {
-            if self
-                .connect_internal(ip, port, Some(CONNECT_TIMEOUT), false)
-                .is_ok()
-            {
-                return;
-            }
-        }
-
-        // 2) 跳过失败的服务器，尝试替代服务器
-        let skip = last.as_ref().map(|(ip, port)| (ip.as_str(), *port));
-
-        // 用户自定义列表
-        {
-            let list = sync::lock_recover(&self.server_list, "server list");
-            for (_, ip, port) in list.iter() {
-                if Some((ip.as_str(), *port)) == skip {
-                    continue;
-                }
-                if self
-                    .connect_internal(ip, *port, Some(CONNECT_TIMEOUT), false)
-                    .is_ok()
-                {
-                    return;
-                }
-            }
-        }
-        // PRIMARY (跳过失败的)
-        for &(_, ip, port) in PRIMARY_SERVERS {
-            if Some((ip, port)) == skip {
-                continue;
-            }
-            if self
-                .connect_internal(ip, port, Some(CONNECT_TIMEOUT), false)
-                .is_ok()
-            {
-                return;
-            }
-        }
-        // ALL_KNOWN (跳过失败的)
-        for &(_, ip, port) in ALL_KNOWN_SERVERS {
-            if Some((ip, port)) == skip {
-                continue;
-            }
-            if self
-                .connect_internal(ip, port, Some(CONNECT_TIMEOUT), false)
-                .is_ok()
-            {
-                return;
-            }
-        }
-
-        loge!("hq", "reconnect failed, all servers unreachable");
     }
 
     // ================================================================
@@ -775,7 +725,7 @@ impl TdxHqClient {
             );
 
             if attempt < max_retry - 1 {
-                self.reconnect_to_another_server();
+                self.reconnect_to_another_server(&[]);
             }
         }
 
@@ -817,25 +767,33 @@ impl TdxHqClient {
 
     /// 尝试切换到另一台服务器
     ///
-    /// 遍历 PRIMARY_SERVERS，跳过当前服务器和黑名单，连接到第一台可用的。
-    fn reconnect_to_another_server(&self) {
+    /// 遍历自定义、PRIMARY 和 ALL_KNOWN 候选，跳过当前服务器、同一请求已失败的
+    /// 服务器和黑名单，连接到第一台可用的。
+    fn reconnect_to_another_server(&self, failed_servers: &[(String, u16)]) {
         let current = sync::lock_recover(&self.last_server, "last server").clone();
 
-        for &(_, ip, port) in PRIMARY_SERVERS {
+        for (ip, port) in self.reconnect_candidates() {
             // 跳过当前服务器
             if let Some((ref cur_ip, cur_port)) = current {
-                if ip == cur_ip && port == cur_port {
+                if &ip == cur_ip && port == cur_port {
                     continue;
                 }
             }
 
+            if failed_servers
+                .iter()
+                .any(|(failed_ip, failed_port)| ip == *failed_ip && port == *failed_port)
+            {
+                continue;
+            }
+
             // 跳过黑名单服务器
-            if self.is_server_blocked(ip, port) {
+            if self.is_server_blocked(&ip, port) {
                 continue;
             }
 
             if self
-                .connect_internal(ip, port, Some(CONNECT_TIMEOUT), false)
+                .connect_internal(&ip, port, Some(CONNECT_TIMEOUT), false)
                 .is_ok()
             {
                 logi!("hq", "switched to server {}:{}", ip, port);
@@ -844,6 +802,29 @@ impl TdxHqClient {
         }
 
         logw!("hq", "no alternative server available");
+    }
+
+    fn reconnect_candidates(&self) -> Vec<(String, u16)> {
+        let mut candidates = Vec::new();
+        let mut push_unique = |ip: &str, port: u16| {
+            let candidate = (ip.to_owned(), port);
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        };
+        {
+            let custom = sync::lock_recover(&self.server_list, "server list");
+            for (_, ip, port) in custom.iter() {
+                push_unique(ip, *port);
+            }
+        }
+        for &(_, ip, port) in PRIMARY_SERVERS {
+            push_unique(ip, port);
+        }
+        for &(_, ip, port) in ALL_KNOWN_SERVERS {
+            push_unique(ip, port);
+        }
+        candidates
     }
 
     /// 为复权计算获取额外的历史 K 线上下文
@@ -1057,7 +1038,7 @@ impl TdxHqClient {
             );
 
             if attempt < max_retry - 1 {
-                self.reconnect_to_another_server();
+                self.reconnect_to_another_server(&[]);
             }
         }
 
@@ -1586,6 +1567,70 @@ mod tests {
             server.join().unwrap(),
             "the second pool slot was not usable while the first request awaited a response"
         );
+    }
+
+    #[test]
+    fn failed_request_discards_the_connection_and_marks_the_client_disconnected() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            drop(stream);
+        });
+
+        let client = TdxHqClient::new();
+        client.set_auto_retry(false);
+        client.set_rate_limit(0);
+        *sync::lock(&client.last_server, "test last server").unwrap() =
+            Some((address.ip().to_string(), address.port()));
+        let config = PoolConfig {
+            connect_timeout: 0.1,
+            handshake_fn: None,
+            ..PoolConfig::default()
+        };
+        *sync::lock(&client.pool, "test pool").unwrap() = Arc::new(ConnectionPool::new_single(
+            (address.ip().to_string(), address.port()),
+            config,
+        ));
+        client.connected.store(true, Ordering::SeqCst);
+
+        assert!(client.send_raw_and_recv(&[1]).is_err());
+        server.join().unwrap();
+        assert!(!client.is_connected());
+        let stats = client.pool_stats();
+        assert_eq!(stats.idle, 0);
+        assert_eq!(stats.active, 0);
+        assert_eq!(stats.total, 0);
+    }
+
+    #[test]
+    fn reconnect_candidates_preserve_custom_primary_and_all_known_fallbacks() {
+        let client = TdxHqClient::new();
+        client.set_servers(&[
+            ("custom", "127.0.0.1", 17709),
+            (
+                "primary duplicate",
+                PRIMARY_SERVERS[0].1,
+                PRIMARY_SERVERS[0].2,
+            ),
+        ]);
+
+        let candidates = client.reconnect_candidates();
+
+        assert_eq!(candidates[0], ("127.0.0.1".to_owned(), 17709));
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| {
+                    candidate.0 == PRIMARY_SERVERS[0].1 && candidate.1 == PRIMARY_SERVERS[0].2
+                })
+                .count(),
+            1
+        );
+        assert!(candidates.iter().any(|candidate| {
+            candidate.0 == ALL_KNOWN_SERVERS[ALL_KNOWN_SERVERS.len() - 1].1
+                && candidate.1 == ALL_KNOWN_SERVERS[ALL_KNOWN_SERVERS.len() - 1].2
+        }));
     }
 
     fn local_failure_client() -> TdxHqClient {

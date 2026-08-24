@@ -79,6 +79,7 @@ impl NewsProvider for SinaClient {
         let mut unique = Vec::<RawNews>::new();
         let mut identities = HashMap::<String, usize>::new();
         let mut selected = Vec::<usize>::new();
+        let mut previous_newest = None::<i64>;
         let mut previous_oldest = None::<i64>;
         let mut newest_source_at = None::<String>;
         let mut final_observed_at = None::<String>;
@@ -97,20 +98,24 @@ impl NewsProvider for SinaClient {
                     .first()
                     .map(|record| record.published_at.clone());
             }
-            if let (Some(previous), Some(current)) = (
-                previous_oldest,
-                parsed.records.first().map(|record| record.published_unix),
-            ) {
-                if current > previous {
-                    return Err(SinaError::Protocol(
-                        "news ordering increased across pages".into(),
-                    ));
-                }
+            let page_newest = parsed.records.first().map(|record| record.published_unix);
+            let page_oldest = parsed.records.last().map(|record| record.published_unix);
+            if previous_newest
+                .zip(page_newest)
+                .is_some_and(|(previous, current)| current > previous)
+                || previous_oldest
+                    .zip(page_oldest)
+                    .is_some_and(|(previous, current)| current > previous)
+            {
+                return Err(SinaError::Protocol(
+                    "news page window increased across pages".into(),
+                ));
             }
-            previous_oldest = parsed.records.last().map(|record| record.published_unix);
-            let page_oldest_date = parsed
+            previous_newest = page_newest;
+            previous_oldest = page_oldest;
+            let page_newest_date = parsed
                 .records
-                .last()
+                .first()
                 .map(|record| record.published_date.clone());
             let has_next = parsed.has_next;
 
@@ -132,15 +137,20 @@ impl NewsProvider for SinaClient {
                 unique.push(record);
             }
 
-            if selected.len() >= limit {
-                break;
-            }
-            let crossed_start = request.start().is_some_and(|start| {
-                page_oldest_date
+            selected.sort_by(|left, right| {
+                unique[*right]
+                    .published_unix
+                    .cmp(&unique[*left].published_unix)
+            });
+            let limit_is_proven = selected.len() >= limit
+                && page_newest
+                    .is_some_and(|newest| newest <= unique[selected[limit - 1]].published_unix);
+            let page_is_before_start = request.start().is_some_and(|start| {
+                page_newest_date
                     .as_deref()
                     .is_some_and(|source_date| source_date < start.as_str())
             });
-            if crossed_start || !has_next {
+            if limit_is_proven || page_is_before_start || !has_next {
                 break;
             }
             if page_number == MAX_NEWS_PAGES {
@@ -150,6 +160,11 @@ impl NewsProvider for SinaClient {
             }
         }
 
+        selected.sort_by(|left, right| {
+            unique[*right]
+                .published_unix
+                .cmp(&unique[*left].published_unix)
+        });
         selected.truncate(limit);
         let observed_at = final_observed_at
             .ok_or_else(|| SinaError::Protocol("news observation time is missing".into()))?;
