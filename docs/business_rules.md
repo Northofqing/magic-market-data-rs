@@ -958,3 +958,21 @@ calendar returns trading days. Neither contract binds its date to an auction
 snapshot record or batch. A benchmark/calendar date must not be joined to the
 snapshot as `trading_date` or `source_at`; an operation-level alternative must
 retain its own Provider identity and requires a separate caller-selected request.
+
+## BR-057 Runtime observability boundary
+
+Production stderr records carry a UTC RFC3339 timestamp, severity, stable
+low-cardinality target and event identity. Authorization metadata, credentials,
+complete payloads and unrestricted upstream text never enter logs. Operational
+timestamps and process clocks are telemetry only and must never become Provider
+`source_at`, record `observed_at`, batch evidence or an admission witness.
+
+Unary query telemetry is recorded once at the gRPC query seam as bounded
+process-lifetime aggregate counters and durations with no Provider, instrument,
+request-ID or payload labels. Successful queries do not emit per-request logs.
+The implementation uses only a monotonic clock and relaxed atomics on the query
+path; cancellation releases the in-flight gauge. Event telemetry reuses the
+existing `EventHub` state lock and adds no lock, exporter, listener, queue or
+background task. Health and listener-status responses expose snapshots only
+when explicitly requested. Telemetry failure or absence cannot change market
+data, completeness, routing, retry classification or fail-closed behavior.

@@ -247,6 +247,13 @@ GetHealth
 启动后应先调用 `GetCapabilities`。RPC 存在不等于对应能力已经准入；每个能力同时返回
 repository admission、runtime availability、diagnostic availability、精确范围和 blocker。
 
+`GetHealth.observability` 是 append-only 的运行时观测快照，包含进程启动 Unix 毫秒、
+单调 uptime、query started/succeeded/failed/cancelled/in-flight/rejected/timed-out、累计与最大
+耗时微秒，以及 unary/blocking 并发上限和当前可用 permit。计数是进程生命周期聚合值，
+没有 Provider、证券、request_id 或 payload 标签；平均耗时由调用方使用
+`query_duration_micros_total / (query_succeeded + query_failed)` 计算。旧客户端忽略新增字段，
+不得把这些运行时值当作 Provider 时间、数据 evidence 或准入依据。
+
 ### MarketDataService
 
 ```text
@@ -366,6 +373,11 @@ payload
 为空表示厂商响应没有源时间，不能用 `observed_at` 代填。
 `GetListenerStatus.admitted_event_families` 还列出三类 LocalAnalysis 异动；只有带合法
 Core `AnomalyEvent` 的 trigger/rearm 才准入，预热、冷却与 reset 继续返回 `UNADMITTED`。
+
+同一状态响应还提供 `replay_oldest`、当前 replay event/byte 数、活动订阅者数，以及进程
+生命周期内 Agent connection/disconnection、已发布事件和 replay eviction 计数。这些字段在
+既有 EventHub 状态锁中维护，不增加新锁、队列或 exporter；调用方可以用
+`replay_oldest..latest` 判断当前可重放窗口，但仍必须按实际 Replay 结果处理 gap。
 
 `analysis` 事件的 `observed_at` 来自监控器生成异动消息时绑定的触发观测时间，原始
 payload 同时声明 `time_basis=local_observation_time`。Agent 接收时间和 gRPC 发送时间
@@ -740,6 +752,9 @@ Provider 失败使用闭合的 `provider_authentication_rejected`、`provider_ra
 `provider_unavailable`、`external_query_rejected` 或 `provider_response_invalid`，保留安全
 Provider 身份和确定的 retryable 标志。CLS 的原始 HTTP status、`errno`/`errmsg` 或解析
 类别只进入服务端受限结构化日志，不进入 gRPC message 或 detail。
+生产 stderr 日志以 `ts=<UTC RFC3339> level=<...> target=<...> event=<...>` 开头；TDX
+兼容日志保留 `[E/W/I/D]` 级别标记并在其前面增加相同 UTC RFC3339 时间戳。成功行情轮询
+和成功 unary 请求不逐条写日志，避免同步 I/O 进入热路径。
 该自定义 detail 不占用标准 `grpc-status-details-bin`，因此 grpcurl 等标准客户端不会把
 它误解为 `google.rpc.Status`。调用方不得依赖自然语言 message 做程序分支。
 
@@ -807,6 +822,7 @@ Go 项目正式接入前可在自己的 Proto 镜像中补 `go_package` 映射�
 - [ ] 不把 UNADMITTED、partial、缺 source_at 当作生产成功。
 - [ ] 持久化 TDX generation/sequence，并处理 gap/reset。
 - [ ] 对 RESOURCE_EXHAUSTED/UNAVAILABLE 使用有界退避。
+- [ ] 采集 GetHealth/GetListenerStatus 聚合指标并按进程重启重置处理。
 - [ ] 日志不输出 Token、完整敏感 payload 或上游凭据。
 
 ## 14. 服务端发布时需要交付给对接方

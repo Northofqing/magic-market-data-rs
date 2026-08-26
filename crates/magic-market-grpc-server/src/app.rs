@@ -12,6 +12,9 @@ use tokio::sync::Semaphore;
 use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::{Code, Request, Response, Status};
 
+use crate::logging::{self, Level};
+use crate::observability::{QueryOutcome, RuntimeObservability};
+
 const ERROR_DETAIL_METADATA_KEY: &str = "magic-error-detail-bin";
 
 #[derive(Clone)]
@@ -21,6 +24,9 @@ pub(crate) struct GrpcApplication<G> {
     unary: Arc<Semaphore>,
     blocking: Arc<Semaphore>,
     blocking_deadline: Duration,
+    observability: Arc<RuntimeObservability>,
+    unary_concurrency_limit: usize,
+    blocking_concurrency_limit: usize,
 }
 
 impl<G> GrpcApplication<G>
@@ -47,10 +53,30 @@ where
             unary: Arc::new(Semaphore::new(unary_concurrency)),
             blocking: Arc::new(Semaphore::new(blocking_concurrency)),
             blocking_deadline,
+            observability: Arc::new(RuntimeObservability::new()),
+            unary_concurrency_limit: unary_concurrency,
+            blocking_concurrency_limit: blocking_concurrency,
         })
     }
 
     async fn query(
+        &self,
+        operation: Operation,
+        request: Request<v1::QueryRequest>,
+    ) -> Result<Response<v1::QueryResponse>, Status> {
+        let observation = self.observability.observe_query();
+        let result = self.query_inner(operation, request).await;
+        let outcome = match result.as_ref().err().map(Status::code) {
+            None => QueryOutcome::Succeeded,
+            Some(Code::ResourceExhausted) => QueryOutcome::Rejected,
+            Some(Code::DeadlineExceeded) => QueryOutcome::TimedOut,
+            Some(_) => QueryOutcome::Failed,
+        };
+        observation.finish(outcome);
+        result
+    }
+
+    async fn query_inner(
         &self,
         operation: Operation,
         request: Request<v1::QueryRequest>,
@@ -191,6 +217,7 @@ where
             .capabilities()
             .iter()
             .any(|capability| capability.repository_admitted && capability.runtime_available);
+        let observability = self.observability.snapshot();
         Ok(Response::new(v1::HealthResponse {
             request_id: context.request_id.clone(),
             live: true,
@@ -200,8 +227,29 @@ where
             } else {
                 "serving_fail_closed".to_owned()
             },
+            observability: Some(v1::RuntimeObservability {
+                process_started_at_unix_ms: observability.process_started_at_unix_ms,
+                uptime_millis: observability.uptime_millis,
+                query_started: observability.query_started,
+                query_succeeded: observability.query_succeeded,
+                query_failed: observability.query_failed,
+                query_cancelled: observability.query_cancelled,
+                query_in_flight: observability.query_in_flight,
+                query_rejected: observability.query_rejected,
+                query_timed_out: observability.query_timed_out,
+                query_duration_micros_total: observability.query_duration_micros_total,
+                query_duration_micros_max: observability.query_duration_micros_max,
+                unary_concurrency_limit: usize_to_u64(self.unary_concurrency_limit),
+                unary_concurrency_available: usize_to_u64(self.unary.available_permits()),
+                blocking_concurrency_limit: usize_to_u64(self.blocking_concurrency_limit),
+                blocking_concurrency_available: usize_to_u64(self.blocking.available_permits()),
+            }),
         }))
     }
+}
+
+fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 macro_rules! implement_query_service {
@@ -470,13 +518,18 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
                     "provider is unavailable",
                 ),
             };
-            eprintln!(
-                "stage={} request_id={:?} operation={} provider={:?} provider_reason={:?}",
-                reason_code,
-                safe_log_value(request_id, 128),
-                rejected_operation.as_str(),
-                safe_log_value(&provider, 64),
-                safe_log_value(&provider_reason, 512),
+            logging::event(
+                Level::Error,
+                "grpc_server",
+                "provider_failure",
+                format_args!(
+                    "stage={} request_id={:?} operation={} provider={:?} provider_reason={:?}",
+                    reason_code,
+                    safe_log_value(request_id, 128),
+                    rejected_operation.as_str(),
+                    safe_log_value(&provider, 64),
+                    safe_log_value(&provider_reason, 512),
+                ),
             );
             (
                 code,
@@ -563,6 +616,7 @@ fn safe_log_value(value: &str, maximum_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use magic_market_grpc_contracts::v1::market_data_service_server::MarketDataService;
+    use magic_market_grpc_contracts::v1::system_service_server::SystemService;
     use magic_market_service::{Capability, OperationRegistry, QueryResult};
 
     use super::*;
@@ -755,6 +809,25 @@ mod tests {
         .unwrap();
         assert_eq!(detail.request_id, "request-1");
         assert_eq!(detail.reason_code, "capability_unadmitted");
+
+        let health = application
+            .get_health(Request::new(v1::HealthRequest {
+                context: Some(v1::RequestContext {
+                    protocol_version: PROTOCOL_VERSION,
+                    request_id: "health-observability".to_owned(),
+                }),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        let observability = health.observability.unwrap();
+        assert_eq!(observability.query_started, 1);
+        assert_eq!(observability.query_failed, 1);
+        assert_eq!(observability.query_in_flight, 0);
+        assert_eq!(observability.unary_concurrency_limit, 1);
+        assert_eq!(observability.unary_concurrency_available, 1);
+        assert_eq!(observability.blocking_concurrency_limit, 1);
+        assert_eq!(observability.blocking_concurrency_available, 1);
     }
 
     #[tokio::test]
@@ -825,8 +898,18 @@ mod tests {
         assert_eq!(status.code(), Code::DeadlineExceeded);
         assert_eq!(application.unary.available_permits(), 1);
         assert_eq!(application.blocking.available_permits(), 0);
+        let observability = application.observability.snapshot();
+        assert_eq!(observability.query_timed_out, 1);
+        assert_eq!(observability.query_failed, 1);
+        assert_eq!(observability.query_in_flight, 0);
 
-        tokio::time::sleep(Duration::from_millis(180)).await;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while application.blocking.available_permits() == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("blocking provider worker did not release its permit");
         assert_eq!(application.blocking.available_permits(), 1);
     }
 

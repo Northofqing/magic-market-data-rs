@@ -120,6 +120,7 @@ MarketDataService RPCs: $rpcCount
 
 Public contract files are covered by manifest.sha256. GlobalNews and InstrumentNews
 use schema version 2; all other request payload versions remain documented per method.
+GetHealth and GetListenerStatus expose append-only aggregate runtime observability fields.
 TLS client identities and Bearer tokens are deployment-private and are not covered by,
 or copied by, this public contract builder.
 

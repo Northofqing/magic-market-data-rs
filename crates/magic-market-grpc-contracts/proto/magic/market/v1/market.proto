@@ -134,6 +134,25 @@ message HealthResponse {
   bool live = 2;
   bool ready = 3;
   string state = 4;
+  RuntimeObservability observability = 5;
+}
+
+message RuntimeObservability {
+  uint64 process_started_at_unix_ms = 1;
+  uint64 uptime_millis = 2;
+  uint64 query_started = 3;
+  uint64 query_succeeded = 4;
+  uint64 query_failed = 5;
+  uint64 query_cancelled = 6;
+  uint64 query_in_flight = 7;
+  uint64 query_rejected = 8;
+  uint64 query_timed_out = 9;
+  uint64 query_duration_micros_total = 10;
+  uint64 query_duration_micros_max = 11;
+  uint64 unary_concurrency_limit = 12;
+  uint64 unary_concurrency_available = 13;
+  uint64 blocking_concurrency_limit = 14;
+  uint64 blocking_concurrency_available = 15;
 }
 
 message ErrorDetail {
@@ -200,6 +219,14 @@ message ListenerStatusResponse {
   repeated string applied_instruments = 9;
   uint32 maximum_watchlist_instruments = 10;
   repeated string admitted_event_families = 11;
+  EventCursor replay_oldest = 12;
+  uint64 replay_event_count = 13;
+  uint64 replay_bytes = 14;
+  uint64 active_subscribers = 15;
+  uint64 agent_connections_total = 16;
+  uint64 agent_disconnects_total = 17;
+  uint64 events_published_total = 18;
+  uint64 replay_evictions_total = 19;
 }
 
 message SetWatchlistRequest {

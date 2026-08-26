@@ -62,6 +62,10 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle 内
 `bundle-metadata.json` 的 `source_commit` 为准。
 
+运行时 stderr 日志统一携带 UTC RFC3339 时间戳。`GetHealth` 和
+`GetListenerStatus` 通过向后兼容的追加字段提供无高基数标签的聚合 query、并发、Agent、
+subscriber 和 replay 指标；成功行情请求不逐条落日志，避免把同步日志 I/O 放入热路径。
+
 ## 明确边界
 
 本项目只处理市场数据，不提供：

@@ -13,6 +13,8 @@ use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream, 
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status, Streaming};
 
+use crate::logging::{self, Level};
+
 type EventResult = Result<v1::MarketEventEnvelope, Status>;
 type EventStream = Pin<Box<dyn Stream<Item = EventResult> + Send + 'static>>;
 type CommandStream = ReceiverStream<Result<v1::AgentCommand, Status>>;
@@ -42,6 +44,10 @@ struct HubState {
     applied_watchlist_revision: u64,
     applied_instruments: Vec<String>,
     next_session: u64,
+    agent_connections_total: u64,
+    agent_disconnects_total: u64,
+    events_published_total: u64,
+    replay_evictions_total: u64,
 }
 
 #[derive(Clone)]
@@ -108,6 +114,12 @@ impl Stream for SubscriberStream {
                         .as_ref()
                         .map(|value| format!("{}:{}", value.generation, value.sequence))
                         .unwrap_or_else(|| "none".to_owned());
+                    logging::event(
+                        Level::Warn,
+                        "grpc_events",
+                        "subscriber_lagged",
+                        format_args!("skipped={skipped} last_cursor={cursor}"),
+                    );
                     return Poll::Ready(Some(Err(Status::resource_exhausted(format!(
                         "subscriber queue lagged by {skipped} events; last_cursor={cursor}"
                     )))));
@@ -154,6 +166,10 @@ impl EventHub {
                 applied_watchlist_revision: 0,
                 applied_instruments: Vec::new(),
                 next_session: 1,
+                agent_connections_total: 0,
+                agent_disconnects_total: 0,
+                events_published_total: 0,
+                replay_evictions_total: 0,
             })),
             live,
             max_subscribers,
@@ -193,6 +209,9 @@ impl EventHub {
             }
         }
         if state.generation.as_deref() != Some(&hello.terminal_generation) {
+            state.replay_evictions_total = state
+                .replay_evictions_total
+                .saturating_add(usize_to_u64(state.replay.len()));
             state.generation = Some(hello.terminal_generation.clone());
             state.latest_sequence = 0;
             state.replay_bytes = 0;
@@ -204,6 +223,7 @@ impl EventHub {
             .checked_add(1)
             .ok_or_else(|| Status::resource_exhausted("agent session identifier exhausted"))?;
         state.agent_session = Some(session);
+        state.agent_connections_total = state.agent_connections_total.saturating_add(1);
         state.agent_commands = Some(commands);
         state.maximum_watchlist_instruments = hello.maximum_watchlist_instruments;
         if adopts_agent_watchlist {
@@ -218,15 +238,40 @@ impl EventHub {
                 revision: state.desired_watchlist_revision,
                 instruments: state.desired_instruments.clone(),
             });
-        Ok((session, state.latest_sequence, configure))
+        let accepted_sequence = state.latest_sequence;
+        drop(state);
+        logging::event(
+            Level::Info,
+            "grpc_events",
+            "agent_connected",
+            format_args!(
+                "session={session} generation={} accepted_sequence={accepted_sequence} watchlist_revision={} instrument_count={}",
+                hello.terminal_generation,
+                hello.watchlist_revision,
+                hello.watchlist_instruments.len()
+            ),
+        );
+        Ok((session, accepted_sequence, configure))
     }
 
     async fn disconnect_agent(&self, session: u64) {
         let mut state = self.inner.lock().await;
-        if state.agent_session == Some(session) {
+        let disconnected = state.agent_session == Some(session);
+        let generation = state.generation.clone().unwrap_or_default();
+        if disconnected {
             state.agent_session = None;
             state.agent_commands = None;
             state.maximum_watchlist_instruments = 0;
+            state.agent_disconnects_total = state.agent_disconnects_total.saturating_add(1);
+        }
+        drop(state);
+        if disconnected {
+            logging::event(
+                Level::Warn,
+                "grpc_events",
+                "agent_disconnected",
+                format_args!("session={session} generation={generation}"),
+            );
         }
     }
 
@@ -333,6 +378,7 @@ impl EventHub {
             )));
         }
         state.latest_sequence = cursor.sequence;
+        state.events_published_total = state.events_published_total.saturating_add(1);
         state.replay_bytes = state
             .replay_bytes
             .checked_add(encoded_len)
@@ -343,6 +389,7 @@ impl EventHub {
         {
             if let Some(removed) = state.replay.pop_front() {
                 state.replay_bytes = state.replay_bytes.saturating_sub(removed.encoded_len());
+                state.replay_evictions_total = state.replay_evictions_total.saturating_add(1);
             }
         }
         drop(state);
@@ -357,6 +404,17 @@ impl EventHub {
     ) -> Result<SubscriberStream, Status> {
         let state = self.inner.lock().await;
         if self.live.receiver_count() >= self.max_subscribers {
+            let active_subscribers = self.live.receiver_count();
+            drop(state);
+            logging::event(
+                Level::Warn,
+                "grpc_events",
+                "subscriber_rejected",
+                format_args!(
+                    "reason=maximum_subscribers active_subscribers={active_subscribers} limit={}",
+                    self.max_subscribers
+                ),
+            );
             return Err(Status::resource_exhausted(
                 "maximum subscriber count reached",
             ));
@@ -426,6 +484,7 @@ impl EventHub {
             generation: value.clone(),
             sequence: state.latest_sequence,
         });
+        let replay_oldest = state.replay.front().and_then(|event| event.cursor.clone());
         v1::ListenerStatusResponse {
             request_id,
             state: if state.agent_session.is_some() {
@@ -453,8 +512,20 @@ impl EventHub {
                 "local_amount_change_anomaly".to_owned(),
                 "local_volume_change_anomaly".to_owned(),
             ],
+            replay_oldest,
+            replay_event_count: usize_to_u64(state.replay.len()),
+            replay_bytes: usize_to_u64(state.replay_bytes),
+            active_subscribers: usize_to_u64(self.live.receiver_count()),
+            agent_connections_total: state.agent_connections_total,
+            agent_disconnects_total: state.agent_disconnects_total,
+            events_published_total: state.events_published_total,
+            replay_evictions_total: state.replay_evictions_total,
         }
     }
+}
+
+fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn validate_live_cursor(after: Option<&v1::EventCursor>, state: &HubState) -> Result<(), Status> {
@@ -975,6 +1046,14 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(status.code(), tonic::Code::OutOfRange);
+
+        let telemetry = hub.listener_status("status-replay".to_owned()).await;
+        assert_eq!(telemetry.replay_event_count, 2);
+        assert_eq!(telemetry.events_published_total, 3);
+        assert_eq!(telemetry.replay_evictions_total, 1);
+        assert_eq!(telemetry.agent_connections_total, 1);
+        assert_eq!(telemetry.agent_disconnects_total, 0);
+        assert_eq!(telemetry.replay_oldest.unwrap().sequence, 2);
     }
 
     #[tokio::test]
@@ -1241,10 +1320,10 @@ mod tests {
         );
 
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(
-            hub.listener_status("after-timeout".to_owned()).await.state,
-            "agent_disconnected"
-        );
+        let status = hub.listener_status("after-timeout".to_owned()).await;
+        assert_eq!(status.state, "agent_disconnected");
+        assert_eq!(status.agent_connections_total, 1);
+        assert_eq!(status.agent_disconnects_total, 1);
 
         drop(messages);
         drop(commands);

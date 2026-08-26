@@ -19,6 +19,7 @@ use time::OffsetDateTime;
 use crate::analysis::{AmountAnalysisInput, AnalysisFamily, AnalysisInput, Analyzers};
 use crate::config::{Config, OutputSlowConsumerPolicy, WatchInstrument};
 use crate::discovery::{CandidateEvidence, DiscoverTerminal, DiscoveryOutcome, SiblingDiscovery};
+use crate::logging::{self, Level};
 use crate::output::{
     AmountUnit, BoundedEventWriter, EventSink, FailureDisposition, FieldAvailability,
     LoopbackOperation, OutputError, ResetReason, ServiceEvent, VolumeUnit,
@@ -496,7 +497,12 @@ where
         let discovery = match self.discovery.discover() {
             Ok(outcome) => outcome,
             Err(error) => {
-                eprintln!("discovery failed: {error}");
+                logging::event(
+                    Level::Error,
+                    "tdx_monitor",
+                    "discovery_failed",
+                    format_args!("detail={error}"),
+                );
                 return self.fail_to_waiting(ResetReason::DiscoveryFailed, error.to_string());
             }
         };
@@ -543,7 +549,12 @@ where
                 self.fail_to_waiting(ResetReason::DiscoveryRejected, reason)
             }
             Err(error) => {
-                eprintln!("identity recheck failed: {error}");
+                logging::event(
+                    Level::Error,
+                    "tdx_monitor",
+                    "identity_recheck_failed",
+                    format_args!("detail={error}"),
+                );
                 self.fail_to_waiting(ResetReason::DiscoveryFailed, error.to_string())
             }
         }
@@ -639,7 +650,12 @@ where
                 );
             }
             Err(error) => {
-                eprintln!("loopback batch poll failed: {}", error.message);
+                logging::event(
+                    Level::Error,
+                    "tdx_monitor",
+                    "loopback_batch_poll_failed",
+                    format_args!("detail={}", error.message),
+                );
                 self.output.emit(&ServiceEvent::LoopbackFailure {
                     generation: self.generation,
                     instrument: "EQUITY_WATCHLIST".to_owned(),
@@ -670,9 +686,11 @@ where
                 Ok(values) => values,
                 Err(error) => {
                     let message = error.to_string();
-                    eprintln!(
-                        "loopback schema validation failed for {}: {message}",
-                        watched.label
+                    logging::event(
+                        Level::Error,
+                        "tdx_monitor",
+                        "loopback_schema_validation_failed",
+                        format_args!("instrument={} detail={message}", watched.label),
                     );
                     self.output.emit(&ServiceEvent::FamilyUnavailable {
                         generation: self.generation,

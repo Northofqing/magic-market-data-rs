@@ -4,6 +4,8 @@ mod app;
 mod auth;
 mod config;
 mod events;
+mod logging;
+mod observability;
 
 use std::sync::Arc;
 
@@ -11,6 +13,7 @@ use app::GrpcApplication;
 use auth::BearerAuth;
 use config::ServerConfig;
 use events::EventHub;
+use logging::Level;
 use magic_market_composition::production_operation_registry;
 use magic_market_grpc_contracts::v1;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
@@ -76,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut builder = Server::builder();
+    let tls_enabled = config.tls.is_some();
     if let Some(tls) = config.tls {
         let certificate = read_tls_file(&tls.certificate)?;
         let private_key = read_tls_file(&tls.private_key)?;
@@ -89,6 +93,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let shutdown_timeout = config.shutdown_timeout;
+    logging::event(
+        Level::Info,
+        "grpc_server",
+        "server_started",
+        format_args!(
+            "bind={} tls={} reflection={} unary_concurrency={} blocking_concurrency={} blocking_deadline_ms={}",
+            config.bind,
+            tls_enabled,
+            config.reflection,
+            config.unary_concurrency,
+            config.blocking_concurrency,
+            config.blocking_deadline.as_millis()
+        ),
+    );
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel::<()>();
     let serving = builder
         .add_service(health)
@@ -105,6 +123,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         result = &mut serving => result?,
         signal = tokio::signal::ctrl_c() => {
             signal?;
+            logging::event(
+                Level::Info,
+                "grpc_server",
+                "shutdown_requested",
+                format_args!("reason=ctrl_c"),
+            );
             let _ = shutdown_sender.send(());
             tokio::time::timeout(shutdown_timeout, &mut serving)
                 .await
@@ -114,6 +138,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ))??;
         }
     }
+    logging::event(
+        Level::Info,
+        "grpc_server",
+        "server_stopped",
+        format_args!("state=clean"),
+    );
     Ok(())
 }
 
