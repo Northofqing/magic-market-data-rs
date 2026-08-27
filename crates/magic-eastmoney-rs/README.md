@@ -16,7 +16,7 @@ sessions, credentials, portfolios, or order data.
 | --- | --- | --- | --- |
 | Instrument and industry reports | `ResearchReports`, `ResearchDocuments` | `reportapi.eastmoney.com`, `pdf.dfcfw.com` | metadata plus the exact original bounded PDF body |
 | Report target-price aggregation | `TargetPriceData` | `reportapi.eastmoney.com` | complete pagination; source code and `stockName`; exact `indvAimPriceL/T`; arithmetic mean of report range midpoints; typed verified-empty result for the exact all-zero shape |
-| Instrument fund flow | `FundFlowSeries` | `push2.eastmoney.com` | admitted current minute and daily (`klt=101`) main/super-large/large/medium/small net-flow mapping with source date/time; the production `MoneyFlows` handler requests one current daily record |
+| Instrument fund flow | `FundFlowSeries` | `push2.eastmoney.com`, `push2delay.eastmoney.com` | admitted current minute and daily (`klt=101`) main/super-large/large/medium/small net-flow mapping with source date/time; the production `MoneyFlows` handler requests one current daily record from the fixed official delay host |
 | Board fund flow | `BoardFlows` | `push2.eastmoney.com` | industry/concept/region; 1/5/10-day ranking, return, main flow, daily tiers, leader when supplied |
 | Dragon-tiger list | `DragonTigerData` | `datacenter-web.eastmoney.com` | entries plus one atomic buy-five/sell-five seat group, amounts, reason, turnover and independent side ranks; seat limit must be at least 10 |
 | Full-market dragon-tiger discovery | `DragonTigerDiscovery` | `datacenter-web.eastmoney.com` | complete dated pagination across Shanghai/Shenzhen/Beijing, stable source ID, stock code and name |
@@ -77,9 +77,11 @@ production `EastmoneyClient` internally and exposes neither client injection
 nor generic registration, so downstream code cannot substitute an injected
 transport or impersonate source/capability ownership.
 The fixed public fund-flow contract is admitted. It uses the exact current
-`/api/qt/stock/fflow/kline/get` route for both minute and daily requests, with
-`klt` selecting the source shape; it does not synthesize daily values from Quote
-or fall back to authenticated Miaoxiang output.
+`/api/qt/stock/fflow/kline/get` route, with `klt` selecting the source shape.
+Minute requests use `push2.eastmoney.com`; daily requests use the fixed official
+`push2delay.eastmoney.com` host because the primary currently omits the TLS
+`close_notify` required by the strict Rust transport. This does not weaken TLS,
+synthesize values from Quote, or fall back to authenticated Miaoxiang output.
 Eastmoney's public keyword-news search is also unadmitted: its real result rows
 do not contain a structured source instrument identity. A query keyword is not
 promoted into `NewsItem::instruments`; `instrument_news` returns a typed
@@ -278,21 +280,12 @@ the official finance rolling page backs admitted `global_news`; these records
 carry category and canonical article identity but intentionally have no
 instrument identity.
 
-The current machine/IP could not complete either fund-flow transport:
-
-- `push2.eastmoney.com` minute flow closed the connection before an HTTP status;
-- `push2his.eastmoney.com` daily flow did the same;
-- exact reference-shape `curl` checks returned `Empty reply from server`;
-- deterministic minute/daily field and unit fixtures still pass.
-
-This is reported as a typed transport failure. `fund_flow_series` therefore
-remains false. It is not counted as a live pass, converted into an empty batch,
-or replaced with another data family.
-
-The historical six-operation run included fund flow and therefore reported
-5 successes / 1 explicit failure. Current `mixed` load runs intentionally
-exclude fund flow but include global latest news. Select `fund-flow` explicitly
-to exercise its unadmitted diagnostic boundary.
+The 2026-08-27 production recheck found that the current daily path on the
+primary host returned a complete body but omitted TLS `close_notify`, which the
+strict Rust transport correctly rejected. The exact same-provider daily
+contract is now pinned to the official delay host and remains fail-closed on
+transport, identity, date, or field errors. Select `fund-flow` explicitly in a
+load run to exercise this admitted boundary.
 
 ## Deployment
 

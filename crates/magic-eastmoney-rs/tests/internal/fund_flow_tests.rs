@@ -92,13 +92,14 @@ fn period_at_rejects_malformed_or_impossible_date_and_time() {
 
 #[test]
 fn public_fund_flow_contract_routes_minute_and_daily_source_shapes() {
-    for (interval, body, expected_klt) in [
+    for (interval, body, expected_klt, expected_host) in [
         (
             FlowInterval::Minute1,
             &br#"{"rc":0,"data":{"klines":[
               "2026-07-23 15:00,100,-10,20,30,60,1.25"
             ],"code":"600396","market":1}}"#[..],
             "klt=1",
+            "GET https://push2.eastmoney.com/",
         ),
         (
             FlowInterval::Day1,
@@ -106,6 +107,7 @@ fn public_fund_flow_contract_routes_minute_and_daily_source_shapes() {
               "2026-07-23,100,-10,20,30,60,1.25"
             ],"code":"600396","market":1}}"#[..],
             "klt=101",
+            "GET https://push2delay.eastmoney.com/",
         ),
     ] {
         let transport = ScriptedTransport::from_bodies([body]);
@@ -121,11 +123,11 @@ fn public_fund_flow_contract_routes_minute_and_daily_source_shapes() {
             requests.lock().unwrap()
         );
         assert!(
-            requests.lock().unwrap()[0]
-                .contains("https://push2.eastmoney.com/api/qt/stock/fflow/kline/get?"),
-            "daily and minute fund flow must use the verified current kline contract: {:?}",
+            requests.lock().unwrap()[0].starts_with(expected_host),
+            "expected host {expected_host}, requests={:?}",
             requests.lock().unwrap()
         );
+        assert!(requests.lock().unwrap()[0].contains("/api/qt/stock/fflow/kline/get?"));
     }
 }
 

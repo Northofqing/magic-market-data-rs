@@ -805,6 +805,9 @@ SecurityProfiles 与未准入路由合同，所有文件由同一 LF `manifest.s
 服务端默认 capture 时刻。
 `2026-08-27.2` 按深交所正式代码区间将 CLS `sz302132` 等 `300000..=309799` 关联身份识别
 为创业板股票；`309800..=309999` 存托凭证仍因无对应 Core 资产类别而 fail-closed。
+`2026-08-27.3` 将东财公开日级 `MoneyFlows` 固定到同一 Provider 的官方
+`push2delay.eastmoney.com/api/qt/stock/fflow/kline/get?klt=101` 合同，规避主机在当前网络中
+缺少 TLS `close_notify` 导致的严格传输拒绝；不跨 Provider 补值，也不降低 TLS 校验。
 
 ## 12. 客户端代码生成
 

@@ -14,8 +14,10 @@ use serde_json::Value;
 
 const MINUTE_ENDPOINT: &str = "https://push2.eastmoney.com/api/qt/stock/fflow/kline/get";
 // Eastmoney's current `kline` contract accepts `klt=101` and returns the same
-// date plus five net-flow fields used by this adapter.
-const DAILY_ENDPOINT: &str = MINUTE_ENDPOINT;
+// date plus five net-flow fields used by this adapter. The exact official
+// delay host is used for daily reads because the primary currently closes its
+// TLS stream without the authenticated close required by the Rust transport.
+const DAILY_ENDPOINT: &str = "https://push2delay.eastmoney.com/api/qt/stock/fflow/kline/get";
 
 impl FundFlowSeries for EastmoneyClient {
     type Error = EastmoneyError;

@@ -52,10 +52,11 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前对接合同交付基线为 client-bundle `2026-08-27.2`。该版本将 `T0Evidence`
+当前对接合同交付基线为 client-bundle `2026-08-27.3`。该版本将 `T0Evidence`
 升级为必须携带调用方精确 `requested_at` 的 v2，并增加运行构建身份与安全、有序的完整
 Provider attempts；同时修复 TDX 形成中日线、Sina 个股新闻原始 URL 查询分隔符和东财公开
-日级资金流路由，并按深交所正式代码区间接受 CLS 的合法 `sz302132` 关联股票。完整逐条
+日级资金流路由（固定使用东财官方 delay 主机以兼容严格 TLS 客户端），并按深交所正式代码
+区间接受 CLS 的合法 `sz302132` 关联股票。完整逐条
 evidence、空批次和失败分类合同以
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用

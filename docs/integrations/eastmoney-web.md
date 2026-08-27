@@ -121,11 +121,13 @@ CNY 元。三次负载请求均成功，实际最小请求起始间隔 1000 ms�
 因此 `PUBLIC_FUND_FLOW_ADMITTED=true`，gRPC `FundFlowSeries` 与 `MoneyFlows`
 默认使用公开 Eastmoney Provider；配置妙想 Key 不会替换这条正式路径。
 
-2026-08-27 复验发现旧 `push2his` `daykline` 路径在当前网络持续提前终止 TLS；已登记的
-东财 `push2` 当前 `kline/get` 路径使用 `klt=101` 返回同一日级源日期以及主力、超大、大、
-中、小五档净流入。生产 `MoneyFlows` 本来只请求一条当前日记录，因此适配器改为该精确
-同源合同；不会跨 Provider 补值，也不把 Quote/成交额推算为资金流。确定性测试同时锁定
-分钟和日级请求都必须落在该精确路径，响应仍需通过证券 identity、日期和逐字段解析校验。
+2026-08-27 复验发现旧 `push2his` `daykline` 路径持续提前终止 TLS，而主
+`push2.eastmoney.com` 在 Rust 严格传输中会返回数据后缺少 TLS `close_notify`。同一 Provider
+已登记的官方 `push2delay.eastmoney.com` 当前 `kline/get` 路径使用 `klt=101` 返回日级源日期
+以及主力、超大、大、中、小五档净流入。因此生产 `MoneyFlows` 的单条日记录固定使用该精确
+官方 delay 主机；分钟记录仍使用主 `push2` 主机。实现不会跨 Provider 补值、不会把 Quote/
+成交额推算为资金流，也不会放宽 TLS 校验。确定性测试分别锁定两种 interval 的精确主机、
+路径和 `klt`，响应仍需通过证券 identity、日期和逐字段解析校验。
 
 2026-08-16 诊断观察到公开排名响应中部分行缺少量比 `f10` 或主力净流入 `f62`，
 因此完整 `MarketRankings` 仍原子失败。gRPC 的显式 UNADMITTED 诊断可返回有字段的
