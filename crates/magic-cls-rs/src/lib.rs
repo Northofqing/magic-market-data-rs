@@ -494,12 +494,16 @@ fn classify_associated_asset(exchange: Exchange, code: &str) -> Result<AssetClas
         Exchange::Shenzhen if code.starts_with("399") => AssetClass::Index,
         Exchange::Shenzhen if code.starts_with("159") => AssetClass::Fund,
         Exchange::Shenzhen
-            if ["000", "001", "002", "003", "300", "301"]
+            if ["000", "001", "002", "003"]
                 .iter()
                 .any(|prefix| code.starts_with(prefix)) =>
         {
             AssetClass::Equity
         }
+        // The SZSE code table reserves 300000..=309799 for ChiNext stocks;
+        // 309800..=309999 are depositary receipts and remain unsupported by
+        // Core's closed AssetClass enum.
+        Exchange::Shenzhen if ("300000"..="309799").contains(&code) => AssetClass::Equity,
         Exchange::Beijing
             if code.starts_with('4') || code.starts_with('8') || code.starts_with("920") =>
         {

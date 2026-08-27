@@ -803,6 +803,8 @@ SecurityProfiles 与未准入路由合同，所有文件由同一 LF `manifest.s
 `2026-08-27.1` 将 `T0Evidence` 升级到 v2 并要求 `requested_at`，在 Health 增加运行构建
 身份，在安全错误 detail 增加完整有序 provider attempts。旧 T0 v1 请求明确拒绝，不由
 服务端默认 capture 时刻。
+`2026-08-27.2` 按深交所正式代码区间将 CLS `sz302132` 等 `300000..=309799` 关联身份识别
+为创业板股票；`309800..=309999` 存托凭证仍因无对应 Core 资产类别而 fail-closed。
 
 ## 12. 客户端代码生成
 

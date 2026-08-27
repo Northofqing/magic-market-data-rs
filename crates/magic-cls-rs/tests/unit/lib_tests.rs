@@ -205,12 +205,13 @@ fn associated_instruments_preserve_verified_asset_classes() {
               {"StockID": "sz159915"},
               {"StockID": "sz399001"},
               {"StockID": "sz000001"},
+              {"StockID": "sz302132"},
               {"StockID": "bj920118"}
             ]"#,
     );
     let batch = parse_response(body.as_bytes(), 1, "observed").expect("fixture parses");
     let instruments = &batch.records()[0].instruments;
-    assert_eq!(instruments.len(), 7);
+    assert_eq!(instruments.len(), 8);
     assert_eq!(instruments[0].code(), "510050");
     assert_eq!(instruments[0].asset_class(), AssetClass::Fund);
     assert_eq!(instruments[1].code(), "000001");
@@ -221,6 +222,8 @@ fn associated_instruments_preserve_verified_asset_classes() {
     assert_eq!(instruments[4].asset_class(), AssetClass::Index);
     assert_eq!(instruments[5].asset_class(), AssetClass::Equity);
     assert_eq!(instruments[6].asset_class(), AssetClass::Equity);
+    assert_eq!(instruments[6].code(), "302132");
+    assert_eq!(instruments[7].asset_class(), AssetClass::Equity);
 
     let unverified = FIXTURE.replace(
         r#""stock_list": [{"StockID": "sh688099"}]"#,
@@ -228,6 +231,15 @@ fn associated_instruments_preserve_verified_asset_classes() {
     );
     assert!(matches!(
         parse_response(unverified.as_bytes(), 1, "observed"),
+        Err(ClsError::Protocol(message)) if message.contains("unverified")
+    ));
+
+    let depositary_receipt = FIXTURE.replace(
+        r#""stock_list": [{"StockID": "sh688099"}]"#,
+        r#""stock_list": [{"StockID": "sz309800"}]"#,
+    );
+    assert!(matches!(
+        parse_response(depositary_receipt.as_bytes(), 1, "observed"),
         Err(ClsError::Protocol(message)) if message.contains("unverified")
     ));
 }
