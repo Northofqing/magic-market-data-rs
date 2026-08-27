@@ -135,6 +135,15 @@ message HealthResponse {
   bool ready = 3;
   string state = 4;
   RuntimeObservability observability = 5;
+  BuildIdentity build_identity = 6;
+}
+
+message BuildIdentity {
+  string service_version = 1;
+  string source_revision = 2;
+  string contract_sha256 = 3;
+  string binary_sha256 = 4;
+  string identity_error = 5;
 }
 
 message RuntimeObservability {
@@ -166,6 +175,16 @@ message ErrorDetail {
   string evidence_field = 8;
   uint32 record_index = 9;
   bool has_record_index = 10;
+  repeated ProviderAttemptDetail provider_attempts = 11;
+}
+
+message ProviderAttemptDetail {
+  uint32 ordinal = 1;
+  string provider = 2;
+  string outcome = 3;
+  string reason_code = 4;
+  bool retryable = 5;
+  bool terminal = 6;
 }
 
 message EventCursor {

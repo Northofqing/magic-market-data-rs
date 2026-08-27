@@ -52,17 +52,17 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前对接合同交付基线为 client-bundle `2026-08-24.2`，发布 tag
-`grpc-provider-readiness-2026-08-24.2`。该版本保留官方 HITHINK 扶摇七项生产 operation
-和 EMQuant 正式日线，修正新闻 Provider 准入、TDX 连接类错误分类及未准入路径清单，
-并把外部文档直接引用的合同文件全部纳入同一 checksum manifest；不改变 protobuf wire
-字段。完整逐条 evidence、空批次和失败分类合同以
+当前对接合同交付基线为 client-bundle `2026-08-27.1`。该版本将 `T0Evidence`
+升级为必须携带调用方精确 `requested_at` 的 v2，并增加运行构建身份与安全、有序的完整
+Provider attempts；同时修复 TDX 形成中日线、Sina 个股新闻原始 URL 查询分隔符和东财公开
+日级资金流路由。完整逐条 evidence、空批次和失败分类合同以
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用
 LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle 内
 `bundle-metadata.json` 的 `source_commit` 为准。
 
-运行时 stderr 日志统一携带 UTC RFC3339 时间戳。`GetHealth` 和
+运行时 stderr 日志统一携带 UTC RFC3339 时间戳。`GetHealth` 还返回源码 revision、协议
+descriptor 与当前二进制 SHA-256；`GetHealth` 和
 `GetListenerStatus` 通过向后兼容的追加字段提供无高基数标签的聚合 query、并发、Agent、
 subscriber 和 replay 指标；成功行情请求不逐条落日志，避免把同步日志 I/O 放入热路径。
 
@@ -73,6 +73,7 @@ subscriber 和 replay 指标；成功行情请求不逐条落日志，避免把�
 - 策略回测、参数优化、撮合、滑点、手续费、资金曲线或绩效归因；
 - 模拟交易、实盘下单、撤单、账户、资金、持仓或成交回报；
 - 数据库、数据湖、长期历史仓库或跨请求缓存；
+- 客户端批次审计落库、去重/保留策略、FIFO/T+1 持仓账本或候选扫描解释；
 - 对公共网页、厂商服务可用性和数据再分发权的 SLA 承诺；
 - 未经证明的字段推导、跨源静默拼接或未授权接口访问。
 

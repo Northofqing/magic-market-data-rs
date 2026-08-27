@@ -120,6 +120,12 @@ fn public_fund_flow_contract_routes_minute_and_daily_source_shapes() {
             "{:?}",
             requests.lock().unwrap()
         );
+        assert!(
+            requests.lock().unwrap()[0]
+                .contains("https://push2.eastmoney.com/api/qt/stock/fflow/kline/get?"),
+            "daily and minute fund flow must use the verified current kline contract: {:?}",
+            requests.lock().unwrap()
+        );
     }
 }
 

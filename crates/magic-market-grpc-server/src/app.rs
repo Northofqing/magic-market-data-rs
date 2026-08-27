@@ -1,13 +1,14 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use magic_market_grpc_contracts::v1;
 use magic_market_grpc_contracts::{CANONICAL_JSON_CONTENT_TYPE, PROTOCOL_VERSION};
 use magic_market_service::{
-    BlockingQueryGateway, CanonicalPayload, Operation, ProviderFailureKind, QueryCommand,
-    ServiceError,
+    BlockingQueryGateway, CanonicalPayload, Operation, ProviderAttempt, ProviderFailureKind,
+    QueryCommand, ServiceError,
 };
 use prost::Message;
+use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
 use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::{Code, Request, Response, Status};
@@ -244,8 +245,37 @@ where
                 blocking_concurrency_limit: usize_to_u64(self.blocking_concurrency_limit),
                 blocking_concurrency_available: usize_to_u64(self.blocking.available_permits()),
             }),
+            build_identity: Some(build_identity().clone()),
         }))
     }
+}
+
+fn build_identity() -> &'static v1::BuildIdentity {
+    static IDENTITY: OnceLock<v1::BuildIdentity> = OnceLock::new();
+    IDENTITY.get_or_init(|| {
+        let contract_sha256 = sha256_hex(v1::FILE_DESCRIPTOR_SET);
+        let (binary_sha256, identity_error) = std::env::current_exe()
+            .map_err(|error| format!("current executable path is unavailable: {error}"))
+            .and_then(|path| {
+                std::fs::read(path)
+                    .map_err(|error| format!("current executable bytes are unavailable: {error}"))
+            })
+            .map(|bytes| (sha256_hex(&bytes), String::new()))
+            .unwrap_or_else(|error| (String::new(), error));
+        v1::BuildIdentity {
+            service_version: env!("CARGO_PKG_VERSION").to_owned(),
+            source_revision: option_env!("MAGIC_MARKET_SOURCE_REVISION")
+                .unwrap_or("unavailable")
+                .to_owned(),
+            contract_sha256,
+            binary_sha256,
+            identity_error,
+        }
+    })
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn usize_to_u64(value: usize) -> u64 {
@@ -409,6 +439,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
         evidence_code,
         evidence_field,
         record_index,
+        provider_attempts,
     ) = match error {
         ServiceError::InvalidRequest(message) => (
             Code::InvalidArgument,
@@ -419,6 +450,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
         ServiceError::Unsupported { reason, .. } => (
             Code::Unimplemented,
@@ -429,6 +461,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
         ServiceError::Unauthenticated => (
             Code::Unauthenticated,
@@ -439,6 +472,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
         ServiceError::PermissionDenied(message) => (
             Code::PermissionDenied,
@@ -449,6 +483,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
         ServiceError::ResourceExhausted(message) => (
             Code::ResourceExhausted,
@@ -459,6 +494,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
         ServiceError::DeadlineExceeded(message) => (
             Code::DeadlineExceeded,
@@ -469,6 +505,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
         ServiceError::Unavailable { reason, .. } => (
             Code::Unavailable,
@@ -479,6 +516,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
         ServiceError::ProviderFailure {
             operation: rejected_operation,
@@ -540,6 +578,50 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
                 String::new(),
                 String::new(),
                 None,
+                Vec::new(),
+            )
+        }
+        ServiceError::ProviderRouteFailure {
+            operation: routed_operation,
+            exhausted,
+            attempts,
+        } => {
+            let retryable = !attempts.is_empty() && attempts.iter().all(ProviderAttempt::retryable);
+            let provider = attempts
+                .last()
+                .map(|attempt| attempt.provider().to_owned())
+                .unwrap_or_default();
+            let reason_code = if exhausted {
+                "provider_route_exhausted"
+            } else {
+                "provider_route_stopped"
+            };
+            logging::event(
+                Level::Error,
+                "grpc_server",
+                "provider_route_failure",
+                format_args!(
+                    "stage={} request_id={:?} operation={} attempt_count={}",
+                    reason_code,
+                    safe_log_value(request_id, 128),
+                    routed_operation.as_str(),
+                    attempts.len(),
+                ),
+            );
+            (
+                if retryable {
+                    Code::Unavailable
+                } else {
+                    Code::FailedPrecondition
+                },
+                reason_code,
+                retryable,
+                "provider route did not produce an admitted batch".to_owned(),
+                provider,
+                String::new(),
+                String::new(),
+                None,
+                attempts,
             )
         }
         ServiceError::FailedPrecondition(message) => (
@@ -551,6 +633,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
         ServiceError::InvalidEvidence {
             provider,
@@ -567,6 +650,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             evidence_code,
             evidence_field,
             record_index,
+            Vec::new(),
         ),
         ServiceError::Internal(_) => (
             Code::Internal,
@@ -577,6 +661,7 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             String::new(),
             String::new(),
             None,
+            Vec::new(),
         ),
     };
     let detail = v1::ErrorDetail {
@@ -590,6 +675,19 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
         evidence_field,
         record_index: record_index.unwrap_or_default(),
         has_record_index: record_index.is_some(),
+        provider_attempts: provider_attempts
+            .into_iter()
+            .take(16)
+            .enumerate()
+            .map(|(index, attempt)| v1::ProviderAttemptDetail {
+                ordinal: u32::try_from(index + 1).unwrap_or(u32::MAX),
+                provider: attempt.provider().to_owned(),
+                outcome: attempt.outcome().to_owned(),
+                reason_code: attempt.reason_code().to_owned(),
+                retryable: attempt.retryable(),
+                terminal: attempt.terminal(),
+            })
+            .collect(),
     }
     .encode_to_vec();
     let mut metadata = MetadataMap::new();
@@ -617,7 +715,7 @@ fn safe_log_value(value: &str, maximum_chars: usize) -> String {
 mod tests {
     use magic_market_grpc_contracts::v1::market_data_service_server::MarketDataService;
     use magic_market_grpc_contracts::v1::system_service_server::SystemService;
-    use magic_market_service::{Capability, OperationRegistry, QueryResult};
+    use magic_market_service::{Capability, OperationRegistry, ProviderAttempt, QueryResult};
 
     use super::*;
 
@@ -725,6 +823,45 @@ mod tests {
     }
 
     #[test]
+    fn routed_failure_preserves_every_safe_typed_provider_attempt() {
+        let status = status_from_error(
+            "request-route-attempts",
+            Operation::IndexQuotes,
+            ServiceError::ProviderRouteFailure {
+                operation: Operation::IndexQuotes,
+                exhausted: true,
+                attempts: vec![
+                    ProviderAttempt::new("Tencent", "failed", "transport", true, false).unwrap(),
+                    ProviderAttempt::new("Tdx", "rejected", "evidence", false, false).unwrap(),
+                ],
+            },
+        );
+        assert_eq!(status.code(), Code::FailedPrecondition);
+        let detail = v1::ErrorDetail::decode(
+            status
+                .metadata()
+                .get_bin(ERROR_DETAIL_METADATA_KEY)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(detail.reason_code, "provider_route_exhausted");
+        assert!(!detail.retryable);
+        assert_eq!(detail.provider_attempts.len(), 2);
+        assert_eq!(detail.provider_attempts[0].ordinal, 1);
+        assert_eq!(detail.provider_attempts[0].provider, "Tencent");
+        assert_eq!(detail.provider_attempts[0].outcome, "failed");
+        assert_eq!(detail.provider_attempts[0].reason_code, "transport");
+        assert!(detail.provider_attempts[0].retryable);
+        assert_eq!(detail.provider_attempts[1].ordinal, 2);
+        assert_eq!(detail.provider_attempts[1].provider, "Tdx");
+        assert_eq!(detail.provider_attempts[1].outcome, "rejected");
+        assert_eq!(detail.provider_attempts[1].reason_code, "evidence");
+        assert!(!detail.provider_attempts[1].retryable);
+    }
+
+    #[test]
     fn provider_failure_kinds_have_closed_safe_status_contracts() {
         let cases = [
             (
@@ -821,6 +958,10 @@ mod tests {
             .unwrap()
             .into_inner();
         let observability = health.observability.unwrap();
+        let build = health.build_identity.unwrap();
+        assert_eq!(build.service_version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(build.contract_sha256.len(), 64);
+        assert_eq!(build.binary_sha256.len(), 64);
         assert_eq!(observability.query_started, 1);
         assert_eq!(observability.query_failed, 1);
         assert_eq!(observability.query_in_flight, 0);

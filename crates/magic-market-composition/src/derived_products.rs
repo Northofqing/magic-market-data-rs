@@ -142,6 +142,7 @@ pub struct T0EvidenceRequest {
     instruments: Vec<InstrumentId>,
     daily_bar_count: PositiveU32,
     five_minute_bar_count: PositiveU32,
+    requested_at: NonEmptyText,
 }
 
 impl T0EvidenceRequest {
@@ -149,6 +150,7 @@ impl T0EvidenceRequest {
         instruments: Vec<InstrumentId>,
         daily_bar_count: PositiveU32,
         five_minute_bar_count: PositiveU32,
+        requested_at: impl Into<String>,
     ) -> Result<Self, DerivedProductContractError> {
         validate_cardinality(
             "T0Evidence instruments",
@@ -165,10 +167,13 @@ impl T0EvidenceRequest {
             five_minute_bar_count.get(),
             MAX_T0_BARS,
         )?;
+        let requested_at = NonEmptyText::new(requested_at)?;
+        EvidenceTimestamp::parse_instant(requested_at.as_str())?;
         Ok(Self {
             instruments,
             daily_bar_count,
             five_minute_bar_count,
+            requested_at,
         })
     }
 
@@ -183,6 +188,10 @@ impl T0EvidenceRequest {
     pub fn five_minute_bar_count(&self) -> PositiveU32 {
         self.five_minute_bar_count
     }
+
+    pub fn requested_at(&self) -> &str {
+        self.requested_at.as_str()
+    }
 }
 
 impl<'de> Deserialize<'de> for T0EvidenceRequest {
@@ -196,6 +205,7 @@ impl<'de> Deserialize<'de> for T0EvidenceRequest {
             instruments: Vec<InstrumentId>,
             daily_bar_count: PositiveU32,
             five_minute_bar_count: PositiveU32,
+            requested_at: String,
         }
 
         let wire = Wire::deserialize(deserializer)?;
@@ -203,6 +213,7 @@ impl<'de> Deserialize<'de> for T0EvidenceRequest {
             wire.instruments,
             wire.daily_bar_count,
             wire.five_minute_bar_count,
+            wire.requested_at,
         )
         .map_err(de::Error::custom)
     }
@@ -572,6 +583,7 @@ impl<'de> Deserialize<'de> for IntradayShapeRecord {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct T0EvidenceRecord {
     instrument: InstrumentId,
+    requested_at: NonEmptyText,
     quote: Quote,
     order_book: OrderBook,
     daily_bar_count: PositiveU32,
@@ -588,6 +600,7 @@ impl T0EvidenceRecord {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument: InstrumentId,
+        requested_at: impl Into<String>,
         quote: Quote,
         order_book: OrderBook,
         daily_bars: Vec<Bar>,
@@ -599,6 +612,8 @@ impl T0EvidenceRecord {
         input_digest_sha256: impl Into<String>,
     ) -> Result<Self, DerivedProductContractError> {
         validate_a_share_equity(&instrument)?;
+        let requested_at = NonEmptyText::new(requested_at)?;
+        EvidenceTimestamp::parse_instant(requested_at.as_str())?;
         if quote.instrument() != &instrument || order_book.instrument() != &instrument {
             return Err(invalid("T0 quote/order_book instrument mismatch"));
         }
@@ -656,6 +671,7 @@ impl T0EvidenceRecord {
         validate_digest(&input_digest_sha256)?;
         Ok(Self {
             instrument,
+            requested_at,
             quote,
             order_book,
             daily_bar_count: expected_daily_bar_count,
@@ -671,6 +687,10 @@ impl T0EvidenceRecord {
 
     pub fn instrument(&self) -> &InstrumentId {
         &self.instrument
+    }
+
+    pub fn requested_at(&self) -> &str {
+        self.requested_at.as_str()
     }
 
     pub fn quote(&self) -> &Quote {
@@ -719,6 +739,7 @@ impl<'de> Deserialize<'de> for T0EvidenceRecord {
         #[serde(deny_unknown_fields)]
         struct Wire {
             instrument: InstrumentId,
+            requested_at: String,
             quote: Quote,
             order_book: OrderBook,
             daily_bar_count: PositiveU32,
@@ -735,6 +756,7 @@ impl<'de> Deserialize<'de> for T0EvidenceRecord {
         validate_algorithm(&wire.algorithm_id, "magic.t0_evidence").map_err(de::Error::custom)?;
         Self::new(
             wire.instrument,
+            wire.requested_at,
             wire.quote,
             wire.order_book,
             wire.daily_bars,
@@ -1404,6 +1426,7 @@ mod tests {
             vec![equity()],
             PositiveU32::new(20).unwrap(),
             PositiveU32::new(48).unwrap(),
+            "2026-08-14T15:01:00+08:00",
         )
         .unwrap();
         let decoded: T0EvidenceRequest =
@@ -1432,6 +1455,39 @@ mod tests {
     }
 
     #[test]
+    fn t0_evidence_v2_requires_and_preserves_the_caller_requested_at_instant() {
+        let request: T0EvidenceRequest = serde_json::from_value(serde_json::json!({
+            "instruments": [equity()],
+            "daily_bar_count": 20,
+            "five_minute_bar_count": 48,
+            "requested_at": "2026-08-27T09:57:40+08:00"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(request).unwrap()["requested_at"],
+            "2026-08-27T09:57:40+08:00"
+        );
+        assert!(
+            serde_json::from_value::<T0EvidenceRequest>(serde_json::json!({
+                "instruments": [equity()],
+                "daily_bar_count": 20,
+                "five_minute_bar_count": 48
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<T0EvidenceRequest>(serde_json::json!({
+                "instruments": [equity()],
+                "daily_bar_count": 20,
+                "five_minute_bar_count": 48,
+                "requested_at": "2026-08-27 09:57:40"
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
     fn invalid_identity_bounds_unknown_fields_and_due_time_fail_closed() {
         assert!(IndexQuotesRequest::new(vec![equity()], 5_000).is_err());
         assert!(IndexQuotesRequest::new(vec![index(), index()], 5_000).is_err());
@@ -1444,7 +1500,8 @@ mod tests {
         assert!(T0EvidenceRequest::new(
             vec![equity(), equity()],
             PositiveU32::new(20).unwrap(),
-            PositiveU32::new(48).unwrap()
+            PositiveU32::new(48).unwrap(),
+            "2026-08-14T15:01:00+08:00"
         )
         .is_err());
         assert!(OutcomeDailyBarsRequest::new(
@@ -1489,6 +1546,7 @@ mod tests {
 
         let t0 = T0EvidenceRecord::new(
             equity(),
+            "2026-08-14T15:00:30+08:00",
             quote(),
             order_book(),
             vec![bar(BarInterval::Day, "day-batch")],
@@ -1505,6 +1563,9 @@ mod tests {
             "b".repeat(64),
         )
         .unwrap();
+        let t0_round_trip: T0EvidenceRecord =
+            serde_json::from_slice(&serde_json::to_vec(&t0).unwrap()).unwrap();
+        assert_eq!(t0_round_trip.requested_at(), "2026-08-14T15:00:30+08:00");
         let mut t0_json = serde_json::to_value(&t0).unwrap();
         t0_json["daily_bar_count"] = serde_json::json!(2);
         assert!(serde_json::from_value::<T0EvidenceRecord>(t0_json).is_err());

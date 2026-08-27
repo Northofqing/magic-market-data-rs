@@ -254,6 +254,18 @@ repository admission、runtime availability、diagnostic availability、精确�
 `query_duration_micros_total / (query_succeeded + query_failed)` 计算。旧客户端忽略新增字段，
 不得把这些运行时值当作 Provider 时间、数据 evidence 或准入依据。
 
+`GetHealth.build_identity` 用于核对实际运行产物：`service_version`、构建时可用的
+`source_revision`、protobuf descriptor 的 `contract_sha256`、当前进程二进制的
+`binary_sha256`，以及仅在无法读取二进制身份时出现的 `identity_error`。monitor、探针和
+客户端 bundle 必须比较这些字段，不能仅凭进程名或本地源码目录推断服务版本。二进制摘要
+在服务进程内首次计算并缓存，不进入行情查询热路径。
+
+本服务不持久化查询审计。客户端若同时保存请求审计与服务响应审计，必须以稳定
+`request_id`/batch identity 去重，不能把同一 `HistoricalBars` 批次作为两次独立采集写入。
+数据库增长、保留周期和重复落库属于客户端数据基础设施；服务端负责返回一次完整响应及其
+证据。持仓 FIFO、T+1 可卖账本和 `invalid_position_ledger` 也属于账户/策略系统，不由本
+市场数据服务推导或修补。
+
 ### MarketDataService
 
 ```text
@@ -479,12 +491,13 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   `magic.market.news_item`；请求和记录版本均为 2，日期范围必须同时提供 start/end 或同时
   省略，并且必须携带调用方精确 `captured_through`；
 - `IndexQuotes`、`IntradayShape`、`T0Evidence`、`OutcomeDailyBars` 和
-  `UpperLimitPoolReview` 是 append-only 的第 56..60 个操作。其 v1 请求/记录字段见
+  `UpperLimitPoolReview` 是 append-only 的第 56..60 个操作。其版本化请求/记录字段见
   [`grpc-derived-products.md`](grpc-derived-products.md)；`IndexQuotes` 已绑定腾讯六指数
   严格 freshness composition，`IntradayShape` 已绑定腾讯完整分钟序列确定性派生，
   `OutcomeDailyBars` 已绑定 TDX-only 精确 through 日线，`UpperLimitPoolReview` 已绑定东财
   同交易日四池原子组合；`T0Evidence` 正式读取 TDX Quote、盘口、日 K 和 5 分钟 K，
-  返回当前本地 `observed_at`、保留四份输入证据并在无公共源时间时保持 `source_at=null`；
+  v2 必须接收并逐条原样回显调用方的精确 `requested_at`，返回当前本地 `observed_at`、
+  保留四份输入证据并在无公共源时间时保持 `source_at=null`；
 - `MoneyFlows`、`FundFlowSeries` 已绑定东财公开资金流正式合同，`TechnicalBars` 已绑定
   Baidu 未复权源技术日线正式合同；`PostCloseFlows` 已绑定东财当前交易日 15:35 后的
   本地观察快照；`FuturesDelivery` 已绑定 CFFEX 官方固定交割日历，Baidu
@@ -744,7 +757,9 @@ composition 实测后，2026-08-18 更新的部署实例通过远程 mTLS + Bear
 
 服务端把安全的 Protobuf `ErrorDetail` 编码在 trailing metadata
 `magic-error-detail-bin` 中：request ID、operation、Provider、reason code、retryable、
-admission，以及可选的 `evidence_code`、`evidence_field`、`record_index`。
+admission，以及可选的 `evidence_code`、`evidence_field`、`record_index`。有序路由失败还
+携带最多 16 个 `provider_attempts`，每项只有 ordinal、Provider、closed outcome/reason
+code、retryable 和 terminal；上游自由文本、URL、响应体与凭据永不进入该数组。
 证据拒绝固定使用 `reason_code=invalid_evidence`、`retryable=false`。GlobalNews 可用
 `record_index` 定位被拒记录；Consensus 使用安全的结构化字段路径标识 Provider 响应中
 发生冲突的 identity、年度、机构数、最小/均值/最大值或表结构，不回传敏感原文。
@@ -752,6 +767,10 @@ Provider 失败使用闭合的 `provider_authentication_rejected`、`provider_ra
 `provider_unavailable`、`external_query_rejected` 或 `provider_response_invalid`，保留安全
 Provider 身份和确定的 retryable 标志。CLS 的原始 HTTP status、`errno`/`errmsg` 或解析
 类别只进入服务端受限结构化日志，不进入 gRPC message 或 detail。
+`records=[]` 或策略侧“扫描到 0 候选”只有在该策略声明的全部必需数据族都返回已准入、完整
+或 verified-empty 时，才可解释为没有机会。任一 MoneyFlow、完成日线、T0Evidence 或其他
+必需输入为 unavailable、partial、stale、UNADMITTED 或失败时，客户端必须记录
+`incomplete_inputs`，不能把零候选提升为市场结论。
 生产 stderr 日志以 `ts=<UTC RFC3339> level=<...> target=<...> event=<...>` 开头；TDX
 兼容日志保留 `[E/W/I/D]` 级别标记并在其前面增加相同 UTC RFC3339 时间戳。成功行情轮询
 和成功 unary 请求不逐条写日志，避免同步 I/O 进入热路径。
@@ -780,6 +799,10 @@ TDX 日内 K 线还会排除上游唯一、最新、同日且受限的未完成�
 接受任意其它子域或后缀伪装。bundle 同时收录本文直接引用的 TDX
 SecurityProfiles 与未准入路由合同，所有文件由同一 LF `manifest.sha256` 覆盖；protobuf wire
 字段仍未变化。
+
+`2026-08-27.1` 将 `T0Evidence` 升级到 v2 并要求 `requested_at`，在 Health 增加运行构建
+身份，在安全错误 detail 增加完整有序 provider attempts。旧 T0 v1 请求明确拒绝，不由
+服务端默认 capture 时刻。
 
 ## 12. 客户端代码生成
 
@@ -816,6 +839,7 @@ Go 项目正式接入前可在自己的 Proto 镜像中补 `go_package` 映射�
 - [ ] Proto 文件摘要与服务端发布版本一致。
 - [ ] `protocol_version=1`，request_id 非空且可检索。
 - [ ] 启动先调用 GetHealth 和 GetCapabilities。
+- [ ] 比较 GetHealth.build_identity 与本次 bundle/发布制品的 descriptor 和二进制摘要。
 - [ ] 远程连接验证 TLS hostname 和 CA。
 - [ ] Authorization 只在 metadata 中注入。
 - [ ] 为 unary 和 stream 分别设置客户端 deadline/keepalive。

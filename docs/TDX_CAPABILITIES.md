@@ -74,6 +74,14 @@ and the batch `source_at` stays null. It is not eligible for a BR-033 strict
 source-time freshness gate; successful TCP reads do not promote it into a
 realtime quote route.
 
+For daily `HistoricalBars`, the current China-calendar-day row is a forming bar
+until 15:00 Asia/Shanghai. Before that boundary the adapter removes only that
+single structurally valid newest row and fetches exactly one older row from the
+same TDX source, preserving the requested cardinality and all source values.
+It never admits the forming row as settled history or replaces it with local
+values. At and after the close boundary, the same-date row is eligible for the
+normal structural and evidence checks.
+
 The security-list packet supplies name and enough evidence to identify ST
 names. The normalized Gateway joins it with the exact requested finance record
 to supply a validated listing date; mismatched identities, malformed dates and

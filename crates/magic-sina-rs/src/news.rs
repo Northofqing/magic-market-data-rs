@@ -673,11 +673,27 @@ fn decode_html_entities(value: &str) -> Result<String, SinaError> {
     while let Some(relative_start) = value[cursor..].find('&') {
         let start = cursor + relative_start;
         output.push_str(&value[cursor..start]);
-        let relative_end = value[start + 1..].find(';').ok_or_else(|| {
-            SinaError::Protocol("instrument-news HTML entity is not closed".into())
-        })?;
-        let end = start + 1 + relative_end;
-        let entity = &value[start + 1..end];
+        let tail = &value[start + 1..];
+        let token_length = tail
+            .bytes()
+            .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'#')
+            .count();
+        let entity = &tail[..token_length];
+        if token_length == 0 || !tail[token_length..].starts_with(';') {
+            if matches!(
+                entity,
+                "amp" | "lt" | "gt" | "quot" | "apos" | "nbsp" | "#39"
+            ) || entity.starts_with('#')
+            {
+                return Err(SinaError::Protocol(
+                    "instrument-news HTML entity is not closed".into(),
+                ));
+            }
+            output.push('&');
+            cursor = start + 1;
+            continue;
+        }
+        let end = start + 1 + token_length;
         let decoded = match entity {
             "amp" => '&',
             "lt" => '<',

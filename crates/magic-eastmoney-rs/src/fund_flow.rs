@@ -13,7 +13,9 @@ pub const PUBLIC_FUND_FLOW_ADMITTED: bool = true;
 use serde_json::Value;
 
 const MINUTE_ENDPOINT: &str = "https://push2.eastmoney.com/api/qt/stock/fflow/kline/get";
-const DAILY_ENDPOINT: &str = "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get";
+// Eastmoney's current `kline` contract accepts `klt=101` and returns the same
+// date plus five net-flow fields used by this adapter.
+const DAILY_ENDPOINT: &str = MINUTE_ENDPOINT;
 
 impl FundFlowSeries for EastmoneyClient {
     type Error = EastmoneyError;

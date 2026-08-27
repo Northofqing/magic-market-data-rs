@@ -1088,6 +1088,7 @@ dependencies = [
  "magic-market-service",
  "prost",
  "serde_json",
+ "sha2",
  "thiserror",
  "time",
  "tokio",

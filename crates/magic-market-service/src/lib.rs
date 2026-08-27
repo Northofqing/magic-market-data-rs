@@ -487,6 +487,85 @@ pub enum ProviderFailureKind {
     Unavailable,
 }
 
+/// One bounded, client-safe step in an ordered provider route failure.
+///
+/// Free-form upstream messages deliberately remain outside this type.  The
+/// external boundary may persist these values without leaking credentials or
+/// provider response text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProviderAttempt {
+    provider: String,
+    outcome: String,
+    reason_code: String,
+    retryable: bool,
+    terminal: bool,
+}
+
+impl ProviderAttempt {
+    pub fn new(
+        provider: impl Into<String>,
+        outcome: impl Into<String>,
+        reason_code: impl Into<String>,
+        retryable: bool,
+        terminal: bool,
+    ) -> Result<Self, ServiceError> {
+        let provider = provider.into();
+        let outcome = outcome.into();
+        let reason_code = reason_code.into();
+        if provider.trim() != provider
+            || provider.is_empty()
+            || provider.len() > 64
+            || provider.chars().any(char::is_control)
+        {
+            return Err(ServiceError::Internal(
+                "provider attempt identity is invalid".to_owned(),
+            ));
+        }
+        if !matches!(outcome.as_str(), "failed" | "rejected" | "selected") {
+            return Err(ServiceError::Internal(
+                "provider attempt outcome is invalid".to_owned(),
+            ));
+        }
+        if reason_code.is_empty()
+            || reason_code.len() > 64
+            || !reason_code
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        {
+            return Err(ServiceError::Internal(
+                "provider attempt reason code is invalid".to_owned(),
+            ));
+        }
+        Ok(Self {
+            provider,
+            outcome,
+            reason_code,
+            retryable,
+            terminal,
+        })
+    }
+
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    pub fn outcome(&self) -> &str {
+        &self.outcome
+    }
+
+    pub fn reason_code(&self) -> &str {
+        &self.reason_code
+    }
+
+    pub const fn retryable(&self) -> bool {
+        self.retryable
+    }
+
+    pub const fn terminal(&self) -> bool {
+        self.terminal
+    }
+}
+
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ServiceError {
     #[error("invalid request: {0}")]
@@ -515,6 +594,12 @@ pub enum ServiceError {
         provider: String,
         kind: ProviderFailureKind,
         provider_reason: String,
+    },
+    #[error("provider route failed for operation {operation:?}")]
+    ProviderRouteFailure {
+        operation: Operation,
+        exhausted: bool,
+        attempts: Vec<ProviderAttempt>,
     },
     #[error("source precondition failed: {0}")]
     FailedPrecondition(String),

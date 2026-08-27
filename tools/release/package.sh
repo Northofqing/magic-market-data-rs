@@ -60,7 +60,8 @@ build_probe() {
   package_name=$1
   example_name=$2
   installed_name=$3
-  CARGO_TARGET_DIR="$package_target_dir" cargo build -p "$package_name" \
+  MAGIC_MARKET_SOURCE_REVISION="$revision" CARGO_TARGET_DIR="$package_target_dir" \
+    cargo build -p "$package_name" \
     --example "$example_name" --release --locked --offline --target "$host_triple"
   install -m 0755 "$example_dir/$example_name$executable_suffix" \
     "$bin_dir/$installed_name$executable_suffix"
@@ -70,7 +71,8 @@ build_binary() {
   package_name=$1
   binary_name=$2
   installed_name=$3
-  CARGO_TARGET_DIR="$package_target_dir" cargo build -p "$package_name" \
+  MAGIC_MARKET_SOURCE_REVISION="$revision" CARGO_TARGET_DIR="$package_target_dir" \
+    cargo build -p "$package_name" \
     --bin "$binary_name" --release --locked --offline --target "$host_triple"
   install -m 0755 "$release_bin_dir/$binary_name$executable_suffix" \
     "$bin_dir/$installed_name$executable_suffix"

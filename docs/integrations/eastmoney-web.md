@@ -121,6 +121,12 @@ CNY 元。三次负载请求均成功，实际最小请求起始间隔 1000 ms�
 因此 `PUBLIC_FUND_FLOW_ADMITTED=true`，gRPC `FundFlowSeries` 与 `MoneyFlows`
 默认使用公开 Eastmoney Provider；配置妙想 Key 不会替换这条正式路径。
 
+2026-08-27 复验发现旧 `push2his` `daykline` 路径在当前网络持续提前终止 TLS；已登记的
+东财 `push2` 当前 `kline/get` 路径使用 `klt=101` 返回同一日级源日期以及主力、超大、大、
+中、小五档净流入。生产 `MoneyFlows` 本来只请求一条当前日记录，因此适配器改为该精确
+同源合同；不会跨 Provider 补值，也不把 Quote/成交额推算为资金流。确定性测试同时锁定
+分钟和日级请求都必须落在该精确路径，响应仍需通过证券 identity、日期和逐字段解析校验。
+
 2026-08-16 诊断观察到公开排名响应中部分行缺少量比 `f10` 或主力净流入 `f62`，
 因此完整 `MarketRankings` 仍原子失败。gRPC 的显式 UNADMITTED 诊断可返回有字段的
 有界行，但会保留各行不同的 `f124` 时间；这仍不会提升完整 `MarketRankings`。

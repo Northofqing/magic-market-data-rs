@@ -196,7 +196,7 @@ fn intraday_interval_seconds(interval: BarInterval) -> Option<i64> {
     }
 }
 
-fn validate_discarded_intraday_placeholder(
+fn validate_discarded_bar(
     request: &BarsRequest,
     record: &SecurityBar,
     bar_time: &str,
@@ -286,7 +286,56 @@ fn has_bounded_future_intraday_placeholder(
             "TDX bar source time {source_at} is newer than observation {observed_at} outside the bounded current intraday placeholder contract"
         )));
     }
-    validate_discarded_intraday_placeholder(request, &records[index], &bar_time, &source_at)?;
+    validate_discarded_bar(request, &records[index], &bar_time, &source_at)?;
+    Ok(true)
+}
+
+fn has_current_forming_daily_bar(
+    request: &BarsRequest,
+    records: &[SecurityBar],
+    observed_at: &str,
+) -> Result<bool, TdxError> {
+    if request.interval() != BarInterval::Day {
+        return Ok(false);
+    }
+    let observed_epoch = observed_at.parse::<i64>().map_err(|error| {
+        TdxError::InvalidData(format!("invalid TDX observation timestamp: {error}"))
+    })?;
+    const CHINA_OFFSET_SECONDS: i64 = 8 * 60 * 60;
+    const SECONDS_PER_DAY: i64 = 24 * 60 * 60;
+    const DAILY_SESSION_END_SECONDS: i64 = 15 * 60 * 60;
+    let observed_china = observed_epoch
+        .checked_add(CHINA_OFFSET_SECONDS)
+        .ok_or_else(|| TdxError::InvalidData("TDX observation timestamp overflow".into()))?;
+    if observed_china.rem_euclid(SECONDS_PER_DAY) >= DAILY_SESSION_END_SECONDS {
+        return Ok(false);
+    }
+    let observed_day = observed_china.div_euclid(SECONDS_PER_DAY);
+    let mut current_day = None;
+    for (index, record) in records.iter().enumerate() {
+        let (source_at, bar_time, source_epoch) = normalized_bar_time(request.interval(), record)?;
+        let source_day = source_epoch
+            .checked_add(CHINA_OFFSET_SECONDS)
+            .ok_or_else(|| TdxError::InvalidData("TDX bar timestamp overflow".into()))?
+            .div_euclid(SECONDS_PER_DAY);
+        if source_day != observed_day {
+            continue;
+        }
+        if current_day.replace((index, source_at, bar_time)).is_some() {
+            return Err(TdxError::InvalidData(
+                "TDX daily bars contain more than one current-day source row".into(),
+            ));
+        }
+    }
+    let Some((index, source_at, bar_time)) = current_day else {
+        return Ok(false);
+    };
+    if index + 1 != records.len() {
+        return Err(TdxError::InvalidData(format!(
+            "TDX current-day daily row {source_at} is not the newest source row"
+        )));
+    }
+    validate_discarded_bar(request, &records[index], &bar_time, &source_at)?;
     Ok(true)
 }
 
@@ -866,9 +915,10 @@ fn historical_bars_with_clock(
     }
     let mut records = pagination.finish()?;
     let selection_observed_at = observe()?;
-    let replace_placeholder =
-        has_bounded_future_intraday_placeholder(request, &records, &selection_observed_at)?;
-    let observed_at = if replace_placeholder {
+    let replace_unsettled_newest =
+        has_bounded_future_intraday_placeholder(request, &records, &selection_observed_at)?
+            || has_current_forming_daily_bar(request, &records, &selection_observed_at)?;
+    let observed_at = if replace_unsettled_newest {
         let mut older = query.security_bars(
             category,
             market,
@@ -885,9 +935,9 @@ fn historical_bars_with_clock(
                 requested_total: request.limit(),
             });
         }
-        records.pop().ok_or_else(|| {
-            TdxError::InvalidData("TDX intraday placeholder projection is empty".into())
-        })?;
+        records
+            .pop()
+            .ok_or_else(|| TdxError::InvalidData("TDX unsettled bar projection is empty".into()))?;
         older.append(&mut records);
         records = older;
         observe()?
@@ -940,9 +990,10 @@ async fn historical_bars_async_with_clock(
     }
     let mut records = pagination.finish()?;
     let selection_observed_at = observe()?;
-    let replace_placeholder =
-        has_bounded_future_intraday_placeholder(request, &records, &selection_observed_at)?;
-    let observed_at = if replace_placeholder {
+    let replace_unsettled_newest =
+        has_bounded_future_intraday_placeholder(request, &records, &selection_observed_at)?
+            || has_current_forming_daily_bar(request, &records, &selection_observed_at)?;
+    let observed_at = if replace_unsettled_newest {
         let mut older = query
             .security_bars(
                 category,
@@ -961,9 +1012,9 @@ async fn historical_bars_async_with_clock(
                 requested_total: request.limit(),
             });
         }
-        records.pop().ok_or_else(|| {
-            TdxError::InvalidData("TDX intraday placeholder projection is empty".into())
-        })?;
+        records
+            .pop()
+            .ok_or_else(|| TdxError::InvalidData("TDX unsettled bar projection is empty".into()))?;
         older.append(&mut records);
         records = older;
         observe()?

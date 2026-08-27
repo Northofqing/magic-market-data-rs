@@ -415,6 +415,66 @@ fn blocking_bar_seam_uses_decoded_records_and_exact_request_parameters() {
 }
 
 #[test]
+fn blocking_daily_bars_replace_current_forming_day_with_older_source_row() {
+    let query = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([
+            Ok(vec![source_bar_at(22, 10.0), source_bar_at(23, 10.5)]),
+            Ok(vec![source_bar_at(21, 9.5)]),
+        ])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 2).unwrap();
+
+    let batch = historical_bars_with_observed_at(
+        &query,
+        "tdx",
+        &request,
+        "1784772000", // 2026-07-23 10:00:00 +08:00
+    )
+    .unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![
+            (KLINE_DAILY, 1, "600396".into(), 0, 2, 0),
+            (KLINE_DAILY, 1, "600396".into(), 2, 1, 0),
+        ]
+    );
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.records()[0].bar_start(), "2026-07-21");
+    assert_eq!(batch.records()[1].bar_start(), "2026-07-22");
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-22"));
+}
+
+#[test]
+fn blocking_daily_bars_accept_current_day_at_the_local_close_boundary() {
+    let query = ScriptedBarsQuery {
+        responses: RefCell::new(VecDeque::from([Ok(vec![
+            source_bar_at(22, 10.0),
+            source_bar_at(23, 10.5),
+        ])])),
+        ..Default::default()
+    };
+    let request = BarsRequest::new(instrument("600396"), BarInterval::Day, 2).unwrap();
+
+    let batch = historical_bars_with_observed_at(
+        &query,
+        "tdx",
+        &request,
+        "1784790000", // 2026-07-23 15:00:00 +08:00
+    )
+    .unwrap();
+
+    assert_eq!(
+        *query.calls.borrow(),
+        vec![(KLINE_DAILY, 1, "600396".into(), 0, 2, 0)]
+    );
+    assert_eq!(batch.records()[0].bar_start(), "2026-07-22");
+    assert_eq!(batch.records()[1].bar_start(), "2026-07-23");
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-23"));
+}
+
+#[test]
 fn blocking_intraday_bars_replace_one_bounded_future_placeholder_with_older_source_row() {
     let query = ScriptedBarsQuery {
         responses: RefCell::new(VecDeque::from([

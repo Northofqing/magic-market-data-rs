@@ -277,6 +277,44 @@ fn official_http_article_url_is_upgraded_to_the_same_https_identity() {
 }
 
 #[test]
+fn official_article_url_accepts_sina_source_query_separators_without_entity_rewriting() {
+    let source_url = "http://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?stockid=600396&id=12535311";
+    let expected = "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?stockid=600396&id=12535311";
+    let client = SinaClient::with_transport(FixtureTransport::new(HashMap::from([(
+        url(1),
+        response(page(
+            "sh600396",
+            1,
+            &[row("2026-07-24 22:35", source_url, "来源公告")],
+            false,
+        )),
+    )])));
+
+    let batch = client.instrument_news(&request(1)).unwrap();
+
+    assert_eq!(batch.records()[0].canonical_url.as_str(), expected);
+}
+
+#[test]
+fn known_html_entities_still_require_a_semicolon() {
+    let source_url = "http://vip.stock.finance.sina.com.cn/corp/view/detail.php?stockid=600396&amp";
+    let client = SinaClient::with_transport(FixtureTransport::new(HashMap::from([(
+        url(1),
+        response(page(
+            "sh600396",
+            1,
+            &[row("2026-07-24 22:35", source_url, "错误实体")],
+            false,
+        )),
+    )])));
+
+    assert!(matches!(
+        client.instrument_news(&request(1)),
+        Err(SinaError::Protocol(message)) if message.contains("HTML entity is not closed")
+    ));
+}
+
+#[test]
 fn range_filter_and_limit_run_after_stable_cross_page_deduplication() {
     let one = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";
     let two = "https://finance.sina.com.cn/roll/2026-07-23/doc-two.shtml";

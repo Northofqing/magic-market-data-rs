@@ -1,10 +1,12 @@
 # gRPC derived market-data products
 
-This document fixes the version-1 external payload contracts for five composed
-market-data products. They are append-only `MarketDataService` RPCs using the
-common `QueryRequest` / `QueryResponse` envelope. The JSON below is carried in
-`CanonicalPayload.data` with `schema_version=1` and
-`content_type=application/json; charset=utf-8`.
+This document fixes the external payload contracts for five composed market-data
+products. They are append-only `MarketDataService` RPCs using the common
+`QueryRequest` / `QueryResponse` envelope. The JSON below is carried in
+`CanonicalPayload.data` with `content_type=application/json; charset=utf-8`.
+`IndexQuotes`, `IntradayShape`, `OutcomeDailyBars`, and
+`UpperLimitPoolReview` remain version 1. `T0Evidence` uses version 2; its frozen
+version-1 shape is no longer accepted by the production handler.
 
 The interfaces are present now so consumers can generate stable clients.
 All five products have passed their deterministic composition tests, two live
@@ -129,6 +131,7 @@ digest but are deliberately excluded from regular-session shape arithmetic.
 - RPC: `MarketDataService/T0Evidence`
 - Request schema: `magic.market.t0_evidence.request`
 - Record schema: `magic.market.t0_evidence`
+- Request and record schema version: 2
 - Provider policy: TDX only; no fallback or mixed-Provider bundle.
 
 Request data:
@@ -137,13 +140,17 @@ Request data:
 {
   "instruments":[{"exchange":"Shanghai","code":"600396","asset_class":"Equity"}],
   "daily_bar_count":20,
-  "five_minute_bar_count":48
+  "five_minute_bar_count":48,
+  "requested_at":"2026-08-27T09:24:10.123456+08:00"
 }
 ```
 
 The request accepts 1 through 8 unique A-share equities. Both counts are
-positive and at most 800. Each output record contains exact `instrument`, one
-`quote`, one `order_book`, echoed checked `daily_bar_count` and
+positive and at most 800. `requested_at` is the caller's exact capture instant
+and must include an explicit RFC3339 offset; the service echoes the original
+string into every record and commits it into the v2 digest. It is never replaced
+with server current time. Each output record contains exact `instrument`, one
+`quote`, one `order_book`, echoed `requested_at`, checked `daily_bar_count` and
 `five_minute_bar_count`, ordered `daily_bars`, ordered `five_minute_bars`,
 non-empty `input_evidence`, `algorithm_id=magic.t0_evidence`, positive
 `algorithm_revision`, and `input_digest_sha256`. Every required family must
@@ -157,6 +164,10 @@ Provider adapter excludes that row and obtains one additional older row from
 the same TDX request sequence. It preserves every returned source timestamp and
 never substitutes `observed_at`. Multiple, cross-date, out-of-session or
 unbounded future rows fail the whole product as invalid Provider evidence.
+Before the local 15:00 close, a TDX daily row labelled with the current China
+date is likewise forming: the adapter validates and excludes it, then fetches
+one additional older row from the same source so the requested settled count is
+preserved. After close, the same date is eligible as a completed daily bar.
 
 The formal handler performs the four TDX reads without fallback or
 `allow_unadmitted`. Two live requests and a separate three-request serial run on

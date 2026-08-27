@@ -150,7 +150,10 @@ target/dist/GIT_SHA/
 复制 Git 已跟踪的文档，不会把本机草稿或未跟踪文件混入制品。该目录是当前操作
 系统和 CPU 架构的产物，不能跨平台复制执行。构建使用每次新建的隔离 target 目录
 和显式 `TARGET_TRIPLE`，不会从常规 `target/release` 复制旧二进制。部署时先核对
-`RELEASE_REVISION` 与批准的 Git SHA，再在目标机执行 SHA-256 校验。POSIX 发布
+`RELEASE_REVISION` 与批准的 Git SHA，再在目标机执行 SHA-256 校验。打包构建会把同一
+revision 作为 `MAGIC_MARKET_SOURCE_REVISION` 编入服务；上线探针必须确认
+`GetHealth.build_identity.source_revision` 与 `RELEASE_REVISION` 相同，并校验协议 descriptor
+与当前进程二进制的 SHA-256 都为完整摘要。POSIX 发布
 脚本需要 Bash 与常用 Unix 工具；Windows 原生制品应在 Git Bash 或 Windows CI
 中生成。WSL 只能生成 Linux 制品，不能冒充 Windows 原生构建。
 打包脚本根据 Rust host triple 决定是否构建本地 TDX pair；现有对 `bin/` 的递归哈希
@@ -388,6 +391,10 @@ Windows 开发机在 2026-08-16 安装 Choice 9.14.0.1 与官方 C++ SDK 2.7.5.0
 链路可执行，但账号 API 权限已过期，不能据此发布任何 Windows EMQuant 数据能力。
 
 ## 健康检查与上线门
+
+上线探针必须在普通健康查询之外强制校验 `buildIdentity`。缺少精确 40 位 Git SHA、
+descriptor/binary SHA-256 或出现 `identityError` 都必须使探针非零退出，避免 monitor、
+客户端 bundle 与实际运行 gRPC 服务使用不同版本却继续工作。
 
 发布包安装后按顺序执行：
 

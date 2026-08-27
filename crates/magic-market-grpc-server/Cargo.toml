@@ -15,6 +15,7 @@ magic-market-grpc-contracts = { path = "../magic-market-grpc-contracts", version
 magic-market-service = { path = "../magic-market-service", version = "=0.2.0" }
 prost = "=0.14.3"
 serde_json = "1"
+sha2.workspace = true
 thiserror.workspace = true
 time = { version = "=0.3.54", default-features = false, features = ["formatting", "std"] }
 tokio = { version = "=1.52.3", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }

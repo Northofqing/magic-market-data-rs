@@ -211,6 +211,14 @@ out-of-session or farther-future rows reject the complete request. Blocking,
 Smart, Direct and async normalized paths share this rule and still return the
 exact caller cardinality in source order.
 
+For `Day`, one newest row dated on the current Asia/Shanghai calendar day is a
+forming bar before 15:00. The normalized operation validates and removes only
+that single newest forming row, then fetches exactly one older row from the same
+TDX source at the next offset. It never rewrites the row time, promotes local
+observation time into source evidence, mixes Providers, or returns fewer rows.
+At and after 15:00 the current-day row is evaluated as a completed candidate by
+the ordinary atomicity checks.
+
 ## BR-023 TDX normalized current-session admission
 Raw TDX current-minute and current-transaction packets are diagnostic evidence
 only until the normalized provider or gateway verifies an active A-share
@@ -751,8 +759,10 @@ hardening changes promotes a Provider, data family or diagnostic admission.
 
 `IndexQuotes`, `IntradayShape`, `T0Evidence`, `OutcomeDailyBars`, and
 `UpperLimitPoolReview` are versioned external data products, not aliases that
-permit an arbitrary existing Provider response to be relabelled. Their v1 JSON
-contracts are fixed by `docs/integrations/grpc-derived-products.md`. Every
+permit an arbitrary existing Provider response to be relabelled. Their JSON
+contracts are fixed by `docs/integrations/grpc-derived-products.md`: four remain
+v1, while `T0Evidence` is v2 and requires the caller's exact offset-bearing
+`requested_at`. Every
 request is explicitly bounded and every output retains the exact normalized
 Provider input evidence. Nullable source fields remain null; zero, local fetch
 time and another family's evidence must not fill a missing value.
@@ -772,6 +782,8 @@ deterministic contract suite and live admission are registered. `IndexQuotes`,
 through bounded deterministic compositions and two live plus three serial
 observations. `T0Evidence` binds one Quote, one five-level book, the requested
 daily bars and requested five-minute bars from TDX for every exact instrument.
+It echoes the caller's original `requested_at` into every record and commits it
+to the v2 digest; server current time cannot replace that capture boundary.
 Its response `observed_at` is the current local Asia/Shanghai observation time;
 the four original evidence objects remain unchanged, and the response
 `source_at` stays absent unless all four source instants are present and equal.

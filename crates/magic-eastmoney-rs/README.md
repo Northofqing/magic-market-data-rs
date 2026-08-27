@@ -16,7 +16,7 @@ sessions, credentials, portfolios, or order data.
 | --- | --- | --- | --- |
 | Instrument and industry reports | `ResearchReports`, `ResearchDocuments` | `reportapi.eastmoney.com`, `pdf.dfcfw.com` | metadata plus the exact original bounded PDF body |
 | Report target-price aggregation | `TargetPriceData` | `reportapi.eastmoney.com` | complete pagination; source code and `stockName`; exact `indvAimPriceL/T`; arithmetic mean of report range midpoints; typed verified-empty result for the exact all-zero shape |
-| Instrument fund flow | `FundFlowSeries` | `push2.eastmoney.com`, `push2his.eastmoney.com` | minute and daily parsers/mapping implemented, but `fund_flow_series=false` until a successful live admission probe |
+| Instrument fund flow | `FundFlowSeries` | `push2.eastmoney.com` | admitted current minute and daily (`klt=101`) main/super-large/large/medium/small net-flow mapping with source date/time; the production `MoneyFlows` handler requests one current daily record |
 | Board fund flow | `BoardFlows` | `push2.eastmoney.com` | industry/concept/region; 1/5/10-day ranking, return, main flow, daily tiers, leader when supplied |
 | Dragon-tiger list | `DragonTigerData` | `datacenter-web.eastmoney.com` | entries plus one atomic buy-five/sell-five seat group, amounts, reason, turnover and independent side ranks; seat limit must be at least 10 |
 | Full-market dragon-tiger discovery | `DragonTigerDiscovery` | `datacenter-web.eastmoney.com` | complete dated pagination across Shanghai/Shenzhen/Beijing, stable source ID, stock code and name |
@@ -76,9 +76,10 @@ uses `EastmoneyClient::provider_top_n_source_identity` and
 production `EastmoneyClient` internally and exposes neither client injection
 nor generic registration, so downstream code cannot substitute an injected
 transport or impersonate source/capability ownership.
-The callable fund-flow method is retained for deterministic fixtures and
-diagnostics, but it is not an admitted capability because neither public host
-has completed a successful live probe on this environment.
+The fixed public fund-flow contract is admitted. It uses the exact current
+`/api/qt/stock/fflow/kline/get` route for both minute and daily requests, with
+`klt` selecting the source shape; it does not synthesize daily values from Quote
+or fall back to authenticated Miaoxiang output.
 Eastmoney's public keyword-news search is also unadmitted: its real result rows
 do not contain a structured source instrument identity. A query keyword is not
 promoted into `NewsItem::instruments`; `instrument_news` returns a typed
@@ -249,8 +250,7 @@ cargo run -p magic-eastmoney-rs --example load_probe --release --locked
 
 `MAGIC_EASTMONEY_LOAD_OPERATION` accepts `mixed`, `research`, `fund-flow`,
 `board-flow`, `limit-pool`, `popularity`, or `news`. `mixed` rotates only
-admitted families and includes `news`; only explicit `fund-flow` remains a
-diagnostic.
+admitted families and includes `news` and `fund-flow`.
 High-level attempts are capped at 20. The summary includes attempts/second,
 min/P50/P95/P99/max attempt latency, explicit pacing-wait total/P95, minimum
 attempt start gap, status counts, and typed error categories. These are not

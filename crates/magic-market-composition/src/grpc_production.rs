@@ -61,8 +61,8 @@ use magic_market_router::{
     SourceError,
 };
 use magic_market_service::{
-    CanonicalPayload, Capability, Operation, OperationRegistry, ProviderFailureKind, QueryCommand,
-    QueryResult, ServiceError,
+    CanonicalPayload, Capability, Operation, OperationRegistry, ProviderAttempt,
+    ProviderFailureKind, QueryCommand, QueryResult, ServiceError,
 };
 use magic_nbs_rs::{NbsClient, NbsError};
 use magic_pbc_rs::{PbcClient, PbcError};
@@ -87,6 +87,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const NEWS_SCHEMA_VERSION: u32 = 2;
+pub const T0_EVIDENCE_SCHEMA_VERSION: u32 = 2;
 const EMQUANT_DAILY_BARS_SCOPE: &str = "Shanghai/Shenzhen equities; explicit inclusive start/end; unadjusted completed daily CSD OHLCV/amount; at most 800 returned rows";
 const HITHINK_HISTORICAL_BARS_SCOPE: &str = "six-digit A-share equities and standard exchange indices with explicit inclusive range of at most ten years, plus Shanghai/Shenzhen ETFs at most five years; official Fuyao unadjusted completed Day bars; most recent caller limit after complete bounded response validation";
 const HITHINK_MARKET_STATISTICS_SCOPE: &str = "1..=100 unique Shanghai/Shenzhen/Beijing equities; official Fuyao PE TTM, PE MRQ and PB MRQ with source nulls preserved";
@@ -3502,7 +3503,11 @@ fn execute_tdx_t0_evidence(
     command: QueryCommand,
     maximum_payload_bytes: usize,
 ) -> Result<QueryResult, ServiceError> {
-    let request: T0EvidenceRequest = decode_request(&command, T0_EVIDENCE_REQUEST_SCHEMA)?;
+    let request: T0EvidenceRequest = decode_request_version(
+        &command,
+        T0_EVIDENCE_REQUEST_SCHEMA,
+        T0_EVIDENCE_SCHEMA_VERSION,
+    )?;
     client
         .connect_to_any(Some(timeout_seconds))
         .map_err(|error| provider_error(Operation::T0Evidence, error))?;
@@ -3564,6 +3569,7 @@ fn execute_tdx_t0_evidence(
         let five_minute_bars = five_minute.into_records();
         let digest = t0_evidence_digest(
             instrument,
+            request.requested_at(),
             &quote,
             &order_book,
             &daily_bars,
@@ -3572,6 +3578,7 @@ fn execute_tdx_t0_evidence(
         )?;
         let record = T0EvidenceRecord::new(
             instrument.clone(),
+            request.requested_at(),
             quote,
             order_book,
             daily_bars,
@@ -3579,13 +3586,14 @@ fn execute_tdx_t0_evidence(
             request.daily_bar_count(),
             request.five_minute_bar_count(),
             input_evidence,
-            PositiveU32::new(1).map_err(|error| ServiceError::Internal(error.to_string()))?,
+            PositiveU32::new(T0_EVIDENCE_SCHEMA_VERSION)
+                .map_err(|error| ServiceError::Internal(error.to_string()))?,
             digest,
         )
         .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
         payloads.push(CanonicalPayload::new(
             T0_EVIDENCE_RECORD_SCHEMA,
-            SCHEMA_VERSION,
+            T0_EVIDENCE_SCHEMA_VERSION,
             serde_json::to_vec(&record).map_err(|error| {
                 ServiceError::Internal(format!("T0Evidence serialization failed: {error}"))
             })?,
@@ -3596,7 +3604,7 @@ fn execute_tdx_t0_evidence(
         records.push(record);
     }
     let aggregate_digest = domain_separated_sha256(
-        b"magic.t0_evidence.batch.v1\0",
+        b"magic.t0_evidence.batch.v2\0",
         &serde_json::to_vec(&records).map_err(|error| {
             ServiceError::Internal(format!("T0Evidence batch digest encoding failed: {error}"))
         })?,
@@ -3782,6 +3790,7 @@ fn current_china_observed_at() -> Result<String, ServiceError> {
 #[derive(Serialize)]
 struct T0EvidenceDigestInput<'a> {
     instrument: &'a InstrumentId,
+    requested_at: &'a str,
     quote: &'a Quote,
     order_book: &'a OrderBook,
     daily_bars: &'a [Bar],
@@ -3791,6 +3800,7 @@ struct T0EvidenceDigestInput<'a> {
 
 fn t0_evidence_digest(
     instrument: &InstrumentId,
+    requested_at: &str,
     quote: &Quote,
     order_book: &OrderBook,
     daily_bars: &[Bar],
@@ -3799,6 +3809,7 @@ fn t0_evidence_digest(
 ) -> Result<String, ServiceError> {
     let normalized = serde_json::to_vec(&T0EvidenceDigestInput {
         instrument,
+        requested_at,
         quote,
         order_book,
         daily_bars,
@@ -3808,7 +3819,7 @@ fn t0_evidence_digest(
     .map_err(|error| {
         ServiceError::Internal(format!("T0Evidence digest encoding failed: {error}"))
     })?;
-    domain_separated_sha256(b"magic.t0_evidence.v1\0", &normalized)
+    domain_separated_sha256(b"magic.t0_evidence.v2\0", &normalized)
 }
 
 #[derive(Serialize)]
@@ -3852,31 +3863,64 @@ fn map_index_quote_router_error(error: RouterError) -> ServiceError {
     if let RouterError::InvalidConfiguration(message) = &error {
         return ServiceError::FailedPrecondition(message.clone());
     }
-    let Some(attempt) = error.attempts().last() else {
-        return ServiceError::FailedPrecondition(error.to_string());
-    };
-    match attempt.status() {
-        AttemptStatus::Failed { kind, message, .. } => match kind {
-            FailureKind::InvalidRequest => ServiceError::InvalidRequest(message.clone()),
-            FailureKind::Unsupported => ServiceError::Unsupported {
-                operation: Operation::IndexQuotes,
-                reason: message.clone(),
-            },
-            FailureKind::Transport | FailureKind::Timeout | FailureKind::RateLimited => {
-                ServiceError::Unavailable {
-                    operation: Operation::IndexQuotes,
-                    reason: message.clone(),
+    let exhausted = matches!(&error, RouterError::Exhausted { .. });
+    let attempts = error
+        .attempts()
+        .iter()
+        .map(|attempt| {
+            let provider = format!("{:?}", attempt.provider_id());
+            match attempt.status() {
+                AttemptStatus::Failed { kind, action, .. } => ProviderAttempt::new(
+                    provider,
+                    "failed",
+                    route_failure_kind_code(*kind),
+                    route_failure_kind_is_retryable(*kind),
+                    matches!(action, magic_market_router::FailureAction::Stop),
+                ),
+                AttemptStatus::Rejected { kind, .. } => ProviderAttempt::new(
+                    provider,
+                    "rejected",
+                    route_failure_kind_code(*kind),
+                    false,
+                    false,
+                ),
+                AttemptStatus::Selected => {
+                    ProviderAttempt::new(provider, "selected", "selected", false, false)
                 }
             }
-            _ => ServiceError::FailedPrecondition(message.clone()),
+        })
+        .collect::<Result<Vec<_>, _>>();
+    match attempts {
+        Ok(attempts) if !attempts.is_empty() => ServiceError::ProviderRouteFailure {
+            operation: Operation::IndexQuotes,
+            exhausted,
+            attempts,
         },
-        AttemptStatus::Rejected { message, .. } => {
-            ServiceError::FailedPrecondition(message.clone())
-        }
-        AttemptStatus::Selected => ServiceError::FailedPrecondition(
-            "IndexQuotes routing failed after a selected attempt".into(),
-        ),
+        Ok(_) => ServiceError::Internal("provider route failure has no attempts".to_owned()),
+        Err(error) => error,
     }
+}
+
+const fn route_failure_kind_code(kind: FailureKind) -> &'static str {
+    match kind {
+        FailureKind::InvalidRequest => "invalid_request",
+        FailureKind::Unsupported => "unsupported",
+        FailureKind::Transport => "transport",
+        FailureKind::Timeout => "timeout",
+        FailureKind::RateLimited => "rate_limited",
+        FailureKind::NoData => "no_data",
+        FailureKind::Protocol => "protocol",
+        FailureKind::Quality => "quality",
+        FailureKind::Evidence => "evidence",
+        FailureKind::Provider => "provider",
+    }
+}
+
+const fn route_failure_kind_is_retryable(kind: FailureKind) -> bool {
+    matches!(
+        kind,
+        FailureKind::Transport | FailureKind::Timeout | FailureKind::RateLimited
+    )
 }
 
 fn execute_tencent_bars(
@@ -5456,6 +5500,46 @@ mod tests {
         assert!(observed_at.ends_with("+08:00"));
     }
 
+    #[test]
+    fn t0_external_decoder_rejects_v1_and_requires_v2_requested_at() {
+        let data = serde_json::to_vec(&serde_json::json!({
+            "instruments": [{
+                "exchange": "Shanghai",
+                "code": "600396",
+                "asset_class": "Equity"
+            }],
+            "daily_bar_count": 20,
+            "five_minute_bar_count": 20,
+            "requested_at": "2026-08-27T09:24:10.123456+08:00"
+        }))
+        .unwrap();
+        let command = |version| {
+            QueryCommand::new(
+                format!("t0-v{version}"),
+                Operation::T0Evidence,
+                Some("Tdx".to_owned()),
+                CanonicalPayload::new(T0_EVIDENCE_REQUEST_SCHEMA, version, data.clone(), 4096)
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        assert!(matches!(
+            decode_request_version::<T0EvidenceRequest>(
+                &command(1),
+                T0_EVIDENCE_REQUEST_SCHEMA,
+                T0_EVIDENCE_SCHEMA_VERSION,
+            ),
+            Err(ServiceError::InvalidRequest(message)) if message.contains("version 2")
+        ));
+        let request = decode_request_version::<T0EvidenceRequest>(
+            &command(T0_EVIDENCE_SCHEMA_VERSION),
+            T0_EVIDENCE_REQUEST_SCHEMA,
+            T0_EVIDENCE_SCHEMA_VERSION,
+        )
+        .unwrap();
+        assert_eq!(request.requested_at(), "2026-08-27T09:24:10.123456+08:00");
+    }
+
     const QUOTE_RESPONSE: &str = "v_sh600396=\"1~ABC~600396~15.47~14.92~15.30~1775070~821130~950794~15.47~212~15.46~95~15.45~64~15.44~3~15.43~375~15.49~49~15.50~2721~15.51~241~15.52~450~15.53~86~~20260723094907~0.55~3.69~15.88~14.85~15.47/1775070/2729507908~1775070~272951~\";";
     const INDEX_QUOTE_RESPONSE: &str = "v_sh000001=\"1~Shanghai Composite~000001~3560.47~3544.15~3551.30~1775070~821130~950794~3560.47~212~3560.46~95~3560.45~64~3560.44~3~3560.43~375~3560.49~49~3560.50~2721~3560.51~241~3560.52~450~3560.53~86~~20260723094907~16.32~0.46~3568.88~3538.85~3560.47/1775070/2729507908~1775070~272951~\";";
 
@@ -5480,6 +5564,15 @@ mod tests {
         fn get(&self, _url: &str) -> Result<Vec<u8>, TencentError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(INDEX_QUOTE_RESPONSE.as_bytes().to_vec())
+        }
+    }
+
+    #[derive(Clone)]
+    struct FailingIndexTransport;
+
+    impl SnapshotTransport for FailingIndexTransport {
+        fn get(&self, _url: &str) -> Result<Vec<u8>, TencentError> {
+            Err(TencentError::Transport("fixture TLS failure".to_owned()))
         }
     }
 
@@ -5929,6 +6022,46 @@ mod tests {
             Err(ServiceError::InvalidRequest(_))
         ));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn index_quote_route_failure_retains_its_safe_provider_attempt_trace() {
+        let client = TencentClient::with_transport(FailingIndexTransport);
+        let registry = registry_with_tencent(client, Duration::from_secs(1), 4096).unwrap();
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "indices": [{
+                "exchange": "Shanghai",
+                "code": "000001",
+                "asset_class": "Index"
+            }],
+            "maximum_source_age_millis": 5000
+        }))
+        .unwrap();
+        let command = QueryCommand::new(
+            "index-quotes-route-failure",
+            Operation::IndexQuotes,
+            Some(TENCENT_PROVIDER.to_owned()),
+            CanonicalPayload::new(INDEX_QUOTES_REQUEST_SCHEMA, SCHEMA_VERSION, payload, 4096)
+                .unwrap(),
+        )
+        .unwrap();
+        let error = registry.execute(command).unwrap_err();
+        let ServiceError::ProviderRouteFailure {
+            operation,
+            exhausted,
+            attempts,
+        } = error
+        else {
+            panic!("expected typed provider route failure");
+        };
+        assert_eq!(operation, Operation::IndexQuotes);
+        assert!(exhausted);
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].provider(), "Tencent");
+        assert_eq!(attempts[0].outcome(), "failed");
+        assert_eq!(attempts[0].reason_code(), "transport");
+        assert!(attempts[0].retryable());
+        assert!(!attempts[0].terminal());
     }
 
     #[test]
