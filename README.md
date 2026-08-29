@@ -194,6 +194,17 @@ gRPC 的 TLS、Bearer Token、启动参数、客户端证书和调用示例见
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)。Protobuf 文件位于
 [`market.proto`](crates/magic-market-grpc-contracts/proto/magic/market/v1/market.proto)。
 
+Windows 工作站可将完整 gRPC/TDX runtime 配置为当前用户登录后自动启动：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/runtime/install-windows-autostart.ps1
+```
+
+安装脚本写入当前用户的标准 Windows `Run` 启动项，默认延迟 20 秒并幂等检查 PID，避免
+重复进程。它有意使用当前用户的交互会话，不以 `SYSTEM` 身份运行，否则 TDX 同用户/同会话
+验证以及用户级 Provider 凭据会失真。移除启动项使用
+`tools/runtime/uninstall-windows-autostart.ps1`。
+
 ## 如何扩展
 
 新增数据源或数据族按以下顺序进行：
