@@ -393,6 +393,36 @@ fn parse_reports(
         .get("data")
         .and_then(Value::as_array)
         .ok_or_else(|| EastmoneyError::Protocol("report response data is not an array".into()))?;
+    if rows.is_empty() {
+        // 空 data 数组 = 源对该精确请求确认无报告 (业务态), 非响应缺陷。
+        // 与 target-price 先例对齐: finish_allow_empty + VerifiedEmpty, 服务器
+        // 据此分类为业务态而非 invalid_evidence (2026-08-30: 605178/300128
+        // 空响应曾被误判 Protocol("no usable records") → invalid_evidence)。
+        let context = BatchContext::new("research-reports", None)?;
+        let evidence = context.evidence()?;
+        let batch = context.finish_allow_empty::<ResearchReport>(Vec::new())?;
+        let request_identity = match requested_scope {
+            ReportScope::Instrument(instrument) => format!(
+                "{:?}:{}:research-report",
+                instrument.exchange(),
+                instrument.code()
+            ),
+            ReportScope::Industry(industry) => format!("industry:{}", industry.as_str()),
+        };
+        let empty = VerifiedEmpty::new(
+            "research_reports",
+            request_identity,
+            "source returned data=[] for the exact request",
+            evidence,
+            batch.provenance().clone(),
+        )
+        .map_err(|error| {
+            EastmoneyError::Protocol(format!(
+                "research-reports verified-empty evidence is invalid: {error}"
+            ))
+        })?;
+        return Err(EastmoneyError::VerifiedEmpty(Box::new(empty)));
+    }
     let source_at = rows
         .iter()
         .filter_map(|row| optional_string(row.get("publishDate")).ok().flatten())

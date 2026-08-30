@@ -477,6 +477,24 @@ fn report_parser_maps_wildcard_industries_author_fallbacks_and_beijing_identity(
     assert!(parse_reports(br#"{"data":[]}"#, &wildcard).is_err());
 }
 
+/// 空 data 数组 = 源对该精确请求确认无报告 (业务态), 必须分类为 VerifiedEmpty
+/// 而非 Protocol 缺陷 — 服务器据此映射业务态而非 invalid_evidence
+/// (2026-08-30: 605178/300128 空响应曾被误判 "no usable records")。
+#[test]
+fn empty_report_response_is_verified_empty_not_protocol_defect() {
+    let wildcard = ReportScope::Industry(NonEmptyText::new("*").unwrap());
+    let err = parse_reports(br#"{"data":[]}"#, &wildcard)
+        .expect_err("empty data array must be an error variant");
+    match err {
+        EastmoneyError::VerifiedEmpty(empty) => {
+            assert_eq!(empty.family(), "research_reports");
+            assert_eq!(empty.request_identity(), "industry:*");
+            assert!(empty.reason().contains("data=[]"));
+        }
+        other => panic!("expected VerifiedEmpty, got {other:?}"),
+    }
+}
+
 #[test]
 fn public_report_and_target_price_facades_reject_invalid_instruments_before_transport() {
     let invalid = InstrumentId::new(Exchange::Shanghai, "510050", AssetClass::Fund).unwrap();
