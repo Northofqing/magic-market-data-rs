@@ -5029,6 +5029,7 @@ mod tests {
     use magic_eastmoney_rs::EastmoneyTransport;
     use magic_market_core::{AssetClass, Quote, SecurityMetadata};
     use magic_market_service::QueryCommand;
+    use magic_sina_rs::SnapshotTransport as SinaSnapshotTransport;
     use magic_tencent_rs::SnapshotTransport;
 
     use super::*;
@@ -5542,6 +5543,16 @@ mod tests {
 
     const QUOTE_RESPONSE: &str = "v_sh600396=\"1~ABC~600396~15.47~14.92~15.30~1775070~821130~950794~15.47~212~15.46~95~15.45~64~15.44~3~15.43~375~15.49~49~15.50~2721~15.51~241~15.52~450~15.53~86~~20260723094907~0.55~3.69~15.88~14.85~15.47/1775070/2729507908~1775070~272951~\";";
     const INDEX_QUOTE_RESPONSE: &str = "v_sh000001=\"1~Shanghai Composite~000001~3560.47~3544.15~3551.30~1775070~821130~950794~3560.47~212~3560.46~95~3560.45~64~3560.44~3~3560.43~375~3560.49~49~3560.50~2721~3560.51~241~3560.52~450~3560.53~86~~20260723094907~16.32~0.46~3568.88~3538.85~3560.47/1775070/2729507908~1775070~272951~\";";
+    const SINA_AUCTION_NO_TRADE_RESPONSE: &str = "var hq_str_sh600396=\"ABC,0.000,14.920,0.000,0.000,0.000,16.410,16.420,0,0.000,6409200,16.410,72100,16.400,17600,16.390,3500,16.380,5000,16.370,1000,16.420,2000,16.430,3000,16.440,4000,16.450,5000,16.460,2026-08-31,09:20:00,00\";";
+
+    #[derive(Clone)]
+    struct SinaAuctionTransport;
+
+    impl SinaSnapshotTransport for SinaAuctionTransport {
+        fn get(&self, _url: &str) -> Result<Vec<u8>, SinaError> {
+            Ok(SINA_AUCTION_NO_TRADE_RESPONSE.as_bytes().to_vec())
+        }
+    }
 
     #[derive(Clone)]
     struct StaticTransport {
@@ -5637,6 +5648,40 @@ mod tests {
             CanonicalPayload::new(schema, SCHEMA_VERSION, data, 4096).unwrap(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn sina_auction_order_book_is_admitted_without_a_trade_price() {
+        let mut registry = OperationRegistry::all_unadmitted("fixture");
+        register_sina_parity(
+            &mut registry,
+            SinaClient::with_transport(SinaAuctionTransport),
+            4096,
+        )
+        .unwrap();
+
+        let result = registry
+            .execute(command_for(
+                Operation::OrderBooks,
+                ORDER_BOOKS_REQUEST_SCHEMA,
+                Some("Sina"),
+            ))
+            .unwrap();
+
+        assert!(result.repository_admitted);
+        assert!(result.complete);
+        assert_eq!(result.provider, "Sina");
+        assert_eq!(
+            result.source_at.as_deref(),
+            Some("2026-08-31T09:20:00+08:00")
+        );
+        assert_eq!(result.records.len(), 1);
+        let book: OrderBook = serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(book.status(), DataStatus::Available);
+        assert_eq!(
+            book.bids()[0].quantity().map(|value| value.get()),
+            Some(64_092.0)
+        );
     }
 
     #[test]

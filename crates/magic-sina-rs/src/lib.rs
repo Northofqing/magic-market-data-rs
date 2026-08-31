@@ -285,7 +285,7 @@ impl SinaClient {
 struct Snapshot {
     symbol: String,
     name: Option<String>,
-    current: f64,
+    current: Option<f64>,
     previous_close: Option<f64>,
     open: Option<f64>,
     high: Option<f64>,
@@ -405,13 +405,18 @@ fn parse_line(line: &str) -> Result<Snapshot, SinaError> {
     validate_top_of_book("bid", parse_nonnegative(fields[6], "best bid")?, bids[0].0)?;
     validate_top_of_book("ask", parse_nonnegative(fields[7], "best ask")?, asks[0].0)?;
 
-    let current = parse_positive(fields[3], "current price")?;
+    // Sina reports 0.000 before the first auction trade. That is a valid
+    // absence of a last-traded price and must not invalidate the independent
+    // five-level order book carried by the same packet.
+    let current = parse_optional_positive(fields[3], "current price")?;
     let previous_close = parse_optional_positive(fields[2], "previous close")?;
     let open = parse_optional_positive(fields[1], "open")?;
     let high = parse_optional_positive(fields[4], "high")?;
     let low = parse_optional_positive(fields[5], "low")?;
     validate_quote_shape(&symbol, current, open, high, low)?;
-    let change_percent = previous_close.map(|value| (current - value) / value * 100.0);
+    let change_percent = current
+        .zip(previous_close)
+        .map(|(current, previous)| (current - previous) / previous * 100.0);
     let source_at = parse_optional_timestamp(fields[30], fields[31])?;
     Ok(Snapshot {
         symbol,
@@ -452,14 +457,6 @@ fn parse_nonnegative(value: &str, field: &'static str) -> Result<f64, SinaError>
     let parsed = parse_number(value, field)?;
     if parsed < 0.0 {
         return Err(SinaError::Protocol(format!("{field} must be non-negative")));
-    }
-    Ok(parsed)
-}
-
-fn parse_positive(value: &str, field: &'static str) -> Result<f64, SinaError> {
-    let parsed = parse_nonnegative(value, field)?;
-    if parsed <= 0.0 {
-        return Err(SinaError::Protocol(format!("{field} must be positive")));
     }
     Ok(parsed)
 }
@@ -525,7 +522,7 @@ fn validate_top_of_book(
 
 fn validate_quote_shape(
     symbol: &str,
-    current: f64,
+    current: Option<f64>,
     open: Option<f64>,
     high: Option<f64>,
     low: Option<f64>,
@@ -536,7 +533,7 @@ fn validate_quote_shape(
                 "{symbol} high price is below low price"
             )));
         }
-        for (label, value) in [("current", Some(current)), ("open", open)] {
+        for (label, value) in [("current", current), ("open", open)] {
             if value.is_some_and(|price| price < low || price > high) {
                 return Err(SinaError::Protocol(format!(
                     "{symbol} {label} price is outside the daily range"
@@ -684,6 +681,12 @@ impl RealtimeQuotes for SinaClient {
         let mut records = Vec::with_capacity(snapshots.len());
         let mut issues = Vec::new();
         for (instrument, snapshot) in instruments.iter().zip(&snapshots) {
+            let current = snapshot.current.ok_or_else(|| {
+                SinaError::Unsupported(format!(
+                    "{} has no last-traded price; use order_books for call-auction liquidity",
+                    instrument.code()
+                ))
+            })?;
             let previous_close = optional_price(snapshot.previous_close)?;
             let open = optional_price(snapshot.open)?;
             let high = optional_price(snapshot.high)?;
@@ -713,7 +716,7 @@ impl RealtimeQuotes for SinaClient {
             records.push(Quote::from_parts(
                 instrument.clone(),
                 snapshot.name.clone(),
-                Price::new(snapshot.current)?,
+                Price::new(current)?,
                 previous_close,
                 open,
                 high,
@@ -923,6 +926,7 @@ mod tests {
 
     const SH_LINE: &str = "var hq_str_sh600396=\"华电辽能,15.300,14.920,16.410,16.410,14.850,16.410,0.000,341780059,5352355411.000,6409200,16.410,72100,16.400,17600,16.390,3500,16.380,5000,16.370,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,2026-07-23,15:34:59,00,D|402000|6596820.00\";";
     const SZ_LINE: &str = "var hq_str_sz000001=\"平安银行,10.920,10.980,11.080,11.120,10.900,11.070,11.080,109574268,1210838024.380,238200,11.070,173100,11.060,441300,11.050,88100,11.040,163594,11.030,15464,11.080,689371,11.090,2364064,11.100,1244300,11.110,2108997,11.120,2026-07-23,15:36:00,00,D|21253|235483.240\";";
+    const SZ_AUCTION_NO_TRADE_LINE: &str = "var hq_str_sz000001=\"平安银行,0.000,10.980,0.000,0.000,0.000,11.070,11.080,0,0.000,238200,11.070,173100,11.060,441300,11.050,88100,11.040,163594,11.030,15464,11.080,689371,11.090,2364064,11.100,1244300,11.110,2108997,11.120,2026-08-31,09:20:00,00,D|21253|235483.240\";";
     const BJ_LINE: &str = "var hq_str_bj920118=\"太湖远大,16.440,16.530,17.260,17.360,16.380,17.250,17.260,588716,9976849.670,75313,17.250,378,17.240,1000,17.230,500,17.150,2500,17.020,2038,17.260,7183,17.280,3002,17.290,1113,17.300,1200,17.320,2026-07-23,15:30:02,00,33.2261,0.0000,0,8300000,B,T\";";
 
     #[derive(Clone)]
@@ -1010,6 +1014,26 @@ mod tests {
             Some("2026-07-23T15:34:59+08:00")
         );
         assert!(batch.quality().is_complete());
+    }
+
+    #[test]
+    fn auction_without_trades_is_not_rejected() {
+        let client = SinaClient::with_transport(FixtureTransport {
+            response: encoded(SZ_AUCTION_NO_TRADE_LINE),
+        });
+
+        let batch = client.order_books(&[sz()]).unwrap();
+        let book = &batch.records()[0];
+        assert_eq!(book.status(), DataStatus::Available);
+        assert_eq!(book.bids()[0].price().map(Price::get), Some(11.07));
+        assert_eq!(book.bids()[0].quantity().map(Quantity::get), Some(2_382.0));
+        assert_eq!(book.source_at(), Some("2026-08-31T09:20:00+08:00"));
+        assert!(batch.quality().is_complete());
+        assert!(matches!(
+            client.realtime_quotes(&[sz()]),
+            Err(SinaError::Unsupported(message))
+                if message.contains("has no last-traded price")
+        ));
     }
 
     #[test]

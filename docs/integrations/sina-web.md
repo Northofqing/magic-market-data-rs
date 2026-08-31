@@ -61,7 +61,7 @@ var hq_str_<sh|sz|bj><六位代码>="<逗号字段>";
 | 0 | 名称 | `Quote.name`、ST 名称证据 |
 | 1 | 开盘 | CNY `Price`；0 保持缺失 |
 | 2 | 昨收 | CNY `Price`；0 保持缺失 |
-| 3 | 现价 | 必须为有限正数 |
+| 3 | 现价 | 有限正数表示最新成交价；`0.000` 表示尚无成交，不伪造成交价 |
 | 4 / 5 | 最高 / 最低 | CNY `Price`，校验 OHLC 范围 |
 | 6 / 7 | 最佳买 / 卖 | 与一档价格交叉校验 |
 | 8 | 累计成交量 | 源端“股”除以 100，输出“手” |
@@ -91,13 +91,23 @@ var hq_str_<sh|sz|bj><六位代码>="<逗号字段>";
 - 空请求、超过 50 个代码、重复代码或非沪深京六位 A 股；
 - 空响应、非法 GB18030、字段不足或符号键矛盾；
 - 响应缺行、重复行或包含未请求代码；
-- 非有限/负量额、非正现价、非法日历时间或 OHLC 矛盾；
+- 非有限/负价格或量额、非法日历时间或 OHLC 矛盾；
 - 冗余最佳价与一档价格矛盾；
 - 网络、TLS、HTTP 或响应上限错误。
 
 涨跌停时盘口一侧可能真实为 `0/0`。这种档位输出
 `BookLevel::unavailable()`，OrderBook 标记 `Unavailable` 并附质量问题；不会伪造
 五档。价格和数量只有一项存在也标质量问题或协议错误。
+
+集合竞价尚未成交时，Sina 会把字段 3 的现价返回为 `0.000`，但同一响应中的买卖五档
+仍是有效的挂单观察。解析器把零现价保留为“无最新成交价”，不会让它连带否决
+`OrderBooks`；只要五档和来源时间完整，盘口记录与批次保持 `Available`/complete。
+`RealtimeQuotes` v1 的 `Quote.price` 仍要求真实正成交价，因此该市场状态对
+`RealtimeQuotes` 返回明确 `Unsupported`，不得拿昨收、买一、卖一或零补价。竞价期挂单
+量能应调用已经注册的 `OrderBooks(provider=Sina)`，无需新增 RPC。
+
+这不把 Sina 提升为完整 `Auctions` Provider。五档盘口不能证明撮合价、匹配量、未匹配
+买卖总量或竞价阶段，`auction=false` 保持不变。
 
 每条记录保留 `ProviderId::Sina`、`source_at`、`observed_at` 和 `batch_id`。
 provenance source 固定为 `sina-web`；只有批次中每条快照都有源时间时，批次才写

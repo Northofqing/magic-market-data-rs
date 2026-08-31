@@ -988,3 +988,17 @@ existing `EventHub` state lock and adds no lock, exporter, listener, queue or
 background task. Health and listener-status responses expose snapshots only
 when explicitly requested. Telemetry failure or absence cannot change market
 data, completeness, routing, retry classification or fail-closed behavior.
+
+## BR-058 Sina call-auction no-trade order-book admission
+
+A Sina snapshot current-price value of zero during call auction means that no
+trade price exists yet; it is not a protocol failure and must not invalidate
+the independently sourced five-level order book in the same packet. A complete
+book with source time remains available even when the last-traded price is
+absent. The quote path must not substitute previous close, best bid, best ask,
+zero, observation time or any derived value for the missing trade price.
+
+Consumers needing auction queue liquidity use the existing `OrderBooks`
+operation. Sina remains unsupported for the complete `Auctions` capability:
+five-level queues do not prove matched price, matched quantity, directional
+unmatched totals, auction phase or a Level-2 auction contract.
