@@ -349,6 +349,9 @@ impl OperationRegistry {
             .registrations
             .get(&command.operation)
             .ok_or_else(|| ServiceError::Internal("operation registry is incomplete".to_owned()))?;
+        if command.preferred_provider().is_none() && command.operation == Operation::LimitPools {
+            return Self::execute_limit_pool_route(registrations, command);
+        }
         let registration = if let Some(preferred) = command.preferred_provider() {
             registrations
                 .iter()
@@ -370,6 +373,68 @@ impl OperationRegistry {
                     ServiceError::Internal("operation has no registrations".to_owned())
                 })?
         };
+        Self::execute_registration(registration, command)
+    }
+
+    fn execute_limit_pool_route(
+        registrations: &[Registration],
+        command: QueryCommand,
+    ) -> Result<QueryResult, ServiceError> {
+        let candidates = registrations.iter().filter(|registration| {
+            registration.capability.repository_admitted
+                && registration.capability.runtime_available
+                && registration.handler.is_some()
+        });
+        let mut attempts = Vec::new();
+        for registration in candidates {
+            match Self::execute_registration(registration, command.clone()) {
+                Ok(result) if result.complete => return Ok(result),
+                Ok(_) => {
+                    attempts.push(ProviderAttempt::new(
+                        &registration.capability.provider,
+                        "rejected",
+                        "response_invalid",
+                        false,
+                        false,
+                    )?);
+                    return Err(ServiceError::ProviderRouteFailure {
+                        operation: Operation::LimitPools,
+                        exhausted: false,
+                        attempts,
+                    });
+                }
+                Err(error) => {
+                    let attempt =
+                        provider_attempt_from_error(&registration.capability.provider, &error)?;
+                    let retryable = attempt.retryable();
+                    attempts.push(attempt);
+                    if !retryable {
+                        return Err(ServiceError::ProviderRouteFailure {
+                            operation: Operation::LimitPools,
+                            exhausted: false,
+                            attempts,
+                        });
+                    }
+                }
+            }
+        }
+        if attempts.is_empty() {
+            return registrations
+                .first()
+                .ok_or_else(|| ServiceError::Internal("operation has no registrations".to_owned()))
+                .and_then(|registration| Self::execute_registration(registration, command));
+        }
+        Err(ServiceError::ProviderRouteFailure {
+            operation: Operation::LimitPools,
+            exhausted: true,
+            attempts,
+        })
+    }
+
+    fn execute_registration(
+        registration: &Registration,
+        command: QueryCommand,
+    ) -> Result<QueryResult, ServiceError> {
         let capability = &registration.capability;
         if !capability.repository_admitted && !command.allows_unadmitted() {
             return Err(ServiceError::Unsupported {
@@ -412,6 +477,43 @@ impl OperationRegistry {
         }
         Ok(result)
     }
+}
+
+fn provider_attempt_from_error(
+    provider: &str,
+    error: &ServiceError,
+) -> Result<ProviderAttempt, ServiceError> {
+    let (outcome, reason_code, retryable) = match error {
+        ServiceError::ResourceExhausted(_) => ("failed", "rate_limited", true),
+        ServiceError::DeadlineExceeded(_) => ("failed", "timeout", true),
+        ServiceError::Unavailable { .. } => ("failed", "unavailable", true),
+        ServiceError::ProviderFailure { kind, .. } => match kind {
+            ProviderFailureKind::RateLimited => ("failed", "rate_limited", true),
+            ProviderFailureKind::Unavailable => ("failed", "unavailable", true),
+            ProviderFailureKind::AuthenticationRejected => {
+                ("rejected", "authentication_rejected", false)
+            }
+            ProviderFailureKind::QueryRejected => ("rejected", "query_rejected", false),
+            ProviderFailureKind::ResponseInvalid => ("rejected", "response_invalid", false),
+        },
+        ServiceError::InvalidRequest(_) => ("rejected", "invalid_request", false),
+        ServiceError::Unsupported { .. } => ("rejected", "unsupported", false),
+        ServiceError::Unauthenticated => ("rejected", "unauthenticated", false),
+        ServiceError::PermissionDenied(_) => ("rejected", "permission_denied", false),
+        ServiceError::ProviderRouteFailure { exhausted, .. } => (
+            "rejected",
+            if *exhausted {
+                "provider_route_exhausted"
+            } else {
+                "provider_route_stopped"
+            },
+            false,
+        ),
+        ServiceError::FailedPrecondition(_) => ("rejected", "source_precondition", false),
+        ServiceError::InvalidEvidence { .. } => ("rejected", "invalid_evidence", false),
+        ServiceError::Internal(_) => ("rejected", "internal", false),
+    };
+    ProviderAttempt::new(provider, outcome, reason_code, retryable, false)
 }
 
 fn validate_capability(
@@ -687,6 +789,300 @@ mod tests {
             .unwrap();
         assert_eq!(result.provider, "Tencent");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn default_limit_pool_route_retries_only_retryable_provider_failure() {
+        let first_calls = Arc::new(AtomicUsize::new(0));
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        let first_seen = first_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Primary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    first_seen.fetch_add(1, Ordering::SeqCst);
+                    Err(ServiceError::Unavailable {
+                        operation: Operation::LimitPools,
+                        reason: "temporary outage".to_owned(),
+                    })
+                },
+            )
+            .unwrap();
+        let second_seen = second_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Secondary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    second_seen.fetch_add(1, Ordering::SeqCst);
+                    Ok(QueryResult {
+                        provider: "Secondary".to_owned(),
+                        batch_id: "batch-secondary".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-03T01:20:00Z".to_owned(),
+                        source_at: Some("2026-09-03".to_owned()),
+                        records: Vec::new(),
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        let result = registry
+            .execute(command(Operation::LimitPools, None))
+            .unwrap();
+        assert_eq!(result.provider, "Secondary");
+        assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(second_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn verified_empty_limit_pool_does_not_fall_through_to_another_provider() {
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Primary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                |_| {
+                    Ok(QueryResult {
+                        provider: "Primary".to_owned(),
+                        batch_id: "batch-empty".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-03T01:20:00Z".to_owned(),
+                        source_at: Some("2026-09-03".to_owned()),
+                        records: Vec::new(),
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+        let second_seen = second_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Secondary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    second_seen.fetch_add(1, Ordering::SeqCst);
+                    unreachable!("verified-empty is a terminal successful market state")
+                },
+            )
+            .unwrap();
+
+        let result = registry
+            .execute(command(Operation::LimitPools, None))
+            .unwrap();
+        assert!(result.records.is_empty());
+        assert_eq!(result.provider, "Primary");
+        assert_eq!(second_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn incomplete_limit_pool_is_rejected_without_falling_through() {
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Primary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                |_| {
+                    Ok(QueryResult {
+                        provider: "Primary".to_owned(),
+                        batch_id: "batch-partial".to_owned(),
+                        complete: false,
+                        observed_at: "2026-09-03T01:20:00Z".to_owned(),
+                        source_at: Some("2026-09-03".to_owned()),
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+        let second_seen = second_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Secondary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    second_seen.fetch_add(1, Ordering::SeqCst);
+                    unreachable!("an incomplete response is a terminal contract failure")
+                },
+            )
+            .unwrap();
+
+        let error = registry
+            .execute(command(Operation::LimitPools, None))
+            .unwrap_err();
+        let ServiceError::ProviderRouteFailure {
+            exhausted,
+            attempts,
+            ..
+        } = error
+        else {
+            panic!("expected a safe provider route failure");
+        };
+        assert!(!exhausted);
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].provider(), "Primary");
+        assert_eq!(attempts[0].reason_code(), "response_invalid");
+        assert!(!attempts[0].retryable());
+        assert_eq!(second_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn explicit_limit_pool_provider_never_falls_through() {
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Primary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                |_| {
+                    Err(ServiceError::Unavailable {
+                        operation: Operation::LimitPools,
+                        reason: "temporary outage".to_owned(),
+                    })
+                },
+            )
+            .unwrap();
+        let second_seen = second_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Secondary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    second_seen.fetch_add(1, Ordering::SeqCst);
+                    unreachable!("an explicit Provider must not fall through")
+                },
+            )
+            .unwrap();
+
+        assert!(matches!(
+            registry.execute(command(Operation::LimitPools, Some("Primary"))),
+            Err(ServiceError::Unavailable { .. })
+        ));
+        assert_eq!(second_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn non_retryable_limit_pool_failure_stops_with_safe_attempt() {
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Primary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                |_| {
+                    Err(ServiceError::FailedPrecondition(
+                        "invalid source date".to_owned(),
+                    ))
+                },
+            )
+            .unwrap();
+        let second_seen = second_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Secondary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    second_seen.fetch_add(1, Ordering::SeqCst);
+                    unreachable!("a non-retryable rejection must stop the route")
+                },
+            )
+            .unwrap();
+
+        let error = registry
+            .execute(command(Operation::LimitPools, None))
+            .unwrap_err();
+        let ServiceError::ProviderRouteFailure {
+            exhausted,
+            attempts,
+            ..
+        } = error
+        else {
+            panic!("expected a safe provider route failure");
+        };
+        assert!(!exhausted);
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].provider(), "Primary");
+        assert_eq!(attempts[0].reason_code(), "source_precondition");
+        assert!(!attempts[0].retryable());
+        assert_eq!(second_calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]

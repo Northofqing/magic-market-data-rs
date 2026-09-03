@@ -1098,9 +1098,9 @@ mod tests {
 
     fn limits(response_bytes: usize) -> TqLoopbackLimits {
         TqLoopbackLimits::new(
-            Duration::from_millis(100),
-            Duration::from_millis(100),
-            Duration::from_millis(100),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
             1024,
             response_bytes,
         )

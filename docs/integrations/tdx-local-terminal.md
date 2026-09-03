@@ -274,7 +274,11 @@ loop is not blocked to manufacture a delivery guarantee.
 On a Windows host, `tools/release/package.sh` builds and installs
 `magic-market-monitor-server.exe` and `magic-tdx-native-bridge.exe` into the same
 `bin/` directory. Non-Windows hosts build neither. The recursive `bin/` hash
-manifest covers both. Neither binary auto-starts or opens an inbound listener.
+manifest covers both. Neither binary auto-starts the terminal or opens an
+inbound listener. Deployments may separately enable the repository watchdog,
+which starts only the configured exact `TdxW.exe` matching the admitted SHA-256,
+never kills a terminal or automates login, and reports process and loopback
+readiness independently.
 Price, cumulative volume, cumulative amount, previous close and OHLC are
 production-admitted. Source-record count remains unavailable. The three anomaly
 families are admitted only for triggered/rearmed messages that carry a valid Core

@@ -515,9 +515,11 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - 未配置东财妙想 Key 时，`Auctions` 和 `MarketBreadth` 仍在 I/O 前
   `UNIMPLEMENTED`；配置后也只返回源直接给出的部分字段，不用普通 Quote 冒充竞价，
   不把不完整家数统计提升为完整市场宽度；
-- `preferred_provider` 非空时必须精确选择已登记来源；空值选择该操作第一个可用登记。
-  当前不会在一次请求内部隐藏切源，上游失败会原样形成 typed gRPC error，调用方可根据
-  capabilities 和业务路由策略发起有界重试；
+- `preferred_provider` 非空时必须精确选择已登记来源，不会切源；空值通常选择该操作
+  第一个可用登记。`LimitPools` 是唯一的有界例外：只有来源返回明确可重试的 unavailable、
+  timeout 或 rate-limit failure 时，服务端才按稳定登记顺序尝试下一个已准入来源；完整空批次
+  是 truthful terminal，不会触发切源。所有失败尝试只通过安全、闭合的
+  `provider_attempts` 返回，不混合记录或证据；
 - 当前 10 条未准入 Provider×operation 路径及可显式选择的准入 operation 路由见
   [`unadmitted-provider-routes.md`](unadmitted-provider-routes.md)。这些路由只表示相同
   operation 下的独立来源，不表示数据集或 Provider 等价；例如 NBS/PBC/WorldBank

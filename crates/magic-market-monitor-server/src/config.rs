@@ -266,7 +266,8 @@ impl Config {
             "--identity-recheck-cycles N ",
             "--volume-rule-version N --volume-window-ms N --volume-boundary-tolerance-ms N ",
             "--volume-trigger-delta N --volume-rearm-delta N --volume-cooldown-ms N ",
-            "--restart-budget N --diagnostic-poll-cycles N(0=unbounded) --max-event-bytes N ",
+            "--restart-budget N(4294967295=unbounded) ",
+            "--diagnostic-poll-cycles N(0=unbounded) --max-event-bytes N ",
             "--output-queue-capacity N --output-shutdown-timeout-ms N ",
             "--output-slow-consumer-policy stop"
         )

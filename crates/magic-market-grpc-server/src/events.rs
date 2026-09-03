@@ -1319,8 +1319,17 @@ mod tests {
             "agent_connected_production"
         );
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let status = hub.listener_status("after-timeout".to_owned()).await;
+        let status = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let status = hub.listener_status("after-timeout".to_owned()).await;
+                if status.state == "agent_disconnected" {
+                    break status;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("idle-agent disconnect must complete within the bounded test deadline");
         assert_eq!(status.state, "agent_disconnected");
         assert_eq!(status.agent_connections_total, 1);
         assert_eq!(status.agent_disconnects_total, 1);

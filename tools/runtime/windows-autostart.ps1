@@ -71,6 +71,49 @@ function Test-RecordedProcess(
     }
 }
 
+function Start-TdxTerminalWatchdog {
+    $watchdogScript = [IO.Path]::Combine($PSScriptRoot, "tdx-terminal-watchdog.ps1")
+    $watchdogConfig = [IO.Path]::Combine($RuntimeRoot, "tdx-terminal-watchdog.json")
+    if (-not [IO.File]::Exists($watchdogScript) -or -not [IO.File]::Exists($watchdogConfig)) {
+        Write-AutostartLog "INFO" "TDX terminal watchdog is not configured"
+        return
+    }
+    $watchdogPidPath = [IO.Path]::Combine($RuntimeRoot, "tdx-terminal-watchdog.pid")
+    $powershell = [IO.Path]::Combine(
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows),
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe"
+    )
+    if (Test-RecordedProcess $watchdogPidPath "powershell" $powershell) {
+        Write-AutostartLog "INFO" "TDX terminal watchdog already running"
+        return
+    }
+    if ([IO.File]::Exists($watchdogPidPath)) {
+        [IO.File]::Delete($watchdogPidPath)
+    }
+    $watchdogArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy", "Bypass",
+        "-WindowStyle", "Hidden",
+        "-File", ('"' + $watchdogScript + '"'),
+        "-RuntimeRoot", ('"' + $RuntimeRoot + '"')
+    )
+    Start-Process `
+        -FilePath $powershell `
+        -ArgumentList $watchdogArguments `
+        -WorkingDirectory $PSScriptRoot `
+        -WindowStyle Hidden | Out-Null
+    [Threading.Thread]::Sleep(500)
+    if (-not [IO.File]::Exists($watchdogPidPath)) {
+        throw "TDX terminal watchdog did not remain running after startup"
+    }
+    Write-AutostartLog "INFO" "TDX terminal watchdog started"
+}
+
 $mutex = [Threading.Mutex]::new($false, "Local\MagicMarketDataGrpcRuntimeAutostart")
 $acquired = $false
 try {
@@ -79,6 +122,8 @@ try {
         Write-AutostartLog "INFO" "another autostart invocation is active"
         exit 0
     }
+
+    Start-TdxTerminalWatchdog
 
     $serverPidPath = [IO.Path]::Combine($RuntimeRoot, "grpc-server.pid")
     $agentPidPath = [IO.Path]::Combine($RuntimeRoot, "tdx-agent.pid")

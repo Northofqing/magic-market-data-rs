@@ -1002,3 +1002,35 @@ Consumers needing auction queue liquidity use the existing `OrderBooks`
 operation. Sina remains unsupported for the complete `Auctions` capability:
 five-level queues do not prove matched price, matched quantity, directional
 unmatched totals, auction phase or a Level-2 auction contract.
+
+## BR-059 Limit-pool route and local-terminal supervision
+
+An unpinned `LimitPools` query may try the registered production Providers in
+their deterministic registration order only after an explicitly retryable
+availability, timeout or rate-limit failure. The exact request is unchanged on
+every attempt. A successful complete batch, including a truthful verified-empty
+batch, terminates the route immediately. Invalid requests, unsupported scopes,
+authentication failures, response/evidence conflicts and other non-retryable
+failures stop the route. An explicit `preferred_provider` never falls through.
+An exhausted or stopped route returns only bounded safe typed Provider attempts;
+it never returns stale records, mixed provenance or partial success.
+
+Repeated transient TQ loopback failures for the same discovered terminal
+candidate retain one pending monitor generation. Losing a previously running
+loopback advances continuity once; retrying the unchanged pending candidate does
+not create an Agent reconnect storm. Terminal absence, replacement, conflicting
+identity or permanent schema failure still clears the pending identity and
+preserves the existing fail-closed reset semantics.
+
+The production Agent argument file uses `restart_budget=4294967295` as the
+explicit unbounded-retry sentinel. This keeps one monitor process alive while an
+unchanged terminal is absent or its loopback is temporarily unavailable, so the
+Agent connection and pending generation are not replaced every few minutes.
+Finite diagnostic and acceptance runs continue to use a finite restart budget.
+
+An optional current-user deployment watchdog may restart only the exact
+registered `TdxW.exe` path whose SHA-256 matches the checked-in compatibility
+identity. It never kills a terminal, starts a second ambiguous candidate,
+automates login, changes TQ configuration or treats process existence as data
+readiness. Process identity and fixed-port `127.0.0.1:17709` readiness are logged
+as separate low-cardinality states and do not change any data admission.

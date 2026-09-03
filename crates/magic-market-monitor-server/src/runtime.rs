@@ -413,6 +413,7 @@ struct Runtime<D, P, S, O, C> {
     last_arrival_millis: Option<u64>,
     last_session_marker: Option<SessionMarker>,
     watchlist_validated_generation: Option<u64>,
+    retry_candidate: Option<CandidateEvidence>,
 }
 
 impl<D, P, S, O, C> Runtime<D, P, S, O, C>
@@ -454,6 +455,7 @@ where
             last_arrival_millis: None,
             last_session_marker: None,
             watchlist_validated_generation: None,
+            retry_candidate: None,
         }
     }
 
@@ -503,12 +505,16 @@ where
                     "discovery_failed",
                     format_args!("detail={error}"),
                 );
-                return self.fail_to_waiting(ResetReason::DiscoveryFailed, error.to_string());
+                return self.fail_to_waiting(
+                    ResetReason::DiscoveryFailed,
+                    error.to_string(),
+                    false,
+                );
             }
         };
         match discovery {
             DiscoveryOutcome::None { reason } => {
-                self.reset_to_waiting(ResetReason::TerminalNotRunning)?;
+                self.reset_to_waiting(ResetReason::TerminalNotRunning, false)?;
                 self.output.emit(&ServiceEvent::Waiting {
                     reason,
                     listener_started: false,
@@ -516,7 +522,7 @@ where
                 Ok(Step::Rediscover)
             }
             DiscoveryOutcome::Rejected { reason } => {
-                self.reset_to_waiting(ResetReason::DiscoveryRejected)?;
+                self.reset_to_waiting(ResetReason::DiscoveryRejected, false)?;
                 self.output.emit(&ServiceEvent::Waiting {
                     reason,
                     listener_started: false,
@@ -543,10 +549,10 @@ where
                 }
             }
             Ok(DiscoveryOutcome::None { reason }) => {
-                self.fail_to_waiting(ResetReason::TerminalNotRunning, reason)
+                self.fail_to_waiting(ResetReason::TerminalNotRunning, reason, false)
             }
             Ok(DiscoveryOutcome::Rejected { reason }) => {
-                self.fail_to_waiting(ResetReason::DiscoveryRejected, reason)
+                self.fail_to_waiting(ResetReason::DiscoveryRejected, reason, false)
             }
             Err(error) => {
                 logging::event(
@@ -555,7 +561,7 @@ where
                     "identity_recheck_failed",
                     format_args!("detail={error}"),
                 );
-                self.fail_to_waiting(ResetReason::DiscoveryFailed, error.to_string())
+                self.fail_to_waiting(ResetReason::DiscoveryFailed, error.to_string(), false)
             }
         }
     }
@@ -569,8 +575,17 @@ where
                     && previous.process_creation_time_100ns_since_1601
                         == candidate.process_creation_time_100ns_since_1601
             }
-            Lifecycle::Waiting => false,
+            Lifecycle::Waiting => self.retry_candidate.as_ref().is_some_and(|previous| {
+                previous.process_id == candidate.process_id
+                    && previous.session_id == candidate.session_id
+                    && previous.process_creation_time_100ns_since_1601
+                        == candidate.process_creation_time_100ns_since_1601
+            }),
         };
+        if same_candidate && matches!(self.lifecycle, Lifecycle::Waiting) {
+            self.lifecycle = Lifecycle::Candidate(candidate.clone());
+            self.retry_candidate = None;
+        }
         if !same_candidate {
             if !matches!(self.lifecycle, Lifecycle::Waiting) {
                 self.reset_windows(ResetReason::TerminalCandidateChanged)?;
@@ -586,6 +601,7 @@ where
             self.last_arrival_millis = None;
             self.last_session_marker = None;
             self.watchlist_validated_generation = None;
+            self.retry_candidate = None;
             self.lifecycle = Lifecycle::Candidate(candidate.clone());
             self.output.emit(&ServiceEvent::DiscoveryCandidate {
                 generation: self.generation,
@@ -621,7 +637,12 @@ where
                         message: error.message.clone(),
                         amount_window_cleared: false,
                     })?;
-                    return self.fail_to_waiting(ResetReason::LoopbackPollFailed, error.message);
+                    let retry_same_candidate = error.disposition == FailureDisposition::Transient;
+                    return self.fail_to_waiting(
+                        ResetReason::LoopbackPollFailed,
+                        error.message,
+                        retry_same_candidate,
+                    );
                 }
             }
         }
@@ -647,6 +668,7 @@ where
                 return self.fail_to_waiting(
                     ResetReason::LoopbackPollFailed,
                     "loopback price-volume batch cardinality mismatch".to_owned(),
+                    false,
                 );
             }
             Err(error) => {
@@ -670,7 +692,8 @@ where
                 } else {
                     ResetReason::LoopbackPollFailed
                 };
-                return self.fail_to_waiting(reason, error.message);
+                let retry_same_candidate = error.disposition == FailureDisposition::Transient;
+                return self.fail_to_waiting(reason, error.message, retry_same_candidate);
             }
         };
         for (index, (watched, observation)) in watchlist.into_iter().zip(observations).enumerate() {
@@ -738,6 +761,7 @@ where
                 })?;
                 if !matches!(self.lifecycle, Lifecycle::Running(_)) {
                     self.lifecycle = Lifecycle::Running(candidate.clone());
+                    self.retry_candidate = None;
                     self.output.emit(&ServiceEvent::Running {
                         generation: self.generation,
                     })?;
@@ -1048,14 +1072,19 @@ where
         &mut self,
         reason: ResetReason,
         message: String,
+        retry_same_candidate: bool,
     ) -> Result<Step, ServiceError> {
-        self.reset_to_waiting(reason)?;
+        self.reset_to_waiting(reason, retry_same_candidate)?;
         self.output.emit(&ServiceEvent::Waiting {
             reason: message,
             listener_started: false,
         })?;
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
-        if self.consecutive_failures > self.restart_budget {
+        // Production uses the maximum u32 as an explicit unbounded retry
+        // sentinel. The counter saturates there, so a terminal that is absent
+        // for hours can return without forcing the Agent to replace the
+        // monitor process and its continuity generation.
+        if self.restart_budget != u32::MAX && self.consecutive_failures > self.restart_budget {
             self.output.emit(&ServiceEvent::RestartBudgetExhausted {
                 used: self.consecutive_failures,
                 budget: self.restart_budget,
@@ -1065,7 +1094,19 @@ where
         Ok(Step::Rediscover)
     }
 
-    fn reset_to_waiting(&mut self, reason: ResetReason) -> Result<(), ServiceError> {
+    fn reset_to_waiting(
+        &mut self,
+        reason: ResetReason,
+        retry_same_candidate: bool,
+    ) -> Result<(), ServiceError> {
+        self.retry_candidate = if retry_same_candidate {
+            match &self.lifecycle {
+                Lifecycle::Candidate(candidate) => Some(candidate.clone()),
+                Lifecycle::Waiting | Lifecycle::Running(_) => None,
+            }
+        } else {
+            None
+        };
         if !matches!(self.lifecycle, Lifecycle::Waiting) {
             self.reset_windows(reason)?;
         }
@@ -1659,6 +1700,112 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn repeated_candidate_connect_failures_keep_one_pending_generation() {
+        let same_candidate = candidate(42);
+        let connect_failure = || PollFailure {
+            category: TqLoopbackErrorCategory::Connect,
+            disposition: FailureDisposition::Transient,
+            message: "loopback_not_ready".to_owned(),
+        };
+        let mut runtime = runtime(
+            vec![
+                DiscoveryOutcome::Candidate(same_candidate.clone()),
+                DiscoveryOutcome::Candidate(same_candidate.clone()),
+                DiscoveryOutcome::Candidate(same_candidate),
+            ],
+            vec![
+                Err(connect_failure()),
+                Err(connect_failure()),
+                Err(connect_failure()),
+            ],
+            10,
+        );
+
+        assert_eq!(runtime.step().unwrap(), Step::Rediscover);
+        assert_eq!(runtime.step().unwrap(), Step::Rediscover);
+        assert_eq!(runtime.step().unwrap(), Step::Rediscover);
+        assert_eq!(runtime.generation, 1);
+        assert_eq!(
+            runtime
+                .output
+                .0
+                .iter()
+                .filter(|event| matches!(event, ServiceEvent::DiscoveryCandidate { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn maximum_restart_budget_keeps_production_retry_unbounded() {
+        let same_candidate = candidate(42);
+        let connect_failure = || PollFailure {
+            category: TqLoopbackErrorCategory::Connect,
+            disposition: FailureDisposition::Transient,
+            message: "loopback_not_ready".to_owned(),
+        };
+        let mut runtime = runtime(
+            vec![
+                DiscoveryOutcome::Candidate(same_candidate.clone()),
+                DiscoveryOutcome::Candidate(same_candidate),
+            ],
+            vec![Err(connect_failure()), Err(connect_failure())],
+            u32::MAX,
+        );
+        runtime.consecutive_failures = u32::MAX - 1;
+
+        assert_eq!(runtime.step().unwrap(), Step::Rediscover);
+        assert_eq!(runtime.step().unwrap(), Step::Rediscover);
+        assert_eq!(runtime.consecutive_failures, u32::MAX);
+        assert!(!runtime
+            .output
+            .0
+            .iter()
+            .any(|event| matches!(event, ServiceEvent::RestartBudgetExhausted { .. })));
+    }
+
+    #[test]
+    fn running_loopback_loss_advances_once_then_reuses_pending_generation() {
+        let same_candidate = candidate(42);
+        let connect_failure = || PollFailure {
+            category: TqLoopbackErrorCategory::Connect,
+            disposition: FailureDisposition::Transient,
+            message: "loopback_not_ready".to_owned(),
+        };
+        let mut runtime = runtime(
+            vec![
+                DiscoveryOutcome::Candidate(same_candidate.clone()),
+                DiscoveryOutcome::Candidate(same_candidate.clone()),
+                DiscoveryOutcome::Candidate(same_candidate),
+            ],
+            vec![
+                Ok(observation(1, "10.0", "100")),
+                Err(connect_failure()),
+                Err(connect_failure()),
+                Err(connect_failure()),
+            ],
+            10,
+        );
+
+        assert_eq!(runtime.step().unwrap(), Step::PollAgain);
+        assert_eq!(runtime.generation, 1);
+        assert_eq!(runtime.step().unwrap(), Step::Rediscover);
+        assert_eq!(runtime.step().unwrap(), Step::Rediscover);
+        assert_eq!(runtime.generation, 2);
+        assert_eq!(runtime.step().unwrap(), Step::Rediscover);
+        assert_eq!(runtime.generation, 2);
+        assert_eq!(
+            runtime
+                .output
+                .0
+                .iter()
+                .filter(|event| matches!(event, ServiceEvent::DiscoveryCandidate { .. }))
+                .count(),
+            2
+        );
     }
 
     #[test]

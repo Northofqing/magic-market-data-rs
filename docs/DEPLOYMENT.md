@@ -263,6 +263,26 @@ server 只按自身可执行文件目录解析 discovery helper，不搜索 `PAT
 origin 和 helper 路径均不受接口控制。调用方必须通过 `GetListenerStatus` 等待 desired
 与 applied revision/list 一致，再把新 generation 作为订阅 cursor 基线。
 
+需要在终端意外退出后自动拉起时，可在 `target/runtime` 创建本机私有配置（该文件不进入
+版本库）：
+
+```json
+{"executable":"C:\\new_tdx64\\TdxW.exe"}
+```
+
+文件名固定为 `tdx-terminal-watchdog.json`。随后运行
+`tools/runtime/windows-autostart.ps1`，它会以隐藏后台进程启动
+`tools/runtime/tdx-terminal-watchdog.ps1`。看门狗只接受文件名精确为 `TdxW.exe` 且
+SHA-256 与准入兼容表一致的二进制；进程缺失时在当前交互会话正常显示启动，进程存在但
+`127.0.0.1:17709` 未就绪时只记录 typed 告警，不强杀、不循环重启，也不自动登录。
+日志和 PID 分别写入 `target/runtime/logs/tdx-terminal-watchdog.log` 与
+`target/runtime/tdx-terminal-watchdog.pid`。
+
+常驻 Agent 的同目录 `magic-market-monitor-server.args.json` 必须使用
+`--restart-budget 4294967295` 和 `--diagnostic-poll-cycles 0`。前者是生产持续重连
+哨兵，后者关闭诊断轮次上限；其他正数 restart budget 只适合有界诊断，否则终端长时间
+离线会周期性耗尽 budget、退出 monitor 并更换 generation。
+
 下列 Command Prompt 命令只展示当前 Config 的完整参数形状，并用两个 scheduler
 cycle 限定一次诊断；其中数值是 syntax/fixture 示例，不是生产默认、性能建议或准入
 阈值：
