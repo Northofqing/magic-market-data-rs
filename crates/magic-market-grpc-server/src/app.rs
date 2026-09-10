@@ -362,6 +362,7 @@ implement_query_service! {
         t0_evidence => T0Evidence,
         outcome_daily_bars => OutcomeDailyBars,
         upper_limit_pool_review => UpperLimitPoolReview,
+        current_auction_observations => CurrentAuctionObservations,
 }
 
 pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
@@ -426,6 +427,7 @@ pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
         Operation::T0Evidence => v1::Operation::T0Evidence,
         Operation::OutcomeDailyBars => v1::Operation::OutcomeDailyBars,
         Operation::UpperLimitPoolReview => v1::Operation::UpperLimitPoolReview,
+        Operation::CurrentAuctionObservations => v1::Operation::CurrentAuctionObservations,
     }
 }
 

@@ -11,13 +11,15 @@ Production admission currently covers:
 - recent quarterly A-share `FinancialStatements` with per-report evidence;
 - cash-dividend and bonus-share A-share `CorporateActions`;
 - exact A-share/index/exchange-fund `SecurityMetadata` with unavailable fields left absent.
+- current A-share `CurrentAuctionObservations` for explicit `live` or `final`
+  stage, including the provider-native signed `auction_unmatched` value.
 
-The official current `stage=final` auction snapshot is also implemented as an
-explicit diagnostic. It converts source lots to shares and preserves the
-provider response timestamp as `observed_at`, but it is not production-admitted:
-Fuyao does not return the exact trading date, record `source_at`, or directional
-unmatched bid/ask quantities. Use of another source or local time to fill those
-fields is prohibited.
+The current-observation contract converts source lots to shares, treats a zero
+price as an absent no-trade price, and preserves the response timestamp only as
+`observed_at`. It does not claim a trading date, record `source_at`, unmatched
+unit, or bid/ask direction. The separate complete Core `Auctions` mapping remains
+an explicit unadmitted diagnostic because Fuyao does not return those required
+fields. Use of another source or local time to fill them is prohibited.
 
 Set `HITHINK_FINANCE_API_KEY` in the service process environment. The key is
 sent only in the `X-api-key` header and is redacted from Debug output. Missing,

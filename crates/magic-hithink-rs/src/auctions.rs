@@ -4,13 +4,172 @@ use crate::{
 };
 use magic_market_core::{
     AssetClass, AuctionSnapshot, DataBatch, DataStatus, FiniteNumber, InstrumentId, Money, Price,
-    ProviderId, Quantity, Ratio, RatioUnit,
+    ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence, SourcedRecord,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 const MAX_AUCTION_INSTRUMENTS: usize = 100;
 const SHARES_PER_LOT: f64 = 100.0;
+
+/// Caller-selected view of the provider's current, date-less auction snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurrentAuctionStage {
+    Live,
+    Final,
+}
+
+impl CurrentAuctionStage {
+    fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Live => "live",
+            Self::Final => "final",
+        }
+    }
+}
+
+/// Provider-declared availability state for a returned auction observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurrentAuctionDataStatus {
+    Live,
+    Final,
+    Suspended,
+}
+
+/// Truthful projection of one HITHINK current auction row.
+///
+/// This deliberately has no trading date, provider event time, or directional
+/// unmatched queues because the upstream snapshot publishes none of them.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CurrentAuctionObservation {
+    instrument: InstrumentId,
+    name: String,
+    requested_stage: CurrentAuctionStage,
+    auction_phase: String,
+    data_status: CurrentAuctionDataStatus,
+    auction_price: Option<Price>,
+    pre_close_price: Option<Price>,
+    auction_pct: Option<Ratio>,
+    auction_volume_shares: Option<Quantity>,
+    auction_amount: Option<Money>,
+    /// Signed provider-native value. The source does not publish its unit or
+    /// define which sign represents the bid or ask side.
+    auction_unmatched: Option<FiniteNumber>,
+    auction_turnover_pct: Option<Ratio>,
+    auction_volume_ratio: Option<Ratio>,
+    auction_yesterday_ratio_pct: Option<Ratio>,
+    float_market_cap: Option<Money>,
+    last_price: Option<Price>,
+    open_price: Option<Price>,
+    evidence: SourceEvidence,
+}
+
+impl CurrentAuctionObservation {
+    pub fn instrument(&self) -> &InstrumentId {
+        &self.instrument
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn requested_stage(&self) -> CurrentAuctionStage {
+        self.requested_stage
+    }
+
+    pub fn auction_phase(&self) -> &str {
+        &self.auction_phase
+    }
+
+    pub fn data_status(&self) -> CurrentAuctionDataStatus {
+        self.data_status
+    }
+
+    pub fn auction_price(&self) -> Option<Price> {
+        self.auction_price
+    }
+
+    pub fn pre_close_price(&self) -> Option<Price> {
+        self.pre_close_price
+    }
+
+    pub fn auction_pct(&self) -> Option<Ratio> {
+        self.auction_pct
+    }
+
+    pub fn auction_volume_shares(&self) -> Option<Quantity> {
+        self.auction_volume_shares
+    }
+
+    pub fn auction_amount(&self) -> Option<Money> {
+        self.auction_amount
+    }
+
+    pub fn auction_unmatched(&self) -> Option<FiniteNumber> {
+        self.auction_unmatched
+    }
+
+    pub fn auction_turnover_pct(&self) -> Option<Ratio> {
+        self.auction_turnover_pct
+    }
+
+    pub fn auction_volume_ratio(&self) -> Option<Ratio> {
+        self.auction_volume_ratio
+    }
+
+    pub fn auction_yesterday_ratio_pct(&self) -> Option<Ratio> {
+        self.auction_yesterday_ratio_pct
+    }
+
+    pub fn float_market_cap(&self) -> Option<Money> {
+        self.float_market_cap
+    }
+
+    pub fn last_price(&self) -> Option<Price> {
+        self.last_price
+    }
+
+    pub fn open_price(&self) -> Option<Price> {
+        self.open_price
+    }
+
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+
+    fn into_legacy_snapshot(self) -> Result<AuctionSnapshot, HithinkError> {
+        AuctionSnapshot::new(
+            self.instrument,
+            Some(self.name),
+            self.auction_price,
+            self.pre_close_price,
+            self.auction_pct,
+            self.auction_volume_shares,
+            self.auction_amount,
+            None,
+            None,
+            self.auction_volume_ratio,
+            DataStatus::Unavailable,
+            None,
+            self.evidence.observed_at(),
+            self.evidence.provider(),
+            self.evidence.batch_id(),
+        )
+        .map_err(Into::into)
+    }
+}
+
+impl SourcedRecord for CurrentAuctionObservation {
+    fn provider_id(&self) -> ProviderId {
+        self.evidence.provider()
+    }
+
+    fn evidence_batch_id(&self) -> &str {
+        self.evidence.batch_id()
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +202,25 @@ struct AuctionItem {
 }
 
 impl HithinkClient {
+    /// Fetches one current auction observation per requested instrument.
+    ///
+    /// The returned evidence contains observation time only. It must not be
+    /// used as exact-date or provider-source-time auction evidence.
+    pub fn current_auction_observations(
+        &self,
+        instruments: &[InstrumentId],
+        stage: CurrentAuctionStage,
+    ) -> Result<DataBatch<CurrentAuctionObservation>, HithinkError> {
+        let thscodes = validate_request(instruments)?;
+        let joined = thscodes.join(",");
+        let query = [
+            ("thscodes", joined),
+            ("stage", stage.as_query_value().to_owned()),
+        ];
+        let response: Success<AuctionData> = self.get(AUCTION_PATH, query.iter().map(pair_ref))?;
+        normalize_observations(instruments, &thscodes, stage, response)
+    }
+
     /// Fetches the provider's current final auction snapshot without promoting it into exact-date
     /// production routing. Fuyao's response timestamp is observation/assembly time, not source
     /// time, so both record and batch `source_at` deliberately remain absent.
@@ -50,11 +228,14 @@ impl HithinkClient {
         &self,
         instruments: &[InstrumentId],
     ) -> Result<DataBatch<AuctionSnapshot>, HithinkError> {
-        let thscodes = validate_request(instruments)?;
-        let joined = thscodes.join(",");
-        let query = [("thscodes", joined), ("stage", "final".to_owned())];
-        let response: Success<AuctionData> = self.get(AUCTION_PATH, query.iter().map(pair_ref))?;
-        normalize(instruments, &thscodes, response)
+        let batch = self.current_auction_observations(instruments, CurrentAuctionStage::Final)?;
+        let provenance = batch.provenance().clone();
+        let records = batch
+            .into_records()
+            .into_iter()
+            .map(CurrentAuctionObservation::into_legacy_snapshot)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(DataBatch::strict(records, provenance))
     }
 }
 
@@ -83,22 +264,42 @@ fn validate_request(instruments: &[InstrumentId]) -> Result<Vec<String>, Hithink
     Ok(thscodes)
 }
 
-fn normalize(
+fn normalize_observations(
     instruments: &[InstrumentId],
     thscodes: &[String],
+    requested_stage: CurrentAuctionStage,
     response: Success<AuctionData>,
-) -> Result<DataBatch<AuctionSnapshot>, HithinkError> {
+) -> Result<DataBatch<CurrentAuctionObservation>, HithinkError> {
     let observed_at = source_millis(response.data.timestamp)?;
     validate_safe_text("auction_phase", &response.data.auction_phase)?;
     validate_safe_text("data_status", &response.data.data_status)?;
-    if response.data.auction_phase == "closed" && response.data.data_status == "not_ready" {
+    if response.data.data_status == "not_ready" {
         return Err(HithinkError::NotReady {
             request_id: response.request_id,
         });
     }
-    if response.data.auction_phase != "closed" || response.data.data_status != "final" {
+    let data_status = match response.data.data_status.as_str() {
+        "live" => CurrentAuctionDataStatus::Live,
+        "final" => CurrentAuctionDataStatus::Final,
+        "suspended" => CurrentAuctionDataStatus::Suspended,
+        _ => {
+            return Err(HithinkError::Protocol(
+                "auction response has an unknown data_status".into(),
+            ))
+        }
+    };
+    let state_matches_request = matches!(
+        (requested_stage, data_status),
+        (CurrentAuctionStage::Live, CurrentAuctionDataStatus::Live)
+            | (CurrentAuctionStage::Final, CurrentAuctionDataStatus::Final)
+            | (_, CurrentAuctionDataStatus::Suspended)
+    );
+    if !state_matches_request
+        || (data_status == CurrentAuctionDataStatus::Final
+            && response.data.auction_phase != "closed")
+    {
         return Err(HithinkError::Protocol(
-            "auction response is not a final closed snapshot".into(),
+            "auction response state contradicts the requested stage".into(),
         ));
     }
     if response.data.total != instruments.len() || response.data.item.len() != instruments.len() {
@@ -113,68 +314,75 @@ fn normalize(
         validate_identity(expected, instrument.code(), &item.thscode, &item.ticker)?;
         validate_safe_text("auction name", &item.name)?;
 
-        let matched_price = optional_price(item.auction_price, "auction_price")?;
-        let previous_close = optional_price(item.pre_close_price, "pre_close_price")?;
-        let change_percent =
+        let auction_price = optional_observed_price(item.auction_price, "auction_price")?;
+        let pre_close_price = optional_observed_price(item.pre_close_price, "pre_close_price")?;
+        let auction_pct =
             optional_ratio(item.auction_pct, "auction_pct", false, RatioUnit::Percent)?;
-        let matched_quantity = item
+        let auction_volume_shares = item
             .auction_volume
             .map(|lots| nonnegative(lots, "auction_volume"))
             .transpose()?
             .map(|lots| Quantity::new(lots * SHARES_PER_LOT))
             .transpose()?;
-        let matched_amount = item
+        let auction_amount = item
             .auction_amount
             .map(|value| nonnegative(value, "auction_amount"))
             .transpose()?
             .map(Money::new)
             .transpose()?;
-        // Fuyao exposes one signed aggregate unmatched value without a documented mapping from
-        // sign to the two Core queues. Validate it, but never guess which directional slot it
-        // belongs to.
-        let _unmatched = item.auction_unmatched.map(FiniteNumber::new).transpose()?;
-        let _turnover = optional_ratio(
+        let auction_unmatched = item.auction_unmatched.map(FiniteNumber::new).transpose()?;
+        let auction_turnover_pct = optional_ratio(
             item.auction_turnover_pct,
             "auction_turnover_pct",
             true,
             RatioUnit::Percent,
         )?;
-        let volume_ratio = optional_ratio(
+        let auction_volume_ratio = optional_ratio(
             item.auction_volume_ratio,
             "auction_volume_ratio",
             true,
             RatioUnit::Decimal,
         )?;
-        let _yesterday_ratio = optional_ratio(
+        let auction_yesterday_ratio_pct = optional_ratio(
             item.auction_yesterday_ratio_pct,
             "auction_yesterday_ratio_pct",
             true,
             RatioUnit::Percent,
         )?;
-        let _float_market_cap = item
+        let float_market_cap = item
             .float_market_cap
             .map(|value| nonnegative(value, "float_market_cap"))
+            .transpose()?
+            .map(Money::new)
             .transpose()?;
-        let _last_price = optional_price(item.last_price, "last_price")?;
-        let _open_price = optional_price(item.open_price, "open_price")?;
-
-        records.push(AuctionSnapshot::new(
-            instrument.clone(),
-            Some(item.name),
-            matched_price,
-            previous_close,
-            change_percent,
-            matched_quantity,
-            matched_amount,
-            None,
-            None,
-            volume_ratio,
-            DataStatus::Unavailable,
-            None,
-            observed_at.clone(),
+        let last_price = optional_observed_price(item.last_price, "last_price")?;
+        let open_price = optional_observed_price(item.open_price, "open_price")?;
+        let evidence = SourceEvidence::new(
             ProviderId::Tonghuashun,
+            observed_at.clone(),
             batch_id.clone(),
-        )?);
+        )?;
+
+        records.push(CurrentAuctionObservation {
+            instrument: instrument.clone(),
+            name: item.name,
+            requested_stage,
+            auction_phase: response.data.auction_phase.clone(),
+            data_status,
+            auction_price,
+            pre_close_price,
+            auction_pct,
+            auction_volume_shares,
+            auction_amount,
+            auction_unmatched,
+            auction_turnover_pct,
+            auction_volume_ratio,
+            auction_yesterday_ratio_pct,
+            float_market_cap,
+            last_price,
+            open_price,
+            evidence,
+        });
     }
 
     let provenance = magic_market_core::Provenance::new("HithinkFinance", observed_at)?
@@ -182,17 +390,22 @@ fn normalize(
     Ok(DataBatch::strict(records, provenance))
 }
 
-fn optional_price(value: Option<f64>, field: &str) -> Result<Option<Price>, HithinkError> {
+fn optional_observed_price(value: Option<f64>, field: &str) -> Result<Option<Price>, HithinkError> {
     value
         .map(|value| {
-            if !value.is_finite() || value <= 0.0 {
+            if !value.is_finite() || value < 0.0 {
                 return Err(HithinkError::Protocol(format!(
-                    "{field} must be finite and positive"
+                    "{field} must be finite and non-negative"
                 )));
             }
-            Price::new(value).map_err(Into::into)
+            if value == 0.0 {
+                Ok(None)
+            } else {
+                Price::new(value).map(Some).map_err(Into::into)
+            }
         })
         .transpose()
+        .map(Option::flatten)
 }
 
 fn optional_ratio(
@@ -375,6 +588,23 @@ mod tests {
     }
 
     #[test]
+    fn unknown_provider_field_rejects_the_whole_observation_batch() {
+        let mut changed = item("600519.SH", "600519");
+        changed["undocumented_queue_side"] = json!("buy");
+        let client = HithinkClient::with_transport(
+            "test_key",
+            FixtureTransport::new(vec![response(vec![changed])]),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            client
+                .current_auction_observations(&[instrument("600519")], CurrentAuctionStage::Final),
+            Err(HithinkError::Decode(_))
+        ));
+    }
+
+    #[test]
     fn formal_trait_remains_fail_closed_until_evidence_is_complete() {
         let client =
             HithinkClient::with_transport("test_key", FixtureTransport::default()).unwrap();
@@ -382,6 +612,56 @@ mod tests {
             client.auction_snapshots(&[instrument("600519")]),
             Err(HithinkError::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn live_observation_preserves_unmatched_and_accepts_no_trade_zeroes() {
+        let mut no_trade = item("600519.SH", "600519");
+        no_trade["auction_price"] = json!(0.0);
+        no_trade["auction_volume"] = json!(0.0);
+        no_trade["auction_amount"] = json!(0.0);
+        no_trade["last_price"] = json!(0.0);
+        no_trade["open_price"] = json!(0.0);
+        let transport = FixtureTransport::new(vec![success(
+            "auction-live-zero",
+            json!({
+                "timestamp": 1787386686058_i64,
+                "auction_phase": "matching",
+                "data_status": "live",
+                "total": 1,
+                "item": [no_trade]
+            }),
+        )]);
+        let observed = transport.clone();
+        let client = HithinkClient::with_transport("test_key", transport).unwrap();
+
+        let batch = client
+            .current_auction_observations(&[instrument("600519")], CurrentAuctionStage::Live)
+            .unwrap();
+
+        assert_eq!(batch.records().len(), 1);
+        let record = &batch.records()[0];
+        assert_eq!(record.requested_stage(), CurrentAuctionStage::Live);
+        assert_eq!(record.auction_phase(), "matching");
+        assert_eq!(record.data_status(), CurrentAuctionDataStatus::Live);
+        assert!(record.auction_price().is_none());
+        assert_eq!(record.auction_volume_shares().unwrap().get(), 0.0);
+        assert_eq!(record.auction_amount().unwrap().get(), 0.0);
+        assert_eq!(record.auction_unmatched().unwrap().get(), -321.0);
+        assert!(record.last_price().is_none());
+        assert!(record.open_price().is_none());
+        assert!(record.evidence().source_at().is_none());
+        assert_eq!(record.evidence().observed_at(), "unix-ms:1787386686058");
+        assert_eq!(record.evidence().batch_id(), "auction-live-zero");
+        assert!(batch.provenance().source_at().is_none());
+
+        let json = serde_json::to_value(record).unwrap();
+        assert!(json.get("trading_date").is_none());
+        assert!(json["evidence"]["source_at"].is_null());
+
+        let urls = observed.requested_urls();
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].contains("stage=live"));
     }
 
     #[test]

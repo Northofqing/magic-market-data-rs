@@ -1015,6 +1015,30 @@ failures stop the route. An explicit `preferred_provider` never falls through.
 An exhausted or stopped route returns only bounded safe typed Provider attempts;
 it never returns stale records, mixed provenance or partial success.
 
+## BR-060 HITHINK current auction observation
+
+`CurrentAuctionObservations` is a narrow production contract distinct from the
+complete `Auctions` capability. It accepts 1 through 100 unique A-share
+instruments and a required upstream stage of `live` or `final`. Every successful
+response must contain exactly one row per requested instrument in request order
+with matching `thscode` and ticker identity.
+
+The record preserves all documented Fuyao snapshot numeric values. Source
+`auction_volume` is converted from lots to explicitly named shares. The signed
+`auction_unmatched` value remains provider-native because Fuyao publishes no
+unit or sign-to-bid/ask mapping. It must never be copied into either directional
+queue. Zero auction/open/last price means no price is available and becomes
+`null`; zero volume and amount remain legitimate zero observations.
+
+Fuyao `data.timestamp` is response assembly time and may be used only as record
+and batch `observed_at`. The contract has no `trading_date`; record and batch
+`source_at` remain absent. A calendar date, benchmark date, local date, current
+time or another Provider must not fill those fields. Consequently this operation
+cannot satisfy BR-033 freshness, an exact-date auction request, or the complete
+Level-2 contract in BR-035. Unknown fields, invalid numbers, identity/cardinality
+conflicts, response/request-stage conflicts and `not_ready` fail the whole batch
+without partial records.
+
 Repeated transient TQ loopback failures for the same discovered terminal
 candidate retain one pending monitor generation. Losing a previously running
 loopback advances continuity once; retrying the unchanged pending candidate does

@@ -89,6 +89,7 @@ define_operations! {
     T0Evidence => "t0_evidence",
     OutcomeDailyBars => "outcome_daily_bars",
     UpperLimitPoolReview => "upper_limit_pool_review",
+    CurrentAuctionObservations => "current_auction_observations",
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

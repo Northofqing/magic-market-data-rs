@@ -64,6 +64,7 @@ enum Operation {
   OPERATION_T0_EVIDENCE = 58;
   OPERATION_OUTCOME_DAILY_BARS = 59;
   OPERATION_UPPER_LIMIT_POOL_REVIEW = 60;
+  OPERATION_CURRENT_AUCTION_OBSERVATIONS = 61;
 }
 
 enum AdmissionState {
@@ -371,6 +372,7 @@ service MarketDataService {
   rpc T0Evidence(QueryRequest) returns (QueryResponse);
   rpc OutcomeDailyBars(QueryRequest) returns (QueryResponse);
   rpc UpperLimitPoolReview(QueryRequest) returns (QueryResponse);
+  rpc CurrentAuctionObservations(QueryRequest) returns (QueryResponse);
 }
 
 service MarketEventService {

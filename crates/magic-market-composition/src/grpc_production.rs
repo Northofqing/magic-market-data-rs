@@ -20,8 +20,10 @@ use magic_exchange_rs::{
 use magic_fred_rs::{FredClient, FredError};
 use magic_gov_rs::{GovClient, GovError};
 use magic_hithink_rs::{
-    HithinkClient, HithinkError, AUCTIONS_ADMITTED as HITHINK_AUCTIONS_ADMITTED,
+    CurrentAuctionStage, HithinkClient, HithinkError,
+    AUCTIONS_ADMITTED as HITHINK_AUCTIONS_ADMITTED,
     CORPORATE_ACTIONS_ADMITTED as HITHINK_CORPORATE_ACTIONS_ADMITTED,
+    CURRENT_AUCTION_OBSERVATIONS_ADMITTED as HITHINK_CURRENT_AUCTION_OBSERVATIONS_ADMITTED,
     FINANCIAL_STATEMENTS_ADMITTED as HITHINK_FINANCIAL_STATEMENTS_ADMITTED,
     HISTORICAL_BARS_ADMITTED as HITHINK_HISTORICAL_BARS_ADMITTED,
     LIMIT_POOLS_ADMITTED as HITHINK_LIMIT_POOLS_ADMITTED,
@@ -98,6 +100,7 @@ const HITHINK_CORPORATE_ACTIONS_SCOPE: &str = "one A-share equity; optional exac
 const HITHINK_SECURITY_METADATA_SCOPE: &str = "1..=32 unique A-share equities, standard exchange indices or exchange-traded funds; exact Fuyao thscode/name/currency identity with unpublished board, listing and price-limit fields explicitly unavailable";
 const HITHINK_AUCTIONS_SCOPE: &str = "1..=100 unique A-share equities; current official Fuyao stage=final closed auction snapshot diagnostic; provider response assembly time is observed_at while trading date, source_at and directional unmatched queues remain absent";
 const HITHINK_AUCTIONS_BLOCKER: &str = "Fuyao current auction snapshots omit the exact trading date, provider source time and directional unmatched bid/ask quantities; separate benchmark and calendar dates are not bound to snapshot records";
+const HITHINK_CURRENT_AUCTION_OBSERVATIONS_SCOPE: &str = "1..=100 unique A-share equities; explicit live/final current Fuyao auction observations preserving nullable values and signed directionless auction_unmatched; response assembly time is observed_at only";
 pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.request";
 pub const REALTIME_QUOTES_RECORD_SCHEMA: &str = "magic.market.quote";
 pub const HISTORICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.historical_bars.request";
@@ -221,6 +224,10 @@ pub const HITHINK_CURRENT_AUCTIONS_REQUEST_SCHEMA: &str =
 pub const AUCTIONS_RECORD_SCHEMA: &str = "magic.market.opening_auction_diagnostic";
 pub const HITHINK_CURRENT_AUCTIONS_RECORD_SCHEMA: &str =
     "magic.market.hithink_current_auction_snapshot";
+pub const CURRENT_AUCTION_OBSERVATIONS_REQUEST_SCHEMA: &str =
+    "magic.market.current_auction_observations.request";
+pub const CURRENT_AUCTION_OBSERVATIONS_RECORD_SCHEMA: &str =
+    "magic.market.current_auction_observation";
 pub const MARKET_BREADTH_REQUEST_SCHEMA: &str = "magic.market.market_breadth.request";
 pub const MARKET_BREADTH_RECORD_SCHEMA: &str = "magic.market.market_breadth_diagnostic";
 const TENCENT_PROVIDER: &str = "Tencent";
@@ -301,6 +308,13 @@ struct RealtimeQuotesRequest {
 #[serde(deny_unknown_fields)]
 struct InstrumentsRequest {
     instruments: Vec<InstrumentId>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CurrentAuctionObservationsRequest {
+    instruments: Vec<InstrumentId>,
+    stage: CurrentAuctionStage,
 }
 
 #[derive(Deserialize)]
@@ -1275,6 +1289,11 @@ fn register_hithink(
                     HITHINK_AUCTIONS_ADMITTED,
                     HITHINK_AUCTIONS_SCOPE,
                 ),
+                (
+                    Operation::CurrentAuctionObservations,
+                    HITHINK_CURRENT_AUCTION_OBSERVATIONS_ADMITTED,
+                    HITHINK_CURRENT_AUCTION_OBSERVATIONS_SCOPE,
+                ),
             ] {
                 let capability = if admitted_by_repository {
                     runtime_unavailable(operation, "HithinkFinance", scope, &blocker)
@@ -1438,6 +1457,28 @@ fn register_hithink(
                 batch,
                 "HithinkFinance",
                 HITHINK_CURRENT_AUCTIONS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let current_auction_observations = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::CurrentAuctionObservations,
+            "HithinkFinance",
+            HITHINK_CURRENT_AUCTION_OBSERVATIONS_SCOPE,
+        ),
+        move |command| {
+            let request: CurrentAuctionObservationsRequest =
+                decode_request(&command, CURRENT_AUCTION_OBSERVATIONS_REQUEST_SCHEMA)?;
+            let batch = current_auction_observations
+                .current_auction_observations(&request.instruments, request.stage)
+                .map_err(|error| provider_error(Operation::CurrentAuctionObservations, error))?;
+            provider_query_result(
+                batch,
+                "HithinkFinance",
+                CURRENT_AUCTION_OBSERVATIONS_RECORD_SCHEMA,
                 maximum_payload_bytes,
             )
         },
@@ -5710,7 +5751,7 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 59);
+        assert_eq!(admitted.len(), 60);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
@@ -5749,6 +5790,29 @@ mod tests {
             Operation::MarketBreadth,
         ] {
             assert!(!diagnostic.contains(&operation));
+        }
+    }
+
+    #[test]
+    fn current_auction_observation_request_requires_explicit_known_stage() {
+        let request: CurrentAuctionObservationsRequest =
+            serde_json::from_value(serde_json::json!({
+                "instruments": [{
+                    "exchange": "Shanghai",
+                    "code": "600519",
+                    "asset_class": "Equity"
+                }],
+                "stage": "live"
+            }))
+            .unwrap();
+        assert_eq!(request.stage, CurrentAuctionStage::Live);
+
+        for invalid in [
+            serde_json::json!({"instruments": []}),
+            serde_json::json!({"instruments": [], "stage": "opening"}),
+            serde_json::json!({"instruments": [], "stage": "final", "trading_date": "2026-09-09"}),
+        ] {
+            assert!(serde_json::from_value::<CurrentAuctionObservationsRequest>(invalid).is_err());
         }
     }
 
@@ -5847,6 +5911,7 @@ mod tests {
             Operation::FinancialStatements,
             Operation::CorporateActions,
             Operation::SecurityMetadata,
+            Operation::CurrentAuctionObservations,
         ] {
             let hithink = capabilities
                 .iter()

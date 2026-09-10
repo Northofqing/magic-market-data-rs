@@ -86,8 +86,11 @@ pub const SECURITY_METADATA_ADMITTED: bool = true;
 /// provider does not return an exact trading date, a record source timestamp, or directional
 /// unmatched bid/ask quantities.
 pub const AUCTIONS_ADMITTED: bool = false;
+/// The distinct current-observation contract preserves the provider's truthful partial shape.
+pub const CURRENT_AUCTION_OBSERVATIONS_ADMITTED: bool = true;
 
 mod auctions;
+pub use auctions::{CurrentAuctionDataStatus, CurrentAuctionObservation, CurrentAuctionStage};
 mod corporate_actions;
 mod financials;
 mod metadata;

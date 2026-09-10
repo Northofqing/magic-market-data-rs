@@ -9,7 +9,8 @@ existing `magic-ths-rs` public-web Provider.
 - Public documentation: <https://fuyao.aicubes.cn/docs/>
 - Official repository: <https://github.com/HiThink-Tech/Financial-API>
 - Contract snapshot inspected: repository commit
-  `9dbef74d2ce535857e610eec265bcb9302942d48`
+  `44b7aa34dd504675f3ddaa15b3d478ea16f97884`; the auction contract was
+  introduced at `9dbef74d2ce535857e610eec265bcb9302942d48`.
 - Base URL: `https://fuyao.aicubes.cn`
 - Authentication: `X-api-key` from `HITHINK_FINANCE_API_KEY`
 - Success: HTTP 200 and envelope `code=0` with non-null `data`
@@ -39,7 +40,7 @@ the following private fixed builders:
 | Lower pool | `/api/a-share/special-data/limit-down-pool` | `date_ms`, `page`, `size`, `sort_field`, `sort_dir` |
 | Broken pool | `/api/a-share/special-data/limit-break-pool` | `date_ms`, `page`, `size`, `sort_field`, `sort_dir` |
 | Popularity | `/api/a-share/special-data/hot-stock-list` | `period` |
-| Current final auction diagnostic | `/api/a-share/auction/snapshot` | `thscodes`, fixed `stage=final` |
+| Current auction observations | `/api/a-share/auction/snapshot` | `thscodes`, explicit `stage=live|final` |
 
 The policy accepts JSON only, bounds each response at four MiB and uses the
 composition-supplied timeout. Clones share one 500 ms request-start gate and a
@@ -140,10 +141,44 @@ endpoint. Those fields remain absent and the Core record is explicitly
 was resolved. Live `000300.SH` returns provider-native `ticker=1B0300`; exact
 `thscode` remains the mapped identity and the auxiliary ticker is only validated.
 
-## Implemented auction diagnostic
+### CurrentAuctionObservations
 
-The Provider implements the exact official `/api/a-share/auction/snapshot`
-request for 1..=100 unique A-share equities with fixed `stage=final`. It requires
+The admitted request uses schema
+`magic.market.current_auction_observations.request` version 1:
+
+```json
+{
+  "instruments": [
+    {"exchange":"Shanghai","code":"600519","asset_class":"Equity"}
+  ],
+  "stage": "live"
+}
+```
+
+The request contains 1..=100 unique A-share equities and forwards the explicit
+`live` or `final` stage unchanged. The response must contain exactly one row per
+requested instrument in request order with matching `thscode` and ticker. It
+uses record schema `magic.market.current_auction_observation` version 1 and
+preserves every documented snapshot value.
+
+`auction_volume` is source lots and becomes `auction_volume_shares` after an
+exact multiplication by 100. The source's signed `auction_unmatched` is retained
+under that name as a provider-native number: the public contract gives neither
+its unit nor a sign-to-bid/ask mapping, so the adapter does not relabel or split
+it. A source price of zero is the valid no-trade representation and becomes
+`null`; zero volume and amount remain numeric zero.
+
+`data.timestamp` is response assembly time. It becomes only the record
+`evidence.observed_at` and batch `observed_at`; both source times remain absent.
+The operation has no `trading_date`. It is therefore complete for this narrow
+observation contract but is not eligible for exact-date storage, BR-033 source
+freshness or complete Level-2 auction decisions.
+
+## Legacy complete-Auctions diagnostic
+
+The Provider also projects the exact official `/api/a-share/auction/snapshot`
+response into the old complete-auction shape for an opt-in diagnostic only. It
+uses 1..=100 unique A-share equities with fixed `stage=final` and requires
 the observed `auction_phase=closed` and `data_status=final`, exact response count,
 request order and `thscode`/`ticker` identity. All documented numeric fields are
 decoded and validated before any record is returned. `auction_volume` is source
@@ -187,9 +222,10 @@ auction transport dependencies.
 The inspected official capability map contains 59 endpoints across A-share,
 index/board, fund, auction, special-data and market-dump families. Endpoint
 availability alone does not authorize a lossy mapping into an existing gRPC
-record. The Provider currently exposes fourteen exact paths above. Thirteen
-paths back seven evidence-preserving admitted Core/RPC families; the auction
-path is an explicit diagnostic and does not pass production admission.
+record. The Provider currently exposes fourteen exact paths above. They back
+eight evidence-preserving admitted Core/RPC families, including the narrow
+current-observation operation. The lossy projection into the separate complete
+`Auctions` shape remains an explicit diagnostic and does not pass admission.
 
 Examples that remain outside production mapping include board directories
 without the Core-required `member_count`, constituent rows without atomic board
@@ -205,7 +241,8 @@ query. No other Provider fills these gaps inside a `HithinkFinance` batch.
 - Auction snapshots expose one undirected unmatched quantity and a response
   assembly timestamp, not an exact trading date, the two directional queues or
   record source time required by the complete Core auction contract. The safe
-  subset is implemented only through the provider-specific current diagnostic.
+  subset is admitted only through `CurrentAuctionObservations`; complete
+  `Auctions` remains unadmitted.
 - Board directory and constituent responses do not atomically provide every
   field required by the existing board contracts.
 - The official capability map does not expose minute K, ticks or Level-2, and
@@ -245,7 +282,7 @@ Two additional bounded raw live auction calls returned one exact `600519.SH`
 row with `auction_phase=closed`, `data_status=final` and a positive response
 assembly timestamp. Those calls prove the diagnostic wire shape and identity,
 not a trading date or source time, and therefore do not promote auction
-admission.
+admission for the complete `Auctions` contract.
 
 A separate bounded check on Saturday 2026-08-22 made the missing linkage
 observable: the snapshot still returned one `600519.SH` row as `closed/final`,
@@ -263,7 +300,16 @@ pagination contradictions, Beijing identities, numeric-string heat and safe
 typed business failures. They also cover per-report publication evidence,
 financial identity conflicts, cash/bonus event terms and coverage, field-level
 metadata absence, the provider-native index ticker and null broken-pool
-`open_times`. Auction tests cover exact final-state/identity/cardinality checks,
-lots-to-shares conversion, observation-only timestamp semantics, directional
-queue absence, preflight rejection and whole-batch rejection of malformed or
-conflicting fields.
+`open_times`. Auction tests cover explicit live/final forwarding, exact
+state/identity/cardinality checks, no-trade zero-price handling,
+lots-to-shares conversion, signed unmatched-value preservation,
+observation-only timestamp semantics, directional queue absence, preflight
+rejection and whole-batch rejection of malformed, unknown or conflicting
+fields.
+
+On 2026-09-09, the current-observation path was reviewed against official
+HITHINK commit `44b7aa34dd504675f3ddaa15b3d478ea16f97884`. Two bounded live endpoint
+reads and three serial reads returned the exact requested identity with a
+positive response assembly timestamp and no synthesized source time. This
+admits the truthful current-observation shape only; it does not change the
+complete `AUCTIONS_ADMITTED=false` decision.

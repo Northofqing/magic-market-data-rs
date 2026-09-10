@@ -5,11 +5,11 @@
 | 项目 | 状态 |
 | --- | --- |
 | Protobuf v1 合同 | 已建立，可生成客户端 |
-| 60 个只读数据族 RPC | 已进入 v1 Proto；新增 `InstrumentNews` 与 5 个组合数据产品接口 |
+| 61 个只读数据族 RPC | 已进入 v1 Proto；新增 `CurrentAuctionObservations` 当前竞价窄合同 |
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 60 个操作精确登记；59 个操作至少有一个正式 handler；`EconomicCalendar` 因金十免费日历/API 已退役而仅保留显式诊断路径；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
+| Unary Provider composition | 61 个操作精确登记；60 个操作至少有一个正式 handler；`EconomicCalendar` 因金十免费日历/API 已退役而仅保留显式诊断路径；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
 | TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额、昨收、OHLC 与三类带 Core 证据的 trigger/rearm 事件为生产数据；状态消息仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
@@ -296,7 +296,10 @@ MarketDragonTiger          DragonTigerDiscovery
 MarketRankings             MarketBreadth
 Popularity                 ConceptHits
 OptionData                 ProviderTopNRankings
-InstrumentNews
+InstrumentNews            IndexQuotes
+IntradayShape             T0Evidence
+OutcomeDailyBars          UpperLimitPoolReview
+CurrentAuctionObservations
 ```
 
 所有方法都是只读 unary RPC。没有账户、资产、持仓、委托、撤单或成交写接口。
@@ -476,14 +479,14 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 
 ## 10. 当前实现状态
 
-- Protobuf/descriptor、60 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
+- Protobuf/descriptor、61 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
   blocking 调用隔离均已实现；
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
   异动 trigger/rearm 进入生产事件流；
-- unary registry 对 60 个操作逐项精确登记；除 `EconomicCalendar` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，仅保留显式诊断路径；
+- unary registry 对 61 个操作逐项精确登记；除 `EconomicCalendar` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，仅保留显式诊断路径；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council、iWencai 与官方 `HithinkFinance` 扶摇 API 外，也可精确选择
   TDX 公共协议、Sina、SSE、SZSE、
@@ -502,6 +505,9 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   同交易日四池原子组合；`T0Evidence` 正式读取 TDX Quote、盘口、日 K 和 5 分钟 K，
   v2 必须接收并逐条原样回显调用方的精确 `requested_at`，返回当前本地 `observed_at`、
   保留四份输入证据并在无公共源时间时保持 `source_at=null`；
+- `CurrentAuctionObservations` 是 append-only 的第 61 个操作，只绑定
+  `HithinkFinance` 官方扶摇接口。请求显式选择 `live` 或 `final`，保留单一有符号
+  `auction_unmatched` 和所有源字段，不构造交易日、Provider 源时刻或买卖方向；
 - `MoneyFlows`、`FundFlowSeries` 已绑定东财公开资金流正式合同，`TechnicalBars` 已绑定
   Baidu 未复权源技术日线正式合同；`PostCloseFlows` 已绑定东财当前交易日 15:35 后的
   本地观察快照；`FuturesDelivery` 已绑定 CFFEX 官方固定交割日历，Baidu
@@ -655,8 +661,60 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 扶摇 Key 缺失或到期、认证/权限拒绝、限流、查询拒绝、
 上游不可用和响应冲突都返回闭合 typed failure 和零 records，不回退 `magic-ths-rs` 网页源。
 扶摇显式代码实时快照没有 source timestamp，因此不以 `HithinkFinance` 注册 handler。
-集合竞价只注册上文的当前快照诊断，不注册生产 handler；客户端不得从本地时间或其他
-Provider 补齐其交易日、`source_at` 或未匹配方向。
+集合竞价当前观测通过独立的 `CurrentAuctionObservations` 注册正式 handler；完整
+`Auctions` 映射仍只注册诊断。客户端不得从本地时间或其他 Provider 补齐交易日、
+`source_at` 或未匹配方向。
+
+### CurrentAuctionObservations 当前竞价窄合同
+
+业务请求 schema 为 `magic.market.current_auction_observations.request`、版本 1：
+
+```json
+{
+  "instruments": [
+    {"exchange":"Shanghai","code":"600519","asset_class":"Equity"}
+  ],
+  "stage": "live"
+}
+```
+
+`stage` 必须为 `live` 或 `final`。正常调用使用
+`preferred_provider=HithinkFinance`、`allow_unadmitted=false`。记录 schema 是
+`magic.market.current_auction_observation`、版本 1。以下示例特意展示“暂无成交价但已有未匹配量”
+仍是合法记录：
+
+```json
+{
+  "instrument": {"exchange":"Shanghai","code":"600519","asset_class":"Equity"},
+  "name": "贵州茅台",
+  "requested_stage": "live",
+  "auction_phase": "matching",
+  "data_status": "live",
+  "auction_price": null,
+  "pre_close_price": 1316.01,
+  "auction_pct": null,
+  "auction_volume_shares": 0.0,
+  "auction_amount": 0.0,
+  "auction_unmatched": -321.0,
+  "auction_turnover_pct": null,
+  "auction_volume_ratio": null,
+  "auction_yesterday_ratio_pct": null,
+  "float_market_cap": 1653000000000.0,
+  "last_price": null,
+  "open_price": null,
+  "evidence": {
+    "provider": "Tonghuashun",
+    "source_at": null,
+    "observed_at": "unix-ms:1788956044416",
+    "batch_id": "REDACTED_HITHINK_AUCTION_BATCH"
+  }
+}
+```
+
+`auction_unmatched` 是源端单一、有符号且单位未公开的 provider-native 数字，不能拆成
+`unmatched_bid_quantity`/`unmatched_ask_quantity`。`data.timestamp` 仅是响应组装时间，
+只写入 `observed_at`。此合同没有 `trading_date`，批次和逐条 `source_at` 都为空，不能用于
+严格源时间新鲜度、历史归档日期证明或完整 Level-2 `Auctions` 判断。
 
 以下特定来源变体不是缺少 gRPC 方法，而是该来源的生产数据合同尚未满足。已有字段通过显式
 诊断模式读取，缺失字段保留 `null`，但不会改变下表状态：
@@ -681,6 +739,7 @@ Provider 补齐其交易日、`source_at` 或未匹配方向。
 | `MarketRankings` | `magic.market.market_rankings.request` (`{"kind":...,"limit":...}`) | `magic.market.market_ranking_diagnostic_entry` |
 | `Auctions` / `EastmoneyMiaoxiang` | `magic.market.auctions.request` (`{"instrument":...,"trading_date":"YYYY-MM-DD"}`) | `magic.market.opening_auction_diagnostic` |
 | `Auctions` / `HithinkFinance` diagnostic | `magic.market.hithink_current_auctions.request` (`{"instruments":[...]}`) | `magic.market.hithink_current_auction_snapshot` |
+| `CurrentAuctionObservations` / `HithinkFinance` | `magic.market.current_auction_observations.request` (`{"instruments":[...],"stage":"live|final"}`) | `magic.market.current_auction_observation` |
 | `MarketBreadth` | `magic.market.market_breadth.request` (`{"source_date":"YYYY-MM-DD"}`) | `magic.market.market_breadth_diagnostic` |
 
 例如技术日 K 诊断的业务 JSON 为：
@@ -814,6 +873,9 @@ SecurityProfiles 与未准入路由合同，所有文件由同一 LF `manifest.s
 `2026-08-27.3` 将东财公开日级 `MoneyFlows` 固定到同一 Provider 的官方
 `push2delay.eastmoney.com/api/qt/stock/fflow/kline/get?klt=101` 合同，规避主机在当前网络中
 缺少 TLS `close_notify` 导致的严格传输拒绝；不跨 Provider 补值，也不降低 TLS 校验。
+`2026-09-09.1` 追加第 61 个 `CurrentAuctionObservations` RPC，正式发布同花顺扶摇
+`live`/`final` 当前竞价窄合同。该版本保留单一 `auction_unmatched` 原值和响应观察时间，
+明确不构造交易日、Provider 源时刻或买卖方向；完整 `Auctions` 准入状态不变。
 
 ## 12. 客户端代码生成
 
@@ -864,7 +926,7 @@ Go 项目正式接入前可在自己的 Proto 镜像中补 `go_package` 映射�
 
 发布者使用 `tools/docs/build_client_bundle.ps1` 从同一工作树复制 `market.proto`、本文、
 `grpc-derived-products.md`、`tdx-public-security-profile.md` 和
-`unadmitted-provider-routes.md`。脚本拒绝 MarketDataService RPC 数不是 60 的 proto、拒绝
+`unadmitted-provider-routes.md`。脚本拒绝 MarketDataService RPC 数不是 61 的 proto、拒绝
 bundle 内任一 Markdown 相对链接缺失，并生成 `bundle-metadata.json` 与
 `manifest.sha256`；对接方必须同时校验 bundle version、source commit 和文件摘要，不能
 混用不同提交的“最新版”文件。

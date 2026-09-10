@@ -73,6 +73,7 @@ pub const READ_OPERATIONS: &[v1::Operation] = &[
     v1::Operation::T0Evidence,
     v1::Operation::OutcomeDailyBars,
     v1::Operation::UpperLimitPoolReview,
+    v1::Operation::CurrentAuctionObservations,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,7 +263,7 @@ mod tests {
 
     #[test]
     fn read_operation_registry_is_complete_and_unique() {
-        assert_eq!(READ_OPERATIONS.len(), 60);
+        assert_eq!(READ_OPERATIONS.len(), 61);
         let mut values = READ_OPERATIONS
             .iter()
             .map(|value| *value as i32)
