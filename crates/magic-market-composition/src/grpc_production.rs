@@ -32,27 +32,31 @@ use magic_hithink_rs::{
     SECURITY_METADATA_ADMITTED as HITHINK_SECURITY_METADATA_ADMITTED,
 };
 use magic_iwencai_rs::{IwencaiClient, IwencaiError, SEMANTIC_SEARCH_ADMITTED};
-use magic_jin10_rs::{Jin10Client, Jin10Error, ECONOMIC_CALENDAR_ADMITTED};
+use magic_jin10_rs::{
+    Jin10Client, Jin10Error, ECONOMIC_CALENDAR_ADMITTED, ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED,
+};
 use magic_market_core::{
-    Announcements, Bar, BarInterval, BarsRequest, BlockTrades, BoardCategory,
-    BoardConstituentProvider, BoardConstituentRequest, BoardDirectoryProvider,
-    BoardDirectoryRequest, BoardFlows, BoardMembershipProvider, CompanyFilingRequest,
-    CompanyFilingsProvider, ConceptHits, ConsensusData, ContractMonth, CorporateActionRequest,
-    CorporateActions, DataBatch, DataStatus, DividendPlans, DragonTigerData, DragonTigerDiscovery,
-    DragonTigerDiscoveryRequest, EconomicCalendarProvider, EconomicCalendarRequest,
-    EconomicSeriesProvider, EconomicSeriesRequest, EvidenceTimestamp, FinancialStatements,
-    FlowInterval, FlowScope, ForeignExchangeProvider, FundFlowPoint, FundFlowRequest,
-    FundFlowSeries, FuturesDeliveryCalendar, FuturesDeliveryRequest, FxRequest,
-    GlobalIndexProvider, GlobalIndexRequest, HistoricalBars, HolderCounts,
-    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, InvestorQuestions, IsoDate,
-    LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketAnnouncementRequest,
-    MarketAnnouncements, MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind,
-    MarketStatisticsProvider, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
-    NewsItem, NewsProvider, NonEmptyText, NorthboundDailyRequest, NorthboundDailyStatistics,
-    OfficialFxFixingProvider, OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks,
-    PolicyDocuments, PolicyRequest, PopularityData, PositiveU32, PostCloseFlowRequest,
-    PostCloseFlows, Provenance, ProviderId, ProviderTopNRankingRequest, ProviderTopNRankings,
-    Quote, RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest, ResearchDocumentRequest,
+    verify_admitted_newest_first_batch, verify_verified_empty, Announcements, Bar, BarInterval,
+    BarsRequest, BlockTrades, BoardCategory, BoardConstituentProvider, BoardConstituentRequest,
+    BoardDirectoryProvider, BoardDirectoryRequest, BoardFlows, BoardMembershipProvider,
+    CompanyFilingRequest, CompanyFilingsProvider, ConceptHits, ConsensusData, ContractMonth,
+    CorporateActionRequest, CorporateActions, DataBatch, DataStatus, DividendPlans,
+    DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest, EconomicCalendarProvider,
+    EconomicCalendarRequest, EconomicReleaseObservationsProvider,
+    EconomicReleaseObservationsRequest, EconomicSeriesProvider, EconomicSeriesRequest,
+    EvidenceTimestamp, FinancialStatements, FlowInterval, FlowScope, ForeignExchangeProvider,
+    FundFlowPoint, FundFlowRequest, FundFlowSeries, FuturesDeliveryCalendar,
+    FuturesDeliveryRequest, FxRequest, GlobalIndexProvider, GlobalIndexRequest, HistoricalBars,
+    HolderCounts, InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest,
+    InvestorQuestions, IsoDate, LimitPoolRequest, LimitPools, LockupEvents, MarginData,
+    MarketAnnouncementRequest, MarketAnnouncements, MarketDragonTigerData,
+    MarketDragonTigerRequest, MarketRankingKind, MarketStatisticsProvider, MinuteData,
+    MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider, NonEmptyText,
+    NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
+    OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks, PolicyDocuments, PolicyRequest,
+    PopularityData, PositiveU32, PostCloseFlowRequest, PostCloseFlows, ProbeAdmissionPolicy,
+    Provenance, ProviderId, ProviderTopNRankingRequest, ProviderTopNRankings, Quote,
+    RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest, ResearchDocumentRequest,
     ResearchDocuments, ResearchReports, ResearchRequest, SecurityMetadataProvider,
     SecurityProfiles, SemanticSearch, SemanticSearchRequest, SourceEvidence, StatementKind,
     StrongStockReasons, TargetPriceData, TargetPriceRequest, TechnicalBarsProvider, Trades,
@@ -101,6 +105,7 @@ const HITHINK_SECURITY_METADATA_SCOPE: &str = "1..=32 unique A-share equities, s
 const HITHINK_AUCTIONS_SCOPE: &str = "1..=100 unique A-share equities; current official Fuyao stage=final closed auction snapshot diagnostic; provider response assembly time is observed_at while trading date, source_at and directional unmatched queues remain absent";
 const HITHINK_AUCTIONS_BLOCKER: &str = "Fuyao current auction snapshots omit the exact trading date, provider source time and directional unmatched bid/ask quantities; separate benchmark and calendar dates are not bound to snapshot records";
 const HITHINK_CURRENT_AUCTION_OBSERVATIONS_SCOPE: &str = "1..=100 unique A-share equities; explicit live/final current Fuyao auction observations preserving nullable values and signed directionless auction_unmatched; response assembly time is observed_at only";
+const JIN10_ECONOMIC_RELEASE_OBSERVATIONS_SCOPE: &str = "at most 20 public type-1 structured economic-release observations found in Jin10's current bounded mixed flash window; optional exact source country; complete means the fetched window was fully validated, not a complete day or calendar";
 pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.request";
 pub const REALTIME_QUOTES_RECORD_SCHEMA: &str = "magic.market.quote";
 pub const HISTORICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.historical_bars.request";
@@ -174,6 +179,10 @@ pub const PROVIDER_TOP_N_REQUEST_SCHEMA: &str = "magic.market.provider_top_n_ran
 pub const PROVIDER_TOP_N_RECORD_SCHEMA: &str = "magic.market.provider_top_n_ranking";
 pub const ECONOMIC_CALENDAR_REQUEST_SCHEMA: &str = "magic.market.economic_calendar.request";
 pub const ECONOMIC_CALENDAR_RECORD_SCHEMA: &str = "magic.market.economic_event";
+pub const ECONOMIC_RELEASE_OBSERVATIONS_REQUEST_SCHEMA: &str =
+    "magic.market.economic_release_observations.request";
+pub const ECONOMIC_RELEASE_OBSERVATIONS_RECORD_SCHEMA: &str =
+    "magic.market.economic_release_observation";
 pub const NORTHBOUND_DAILY_REQUEST_SCHEMA: &str = "magic.market.northbound_daily.request";
 pub const NORTHBOUND_DAILY_RECORD_SCHEMA: &str = "magic.market.northbound_daily_stat";
 pub const CONSENSUS_REQUEST_SCHEMA: &str = "magic.market.consensus.request";
@@ -1886,6 +1895,30 @@ fn register_additional_providers(
                 )
             },
         )?;
+    }
+    if ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED {
+        let release_observations = jin10.clone();
+        registry.register_handler(
+            admitted(
+                Operation::EconomicReleaseObservations,
+                "Jin10",
+                JIN10_ECONOMIC_RELEASE_OBSERVATIONS_SCOPE,
+            ),
+            move |command| {
+                execute_economic_release_observations(
+                    command,
+                    &release_observations,
+                    maximum_payload_bytes,
+                )
+            },
+        )?;
+    } else {
+        registry.register_unavailable(blocked(
+            Operation::EconomicReleaseObservations,
+            "Jin10",
+            JIN10_ECONOMIC_RELEASE_OBSERVATIONS_SCOPE,
+            "Jin10 economic release observations have not passed repository admission",
+        ))?;
     }
     registry.register_handler(
         admitted(
@@ -4068,6 +4101,161 @@ where
     provider_query_result(batch, provider, record_schema, maximum_payload_bytes)
 }
 
+fn execute_economic_release_observations(
+    command: QueryCommand,
+    client: &Jin10Client,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: EconomicReleaseObservationsRequest =
+        decode_request(&command, ECONOMIC_RELEASE_OBSERVATIONS_REQUEST_SCHEMA)?;
+    let request_identity = serde_json::to_string(&request).map_err(|error| {
+        ServiceError::Internal(format!(
+            "economic release observation request serialization failed: {error}"
+        ))
+    })?;
+    let result = client.economic_release_observations(&request);
+    economic_release_observations_query_result(result, &request_identity, maximum_payload_bytes)
+}
+
+fn economic_release_observations_query_result(
+    result: Result<DataBatch<magic_market_core::EconomicEvent>, Jin10Error>,
+    request_identity: &str,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    match result {
+        Ok(batch) => {
+            if batch.provenance().source() != "jin10-flash-v1" {
+                return Err(invalid_economic_release_evidence(
+                    "batch_source_mismatch",
+                    "source",
+                    None,
+                ));
+            }
+            verify_admitted_newest_first_batch(
+                &batch,
+                &ProbeAdmissionPolicy::new(ProviderId::Jin10).require_source_at(),
+                |record| &record.evidence,
+                |record| record.released_at.as_str(),
+                |record| record.event_id.as_str().to_owned(),
+            )
+            .map_err(|_| {
+                invalid_economic_release_evidence("batch_evidence_inconsistent", "evidence", None)
+            })?;
+            for (index, record) in batch.records().iter().enumerate() {
+                let raw_source_at = record.evidence.source_at().ok_or_else(|| {
+                    invalid_economic_release_evidence(
+                        "record_evidence_incomplete",
+                        "source_at",
+                        u32::try_from(index).ok(),
+                    )
+                })?;
+                let raw_instant =
+                    EvidenceTimestamp::parse_instant(raw_source_at).map_err(|_| {
+                        invalid_economic_release_evidence(
+                            "record_source_at_invalid",
+                            "source_at",
+                            u32::try_from(index).ok(),
+                        )
+                    })?;
+                let released_instant = EvidenceTimestamp::parse_instant(
+                    record.released_at.as_str(),
+                )
+                .map_err(|_| {
+                    invalid_economic_release_evidence(
+                        "record_released_at_invalid",
+                        "released_at",
+                        u32::try_from(index).ok(),
+                    )
+                })?;
+                EvidenceTimestamp::parse_instant(record.scheduled_at.as_str()).map_err(|_| {
+                    invalid_economic_release_evidence(
+                        "record_scheduled_at_invalid",
+                        "scheduled_at",
+                        u32::try_from(index).ok(),
+                    )
+                })?;
+                if raw_instant != released_instant {
+                    return Err(invalid_economic_release_evidence(
+                        "record_released_at_mismatch",
+                        "released_at",
+                        u32::try_from(index).ok(),
+                    ));
+                }
+            }
+            provider_query_result(
+                batch,
+                "Jin10",
+                ECONOMIC_RELEASE_OBSERVATIONS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        }
+        Err(Jin10Error::VerifiedEmpty(empty)) => {
+            if empty.family() != "economic_release_observations" {
+                return Err(invalid_economic_release_evidence(
+                    "empty_family_mismatch",
+                    "family",
+                    None,
+                ));
+            }
+            if empty.request_identity() != request_identity {
+                return Err(invalid_economic_release_evidence(
+                    "empty_request_identity_mismatch",
+                    "request_identity",
+                    None,
+                ));
+            }
+            if empty.provenance().source() != "jin10-flash-v1" {
+                return Err(invalid_economic_release_evidence(
+                    "batch_source_mismatch",
+                    "source",
+                    None,
+                ));
+            }
+            verify_verified_empty(&empty, &ProbeAdmissionPolicy::new(ProviderId::Jin10)).map_err(
+                |_| {
+                    invalid_economic_release_evidence(
+                        "empty_evidence_inconsistent",
+                        "evidence",
+                        None,
+                    )
+                },
+            )?;
+            let provenance = empty.provenance();
+            let batch_id = provenance.batch_id().ok_or_else(|| {
+                invalid_economic_release_evidence("batch_evidence_incomplete", "batch_id", None)
+            })?;
+            Ok(QueryResult {
+                provider: "Jin10".to_owned(),
+                batch_id: batch_id.to_owned(),
+                complete: true,
+                observed_at: provenance.fetched_at().to_owned(),
+                source_at: None,
+                records: Vec::new(),
+                repository_admitted: true,
+                diagnostic_blocker: None,
+            })
+        }
+        Err(error) => Err(provider_error(
+            Operation::EconomicReleaseObservations,
+            error,
+        )),
+    }
+}
+
+fn invalid_economic_release_evidence(
+    evidence_code: &str,
+    evidence_field: &str,
+    record_index: Option<u32>,
+) -> ServiceError {
+    ServiceError::InvalidEvidence {
+        provider: "Jin10".to_owned(),
+        evidence_code: evidence_code.to_owned(),
+        evidence_field: evidence_field.to_owned(),
+        record_index,
+        message: "economic release observation evidence is incomplete or inconsistent".to_owned(),
+    }
+}
+
 fn execute_global_news<P>(
     command: QueryCommand,
     client: &P,
@@ -4920,9 +5108,10 @@ fn map_jin10_error(operation: Operation, error: &Jin10Error) -> ServiceError {
         Jin10Error::InvalidRequest(message) => invalid(message),
         Jin10Error::Transport(_) => unavailable(operation, error),
         Jin10Error::Unsupported(reason) => unsupported(operation, reason),
-        Jin10Error::Decode(_) | Jin10Error::Protocol(_) | Jin10Error::Core(_) => {
-            precondition(error)
-        }
+        Jin10Error::Decode(_)
+        | Jin10Error::Protocol(_)
+        | Jin10Error::Core(_)
+        | Jin10Error::VerifiedEmpty(_) => precondition(error),
     }
 }
 
@@ -5751,7 +5940,7 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 60);
+        assert_eq!(admitted.len(), 61);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
@@ -5830,6 +6019,7 @@ mod tests {
             (Operation::EconomicSeries, "Nbs"),
             (Operation::EconomicSeries, "Pbc"),
             (Operation::EconomicSeries, "WorldBank"),
+            (Operation::EconomicReleaseObservations, "Jin10"),
             (Operation::RealtimeQuotes, "Sina"),
             (Operation::HistoricalBars, "Sina"),
             (Operation::MinuteData, "Sina"),
@@ -5997,6 +6187,45 @@ mod tests {
             .blocker
             .as_deref()
             .is_some_and(|blocker| blocker.contains("2025-12-01")));
+    }
+
+    #[test]
+    fn jin10_release_observation_verified_empty_is_admitted_only_for_the_same_request() {
+        let observed_at = "2026-09-12T12:00:00+08:00";
+        let batch_id = "jin10:test:economic-release-observations";
+        let request_identity = r#"{"limit":20,"country":null}"#;
+        let empty = magic_market_core::VerifiedEmpty::new(
+            "economic_release_observations",
+            request_identity,
+            "current public flash window contains no eligible type-1 rows",
+            SourceEvidence::new(ProviderId::Jin10, observed_at, batch_id).unwrap(),
+            Provenance::new("jin10-flash-v1", observed_at)
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        )
+        .unwrap();
+
+        let admitted = economic_release_observations_query_result(
+            Err(Jin10Error::VerifiedEmpty(Box::new(empty.clone()))),
+            request_identity,
+            4096,
+        )
+        .unwrap();
+        assert!(admitted.complete);
+        assert!(admitted.records.is_empty());
+        assert_eq!(admitted.source_at, None);
+        assert!(admitted.repository_admitted);
+
+        assert!(matches!(
+            economic_release_observations_query_result(
+                Err(Jin10Error::VerifiedEmpty(Box::new(empty))),
+                r#"{"limit":10,"country":null}"#,
+                4096,
+            ),
+            Err(ServiceError::InvalidEvidence { evidence_code, .. })
+                if evidence_code == "empty_request_identity_mismatch"
+        ));
     }
 
     #[test]

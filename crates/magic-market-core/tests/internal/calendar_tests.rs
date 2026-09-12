@@ -34,6 +34,32 @@ fn economic_calendar_request_preserves_optional_country() {
 }
 
 #[test]
+fn economic_release_observation_request_is_a_bounded_window_not_a_calendar_range() {
+    let request = EconomicReleaseObservationsRequest::new(PositiveU32::new(7).unwrap())
+        .unwrap()
+        .with_country("中国")
+        .unwrap();
+    assert_eq!(request.limit().get(), 7);
+    assert_eq!(request.country().unwrap().as_str(), "中国");
+
+    let restored: EconomicReleaseObservationsRequest =
+        serde_json::from_str(r#"{"limit":7,"country":"中国"}"#).unwrap();
+    assert_eq!(restored, request);
+    assert!(serde_json::from_str::<EconomicReleaseObservationsRequest>(
+        r#"{"limit":21,"country":null}"#
+    )
+    .is_err());
+    assert!(serde_json::from_str::<EconomicReleaseObservationsRequest>(
+        r#"{"limit":1,"country":"   "}"#
+    )
+    .is_err());
+    assert!(serde_json::from_str::<EconomicReleaseObservationsRequest>(
+        r#"{"limit":1,"start":"2026-09-12"}"#
+    )
+    .is_err());
+}
+
+#[test]
 fn futures_delivery_request_revalidates_year_and_exposes_month() {
     let request = FuturesDeliveryRequest::new(
         PositiveU32::new(2026).unwrap(),

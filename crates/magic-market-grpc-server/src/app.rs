@@ -363,6 +363,7 @@ implement_query_service! {
         outcome_daily_bars => OutcomeDailyBars,
         upper_limit_pool_review => UpperLimitPoolReview,
         current_auction_observations => CurrentAuctionObservations,
+        economic_release_observations => EconomicReleaseObservations,
 }
 
 pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
@@ -428,6 +429,7 @@ pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
         Operation::OutcomeDailyBars => v1::Operation::OutcomeDailyBars,
         Operation::UpperLimitPoolReview => v1::Operation::UpperLimitPoolReview,
         Operation::CurrentAuctionObservations => v1::Operation::CurrentAuctionObservations,
+        Operation::EconomicReleaseObservations => v1::Operation::EconomicReleaseObservations,
     }
 }
 

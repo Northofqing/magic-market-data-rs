@@ -95,6 +95,75 @@ pub trait EconomicCalendarProvider {
     ) -> Result<DataBatch<EconomicEvent>, Self::Error>;
 }
 
+/// Bounded observations from a Provider's current public economic-release
+/// window. This request deliberately has no date range: it cannot assert
+/// calendar completeness.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EconomicReleaseObservationsRequest {
+    limit: PositiveU32,
+    country: Option<NonEmptyText>,
+}
+
+impl EconomicReleaseObservationsRequest {
+    pub fn new(limit: PositiveU32) -> Result<Self, crate::CoreError> {
+        if limit.get() > 20 {
+            return Err(crate::CoreError::InvalidRequest(
+                "economic release observations limit must be at most 20".into(),
+            ));
+        }
+        Ok(Self {
+            limit,
+            country: None,
+        })
+    }
+
+    pub fn with_country(mut self, country: impl Into<String>) -> Result<Self, crate::CoreError> {
+        self.country = Some(NonEmptyText::new(country)?);
+        Ok(self)
+    }
+
+    pub fn limit(&self) -> PositiveU32 {
+        self.limit
+    }
+
+    pub fn country(&self) -> Option<&NonEmptyText> {
+        self.country.as_ref()
+    }
+}
+
+impl<'de> Deserialize<'de> for EconomicReleaseObservationsRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            limit: PositiveU32,
+            country: Option<String>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        let mut request = Self::new(wire.limit).map_err(de::Error::custom)?;
+        if let Some(country) = wire.country {
+            request = request.with_country(country).map_err(de::Error::custom)?;
+        }
+        Ok(request)
+    }
+}
+
+/// A structured, already-published release observed in a bounded Provider
+/// window. It is not proof of a complete calendar.
+pub type EconomicReleaseObservation = EconomicEvent;
+
+pub trait EconomicReleaseObservationsProvider {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn economic_release_observations(
+        &self,
+        request: &EconomicReleaseObservationsRequest,
+    ) -> Result<DataBatch<EconomicReleaseObservation>, Self::Error>;
+}
+
 /// CFFEX equity-index-futures products admitted by the delivery-notice parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FuturesProduct {

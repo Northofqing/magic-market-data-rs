@@ -1039,6 +1039,30 @@ Level-2 contract in BR-035. Unknown fields, invalid numbers, identity/cardinalit
 conflicts, response/request-stage conflicts and `not_ready` fail the whole batch
 without partial records.
 
+## BR-061 Jin10 rolling economic release observation
+
+`EconomicReleaseObservations` exposes only public, unlocked type-1 structured
+release rows found in Jin10's current bounded mixed flash window. It accepts a
+maximum of 20 returned rows and an optional exact source country. It is distinct
+from `EconomicCalendar`: it has no date range and makes no claim that all events
+for a day, country or future schedule are present. `EconomicCalendar` remains
+repository-unadmitted.
+
+Every non-empty record preserves the source event and indicator identities,
+country, name, period, scheduled time, observed release time,
+previous/consensus/actual/revised values, unit, importance and impact. Numeric
+zero is data, not absence. Normalized `scheduled_at` and `released_at` are
+RFC3339 instants; evidence `source_at` preserves the original source row time
+and denotes the same instant as `released_at`. `observed_at` is local receipt
+time and must not fill either source field.
+
+A fully validated public flash window with no eligible type-1 row is a complete
+zero-record result with no batch `source_at`. This proves only that the fetched
+rolling window contained no release observation. Malformed eligible rows,
+duplicates, evidence conflicts, invalid times, source time after observation,
+oversized windows and incomplete quality reject the whole batch. Ordinary news
+text is never parsed to invent calendar events or values.
+
 Repeated transient TQ loopback failures for the same discovered terminal
 candidate retain one pending monitor generation. Losing a previously running
 loopback advances continuity once; retrying the unchanged pending candidate does

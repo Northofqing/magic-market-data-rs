@@ -254,7 +254,7 @@ Its local `observed_at` must never be copied into nullable provider `source_at`.
 The rebuilt Windows service was then exercised through its real mTLS + Bearer
 endpoint at `10.211.55.3:50051`; the address is deployment evidence, not a
 portable endpoint default. The current source contract and rebuilt client bundle
-contain the same 61 data operations; every operation except `EconomicCalendar` has at least one formally admitted
+contain the same 62 data operations; every operation except `EconomicCalendar` has at least one formally admitted
 Provider path. The earlier 56/4 snapshot was superseded when the remaining formal paths,
 including CFFEX `FuturesDelivery`, were published. A formal external
 `T0Evidence` request returned `complete=true`, `ADMITTED`, a current local

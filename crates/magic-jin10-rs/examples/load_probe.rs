@@ -1,5 +1,9 @@
-use magic_jin10_rs::Jin10Client;
-use magic_market_core::{NewsProvider, PositiveU32};
+use magic_jin10_rs::{Jin10Client, Jin10Error};
+use magic_market_core::{
+    verify_admitted_newest_first_batch, verify_verified_empty, EconomicReleaseObservationsProvider,
+    EconomicReleaseObservationsRequest, NewsProvider, PositiveU32, ProbeAdmissionPolicy,
+    ProviderId,
+};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -27,6 +31,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .transpose()?
         .unwrap_or(2);
     validate_load(requests)?;
+    let release_observations =
+        std::env::var("MAGIC_JIN10_LOAD_RELEASE_OBSERVATIONS").as_deref() == Ok("1");
     let client = Jin10Client::new()?;
     let started = Instant::now();
     let mut latencies = Vec::with_capacity(requests);
@@ -35,10 +41,35 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut errors = Vec::new();
     for index in 0..requests {
         let request_started = Instant::now();
-        match client.global_news(PositiveU32::new(10)?) {
-            Ok(batch) => {
+        let result = if release_observations {
+            let request = EconomicReleaseObservationsRequest::new(PositiveU32::new(20)?)?;
+            match client.economic_release_observations(&request) {
+                Ok(batch) => verify_admitted_newest_first_batch(
+                    &batch,
+                    &ProbeAdmissionPolicy::new(ProviderId::Jin10).require_source_at(),
+                    |event| &event.evidence,
+                    |event| event.released_at.as_str(),
+                    |event| event.event_id.as_str().to_owned(),
+                )
+                .map(|_| batch.records().len())
+                .map_err(|error| error.to_string()),
+                Err(Jin10Error::VerifiedEmpty(empty)) => {
+                    verify_verified_empty(&empty, &ProbeAdmissionPolicy::new(ProviderId::Jin10))
+                        .map(|_| 0)
+                        .map_err(|error| error.to_string())
+                }
+                Err(error) => Err(error.to_string()),
+            }
+        } else {
+            client
+                .global_news(PositiveU32::new(10)?)
+                .map(|batch| batch.records().len())
+                .map_err(|error| error.to_string())
+        };
+        match result {
+            Ok(record_count) => {
                 successes += 1;
-                records += batch.records().len();
+                records += record_count;
             }
             Err(error) => errors.push(format!("request_{}={error}", index + 1)),
         }
@@ -49,7 +80,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let failures = errors.len();
     let rps = requests as f64 / elapsed.as_secs_f64();
     println!(
-        "provider=jin10-flash-v1 requests={requests} concurrency=1 min_interval_ms={} successes={successes} failures={failures} records={records} elapsed_seconds={:.3} requests_per_second={rps:.3} latency_us_p50={} latency_us_p95={} latency_us_p99={} latency_us_max={}",
+        "provider=jin10-flash-v1 operation={} requests={requests} concurrency=1 min_interval_ms={} successes={successes} failures={failures} records={records} elapsed_seconds={:.3} requests_per_second={rps:.3} latency_us_p50={} latency_us_p95={} latency_us_p99={} latency_us_max={}",
+        if release_observations { "economic_release_observations" } else { "global_news" },
         MIN_INTERVAL.as_millis(),
         elapsed.as_secs_f64(),
         percentile(&latencies, 50),

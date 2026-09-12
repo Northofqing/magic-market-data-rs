@@ -24,7 +24,7 @@
 | 数据类别 | 具体内容 | 数据源/端点 | 提供方 | 关键代码位置 | 频率/触发 | 用途 |
 |---|---|---|---|---|---|---|
 | 全局新闻聚合 (4 Feed) | 东财快讯/财联社电报/金十快讯/澎湃财经 各 ≤20 条 | 4 家供应商 HTTP 端点 (crate 内实现) | magic-eastmoney-rs (eastmoney-web) / magic-cls-rs (cls-v1) / magic-jin10-rs (jin10-flash-v1) / magic-thepaper-rs (thepaper-finance-v1) | `src/data_gateway/global_news.rs:19-43` (GlobalNewsProvider) | BR-166 轮询, 默认 120s (NEWS_POLL_INTERVAL) | 快讯共振 → 选股信号 (BR-174 ingress) |
-| 新闻搜索 (宏观) | 4 家快讯聚合渲染综合宏观点评 + 经济日历章节 | 依赖 GlobalNewsGateway + EconomicCalendarGateway | 同上 4 家 + Jin10 | `src/search_service/service.rs:1369` (search_macro_news), `:337` (并发 join) | R-08 盘后复盘等触发 | LLM 宏观分析上游 |
+| 新闻搜索 (宏观) | 4 家快讯聚合渲染综合宏观点评 + 当前窗口经济发布观测 | 依赖 GlobalNewsGateway + `EconomicReleaseObservations`；完整 `EconomicCalendar` 仍阻断 | 同上 4 家 + Jin10 | `src/search_service/service.rs:1369` (search_macro_news), `:337` (并发 join) | R-08 盘后复盘等触发 | LLM 宏观分析上游，不声明日历完整性 |
 | 个股新闻 | 指定代码+日期范围的公司新闻 | Magic Sina (HTTP) | magic-sina-rs (sina-company-news) | `src/data_gateway/sina_instrument_news.rs:20-21` (SinaInstrumentNews, limit 100) | BR-163 按需 | BR-066 个股新闻审计 |
 | 市场公告 (CNInfo) | 交易日全市场公告 | 巨潮资讯网 (CninfoClient HTTP) | magic-cninfo-rs (cninfo-market) | `src/data_gateway/event_calendar.rs:18-19` (R-08-announcements) | BR-161 按交易日拉取 | R-08 大盘复盘、公告推送 |
 | 盘面新闻事件 | 4 feed → market_event pipeline (simhash 去重) | GlobalNewsGateway | 同上 4 家 | `src/news/aggregator/feed.rs`, `src/news/aggregator/mod.rs` (SourceKind) | BR-166/BR-174 轮询 | 新闻→市场事件→产业链映射→选股 |
@@ -78,7 +78,7 @@
 
 | 数据类别 | 具体内容 | 数据源/端点 | 提供方 | 关键代码位置 | 频率/触发 | 用途 |
 |---|---|---|---|---|---|---|
-| 宏观经济事件 | 各国经济数据发布/预期/实际值 | 金十数据 (Jin10Client HTTP) | magic-jin10-rs (jin10-flash-v1) | `src/data_gateway/economic_calendar.rs:13-14` (MAX_LIMIT 20) | BR-133/167 按 limit+国家 | R-08 宏观日历 |
+| 宏观数据发布观测 | 当前公开滚动窗口中的国家、指标、发布/计划时间、前值/预期/实际值 | 金十数据 type-1 公共快讯 (Jin10Client HTTP) | magic-jin10-rs (jin10-flash-v1) | gRPC `EconomicReleaseObservations`，limit 1..=20 + 可选精确国家 | 按需；空窗口合法 | R-08 已发布宏观观测；不能替代完整事件日历 |
 
 ## 九、搜索/研究类 (ResearchOnly)
 
@@ -116,7 +116,7 @@
 | magic-eastmoney-rs | HTTP | 东方财富 (行情/资金流/龙虎榜/大宗/研报/板块) |
 | magic-baidu-rs | HTTP | 百度财经日 K 线 |
 | magic-cls-rs | HTTP | 财联社电报 |
-| magic-jin10-rs | HTTP | 金十数据快讯 + 经济日历 |
+| magic-jin10-rs | HTTP | 金十数据快讯 + 当前滚动经济发布观测（非完整日历） |
 | magic-thepaper-rs | HTTP | 澎湃财经 |
 | magic-cninfo-rs | HTTP | 巨潮资讯网市场公告 |
 | magic-exchange-rs | HTTP | HKEX 北向资金 + CFFEX 期货交割 |

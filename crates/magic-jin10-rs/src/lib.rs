@@ -3,8 +3,10 @@
 
 use magic_market_core::{
     CalendarCapabilities, ContentCapabilities, DataBatch, EconomicCalendarProvider,
-    EconomicCalendarRequest, EconomicEvent, HttpsUrl, InstrumentDateRangeRequest, NewsItem,
-    NewsProvider, NonEmptyText, PositiveU32, Provenance, ProviderId, SourceEvidence,
+    EconomicCalendarRequest, EconomicEvent, EconomicReleaseObservationsProvider,
+    EconomicReleaseObservationsRequest, EvidenceTimestamp, HttpsUrl, InstrumentDateRangeRequest,
+    NewsItem, NewsProvider, NonEmptyText, PositiveU32, Provenance, ProviderId, SourceEvidence,
+    VerifiedEmpty,
 };
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -27,6 +29,10 @@ const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 /// economic-calendar contract after Jin10 retired its free calendar/API embed.
 pub const ECONOMIC_CALENDAR_ADMITTED: bool = false;
 
+/// Public type-1 rows are admitted only as observations in the current rolling
+/// flash window, never as a complete date-range calendar.
+pub const ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED: bool = true;
+
 /// Jin10 adapter failures. Protected or malformed upstream data is never
 /// converted into an empty successful batch.
 #[derive(Debug, Error)]
@@ -41,6 +47,8 @@ pub enum Jin10Error {
     Protocol(String),
     #[error("unsupported capability: {0}")]
     Unsupported(String),
+    #[error("verified empty: {0}")]
+    VerifiedEmpty(Box<VerifiedEmpty>),
     #[error("core contract error: {0}")]
     Core(#[from] magic_market_core::CoreError),
 }
@@ -249,6 +257,31 @@ impl EconomicCalendarProvider for Jin10Client {
     }
 }
 
+impl EconomicReleaseObservationsProvider for Jin10Client {
+    type Error = Jin10Error;
+
+    fn economic_release_observations(
+        &self,
+        request: &EconomicReleaseObservationsRequest,
+    ) -> Result<DataBatch<EconomicEvent>, Self::Error> {
+        let body = self.execute(&build_request())?;
+        if body.len() > MAX_RESPONSE_BYTES {
+            return Err(Jin10Error::Protocol(format!(
+                "response exceeds {MAX_RESPONSE_BYTES} bytes"
+            )));
+        }
+        let observed_at = now()?;
+        let request_identity = serde_json::to_string(request)
+            .map_err(|error| Jin10Error::Protocol(format!("request identity: {error}")))?;
+        parse_economic_release_observations_response(
+            &body,
+            request,
+            &request_identity,
+            &observed_at,
+        )
+    }
+}
+
 fn ensure_official_url(url: &str) -> Result<(), Jin10Error> {
     let valid = url
         .strip_prefix("https://flash-api.jin10.com/")
@@ -370,6 +403,56 @@ fn parse_economic_response(
     request: &EconomicCalendarRequest,
     observed_at: &str,
 ) -> Result<DataBatch<EconomicEvent>, Jin10Error> {
+    parse_economic_window(
+        body,
+        request.limit(),
+        request.country(),
+        observed_at,
+        EconomicWindowContract::CalendarDiagnostic,
+    )
+}
+
+fn parse_economic_release_observations_response(
+    body: &[u8],
+    request: &EconomicReleaseObservationsRequest,
+    request_identity: &str,
+    observed_at: &str,
+) -> Result<DataBatch<EconomicEvent>, Jin10Error> {
+    parse_economic_window(
+        body,
+        request.limit(),
+        request.country(),
+        observed_at,
+        EconomicWindowContract::ReleaseObservations { request_identity },
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EconomicWindowContract<'a> {
+    CalendarDiagnostic,
+    ReleaseObservations { request_identity: &'a str },
+}
+
+impl EconomicWindowContract<'_> {
+    const fn batch_kind(self) -> &'static str {
+        match self {
+            Self::CalendarDiagnostic => "economic-calendar",
+            Self::ReleaseObservations { .. } => "economic-release-observations",
+        }
+    }
+
+    const fn preserves_original_source_at(self) -> bool {
+        matches!(self, Self::ReleaseObservations { .. })
+    }
+}
+
+fn parse_economic_window(
+    body: &[u8],
+    limit: PositiveU32,
+    country: Option<&NonEmptyText>,
+    observed_at: &str,
+    contract: EconomicWindowContract<'_>,
+) -> Result<DataBatch<EconomicEvent>, Jin10Error> {
     let root: Value = serde_json::from_slice(body)
         .map_err(|error| Jin10Error::Decode(format!("flash JSON: {error}")))?;
     let object = checked_envelope(&root)?;
@@ -384,7 +467,9 @@ fn parse_economic_response(
         )));
     }
 
-    let batch_id = format!("jin10:{observed_at}:economic-calendar");
+    EvidenceTimestamp::parse_instant(observed_at)
+        .map_err(|_| Jin10Error::Protocol("observation time is invalid".into()))?;
+    let batch_id = format!("jin10:{observed_at}:{}", contract.batch_kind());
     let mut seen = HashSet::with_capacity(rows.len());
     let mut records = Vec::new();
     for row in rows {
@@ -407,25 +492,46 @@ fn parse_economic_response(
         if item_type != 1 {
             continue;
         }
-        let record = parse_economic_event(row, event_id, observed_at, &batch_id)?;
-        if request
-            .country()
-            .is_some_and(|country| country.as_str() != record.country.as_str())
-        {
+        let record = parse_economic_event(
+            row,
+            event_id,
+            observed_at,
+            &batch_id,
+            contract.preserves_original_source_at(),
+        )?;
+        if country.is_some_and(|country| country.as_str() != record.country.as_str()) {
             continue;
         }
         records.push(record);
     }
     if records.is_empty() {
-        return Err(Jin10Error::Protocol(
-            "Jin10 returned no eligible public economic releases".into(),
-        ));
+        return match contract {
+            EconomicWindowContract::CalendarDiagnostic => Err(Jin10Error::Protocol(
+                "Jin10 returned no eligible public economic releases".into(),
+            )),
+            EconomicWindowContract::ReleaseObservations { request_identity } => {
+                let evidence = SourceEvidence::new(ProviderId::Jin10, observed_at, &batch_id)?;
+                let provenance =
+                    Provenance::new("jin10-flash-v1", observed_at)?.with_batch_id(&batch_id)?;
+                let empty = VerifiedEmpty::new(
+                    "economic_release_observations",
+                    request_identity,
+                    "current public flash window contains no eligible type-1 rows",
+                    evidence,
+                    provenance,
+                )
+                .map_err(|error| {
+                    Jin10Error::Protocol(format!("verified-empty evidence: {error}"))
+                })?;
+                Err(Jin10Error::VerifiedEmpty(Box::new(empty)))
+            }
+        };
     }
     records.sort_by(|left, right| right.released_at.as_str().cmp(left.released_at.as_str()));
-    records.truncate(request.limit().get() as usize);
+    records.truncate(limit.get() as usize);
     let source_at = records
         .first()
-        .map(|record| record.released_at.as_str())
+        .and_then(|record| record.evidence.source_at())
         .ok_or_else(|| Jin10Error::Protocol("latest economic release time is missing".into()))?;
     let provenance = Provenance::new("jin10-flash-v1", observed_at)?
         .with_source_at(source_at)?
@@ -458,15 +564,26 @@ fn parse_economic_event(
     event_id: String,
     observed_at: &str,
     batch_id: &str,
+    preserve_original_source_at: bool,
 ) -> Result<EconomicEvent, Jin10Error> {
     let data = row
         .get("data")
         .and_then(Value::as_object)
         .ok_or_else(|| Jin10Error::Protocol("economic data must be an object".into()))?;
-    let released_at =
-        jin10_time(row.get("time").and_then(Value::as_str).ok_or_else(|| {
-            Jin10Error::Protocol("economic release time must be a string".into())
-        })?)?;
+    let original_source_at = row
+        .get("time")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Jin10Error::Protocol("economic release time must be a string".into()))?;
+    let released_at = jin10_time(original_source_at)?;
+    let released_instant = EvidenceTimestamp::parse_instant(&released_at)
+        .map_err(|_| Jin10Error::Protocol("economic release time is invalid".into()))?;
+    let observed_instant = EvidenceTimestamp::parse_instant(observed_at)
+        .map_err(|_| Jin10Error::Protocol("observation time is invalid".into()))?;
+    if released_instant > observed_instant {
+        return Err(Jin10Error::Protocol(
+            "economic release time must not be after observation time".into(),
+        ));
+    }
     let scheduled_at = jin10_time(
         data.get("pub_time")
             .and_then(Value::as_str)
@@ -481,8 +598,13 @@ fn parse_economic_event(
     }
     let country = required_scalar_text(data.get("country"), "country")?;
     let name = required_scalar_text(data.get("name"), "name")?;
+    let evidence_source_at = if preserve_original_source_at {
+        original_source_at
+    } else {
+        released_at.as_str()
+    };
     let evidence = SourceEvidence::new(ProviderId::Jin10, observed_at, batch_id)?
-        .with_source_at(released_at.clone())?;
+        .with_source_at(evidence_source_at)?;
     Ok(EconomicEvent {
         event_id: NonEmptyText::new(event_id)?,
         indicator_id: indicator,
@@ -870,6 +992,33 @@ mod tests {
       ]
     }"#;
 
+    const ECONOMIC_FIXTURE: &str = r#"{
+      "status": 200,
+      "message": "OK",
+      "data": [{
+        "id": "202607250001",
+        "time": "2026-07-25 09:30:01",
+        "type": 1,
+        "important": 1,
+        "data": {
+          "lock": false,
+          "indicator_id": 950,
+          "country": "中国",
+          "name": "规模以上工业企业利润",
+          "time_period": "6月",
+          "pub_time": "2026-07-25 09:30:00",
+          "previous": -9.1,
+          "consensus": null,
+          "actual": 0,
+          "revised": null,
+          "unit": "%",
+          "star": 3,
+          "affect": 1
+        },
+        "tags": []
+      }]
+    }"#;
+
     #[derive(Debug)]
     struct FixtureTransport {
         response: Vec<u8>,
@@ -1026,35 +1175,9 @@ mod tests {
 
     #[test]
     fn economic_release_preserves_zero_actual_and_source_fields() {
-        let economic = r#"{
-          "status": 200,
-          "message": "OK",
-          "data": [{
-            "id": "202607250001",
-            "time": "2026-07-25 09:30:01",
-            "type": 1,
-            "important": 1,
-            "data": {
-              "lock": false,
-              "indicator_id": 950,
-              "country": "中国",
-              "name": "规模以上工业企业利润",
-              "time_period": "6月",
-              "pub_time": "2026-07-25 09:30:00",
-              "previous": -9.1,
-              "consensus": null,
-              "actual": 0,
-              "revised": null,
-              "unit": "%",
-              "star": 3,
-              "affect": 1
-            },
-            "tags": []
-          }]
-        }"#;
         let client = Jin10Client::from_parts(
             Arc::new(FixtureTransport {
-                response: economic.as_bytes().to_vec(),
+                response: ECONOMIC_FIXTURE.as_bytes().to_vec(),
                 request: Mutex::new(None),
             }),
             Duration::ZERO,
@@ -1070,6 +1193,99 @@ mod tests {
             batch.provenance().source_at(),
             Some("2026-07-25T09:30:01+08:00")
         );
+    }
+
+    #[test]
+    fn release_observations_preserve_original_evidence_time() {
+        let request = EconomicReleaseObservationsRequest::new(PositiveU32::new(20).unwrap())
+            .unwrap()
+            .with_country("中国")
+            .unwrap();
+        let batch = parse_economic_release_observations_response(
+            ECONOMIC_FIXTURE.as_bytes(),
+            &request,
+            r#"{"limit":20,"country":"中国"}"#,
+            "2026-07-25T09:30:02+08:00",
+        )
+        .unwrap();
+        let record = &batch.records()[0];
+        assert_eq!(record.released_at.as_str(), "2026-07-25T09:30:01+08:00");
+        assert_eq!(record.scheduled_at.as_str(), "2026-07-25T09:30:00+08:00");
+        assert_eq!(record.actual.as_ref().unwrap().as_str(), "0");
+        assert_eq!(record.evidence.source_at(), Some("2026-07-25 09:30:01"));
+        assert_eq!(batch.provenance().source_at(), Some("2026-07-25 09:30:01"));
+        assert_eq!(
+            record.evidence.batch_id(),
+            batch.provenance().batch_id().unwrap()
+        );
+    }
+
+    #[test]
+    fn release_observations_admit_a_fully_checked_empty_public_window() {
+        let mut root: Value = serde_json::from_str(FIXTURE).unwrap();
+        root.get_mut("data")
+            .and_then(Value::as_array_mut)
+            .unwrap()
+            .retain(|row| row.get("type").and_then(Value::as_i64) != Some(1));
+        let body = serde_json::to_vec(&root).unwrap();
+        let request =
+            EconomicReleaseObservationsRequest::new(PositiveU32::new(20).unwrap()).unwrap();
+        let result = parse_economic_release_observations_response(
+            &body,
+            &request,
+            r#"{"limit":20,"country":null}"#,
+            "2026-07-25T23:00:00+08:00",
+        );
+        let Err(Jin10Error::VerifiedEmpty(empty)) = result else {
+            panic!("expected a source-proven empty result");
+        };
+        assert_eq!(empty.family(), "economic_release_observations");
+        assert_eq!(empty.request_identity(), r#"{"limit":20,"country":null}"#);
+        assert_eq!(empty.provenance().source_at(), None);
+        assert!(empty
+            .provenance()
+            .batch_id()
+            .unwrap()
+            .ends_with(":economic-release-observations"));
+        assert_eq!(
+            magic_market_core::verify_verified_empty(
+                &empty,
+                &magic_market_core::ProbeAdmissionPolicy::new(ProviderId::Jin10)
+            )
+            .unwrap(),
+            magic_market_core::ProbeStatus::VerifiedEmpty
+        );
+    }
+
+    #[test]
+    fn release_observation_country_filter_can_be_verified_empty() {
+        let request = EconomicReleaseObservationsRequest::new(PositiveU32::new(20).unwrap())
+            .unwrap()
+            .with_country("美国")
+            .unwrap();
+        let result = parse_economic_release_observations_response(
+            ECONOMIC_FIXTURE.as_bytes(),
+            &request,
+            r#"{"limit":20,"country":"美国"}"#,
+            "2026-07-25T09:30:02+08:00",
+        );
+        assert!(matches!(result, Err(Jin10Error::VerifiedEmpty(_))));
+    }
+
+    #[test]
+    fn release_observation_rejects_source_time_after_observation() {
+        let request =
+            EconomicReleaseObservationsRequest::new(PositiveU32::new(20).unwrap()).unwrap();
+        assert!(matches!(
+            parse_economic_release_observations_response(
+                ECONOMIC_FIXTURE.as_bytes(),
+                &request,
+                r#"{"limit":20,"country":null}"#,
+                "2026-07-25T09:30:00+08:00",
+            ),
+            Err(Jin10Error::Protocol(message))
+                if message.contains("after observation time")
+        ));
     }
 
     #[test]

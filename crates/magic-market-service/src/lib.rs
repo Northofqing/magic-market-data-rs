@@ -90,6 +90,7 @@ define_operations! {
     OutcomeDailyBars => "outcome_daily_bars",
     UpperLimitPoolReview => "upper_limit_pool_review",
     CurrentAuctionObservations => "current_auction_observations",
+    EconomicReleaseObservations => "economic_release_observations",
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

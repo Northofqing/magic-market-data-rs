@@ -7,6 +7,7 @@ magic-fred-rs	Fred	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/fred-api.md	a
 magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-08-13	0	0	DataMapper returns HTTP 403; replacement SDMX Swagger requires beta portal login and a documented API contract
 magic-iwencai-rs	Iwencai	SEMANTIC_SEARCH_ADMITTED	true	docs/integrations/iwencai-api.md	admitted	2026-08-14	2	3	-
 magic-jin10-rs	Jin10	ECONOMIC_CALENDAR_ADMITTED	false	docs/integrations/jin10-web.md	blocked	2026-08-24	0	0	Jin10 ended its free calendar and API embedding service on 2025-12-01; the latest public flash window cannot prove a complete economic calendar
+magic-jin10-rs	Jin10	ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED	true	docs/integrations/jin10-web.md	admitted	2026-09-12	2	3	-
 magic-nbs-rs	Nbs	NATIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-
 magic-nbs-rs	Nbs	REGIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-
 magic-pbc-rs	Pbc	MONEY_SUPPLY_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-07-29	2	3	-

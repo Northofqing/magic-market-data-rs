@@ -26,8 +26,31 @@ Only public type-0 flashes and type-2 linked articles are normalized by
 channel 1, 2 or 3; source rows belonging only to channel 5 are promotional
 slots and are omitted. Missing, empty or non-integral channel arrays remain
 protocol failures. Public unlocked type-1 economic rows can be inspected
-separately through the diagnostic `EconomicCalendarProvider`; the two contracts
-are never mixed.
+through the narrow `EconomicReleaseObservationsProvider` and, separately, the
+diagnostic `EconomicCalendarProvider`; none of these contracts are mixed.
+
+## Economic-release observations
+
+`ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED` is `true`. The append-only
+`EconomicReleaseObservations` operation exposes only structured type-1 release
+rows present in the current rolling public flash window. It accepts 1 through
+20 rows and an optional exact source country. The limit is a maximum after the
+complete source window has been checked; it is not a requested calendar size.
+
+Each record preserves event/indicator identity, country, name, period,
+scheduled and observed release times, previous/consensus/actual/revised values,
+unit, importance, impact and per-record evidence. `scheduled_at` and
+`released_at` are normalized RFC3339 instants. Evidence `source_at` retains the
+original Provider `YYYY-MM-DD HH:MM:SS` value and represents the same instant as
+`released_at`; `observed_at` remains the local receipt time. Numeric zero is
+retained as `"0"`.
+
+When the valid mixed source window contains no eligible type-1 row, this narrow
+operation returns `complete=true`, zero records and no batch `source_at`. That
+means only "none in the fetched rolling window". It does not mean a day, country
+or future calendar is empty. An eligible type-1 row with malformed data still
+rejects the entire batch; ordinary type-0/type-2 news text is never interpreted
+as an economic event.
 
 ## Economic-calendar diagnostic
 
@@ -37,6 +60,8 @@ The remaining public flash endpoint is only a rolling latest-item window. It
 cannot prove a complete calendar result for a requested date range, so
 `ECONOMIC_CALENDAR_ADMITTED` is `false` and production routing never selects it.
 The parser remains reachable only through explicit unadmitted diagnostic access.
+Callers that need already-published observations may instead use the admitted
+`EconomicReleaseObservations` operation, but must not treat it as a calendar.
 
 The calendar adapter preserves the source event/indicator identity, country, name,
 period, scheduled and released times, previous/consensus/actual/revised values, unit,
@@ -59,7 +84,9 @@ flash window is a typed failure, never a verified-empty calendar.
   apart.
 - HTTP, content-type, envelope, ID, duplicate, timestamp, public-content, URL, tag, and
   evidence failures remain typed errors.
-- An empty eligible public batch is not a successful result.
+- An empty eligible public-news batch is not a successful result. An empty
+  eligible type-1 window is successful only for `EconomicReleaseObservations`
+  under the narrower semantics above.
 - `instrument_news` is explicitly unsupported because the public stream supplies no
   verified structured security filter.
 
@@ -77,7 +104,11 @@ cargo test -p magic-jin10-rs --all-targets --locked --offline
 cargo run -p magic-jin10-rs --example live_probe --release
 MAGIC_JIN10_LIVE_INCLUDE_CALENDAR=1 \
   cargo run -p magic-jin10-rs --example live_probe --release
+MAGIC_JIN10_LIVE_INCLUDE_RELEASE_OBSERVATIONS=1 \
+  cargo run -p magic-jin10-rs --example live_probe --release
 MAGIC_JIN10_LOAD_REQUESTS=2 \
+  cargo run -p magic-jin10-rs --example load_probe --release
+MAGIC_JIN10_LOAD_REQUESTS=3 MAGIC_JIN10_LOAD_RELEASE_OBSERVATIONS=1 \
   cargo run -p magic-jin10-rs --example load_probe --release
 ```
 
@@ -85,6 +116,7 @@ The default live probe validates public news. Set
 `MAGIC_JIN10_LIVE_INCLUDE_CALENDAR=1` to run the explicit unadmitted diagnostic
 and require a current economic release; this mode can correctly fail when the
 rolling public window contains no eligible type-1 row. It is not admission
-evidence for a complete calendar. The load probe defaults to two requests,
-accepts at most three, uses concurrency one, and reports failures and latency
-percentiles.
+evidence for a complete calendar. The release-observation mode accepts a fully
+validated empty rolling window as verified-empty evidence for its narrow
+operation. The load probe defaults to two requests, accepts at most three, uses
+concurrency one, and reports failures and latency percentiles.

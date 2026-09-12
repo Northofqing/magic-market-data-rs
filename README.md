@@ -11,6 +11,8 @@
 
 - 获取实时行情、K 线、分时、逐笔、五档、证券元数据、财务与公司行动等标准化数据。
 - 接入 TDX、Tencent、Sina、Eastmoney、CNInfo、THS、交易所及多种新闻、宏观数据源。
+- 提供 Jin10 当前公开快讯窗口内的结构化宏观发布观测；空窗口是合法结果，但不冒充
+  某日完整的 CPI、PMI、非农或利率决议日历。
 - 使用 Router 按固定顺序切换数据源，同时保留每次尝试和最终来源。
 - 通过 `magic.market.v1` gRPC 查询数据、读取能力状态、订阅事件和执行有界重放。
 - 在 Windows 自动发现当前用户会话中的通达信客户端，通过固定本机 TQ-Local 只读接口
@@ -93,6 +95,11 @@ LPR 和官方汇率能力不受 DR007 授权缺口影响。窄版 `Auctions` 只
 响应时间仅作为 `observed_at`。完整 `Auctions` 映射因快照本身未给交易日、逐条源时刻和
 方向化未匹配队列，仍保持 repository-unadmitted，只能显式 `allow_unadmitted=true` 调用。
 同花顺交易日历和竞价短线基准虽然包含日期，但日期不与该快照记录绑定，不能跨响应补证据。
+
+`EconomicReleaseObservations` 只返回 Jin10 当前滚动公开窗口中真实存在的 type-1
+结构化发布记录，并保留计划时间、发布观测时间、实际/预期/前值和逐条证据。普通新闻
+`published_at` 不会被解析或复制成事件时间。完整 `EconomicCalendar` 因无法证明日期范围
+完整性，仍保持 repository-unadmitted。
 
 `MarketBreadth` 的上市总数、涨跌平、涨跌停和覆盖率来自同一个妙想响应；这证明采集
 原子性，但 Provider 没有给每个字段源时刻，因此 `maximum_source_skew_millis` 保持

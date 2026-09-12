@@ -5,11 +5,11 @@
 | 项目 | 状态 |
 | --- | --- |
 | Protobuf v1 合同 | 已建立，可生成客户端 |
-| 61 个只读数据族 RPC | 已进入 v1 Proto；新增 `CurrentAuctionObservations` 当前竞价窄合同 |
+| 62 个只读数据族 RPC | 已进入 v1 Proto；新增 `EconomicReleaseObservations` 滚动宏观发布观测窄合同 |
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 61 个操作精确登记；60 个操作至少有一个正式 handler；`EconomicCalendar` 因金十免费日历/API 已退役而仅保留显式诊断路径；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
+| Unary Provider composition | 62 个操作精确登记；61 个操作至少有一个正式 handler；`EconomicCalendar` 因金十免费日历/API 已退役而仅保留显式诊断路径；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
 | TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额、昨收、OHLC 与三类带 Core 证据的 trigger/rearm 事件为生产数据；状态消息仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
@@ -299,7 +299,7 @@ OptionData                 ProviderTopNRankings
 InstrumentNews            IndexQuotes
 IntradayShape             T0Evidence
 OutcomeDailyBars          UpperLimitPoolReview
-CurrentAuctionObservations
+CurrentAuctionObservations EconomicReleaseObservations
 ```
 
 所有方法都是只读 unary RPC。没有账户、资产、持仓、委托、撤单或成交写接口。
@@ -479,14 +479,14 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 
 ## 10. 当前实现状态
 
-- Protobuf/descriptor、61 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
+- Protobuf/descriptor、62 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
   blocking 调用隔离均已实现；
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
   异动 trigger/rearm 进入生产事件流；
-- unary registry 对 61 个操作逐项精确登记；除 `EconomicCalendar` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，仅保留显式诊断路径；
+- unary registry 对 62 个操作逐项精确登记；除 `EconomicCalendar` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，仅保留显式诊断路径；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council、iWencai 与官方 `HithinkFinance` 扶摇 API 外，也可精确选择
   TDX 公共协议、Sina、SSE、SZSE、
@@ -508,6 +508,9 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - `CurrentAuctionObservations` 是 append-only 的第 61 个操作，只绑定
   `HithinkFinance` 官方扶摇接口。请求显式选择 `live` 或 `final`，保留单一有符号
   `auction_unmatched` 和所有源字段，不构造交易日、Provider 源时刻或买卖方向；
+- `EconomicReleaseObservations` 是 append-only 的第 62 个操作，只绑定 Jin10
+  当前公开滚动快讯窗口中的结构化 type-1 行。它可以返回完整的零记录窗口，但不声明
+  日期范围、当日或未来经济日历完整性；普通新闻发布时间不能构造事件时间；
 - `MoneyFlows`、`FundFlowSeries` 已绑定东财公开资金流正式合同，`TechnicalBars` 已绑定
   Baidu 未复权源技术日线正式合同；`PostCloseFlows` 已绑定东财当前交易日 15:35 后的
   本地观察快照；`FuturesDelivery` 已绑定 CFFEX 官方固定交割日历，Baidu
@@ -716,6 +719,54 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 只写入 `observed_at`。此合同没有 `trading_date`，批次和逐条 `source_at` 都为空，不能用于
 严格源时间新鲜度、历史归档日期证明或完整 Level-2 `Auctions` 判断。
 
+### EconomicReleaseObservations 滚动宏观发布观测
+
+业务请求 schema 为
+`magic.market.economic_release_observations.request`、版本 1：
+
+```json
+{"limit":20,"country":"中国"}
+```
+
+`country` 可省略；有值时按 Provider 原始国家文本精确匹配。`limit` 是完整检查当前
+混合快讯窗口后最多返回的条数，不是日历应有条数。正常调用使用
+`preferred_provider=Jin10`、`allow_unadmitted=false`。记录 schema 为
+`magic.market.economic_release_observation`、版本 1：
+
+```json
+{
+  "event_id": "202607250001",
+  "indicator_id": 950,
+  "country": "中国",
+  "name": "规模以上工业企业利润",
+  "period": "6月",
+  "scheduled_at": "2026-07-25T09:30:00+08:00",
+  "released_at": "2026-07-25T09:30:01+08:00",
+  "previous": "-9.1",
+  "consensus": null,
+  "actual": "0",
+  "revised": null,
+  "unit": "%",
+  "importance": 3,
+  "impact": "1",
+  "evidence": {
+    "provider": "Jin10",
+    "source_at": "2026-07-25 09:30:01",
+    "observed_at": "1784943002.000000000",
+    "batch_id": "REDACTED_JIN10_RELEASE_BATCH"
+  }
+}
+```
+
+`scheduled_at` 来自结构化 `pub_time`，`released_at` 来自结构化 type-1 行时间；两者
+不是从普通新闻正文或 `published_at` 猜测。逐条 evidence 保留 Provider 原始时间字符串，
+其时间点必须与规范化 `released_at` 相同。非空批次 `source_at` 等于最新记录的原始
+`evidence.source_at`。
+
+当前有效滚动窗口没有 type-1 行时，返回 `ADMITTED`、`complete=true`、`records=[]`、
+`source_at=null`。这只证明本次获取的滚动窗口为空，不证明某日、某国家或未来日历为空。
+完整 `EconomicCalendar` 继续 fail-closed；客户端不得把两者互换。
+
 以下特定来源变体不是缺少 gRPC 方法，而是该来源的生产数据合同尚未满足。已有字段通过显式
 诊断模式读取，缺失字段保留 `null`，但不会改变下表状态：
 
@@ -740,6 +791,7 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 | `Auctions` / `EastmoneyMiaoxiang` | `magic.market.auctions.request` (`{"instrument":...,"trading_date":"YYYY-MM-DD"}`) | `magic.market.opening_auction_diagnostic` |
 | `Auctions` / `HithinkFinance` diagnostic | `magic.market.hithink_current_auctions.request` (`{"instruments":[...]}`) | `magic.market.hithink_current_auction_snapshot` |
 | `CurrentAuctionObservations` / `HithinkFinance` | `magic.market.current_auction_observations.request` (`{"instruments":[...],"stage":"live|final"}`) | `magic.market.current_auction_observation` |
+| `EconomicReleaseObservations` / `Jin10` | `magic.market.economic_release_observations.request` (`{"limit":20,"country":"中国"}`) | `magic.market.economic_release_observation` |
 | `MarketBreadth` | `magic.market.market_breadth.request` (`{"source_date":"YYYY-MM-DD"}`) | `magic.market.market_breadth_diagnostic` |
 
 例如技术日 K 诊断的业务 JSON 为：
@@ -876,6 +928,9 @@ SecurityProfiles 与未准入路由合同，所有文件由同一 LF `manifest.s
 `2026-09-09.1` 追加第 61 个 `CurrentAuctionObservations` RPC，正式发布同花顺扶摇
 `live`/`final` 当前竞价窄合同。该版本保留单一 `auction_unmatched` 原值和响应观察时间，
 明确不构造交易日、Provider 源时刻或买卖方向；完整 `Auctions` 准入状态不变。
+`2026-09-12.1` 追加第 62 个 `EconomicReleaseObservations` RPC，正式发布 Jin10 当前
+公开滚动窗口中的结构化 type-1 宏观发布观测。空窗口是合法完整结果，但不代表日历为空；
+`EconomicCalendar` 准入状态不变。
 
 ## 12. 客户端代码生成
 
@@ -926,7 +981,7 @@ Go 项目正式接入前可在自己的 Proto 镜像中补 `go_package` 映射�
 
 发布者使用 `tools/docs/build_client_bundle.ps1` 从同一工作树复制 `market.proto`、本文、
 `grpc-derived-products.md`、`tdx-public-security-profile.md` 和
-`unadmitted-provider-routes.md`。脚本拒绝 MarketDataService RPC 数不是 61 的 proto、拒绝
+`unadmitted-provider-routes.md`。脚本拒绝 MarketDataService RPC 数不是 62 的 proto、拒绝
 bundle 内任一 Markdown 相对链接缺失，并生成 `bundle-metadata.json` 与
 `manifest.sha256`；对接方必须同时校验 bundle version、source commit 和文件摘要，不能
 混用不同提交的“最新版”文件。

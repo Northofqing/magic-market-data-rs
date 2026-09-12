@@ -1,6 +1,6 @@
 param(
     [string]$Destination = "target/runtime/client-bundle",
-    [string]$BundleVersion = "2026-09-09.1",
+    [string]$BundleVersion = "2026-09-12.1",
     [string]$SourceCommit = ""
 )
 
@@ -90,8 +90,8 @@ if (-not $serviceMatch.Success) {
     throw "market.proto has no MarketDataService block"
 }
 $rpcCount = [regex]::Matches($serviceMatch.Groups['body'].Value, '\brpc\s+').Count
-if ($rpcCount -ne 61) {
-    throw "client bundle must contain exactly 61 MarketDataService RPCs, got $rpcCount"
+if ($rpcCount -ne 62) {
+    throw "client bundle must contain exactly 62 MarketDataService RPCs, got $rpcCount"
 }
 
 $generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
@@ -104,6 +104,7 @@ $metadata = @"
   "instrument_news_schema_version": 2,
   "t0_evidence_schema_version": 2,
   "current_auction_observations_schema_version": 1,
+  "economic_release_observations_schema_version": 1,
   "generated_at_utc": "$generatedAt"
 }
 "@
