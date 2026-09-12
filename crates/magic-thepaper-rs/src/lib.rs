@@ -477,9 +477,11 @@ fn parse_topics(row: &Map<String, Value>) -> Result<Vec<NonEmptyText>, ThePaperE
     let mut seen = HashSet::new();
     seen.insert(subsection.clone());
     let mut topics = vec![NonEmptyText::new(subsection)?];
-    let tags = row
-        .get("tagList")
-        .and_then(Value::as_array)
+    let Some(tags) = row.get("tagList") else {
+        return Ok(topics);
+    };
+    let tags = tags
+        .as_array()
         .ok_or_else(|| ThePaperError::Protocol("tagList must be an array".into()))?;
     for tag in tags {
         let object = tag
@@ -631,6 +633,41 @@ mod tests {
             Some("unix-ms:1784903331309")
         );
         assert_eq!(batch.records()[1].topics.len(), 2);
+    }
+
+    #[test]
+    fn native_rows_without_optional_tag_list_remain_admitted() {
+        let without_optional_tags = FIXTURE.replace("\"tagList\":", "\"optionalTagList\":");
+        let client = ThePaperClient::with_transport(FixtureTransport {
+            response: without_optional_tags.into_bytes(),
+            request: Mutex::new(None),
+        });
+
+        let batch = client
+            .global_news(PositiveU32::new(20).unwrap())
+            .expect("native rows must not require optional tags");
+
+        assert_eq!(batch.records().len(), 2);
+        assert!(batch.records().iter().all(|item| item.topics.len() == 1));
+        assert_eq!(batch.records()[0].topics[0].as_str(), "能见度");
+        assert_eq!(batch.records()[0].evidence.provider(), ProviderId::ThePaper);
+    }
+
+    #[test]
+    fn tag_list_must_still_be_an_array_when_present() {
+        let malformed_tags = FIXTURE.replace(
+            r#""tagList": [{"tag": "宁德时代"}, {"tag": "业绩"}]"#,
+            r#""tagList": {"tag": "宁德时代"}"#,
+        );
+        let client = ThePaperClient::with_transport(FixtureTransport {
+            response: malformed_tags.into_bytes(),
+            request: Mutex::new(None),
+        });
+
+        assert!(matches!(
+            client.global_news(PositiveU32::new(20).unwrap()),
+            Err(ThePaperError::Protocol(message)) if message == "tagList must be an array"
+        ));
     }
 
     #[test]
