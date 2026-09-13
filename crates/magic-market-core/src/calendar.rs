@@ -164,6 +164,191 @@ pub trait EconomicReleaseObservationsProvider {
     ) -> Result<DataBatch<EconomicReleaseObservation>, Self::Error>;
 }
 
+/// Inclusive date range for one Provider's published economic-release
+/// schedule. This is intentionally distinct from a complete economic calendar
+/// and from already-released observations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EconomicReleaseScheduleRequest {
+    start: IsoDate,
+    end: IsoDate,
+    limit: PositiveU32,
+}
+
+impl EconomicReleaseScheduleRequest {
+    pub fn new(start: IsoDate, end: IsoDate, limit: PositiveU32) -> Result<Self, crate::CoreError> {
+        if limit.get() > 100 {
+            return Err(crate::CoreError::InvalidRequest(
+                "economic release schedule limit must be at most 100".into(),
+            ));
+        }
+        let start_day = gregorian_ordinal(&start);
+        let end_day = gregorian_ordinal(&end);
+        if start_day > end_day {
+            return Err(crate::CoreError::InvalidRequest(
+                "economic release schedule start must not be after end".into(),
+            ));
+        }
+        if end_day - start_day >= 366 {
+            return Err(crate::CoreError::InvalidRequest(
+                "economic release schedule range must contain at most 366 days".into(),
+            ));
+        }
+        Ok(Self { start, end, limit })
+    }
+
+    pub fn start(&self) -> &IsoDate {
+        &self.start
+    }
+
+    pub fn end(&self) -> &IsoDate {
+        &self.end
+    }
+
+    pub fn limit(&self) -> PositiveU32 {
+        self.limit
+    }
+}
+
+impl<'de> Deserialize<'de> for EconomicReleaseScheduleRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            start: IsoDate,
+            end: IsoDate,
+            limit: PositiveU32,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.start, wire.end, wire.limit).map_err(de::Error::custom)
+    }
+}
+
+fn gregorian_ordinal(date: &IsoDate) -> u32 {
+    let value = date.as_str();
+    let year = value[0..4].parse::<u32>().expect("validated ISO year");
+    let month = value[5..7].parse::<u32>().expect("validated ISO month");
+    let day = value[8..10].parse::<u32>().expect("validated ISO day");
+    let completed_year = year - 1;
+    let leap_days = completed_year / 4 - completed_year / 100 + completed_year / 400;
+    let days_before_month =
+        [0_u32, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][(month - 1) as usize];
+    let leap_adjustment = u32::from(
+        month > 2
+            && year.is_multiple_of(4)
+            && (!year.is_multiple_of(100) || year.is_multiple_of(400)),
+    );
+    completed_year * 365 + leap_days + days_before_month + leap_adjustment + day
+}
+
+/// One date-only economic release entry published by a Provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EconomicReleaseScheduleEntry {
+    release_id: PositiveU32,
+    release_name: NonEmptyText,
+    release_date: IsoDate,
+    release_last_updated: Option<NonEmptyText>,
+    evidence: SourceEvidence,
+}
+
+impl EconomicReleaseScheduleEntry {
+    pub fn new(
+        release_id: PositiveU32,
+        release_name: impl Into<String>,
+        release_date: IsoDate,
+        release_last_updated: Option<String>,
+        evidence: SourceEvidence,
+    ) -> Result<Self, crate::CoreError> {
+        if evidence.source_at().is_some() {
+            return Err(crate::CoreError::InvalidRequest(
+                "economic release schedule evidence must not contain source_at".into(),
+            ));
+        }
+        Ok(Self {
+            release_id,
+            release_name: NonEmptyText::new(release_name)?,
+            release_date,
+            release_last_updated: release_last_updated.map(NonEmptyText::new).transpose()?,
+            evidence,
+        })
+    }
+
+    pub fn release_id(&self) -> PositiveU32 {
+        self.release_id
+    }
+
+    pub fn release_name(&self) -> &NonEmptyText {
+        &self.release_name
+    }
+
+    pub fn release_date(&self) -> &IsoDate {
+        &self.release_date
+    }
+
+    pub fn release_last_updated(&self) -> Option<&NonEmptyText> {
+        self.release_last_updated.as_ref()
+    }
+
+    pub fn evidence(&self) -> &SourceEvidence {
+        &self.evidence
+    }
+}
+
+impl<'de> Deserialize<'de> for EconomicReleaseScheduleEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            release_id: PositiveU32,
+            release_name: String,
+            release_date: IsoDate,
+            release_last_updated: Option<String>,
+            evidence: SourceEvidence,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(
+            wire.release_id,
+            wire.release_name,
+            wire.release_date,
+            wire.release_last_updated,
+            wire.evidence,
+        )
+        .map_err(de::Error::custom)
+    }
+}
+
+impl SourcedRecord for EconomicReleaseScheduleEntry {
+    fn provider_id(&self) -> crate::ProviderId {
+        self.evidence.provider()
+    }
+
+    fn evidence_batch_id(&self) -> &str {
+        self.evidence.batch_id()
+    }
+
+    fn evidence_source_at(&self) -> Option<&str> {
+        self.evidence.source_at()
+    }
+
+    fn evidence_observed_at(&self) -> Option<&str> {
+        Some(self.evidence.observed_at())
+    }
+}
+
+pub trait EconomicReleaseScheduleProvider {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn economic_release_schedule(
+        &self,
+        request: &EconomicReleaseScheduleRequest,
+    ) -> Result<DataBatch<EconomicReleaseScheduleEntry>, Self::Error>;
+}
+
 /// CFFEX equity-index-futures products admitted by the delivery-notice parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FuturesProduct {

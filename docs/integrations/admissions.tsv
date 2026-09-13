@@ -4,7 +4,8 @@ magic-cfets-rs	Cfets	LPR_ADMITTED	true	docs/integrations/cfets-official.md	admit
 magic-cfets-rs	Cfets	DR007_ADMITTED	false	docs/integrations/cfets-official.md	blocked	2026-08-13	0	0	Written CFETS CMDS or information-product authorization, endpoint/schema and entitlement evidence are required; the public display feed is not an authorized machine contract
 magic-cfets-rs	Cfets	OFFICIAL_FX_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-
 magic-fred-rs	Fred	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/fred-api.md	admitted	2026-08-13	2	3	-
-magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-08-13	0	0	DataMapper returns HTTP 403; replacement SDMX Swagger requires beta portal login and a documented API contract
+magic-fred-rs	Fred	ECONOMIC_RELEASE_SCHEDULE_ADMITTED	true	docs/integrations/fred-api.md	admitted	2026-09-13	2	3	-
+magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-09-12	0	0	DataMapper rejects the fixed auditable library user agent at Akamai; curl user-agent success is not a documented machine-client contract, and replacement SDMX Swagger requires beta portal login
 magic-iwencai-rs	Iwencai	SEMANTIC_SEARCH_ADMITTED	true	docs/integrations/iwencai-api.md	admitted	2026-08-14	2	3	-
 magic-jin10-rs	Jin10	ECONOMIC_CALENDAR_ADMITTED	false	docs/integrations/jin10-web.md	blocked	2026-08-24	0	0	Jin10 ended its free calendar and API embedding service on 2025-12-01; the latest public flash window cannot prove a complete economic calendar
 magic-jin10-rs	Jin10	ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED	true	docs/integrations/jin10-web.md	admitted	2026-09-12	2	3	-

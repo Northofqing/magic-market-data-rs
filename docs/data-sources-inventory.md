@@ -79,6 +79,7 @@
 | 数据类别 | 具体内容 | 数据源/端点 | 提供方 | 关键代码位置 | 频率/触发 | 用途 |
 |---|---|---|---|---|---|---|
 | 宏观数据发布观测 | 当前公开滚动窗口中的国家、指标、发布/计划时间、前值/预期/实际值 | 金十数据 type-1 公共快讯 (Jin10Client HTTP) | magic-jin10-rs (jin10-flash-v1) | gRPC `EconomicReleaseObservations`，limit 1..=20 + 可选精确国家 | 按需；空窗口合法 | R-08 已发布宏观观测；不能替代完整事件日历 |
+| 宏观数据发布日期 | FRED release ID、名称、官方日期和可选更新时间标签 | FRED `fred/releases/dates` 官方 API | magic-fred-rs | gRPC `EconomicReleaseSchedule`，日期范围最多 366 天、limit 1..=100 | 按需；完整分页后限流 | 日期级前瞻日程；无具体发布时间、重要度、预期/实际值，不能替代完整 `EconomicCalendar` |
 
 ## 九、搜索/研究类 (ResearchOnly)
 

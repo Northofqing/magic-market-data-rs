@@ -1082,3 +1082,21 @@ identity. It never kills a terminal, starts a second ambiguous candidate,
 automates login, changes TQ configuration or treats process existence as data
 readiness. Process identity and fixed-port `127.0.0.1:17709` readiness are logged
 as separate low-cardinality states and do not change any data admission.
+
+## BR-062 FRED date-only economic release schedule
+
+`EconomicReleaseSchedule` exposes only release dates published through FRED's
+official `releases/dates` interface. A request carries an inclusive date range
+of at most 366 days and a maximum of 100 returned records. The Provider must
+acquire and validate every declared source page before applying the caller
+limit; more than ten 1000-row pages, changing counts, missing offsets, duplicate
+identities, reversed dates or out-of-range rows reject the whole batch.
+
+Each record preserves the positive FRED release ID, non-empty release name,
+exact `release_date` and optional original `release_last_updated`. A calendar
+date and a metadata update label are not release instants. Record and batch
+`source_at` therefore remain absent; `observed_at`, midnight, current time,
+news publication time and values from another Provider must never fill them.
+FRED's date ordering is validated before same-date rows are deterministically
+ordered by release ID. A complete zero-record response proves only the exact
+queried FRED date range. It does not prove a complete global economic calendar.

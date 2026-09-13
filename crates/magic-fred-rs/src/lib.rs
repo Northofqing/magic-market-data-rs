@@ -1,13 +1,15 @@
 #![forbid(unsafe_code)]
 
 mod parser;
+mod schedule;
 mod transport;
 
 pub use parser::{parse_fred_responses, FredParseContext};
 
 use magic_market_core::{
-    CoreError, DataBatch, EconomicDataCapabilities, EconomicObservation, EconomicSeriesProvider,
-    EconomicSeriesRequest, ProviderId,
+    CoreError, DataBatch, EconomicDataCapabilities, EconomicObservation,
+    EconomicReleaseScheduleEntry, EconomicReleaseScheduleProvider, EconomicReleaseScheduleRequest,
+    EconomicSeriesProvider, EconomicSeriesRequest, ProviderId,
 };
 use magic_market_transport::{HttpTransport, RequestGate, ReqwestTransport, TransportError};
 use std::fmt;
@@ -16,6 +18,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 pub const ECONOMIC_SERIES_ADMITTED: bool = true;
+pub const ECONOMIC_RELEASE_SCHEDULE_ADMITTED: bool = true;
 
 #[derive(Clone)]
 struct ApiKey(String);
@@ -120,6 +123,20 @@ impl FredClient {
             request,
         )
     }
+
+    /// Executes the bounded official release-schedule diagnostic without
+    /// advertising production admission through the formal Provider contract.
+    pub fn probe_economic_release_schedule(
+        &self,
+        request: &EconomicReleaseScheduleRequest,
+    ) -> Result<DataBatch<EconomicReleaseScheduleEntry>, FredError> {
+        schedule::fetch_schedule(
+            self.transport.as_ref(),
+            self.gate.as_ref(),
+            &self.api_key.0,
+            request,
+        )
+    }
 }
 
 impl EconomicSeriesProvider for FredClient {
@@ -136,6 +153,22 @@ impl EconomicSeriesProvider for FredClient {
             ));
         }
         self.probe_economic_series(request)
+    }
+}
+
+impl EconomicReleaseScheduleProvider for FredClient {
+    type Error = FredError;
+
+    fn economic_release_schedule(
+        &self,
+        request: &EconomicReleaseScheduleRequest,
+    ) -> Result<DataBatch<EconomicReleaseScheduleEntry>, Self::Error> {
+        if !ECONOMIC_RELEASE_SCHEDULE_ADMITTED {
+            return Err(FredError::Unsupported(
+                "FRED release schedule has not passed live admission".into(),
+            ));
+        }
+        self.probe_economic_release_schedule(request)
     }
 }
 

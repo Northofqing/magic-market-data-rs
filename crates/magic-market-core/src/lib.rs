@@ -34,8 +34,9 @@ pub use batch::{DataBatch, QualityReport};
 pub use calendar::{
     CalendarCapabilities, EconomicCalendarProvider, EconomicCalendarRequest, EconomicEvent,
     EconomicReleaseObservation, EconomicReleaseObservationsProvider,
-    EconomicReleaseObservationsRequest, FuturesDeliveryCalendar, FuturesDeliveryEvent,
-    FuturesDeliveryMethod, FuturesDeliveryRequest, FuturesProduct,
+    EconomicReleaseObservationsRequest, EconomicReleaseScheduleEntry,
+    EconomicReleaseScheduleProvider, EconomicReleaseScheduleRequest, FuturesDeliveryCalendar,
+    FuturesDeliveryEvent, FuturesDeliveryMethod, FuturesDeliveryRequest, FuturesProduct,
 };
 pub use capital::{
     BlockTrade, BlockTrades, BoardFlow, BoardFlows, CapitalCapabilities, DividendPlan,

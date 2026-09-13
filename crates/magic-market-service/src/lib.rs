@@ -91,6 +91,7 @@ define_operations! {
     UpperLimitPoolReview => "upper_limit_pool_review",
     CurrentAuctionObservations => "current_auction_observations",
     EconomicReleaseObservations => "economic_release_observations",
+    EconomicReleaseSchedule => "economic_release_schedule",
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

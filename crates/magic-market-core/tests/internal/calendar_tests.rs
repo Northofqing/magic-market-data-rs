@@ -60,6 +60,111 @@ fn economic_release_observation_request_is_a_bounded_window_not_a_calendar_range
 }
 
 #[test]
+fn economic_release_schedule_request_preserves_an_inclusive_bounded_date_range() {
+    let request = EconomicReleaseScheduleRequest::new(
+        IsoDate::new("2026-09-01").unwrap(),
+        IsoDate::new("2026-09-30").unwrap(),
+        PositiveU32::new(20).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(request.start().as_str(), "2026-09-01");
+    assert_eq!(request.end().as_str(), "2026-09-30");
+    assert_eq!(request.limit().get(), 20);
+
+    let restored: EconomicReleaseScheduleRequest =
+        serde_json::from_str(r#"{"start":"2026-09-01","end":"2026-09-30","limit":20}"#).unwrap();
+    assert_eq!(restored, request);
+    assert!(EconomicReleaseScheduleRequest::new(
+        IsoDate::new("2026-09-30").unwrap(),
+        IsoDate::new("2026-09-01").unwrap(),
+        PositiveU32::new(20).unwrap(),
+    )
+    .is_err());
+    assert!(EconomicReleaseScheduleRequest::new(
+        IsoDate::new("2026-01-01").unwrap(),
+        IsoDate::new("2027-01-02").unwrap(),
+        PositiveU32::new(20).unwrap(),
+    )
+    .is_err());
+    assert!(serde_json::from_str::<EconomicReleaseScheduleRequest>(
+        r#"{"start":"2026-09-01","end":"2026-09-30","limit":101}"#
+    )
+    .is_err());
+    assert!(serde_json::from_str::<EconomicReleaseScheduleRequest>(
+        r#"{"start":"2026-09-01","end":"2026-09-30","limit":20,"country":"US"}"#
+    )
+    .is_err());
+}
+
+#[test]
+fn economic_release_schedule_entry_preserves_date_only_provider_evidence() {
+    let evidence = SourceEvidence::new(
+        crate::ProviderId::Fred,
+        "2026-09-12T15:30:00Z",
+        "FRED:economic-release-schedule:1",
+    )
+    .unwrap();
+    let entry = EconomicReleaseScheduleEntry::new(
+        PositiveU32::new(10).unwrap(),
+        "Consumer Price Index",
+        IsoDate::new("2026-09-15").unwrap(),
+        Some("2026-08-01 09:30:00-05".to_owned()),
+        evidence,
+    )
+    .unwrap();
+    assert_eq!(entry.release_id().get(), 10);
+    assert_eq!(entry.release_name().as_str(), "Consumer Price Index");
+    assert_eq!(entry.release_date().as_str(), "2026-09-15");
+    assert_eq!(
+        entry.release_last_updated().unwrap().as_str(),
+        "2026-08-01 09:30:00-05"
+    );
+    assert_eq!(entry.provider_id(), crate::ProviderId::Fred);
+    assert_eq!(entry.evidence_observed_at(), Some("2026-09-12T15:30:00Z"));
+    assert_eq!(entry.evidence_source_at(), None);
+
+    let restored: EconomicReleaseScheduleEntry =
+        serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
+    assert_eq!(restored, entry);
+
+    let source_at = SourceEvidence::new(
+        crate::ProviderId::Fred,
+        "2026-09-12T15:30:00Z",
+        "FRED:economic-release-schedule:1",
+    )
+    .unwrap()
+    .with_source_at("2026-09-15T00:00:00Z")
+    .unwrap();
+    assert!(EconomicReleaseScheduleEntry::new(
+        PositiveU32::new(10).unwrap(),
+        "Consumer Price Index",
+        IsoDate::new("2026-09-15").unwrap(),
+        None,
+        source_at,
+    )
+    .is_err());
+}
+
+#[test]
+fn economic_release_schedule_provider_is_a_public_seam() {
+    fn assert_provider<T: EconomicReleaseScheduleProvider>() {}
+
+    struct NoProvider;
+    impl EconomicReleaseScheduleProvider for NoProvider {
+        type Error = crate::CoreError;
+
+        fn economic_release_schedule(
+            &self,
+            _request: &EconomicReleaseScheduleRequest,
+        ) -> Result<DataBatch<EconomicReleaseScheduleEntry>, Self::Error> {
+            unreachable!()
+        }
+    }
+
+    assert_provider::<NoProvider>();
+}
+
+#[test]
 fn futures_delivery_request_revalidates_year_and_exposes_month() {
     let request = FuturesDeliveryRequest::new(
         PositiveU32::new(2026).unwrap(),

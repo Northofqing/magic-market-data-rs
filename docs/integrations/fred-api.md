@@ -2,13 +2,13 @@
 
 ## Capability state
 
-Economic-series admission is true for the exact credentialed series contract
-described below.
+Economic-series and date-only economic-release-schedule admission are true for
+the exact credentialed contracts described below.
 
 ## Official host and paths
 
-Only `https://api.stlouisfed.org/fred/series` and
-`/fred/series/observations` are permitted.
+Only `https://api.stlouisfed.org/fred/series`,
+`/fred/series/observations`, and `/fred/releases/dates` are permitted.
 
 ## Request and response ceilings
 
@@ -16,11 +16,23 @@ At most 20 series are composed atomically, request starts are one second apart,
 the timeout is 30 seconds, and the single bounded observation page must be
 complete with no remaining pagination.
 
+Release-schedule requests cover an inclusive range of at most 366 days and
+return at most 100 entries. The adapter acquires every declared 1000-row page
+before applying the caller limit and rejects responses requiring more than ten
+pages.
+
 ## Identity, unit, missing, and source-time semantics
 
 FRED series IDs remain provider-qualified. `.` is missing; numeric zero is
 present. Frequency, date range, metadata, revision and batch evidence are
 validated before normalization.
+
+Release-schedule records preserve FRED `release_id`, `release_name`, exact
+`release_date`, and optional original `release_last_updated`. A date is not an
+instant: neither it nor local observation time is promoted to `source_at`.
+FRED guarantees release-date ordering but does not define same-date ID order;
+the adapter validates nondecreasing dates and then deterministically orders ties
+by release ID.
 
 ## Authentication or usage-rights boundary
 
@@ -41,7 +53,14 @@ pacing and redaction checks passed. The API key was injected only from a
 Git-ignored local environment file and was not recorded in output or evidence.
 The formal `EconomicSeriesProvider` path is admitted under the same bounds.
 
+On 2026-09-13, two independent credentialed release-schedule live probes each
+returned 20 complete records for the next 30 UTC calendar days. A three-call
+serial load probe then returned the same complete bounded shape on all calls.
+Batch and record `source_at` remained absent. The formal
+`EconomicReleaseScheduleProvider` path is admitted under those exact bounds.
+
 ## Explicit unsupported operations
 
-Credential discovery, key logging, unbounded pagination and cross-provider key
-substitution are unsupported.
+Credential discovery, key logging, unbounded pagination, fabricated release
+times, calendar-wide completeness claims and cross-provider key substitution
+are unsupported.

@@ -175,7 +175,7 @@ shasum -a 256 -c SHA256SUMS
 | `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；五类观察字段已按 family 准入 |
 | `magic-market-monitor` | 支持 | 支持 | 支持 | 纯确定性价格窗口与有界 replay；无 I/O |
 | `magic-market-monitor-server` | typed Unsupported | typed Unsupported | Windows 生产叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听；状态消息与缺失字段保持未准入 |
-| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；62 个查询精确登记，61 个操作至少有一个正式 handler；`T0Evidence`、`PostCloseFlows` 与 `CurrentAuctionObservations` 使用观察时间且不伪造 `source_at`；`EconomicReleaseObservations` 仅表示 Jin10 当前公开滚动窗口；东财妙想与 EMQuant 诊断均要求精确 Provider 加 `allow_unadmitted=true` |
+| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；63 个查询精确登记，62 个操作至少有一个正式 handler；`T0Evidence`、`PostCloseFlows`、`CurrentAuctionObservations` 与 FRED `EconomicReleaseSchedule` 使用观察时间且不伪造 `source_at`；`EconomicReleaseObservations` 仅表示 Jin10 当前公开滚动窗口；东财妙想与 EMQuant 诊断均要求精确 Provider 加 `allow_unadmitted=true` |
 | `magic-market-tdx-agent` | typed Unsupported | typed Unsupported | 诊断出站 Agent | 固定同目录 monitor/helper；不开放入站端口，不提升 admission |
 | `magic-tdx-native-bridge --discover` | typed Unsupported | typed Unsupported | 仅发现 | Windows 同用户/会话 `TdxW.exe` 发现和版本证据；不获取行情 |
 | `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |

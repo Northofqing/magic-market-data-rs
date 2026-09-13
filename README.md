@@ -101,6 +101,11 @@ LPR 和官方汇率能力不受 DR007 授权缺口影响。窄版 `Auctions` 只
 `published_at` 不会被解析或复制成事件时间。完整 `EconomicCalendar` 因无法证明日期范围
 完整性，仍保持 repository-unadmitted。
 
+`EconomicReleaseSchedule` 使用 FRED 官方 `releases/dates`，按调用方给出的最多 366 天
+日期范围返回已发布的 release ID、名称和日期。它是日期级日程观察，不包含也不伪造具体
+发布时间、重要度、预期值或实际值；记录和批次 `source_at` 均为空。该窄合同已准入，完整
+跨国家/机构 `EconomicCalendar` 状态不变。
+
 `MarketBreadth` 的上市总数、涨跌平、涨跌停和覆盖率来自同一个妙想响应；这证明采集
 原子性，但 Provider 没有给每个字段源时刻，因此 `maximum_source_skew_millis` 保持
 `null`。gRPC `MarketRankings` 也只声明一次 Eastmoney HTTPS 响应中的 Top-N 快照，

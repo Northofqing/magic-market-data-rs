@@ -66,6 +66,7 @@ enum Operation {
   OPERATION_UPPER_LIMIT_POOL_REVIEW = 60;
   OPERATION_CURRENT_AUCTION_OBSERVATIONS = 61;
   OPERATION_ECONOMIC_RELEASE_OBSERVATIONS = 62;
+  OPERATION_ECONOMIC_RELEASE_SCHEDULE = 63;
 }
 
 enum AdmissionState {
@@ -375,6 +376,7 @@ service MarketDataService {
   rpc UpperLimitPoolReview(QueryRequest) returns (QueryResponse);
   rpc CurrentAuctionObservations(QueryRequest) returns (QueryResponse);
   rpc EconomicReleaseObservations(QueryRequest) returns (QueryResponse);
+  rpc EconomicReleaseSchedule(QueryRequest) returns (QueryResponse);
 }
 
 service MarketEventService {

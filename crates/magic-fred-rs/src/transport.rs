@@ -18,7 +18,11 @@ const OBSERVATIONS_URL: &str = "https://api.stlouisfed.org/fred/series/observati
 pub(crate) fn policy() -> Result<EndpointPolicy, magic_market_transport::TransportError> {
     EndpointPolicy::new(
         "api.stlouisfed.org",
-        vec!["/fred/series".into(), "/fred/series/observations".into()],
+        vec![
+            "/fred/series".into(),
+            "/fred/series/observations".into(),
+            "/fred/releases/dates".into(),
+        ],
         vec![
             "api_key".into(),
             "file_type".into(),
@@ -28,6 +32,10 @@ pub(crate) fn policy() -> Result<EndpointPolicy, magic_market_transport::Transpo
             "offset".into(),
             "limit".into(),
             "sort_order".into(),
+            "realtime_start".into(),
+            "realtime_end".into(),
+            "order_by".into(),
+            "include_release_dates_with_no_data".into(),
         ],
         vec![MediaType::Json],
         4 * 1024 * 1024,
@@ -127,7 +135,7 @@ fn validate_key(key: &magic_market_core::EconomicSeriesKey) -> Result<(), FredEr
     Ok(())
 }
 
-fn execute(
+pub(crate) fn execute(
     transport: &dyn HttpTransport,
     gate: &RequestGate,
     url: &str,
@@ -220,7 +228,7 @@ fn valid_code(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
 }
 
-fn query_url(base: &str, params: &[(&str, &str)]) -> String {
+pub(crate) fn query_url(base: &str, params: &[(&str, &str)]) -> String {
     let query = params
         .iter()
         .map(|(key, value)| format!("{key}={}", percent_encode(value)))
@@ -242,7 +250,7 @@ fn percent_encode(value: &str) -> String {
     encoded
 }
 
-fn observed_at() -> Result<String, FredError> {
+pub(crate) fn observed_at() -> Result<String, FredError> {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .map_err(|_| FredError::Protocol("failed to format observation timestamp".into()))

@@ -36,14 +36,15 @@ sentinels, non-finite values, metadata drift and all-key preflight.
 
 ## Live and load admission evidence
 
-On 2026-08-13 two independently built/rerun bounded live diagnostics both
-returned the exact typed failure `Transport(HttpStatus { status: 403 })` from
-the DataMapper indicator request. A three-call serial load diagnostic then
-completed all three attempts and recorded the same typed HTTP 403 for calls 1,
-2 and 3; it exited non-zero and produced no record. A raw non-browser curl check
-also received `HTTP/1.1 403 Forbidden`, `Server: AkamaiGHost`, `Content-Type:
-text/html`, and a 418-byte body. No browser headers, cookies, proxy, retry or
-bypass were introduced.
+On 2026-09-12 the bounded Rust diagnostic and an exact curl replay using the
+library's fixed `User-Agent: magic-imf-rs/0.2` both returned HTTP 403 from
+Akamai before JSON data was returned. Single-variable replays isolated the
+denial to the user-agent policy: curl's own `curl/8.15.0` user agent received a
+200 JSON response, while the library user agent, an empty user agent,
+`reqwest/0.12`, and a generic browser-like user agent each received 403. This
+does not establish a stable, documented machine-client contract, so the
+adapter must not impersonate curl or a browser to gain admission. No browser
+headers, cookies, proxy, retry, or bypass were introduced.
 
 The current official IMF API page states that data is available through SDMX
 2.1/3.0 but sends API exploration to `portal.api.imf.org`, whose Swagger page

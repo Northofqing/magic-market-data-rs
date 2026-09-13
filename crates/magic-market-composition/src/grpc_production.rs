@@ -17,7 +17,7 @@ use magic_emquant_rs::{
 use magic_exchange_rs::{
     CffexClient, ExchangeError, HkexClient, SseClient, SseConfig, SzseClient, SzseConfig,
 };
-use magic_fred_rs::{FredClient, FredError};
+use magic_fred_rs::{FredClient, FredError, ECONOMIC_RELEASE_SCHEDULE_ADMITTED};
 use magic_gov_rs::{GovClient, GovError};
 use magic_hithink_rs::{
     CurrentAuctionStage, HithinkClient, HithinkError,
@@ -43,7 +43,8 @@ use magic_market_core::{
     CorporateActionRequest, CorporateActions, DataBatch, DataStatus, DividendPlans,
     DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest, EconomicCalendarProvider,
     EconomicCalendarRequest, EconomicReleaseObservationsProvider,
-    EconomicReleaseObservationsRequest, EconomicSeriesProvider, EconomicSeriesRequest,
+    EconomicReleaseObservationsRequest, EconomicReleaseScheduleProvider,
+    EconomicReleaseScheduleRequest, EconomicSeriesProvider, EconomicSeriesRequest,
     EvidenceTimestamp, FinancialStatements, FlowInterval, FlowScope, ForeignExchangeProvider,
     FundFlowPoint, FundFlowRequest, FundFlowSeries, FuturesDeliveryCalendar,
     FuturesDeliveryRequest, FxRequest, GlobalIndexProvider, GlobalIndexRequest, HistoricalBars,
@@ -183,6 +184,10 @@ pub const ECONOMIC_RELEASE_OBSERVATIONS_REQUEST_SCHEMA: &str =
     "magic.market.economic_release_observations.request";
 pub const ECONOMIC_RELEASE_OBSERVATIONS_RECORD_SCHEMA: &str =
     "magic.market.economic_release_observation";
+pub const ECONOMIC_RELEASE_SCHEDULE_REQUEST_SCHEMA: &str =
+    "magic.market.economic_release_schedule.request";
+pub const ECONOMIC_RELEASE_SCHEDULE_RECORD_SCHEMA: &str =
+    "magic.market.economic_release_schedule_entry";
 pub const NORTHBOUND_DAILY_REQUEST_SCHEMA: &str = "magic.market.northbound_daily.request";
 pub const NORTHBOUND_DAILY_RECORD_SCHEMA: &str = "magic.market.northbound_daily_stat";
 pub const CONSENSUS_REQUEST_SCHEMA: &str = "magic.market.consensus.request";
@@ -2914,9 +2919,16 @@ fn register_fred(
             "admitted FRED economic series",
             "FRED_API_KEY is not present in the server process environment",
         ))?;
+        registry.register_unavailable(runtime_unavailable(
+            Operation::EconomicReleaseSchedule,
+            "Fred",
+            "official FRED release dates for an inclusive range of at most 366 days",
+            "FRED_API_KEY is not present in the server process environment",
+        ))?;
         return Ok(());
     };
     let fred = FredClient::new(api_key)?;
+    let fred_series = fred.clone();
     registry.register_handler(
         admitted(
             Operation::EconomicSeries,
@@ -2930,10 +2942,38 @@ fn register_fred(
                 ECONOMIC_SERIES_RECORD_SCHEMA,
                 "Fred",
                 maximum_payload_bytes,
-                |request: &EconomicSeriesRequest| fred.economic_series(request),
+                |request: &EconomicSeriesRequest| fred_series.economic_series(request),
             )
         },
     )?;
+    if ECONOMIC_RELEASE_SCHEDULE_ADMITTED {
+        registry.register_handler(
+            admitted(
+                Operation::EconomicReleaseSchedule,
+                "Fred",
+                "official FRED release dates for an inclusive range of at most 366 days; date-only schedule with no fabricated source_at",
+            ),
+            move |command| {
+                execute_typed(
+                    command,
+                    ECONOMIC_RELEASE_SCHEDULE_REQUEST_SCHEMA,
+                    ECONOMIC_RELEASE_SCHEDULE_RECORD_SCHEMA,
+                    "Fred",
+                    maximum_payload_bytes,
+                    |request: &EconomicReleaseScheduleRequest| {
+                        fred.economic_release_schedule(request)
+                    },
+                )
+            },
+        )?;
+    } else {
+        registry.register_unavailable(blocked(
+            Operation::EconomicReleaseSchedule,
+            "Fred",
+            "official FRED release dates for an inclusive range of at most 366 days",
+            "FRED release schedule has not passed repository admission",
+        ))?;
+    }
     Ok(())
 }
 
@@ -5940,7 +5980,7 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 61);
+        assert_eq!(admitted.len(), 62);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
@@ -6064,6 +6104,20 @@ mod tests {
             );
         }
 
+        let fred_schedule = capabilities
+            .iter()
+            .find(|capability| {
+                capability.operation == Operation::EconomicReleaseSchedule
+                    && capability.provider == "Fred"
+            })
+            .expect("missing FRED economic release schedule registration");
+        assert!(fred_schedule.repository_admitted);
+        assert_eq!(
+            fred_schedule.runtime_available,
+            env::var("FRED_API_KEY").is_ok_and(|value| !value.trim().is_empty())
+        );
+        assert!(!fred_schedule.diagnostic_available);
+
         for operation in [Operation::Auctions, Operation::MarketBreadth] {
             let capability = capabilities
                 .iter()
@@ -6166,6 +6220,44 @@ mod tests {
                 operation.as_str()
             );
         }
+    }
+
+    #[test]
+    fn economic_release_schedule_projection_preserves_date_only_evidence() {
+        let observed_at = "2026-09-13T00:00:00Z";
+        let batch_id = "FRED:economic-release-schedule:test";
+        let record = magic_market_core::EconomicReleaseScheduleEntry::new(
+            PositiveU32::new(10).unwrap(),
+            "Consumer Price Index",
+            IsoDate::new("2026-09-15").unwrap(),
+            Some("2026-08-01 09:30:00-05".to_owned()),
+            SourceEvidence::new(ProviderId::Fred, observed_at, batch_id).unwrap(),
+        )
+        .unwrap();
+        let batch = DataBatch::strict(
+            vec![record],
+            Provenance::new("FRED release schedule", observed_at)
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        );
+
+        let result =
+            provider_query_result(batch, "Fred", ECONOMIC_RELEASE_SCHEDULE_RECORD_SCHEMA, 4096)
+                .unwrap();
+        assert!(result.complete);
+        assert_eq!(result.source_at, None);
+        assert!(result.repository_admitted);
+        assert_eq!(result.records.len(), 1);
+        assert_eq!(
+            result.records[0].schema(),
+            ECONOMIC_RELEASE_SCHEDULE_RECORD_SCHEMA
+        );
+        let value: serde_json::Value = serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(value["release_id"], 10);
+        assert_eq!(value["release_date"], "2026-09-15");
+        assert_eq!(value["evidence"]["provider"], "Fred");
+        assert!(value["evidence"]["source_at"].is_null());
     }
 
     #[test]
