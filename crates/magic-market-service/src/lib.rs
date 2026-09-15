@@ -416,6 +416,8 @@ impl OperationRegistry {
 
         let (sender, receiver) = mpsc::channel();
         let mut attempts = vec![None; candidates.len()];
+        let mut first_invalid_request = None;
+        let mut invalid_request_count = 0_usize;
         let mut running = 0_usize;
         for (index, registration) in candidates.into_iter().enumerate() {
             let provider = registration.capability.provider.clone();
@@ -483,11 +485,21 @@ impl OperationRegistry {
                         false,
                     )?);
                 }
-                Err(error @ ServiceError::InvalidRequest(_)) => return Err(error),
+                Err(error @ ServiceError::InvalidRequest(_)) => {
+                    invalid_request_count += 1;
+                    attempts[index] = Some(provider_attempt_from_error(&provider, &error)?);
+                    if first_invalid_request.is_none() {
+                        first_invalid_request = Some(error);
+                    }
+                }
                 Err(error) => {
                     attempts[index] = Some(provider_attempt_from_error(&provider, &error)?);
                 }
             }
+        }
+
+        if invalid_request_count == attempts.len() {
+            return Err(first_invalid_request.expect("every quote provider rejected the request"));
         }
 
         Err(ServiceError::ProviderRouteFailure {
@@ -1361,6 +1373,61 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn provider_local_invalid_request_does_not_abort_realtime_quote_race() {
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "VenueOnly".to_owned(),
+                    exact_scope: "single-venue equity quote".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                |_| {
+                    Err(ServiceError::InvalidRequest(
+                        "provider requires one venue".to_owned(),
+                    ))
+                },
+            )
+            .unwrap();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "General".to_owned(),
+                    exact_scope: "cross-venue equity quote".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                |_| {
+                    thread::sleep(Duration::from_millis(25));
+                    Ok(QueryResult {
+                        provider: "General".to_owned(),
+                        batch_id: "general".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-15T08:00:00Z".to_owned(),
+                        source_at: None,
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        let result = registry
+            .execute(command(Operation::RealtimeQuotes, None))
+            .unwrap();
+
+        assert_eq!(result.provider, "General");
     }
 
     #[test]

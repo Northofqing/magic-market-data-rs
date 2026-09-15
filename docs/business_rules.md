@@ -1123,7 +1123,11 @@ identify the actual selected source.
 Each Provider permits at most one detached unpinned quote attempt at a time, so
 a timed-out or slow loser cannot create an unbounded worker backlog. A busy
 Provider contributes the safe retryable `provider_busy` attempt. Empty results
-and typed errors cannot win; after all candidates finish or are busy, the
-service returns a deterministic registration-order `ProviderRouteFailure`.
+and typed errors cannot win; a Provider-local `InvalidRequest` cannot abort a
+race while another Provider may still satisfy the same public request. After
+all candidates finish or are busy, the service returns a deterministic
+registration-order `ProviderRouteFailure`; when every candidate rejects the
+public request as `InvalidRequest`, the original request classification is
+preserved.
 An explicit `preferred_provider` remains pinned to that one Provider and never
 races or falls through.

@@ -696,7 +696,10 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 扶摇显式代码实时快照已经注册 `HithinkFinance` 正式 handler。它没有逐条 source timestamp，
 因此每条 `source_at` 保持 `null` 并以 `status=Unavailable` 标注；可选批次
 `data.timestamp` 只作为批次 provenance，不能构造逐条证据。显式选择 Provider 时不回退；
-未指定 Provider 时由服务端并发竞速并保留胜出数据源。
+未指定 Provider 时由服务端并发竞速并保留胜出数据源。某个交易所专用 Provider 因请求中
+包含其他市场而返回 `InvalidRequest` 时，只记录该次尝试并继续等待其他 Provider；不得用
+这个局部拒绝提前终止整场竞速。只有所有候选都将公共请求判为 `InvalidRequest` 时，服务端
+才保留原始请求错误分类。
 集合竞价当前观测通过独立的 `CurrentAuctionObservations` 注册正式 handler；完整
 `Auctions` 映射仍只注册诊断。客户端不得从本地时间或其他 Provider 补齐交易日、
 `source_at` 或未匹配方向。
