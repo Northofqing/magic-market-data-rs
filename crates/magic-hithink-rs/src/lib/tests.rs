@@ -74,6 +74,149 @@ fn historical_request() -> BarsRequest {
 }
 
 #[test]
+fn realtime_quotes_keep_missing_source_time_explicit_and_return_prices() {
+    let transport = FixtureTransport::new(vec![success(
+        "quote-request",
+        json!({
+            "timestamp": null,
+            "total": 2,
+            "item": [
+                {
+                    "thscode": "600396.SH",
+                    "ticker": "600396",
+                    "last_price": 13.64,
+                    "price_change": 0.24,
+                    "price_change_ratio_pct": 1.79,
+                    "open_price": 13.45,
+                    "high_price": 13.75,
+                    "low_price": 13.40,
+                    "prev_price": 13.40,
+                    "volume": 123400.0,
+                    "turnover": 1680000.0
+                },
+                {
+                    "thscode": "000001.SZ",
+                    "ticker": "000001",
+                    "last_price": 11.20,
+                    "price_change": -0.05,
+                    "price_change_ratio_pct": -0.44,
+                    "open_price": 11.30,
+                    "high_price": 11.35,
+                    "low_price": 11.10,
+                    "prev_price": 11.25,
+                    "volume": 50000.0,
+                    "turnover": 560000.0
+                }
+            ]
+        }),
+    )]);
+    let observed = transport.clone();
+    let client = HithinkClient::with_transport("test_key", transport).unwrap();
+    let instruments = [
+        instrument(Exchange::Shanghai, "600396"),
+        instrument(Exchange::Shenzhen, "000001"),
+    ];
+
+    let batch = client.probe_realtime_quotes(&instruments).unwrap();
+
+    assert!(batch.quality().is_complete());
+    assert_eq!(batch.records().len(), 2);
+    assert_eq!(batch.provenance().source(), "HithinkFinance");
+    assert!(batch.provenance().source_at().is_none());
+    for (quote, instrument) in batch.records().iter().zip(&instruments) {
+        assert_eq!(quote.instrument(), instrument);
+        assert_eq!(quote.provider(), ProviderId::Tonghuashun);
+        assert_eq!(quote.status(), magic_market_core::DataStatus::Unavailable);
+        assert!(quote.source_at().is_none());
+        assert_eq!(quote.batch_id(), "quote-request");
+    }
+    assert_eq!(batch.records()[0].price().get(), 13.64);
+    assert_eq!(batch.records()[0].volume().get(), 1234.0);
+    assert_eq!(batch.records()[0].amount().unwrap().get(), 1_680_000.0);
+    let urls = observed.requested_urls();
+    assert_eq!(urls.len(), 1);
+    assert!(urls[0].contains("/api/a-share/prices/snapshot?"));
+    assert!(urls[0].contains("thscodes=600396.SH%2C000001.SZ"));
+}
+
+#[test]
+fn realtime_quote_batch_timestamp_never_becomes_record_source_time() {
+    let timestamp = 1_789_450_351_000_i64;
+    let client = HithinkClient::with_transport(
+        "test_key",
+        FixtureTransport::new(vec![success(
+            "quote-timestamp",
+            json!({
+                "timestamp": timestamp,
+                "total": 1,
+                "item": [{
+                    "thscode": "600396.SH",
+                    "ticker": "600396",
+                    "last_price": 13.64,
+                    "price_change": 0.24,
+                    "price_change_ratio_pct": 1.79,
+                    "open_price": 13.45,
+                    "high_price": 13.75,
+                    "low_price": 13.40,
+                    "prev_price": 13.40,
+                    "volume": 123400.0,
+                    "turnover": 1680000.0
+                }]
+            }),
+        )]),
+    )
+    .unwrap();
+
+    let batch = client
+        .probe_realtime_quotes(&[instrument(Exchange::Shanghai, "600396")])
+        .unwrap();
+
+    assert_eq!(
+        batch.provenance().source_at(),
+        Some(format!("unix-ms:{timestamp}").as_str())
+    );
+    assert!(batch.records()[0].source_at().is_none());
+}
+
+#[test]
+fn realtime_quotes_reject_identity_or_cardinality_conflicts_atomically() {
+    for data in [
+        json!({
+            "timestamp": null,
+            "total": 0,
+            "item": []
+        }),
+        json!({
+            "timestamp": null,
+            "total": 1,
+            "item": [{
+                "thscode": "000001.SZ",
+                "ticker": "000001",
+                "last_price": 11.20,
+                "price_change": -0.05,
+                "price_change_ratio_pct": -0.44,
+                "open_price": 11.30,
+                "high_price": 11.35,
+                "low_price": 11.10,
+                "prev_price": 11.25,
+                "volume": 50000.0,
+                "turnover": 560000.0
+            }]
+        }),
+    ] {
+        let client = HithinkClient::with_transport(
+            "test_key",
+            FixtureTransport::new(vec![success("quote-conflict", data)]),
+        )
+        .unwrap();
+        assert!(matches!(
+            client.probe_realtime_quotes(&[instrument(Exchange::Shanghai, "600396")]),
+            Err(HithinkError::Protocol(_))
+        ));
+    }
+}
+
+#[test]
 fn debug_and_http_request_redact_api_key() {
     let transport = FixtureTransport::new(vec![success(
         "valuation-request",

@@ -1,8 +1,14 @@
 #![forbid(unsafe_code)]
 //! Transport-neutral external query facade.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
+    thread,
+};
 
 use thiserror::Error;
 
@@ -251,6 +257,7 @@ type Handler = Arc<dyn Fn(QueryCommand) -> Result<QueryResult, ServiceError> + S
 struct Registration {
     capability: Capability,
     handler: Option<Handler>,
+    realtime_quote_in_flight: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -279,6 +286,7 @@ impl OperationRegistry {
                             diagnostic_available: false,
                         },
                         handler: None,
+                        realtime_quote_in_flight: Arc::new(AtomicBool::new(false)),
                     }],
                 )
             })
@@ -291,6 +299,7 @@ impl OperationRegistry {
         self.insert_registration(Registration {
             capability,
             handler: None,
+            realtime_quote_in_flight: Arc::new(AtomicBool::new(false)),
         });
         Ok(())
     }
@@ -308,6 +317,7 @@ impl OperationRegistry {
         self.insert_registration(Registration {
             capability,
             handler: Some(Arc::new(handler)),
+            realtime_quote_in_flight: Arc::new(AtomicBool::new(false)),
         });
         Ok(())
     }
@@ -324,6 +334,7 @@ impl OperationRegistry {
         self.insert_registration(Registration {
             capability,
             handler: Some(Arc::new(handler)),
+            realtime_quote_in_flight: Arc::new(AtomicBool::new(false)),
         });
         Ok(())
     }
@@ -355,6 +366,10 @@ impl OperationRegistry {
         if command.preferred_provider().is_none() && command.operation == Operation::LimitPools {
             return Self::execute_limit_pool_route(registrations, command);
         }
+        if command.preferred_provider().is_none() && command.operation == Operation::RealtimeQuotes
+        {
+            return Self::execute_realtime_quote_race(registrations, command);
+        }
         let registration = if let Some(preferred) = command.preferred_provider() {
             registrations
                 .iter()
@@ -377,6 +392,109 @@ impl OperationRegistry {
                 })?
         };
         Self::execute_registration(registration, command)
+    }
+
+    fn execute_realtime_quote_race(
+        registrations: &[Registration],
+        command: QueryCommand,
+    ) -> Result<QueryResult, ServiceError> {
+        let candidates = registrations
+            .iter()
+            .filter(|registration| {
+                registration.capability.repository_admitted
+                    && registration.capability.runtime_available
+                    && registration.handler.is_some()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return registrations
+                .first()
+                .ok_or_else(|| ServiceError::Internal("operation has no registrations".to_owned()))
+                .and_then(|registration| Self::execute_registration(registration, command));
+        }
+
+        let (sender, receiver) = mpsc::channel();
+        let mut attempts = vec![None; candidates.len()];
+        let mut running = 0_usize;
+        for (index, registration) in candidates.into_iter().enumerate() {
+            let provider = registration.capability.provider.clone();
+            if registration
+                .realtime_quote_in_flight
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                attempts[index] = Some(ProviderAttempt::new(
+                    provider,
+                    "failed",
+                    "provider_busy",
+                    true,
+                    false,
+                )?);
+                continue;
+            }
+
+            let worker_sender = sender.clone();
+            let worker_command = command.clone();
+            let in_flight = registration.realtime_quote_in_flight.clone();
+            let spawn_failure_gate = in_flight.clone();
+            let spawn_failure_provider = provider.clone();
+            let spawn = thread::Builder::new()
+                .name(format!("quote-race-{provider}"))
+                .spawn(move || {
+                    let _permit = RealtimeQuotePermit(in_flight);
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        Self::execute_registration(&registration, worker_command)
+                    }))
+                    .unwrap_or_else(|_| {
+                        Err(ServiceError::Internal(
+                            "realtime quote provider worker panicked".to_owned(),
+                        ))
+                    });
+                    let _ = worker_sender.send((index, provider, result));
+                });
+            if spawn.is_err() {
+                spawn_failure_gate.store(false, Ordering::Release);
+                attempts[index] = Some(ProviderAttempt::new(
+                    spawn_failure_provider,
+                    "failed",
+                    "worker_unavailable",
+                    true,
+                    false,
+                )?);
+                continue;
+            }
+            running += 1;
+        }
+        drop(sender);
+
+        for _ in 0..running {
+            let (index, provider, result) = receiver.recv().map_err(|_| {
+                ServiceError::Internal("realtime quote race channel closed".to_owned())
+            })?;
+            match result {
+                Ok(result) if !result.records.is_empty() => return Ok(result),
+                Ok(_) => {
+                    attempts[index] = Some(ProviderAttempt::new(
+                        provider,
+                        "rejected",
+                        "response_invalid",
+                        false,
+                        false,
+                    )?);
+                }
+                Err(error @ ServiceError::InvalidRequest(_)) => return Err(error),
+                Err(error) => {
+                    attempts[index] = Some(provider_attempt_from_error(&provider, &error)?);
+                }
+            }
+        }
+
+        Err(ServiceError::ProviderRouteFailure {
+            operation: Operation::RealtimeQuotes,
+            exhausted: true,
+            attempts: attempts.into_iter().flatten().collect(),
+        })
     }
 
     fn execute_limit_pool_route(
@@ -479,6 +597,14 @@ impl OperationRegistry {
             result.complete = false;
         }
         Ok(result)
+    }
+}
+
+struct RealtimeQuotePermit(Arc<AtomicBool>);
+
+impl Drop for RealtimeQuotePermit {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
     }
 }
 
@@ -722,7 +848,14 @@ pub enum ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            mpsc, Mutex,
+        },
+        thread,
+        time::Duration,
+    };
 
     use super::*;
 
@@ -792,6 +925,74 @@ mod tests {
             .unwrap();
         assert_eq!(result.provider, "Tencent");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn unpinned_realtime_quotes_returns_the_first_data_bearing_provider() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let started_rx = Arc::new(Mutex::new(started_rx));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Slow".to_owned(),
+                    exact_scope: "A-share quote".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    started_tx.send(()).unwrap();
+                    thread::sleep(Duration::from_millis(500));
+                    Ok(QueryResult {
+                        provider: "Slow".to_owned(),
+                        batch_id: "slow-batch".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-15T01:30:00Z".to_owned(),
+                        source_at: Some("2026-09-15T01:30:00Z".to_owned()),
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Fast".to_owned(),
+                    exact_scope: "A-share quote".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    started_rx.lock().unwrap().recv().unwrap();
+                    Ok(QueryResult {
+                        provider: "Fast".to_owned(),
+                        batch_id: "fast-batch".to_owned(),
+                        complete: false,
+                        observed_at: "2026-09-15T01:30:00Z".to_owned(),
+                        source_at: None,
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        let result = registry
+            .execute(command(Operation::RealtimeQuotes, None))
+            .unwrap();
+
+        assert_eq!(result.provider, "Fast");
+        assert!(!result.complete);
+        assert_eq!(result.records.len(), 1);
     }
 
     #[test]
@@ -1110,7 +1311,7 @@ mod tests {
     }
 
     #[test]
-    fn multiple_providers_are_selectable_and_default_is_first_admitted() {
+    fn multiple_realtime_quote_providers_are_selectable_and_unpinned_race_is_bounded() {
         let mut registry = OperationRegistry::all_unadmitted("missing");
         for provider in ["Tencent", "Sina"] {
             let returned_provider = provider.to_owned();
@@ -1141,13 +1342,10 @@ mod tests {
                 .unwrap();
         }
 
-        assert_eq!(
-            registry
-                .execute(command(Operation::RealtimeQuotes, None))
-                .unwrap()
-                .provider,
-            "Tencent"
-        );
+        let unpinned = registry
+            .execute(command(Operation::RealtimeQuotes, None))
+            .unwrap();
+        assert!(matches!(unpinned.provider.as_str(), "Tencent" | "Sina"));
         assert_eq!(
             registry
                 .execute(command(Operation::RealtimeQuotes, Some("Sina")))
@@ -1163,6 +1361,127 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn failed_realtime_quote_race_reports_attempts_in_registration_order() {
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        for provider in ["Slow", "Fast"] {
+            registry
+                .register_handler(
+                    Capability {
+                        operation: Operation::RealtimeQuotes,
+                        repository_admitted: true,
+                        runtime_available: true,
+                        provider: provider.to_owned(),
+                        exact_scope: "A-share quote".to_owned(),
+                        blocker: None,
+                        diagnostic_available: false,
+                    },
+                    move |_| {
+                        if provider == "Slow" {
+                            thread::sleep(Duration::from_millis(50));
+                        }
+                        Err(ServiceError::Unavailable {
+                            operation: Operation::RealtimeQuotes,
+                            reason: "temporary outage".to_owned(),
+                        })
+                    },
+                )
+                .unwrap();
+        }
+
+        let error = registry
+            .execute(command(Operation::RealtimeQuotes, None))
+            .unwrap_err();
+        let ServiceError::ProviderRouteFailure {
+            exhausted,
+            attempts,
+            ..
+        } = error
+        else {
+            panic!("expected safe provider attempts");
+        };
+        assert!(exhausted);
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0].provider(), "Slow");
+        assert_eq!(attempts[1].provider(), "Fast");
+        assert!(attempts.iter().all(ProviderAttempt::retryable));
+    }
+
+    #[test]
+    fn a_losing_realtime_quote_provider_has_only_one_detached_call() {
+        let slow_calls = Arc::new(AtomicUsize::new(0));
+        let fast_calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        let slow_seen = slow_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Slow".to_owned(),
+                    exact_scope: "A-share quote".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    slow_seen.fetch_add(1, Ordering::SeqCst);
+                    thread::sleep(Duration::from_millis(500));
+                    Ok(QueryResult {
+                        provider: "Slow".to_owned(),
+                        batch_id: "slow".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-15T01:30:00Z".to_owned(),
+                        source_at: None,
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+        let slow_started = slow_calls.clone();
+        let fast_seen = fast_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Fast".to_owned(),
+                    exact_scope: "A-share quote".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    while slow_started.load(Ordering::SeqCst) == 0 {
+                        thread::yield_now();
+                    }
+                    fast_seen.fetch_add(1, Ordering::SeqCst);
+                    Ok(QueryResult {
+                        provider: "Fast".to_owned(),
+                        batch_id: "fast".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-15T01:30:00Z".to_owned(),
+                        source_at: None,
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        for _ in 0..2 {
+            let result = registry
+                .execute(command(Operation::RealtimeQuotes, None))
+                .unwrap();
+            assert_eq!(result.provider, "Fast");
+        }
+        assert_eq!(slow_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(fast_calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]

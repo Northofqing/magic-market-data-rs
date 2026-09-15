@@ -90,6 +90,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         valuations.quality().is_complete()
     );
 
+    let quotes = client.probe_realtime_quotes(std::slice::from_ref(&instrument))?;
+    println!(
+        "quotes records={} batch_source_at={:?} record_source_at={:?} status={:?} complete={}",
+        quotes.records().len(),
+        quotes.provenance().source_at(),
+        quotes.records().first().and_then(|quote| quote.source_at()),
+        quotes.records().first().map(|quote| quote.status()),
+        quotes.quality().is_complete()
+    );
+
     for kind in [
         LimitPoolKind::Upper,
         LimitPoolKind::Lower,

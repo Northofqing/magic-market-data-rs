@@ -29,6 +29,7 @@ use magic_hithink_rs::{
     LIMIT_POOLS_ADMITTED as HITHINK_LIMIT_POOLS_ADMITTED,
     MARKET_STATISTICS_ADMITTED as HITHINK_MARKET_STATISTICS_ADMITTED,
     POPULARITY_ADMITTED as HITHINK_POPULARITY_ADMITTED,
+    REALTIME_QUOTES_ADMITTED as HITHINK_REALTIME_QUOTES_ADMITTED,
     SECURITY_METADATA_ADMITTED as HITHINK_SECURITY_METADATA_ADMITTED,
 };
 use magic_iwencai_rs::{IwencaiClient, IwencaiError, SEMANTIC_SEARCH_ADMITTED};
@@ -98,6 +99,7 @@ pub const T0_EVIDENCE_SCHEMA_VERSION: u32 = 2;
 const EMQUANT_DAILY_BARS_SCOPE: &str = "Shanghai/Shenzhen equities; explicit inclusive start/end; unadjusted completed daily CSD OHLCV/amount; at most 800 returned rows";
 const HITHINK_HISTORICAL_BARS_SCOPE: &str = "six-digit A-share equities and standard exchange indices with explicit inclusive range of at most ten years, plus Shanghai/Shenzhen ETFs at most five years; official Fuyao unadjusted completed Day bars; most recent caller limit after complete bounded response validation";
 const HITHINK_MARKET_STATISTICS_SCOPE: &str = "1..=100 unique Shanghai/Shenzhen/Beijing equities; official Fuyao PE TTM, PE MRQ and PB MRQ with source nulls preserved";
+const HITHINK_REALTIME_QUOTES_SCOPE: &str = "1..=60 unique Shanghai/Shenzhen/Beijing equities; official Fuyao current quote snapshot with numeric prices/volume/turnover; record source_at and name remain null and status remains Unavailable because the endpoint has no per-record source timestamp";
 const HITHINK_LIMIT_POOLS_SCOPE: &str = "official Fuyao Upper, Lower or Broken pool for one explicit Shanghai trading date; all declared pages validated before applying caller limit; PreviousUpper unsupported";
 const HITHINK_POPULARITY_SCOPE: &str = "official Fuyao current 24-hour hot-stock ranking; at most 100 rows with exact identity, rank, heat and response source time";
 const HITHINK_FINANCIAL_STATEMENTS_SCOPE: &str = "1..=8 unique A-share equities; most recent 20 quarterly consolidated income, balance or cash-flow statements; source nulls and per-report publication evidence preserved";
@@ -1269,6 +1271,11 @@ fn register_hithink(
                     HITHINK_HISTORICAL_BARS_SCOPE,
                 ),
                 (
+                    Operation::RealtimeQuotes,
+                    HITHINK_REALTIME_QUOTES_ADMITTED,
+                    HITHINK_REALTIME_QUOTES_SCOPE,
+                ),
+                (
                     Operation::MarketStatistics,
                     HITHINK_MARKET_STATISTICS_ADMITTED,
                     HITHINK_MARKET_STATISTICS_SCOPE,
@@ -1342,6 +1349,28 @@ fn register_hithink(
                 "HithinkFinance",
                 maximum_payload_bytes,
                 |request: &BarsRequest| bars.historical_bars(request),
+            )
+        },
+    )?;
+
+    let quotes = client.clone();
+    registry.register_handler(
+        admitted(
+            Operation::RealtimeQuotes,
+            "HithinkFinance",
+            HITHINK_REALTIME_QUOTES_SCOPE,
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, REALTIME_QUOTES_REQUEST_SCHEMA)?;
+            let batch = quotes
+                .realtime_quotes(&request.instruments)
+                .map_err(|error| provider_error(Operation::RealtimeQuotes, error))?;
+            provider_query_result(
+                batch,
+                "HithinkFinance",
+                REALTIME_QUOTES_RECORD_SCHEMA,
+                maximum_payload_bytes,
             )
         },
     )?;
@@ -6149,6 +6178,7 @@ mod tests {
 
         for operation in [
             Operation::HistoricalBars,
+            Operation::RealtimeQuotes,
             Operation::MarketStatistics,
             Operation::LimitPools,
             Operation::Popularity,
@@ -6258,6 +6288,59 @@ mod tests {
         assert_eq!(value["release_date"], "2026-09-15");
         assert_eq!(value["evidence"]["provider"], "Fred");
         assert!(value["evidence"]["source_at"].is_null());
+    }
+
+    #[test]
+    fn hithink_quote_projection_marks_missing_record_source_time() {
+        let observed_at = "1789453335.543000000";
+        let batch_id = "hithink-quote-test";
+        let quote = Quote::from_parts(
+            InstrumentId::new(
+                magic_market_core::Exchange::Shanghai,
+                "600396",
+                magic_market_core::AssetClass::Equity,
+            )
+            .unwrap(),
+            None,
+            magic_market_core::Price::new(13.64).unwrap(),
+            Some(magic_market_core::Price::new(13.40).unwrap()),
+            Some(magic_market_core::Price::new(13.45).unwrap()),
+            Some(magic_market_core::Price::new(13.75).unwrap()),
+            Some(magic_market_core::Price::new(13.40).unwrap()),
+            Some(
+                magic_market_core::Ratio::new(1.79, magic_market_core::RatioUnit::Percent).unwrap(),
+            ),
+            magic_market_core::Quantity::new(1234.0).unwrap(),
+            Some(magic_market_core::Money::new(1_680_000.0).unwrap()),
+            DataStatus::Unavailable,
+            None,
+            observed_at,
+            ProviderId::Tonghuashun,
+            batch_id,
+        )
+        .unwrap();
+        let batch = DataBatch::strict(
+            vec![quote],
+            Provenance::new("HithinkFinance", observed_at)
+                .unwrap()
+                .with_source_at("unix-ms:1789453334000")
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        );
+
+        let result =
+            provider_query_result(batch, "HithinkFinance", REALTIME_QUOTES_RECORD_SCHEMA, 4096)
+                .unwrap();
+
+        assert_eq!(result.provider, "HithinkFinance");
+        assert_eq!(result.source_at.as_deref(), Some("unix-ms:1789453334000"));
+        assert!(result.complete);
+        let record: serde_json::Value = serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(record["provider"], "Tonghuashun");
+        assert_eq!(record["status"], "Unavailable");
+        assert!(record["source_at"].is_null());
+        assert_eq!(record["observed_at"], observed_at);
     }
 
     #[test]

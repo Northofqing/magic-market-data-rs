@@ -28,6 +28,7 @@ the following private fixed builders:
 | Capability | Exact path | Query keys |
 | --- | --- | --- |
 | Historical bars | `/api/a-share/prices/historical` | `thscode`, `interval`, `start`, `end`, `adjust`, `offset` |
+| Realtime quote snapshot | `/api/a-share/prices/snapshot` | `thscodes` |
 | Index historical bars | `/api/a-share-index/prices/historical` | `thscode`, `interval`, `start`, `end` |
 | ETF historical bars | `/api/fund/market/historical` | `thscode`, `interval`, `start`, `end` |
 | Valuation snapshot | `/api/a-share/valuations/snapshot` | `thscodes` |
@@ -77,6 +78,24 @@ validated but not projected because frozen Core v1 has no matching fields.
 
 The response timestamp is only the newest upstream time among five metrics.
 It is batch provenance and is deliberately not copied into record evidence.
+
+### RealtimeQuotes
+
+The exact request contains 1..=60 unique Shanghai, Shenzhen or Beijing
+A-share equities. Response count, request order, `thscode` and `ticker` must
+match exactly. The adapter returns last price, previous close, open, high, low,
+percentage change and turnover. Source volume is shares and is divided by 100
+into Core lots. `price_change` is validated but is not projected because the
+frozen quote record already carries price and percentage change.
+
+The endpoint does not publish a name or a provider-issued timestamp for each
+row. Every record therefore keeps `name=null`, `source_at=null` and
+`status=Unavailable`, while `observed_at` is the local receipt time. Live
+responses may carry an optional positive batch `data.timestamp`; it is retained
+only as batch provenance (`unix-ms:<value>`) and must never be copied into
+record evidence. A complete batch means all requested identities and numeric
+fields were acquired and validated; it does not make these records eligible for
+BR-033 strict source-time freshness.
 
 ### LimitPools
 
@@ -222,22 +241,21 @@ auction transport dependencies.
 The inspected official capability map contains 59 endpoints across A-share,
 index/board, fund, auction, special-data and market-dump families. Endpoint
 availability alone does not authorize a lossy mapping into an existing gRPC
-record. The Provider currently exposes fourteen exact paths above. They back
-eight evidence-preserving admitted Core/RPC families, including the narrow
-current-observation operation. The lossy projection into the separate complete
+record. The Provider currently exposes fifteen exact paths above. They back
+nine evidence-preserving admitted Core/RPC families, including observation-time
+realtime quotes and the narrow current-observation operation. The lossy
+projection into the separate complete
 `Auctions` shape remains an explicit diagnostic and does not pass admission.
 
 Examples that remain outside production mapping include board directories
 without the Core-required `member_count`, constituent rows without atomic board
-name/category evidence, explicit-symbol snapshots with `timestamp=null`, fund
+name/category evidence, fund
 articles without a generally provable caller cutoff traversal, and market dumps
 that belong to a separate file/storage workflow rather than one unary market
 query. No other Provider fills these gaps inside a `HithinkFinance` batch.
 
 ## Deliberately unadmitted families
 
-- Explicit-symbol realtime snapshots return `timestamp=null`; local observation
-  time cannot become provider source time.
 - Auction snapshots expose one undirected unmatched quantity and a response
   assembly timestamp, not an exact trading date, the two directional queues or
   record source time required by the complete Core auction contract. The safe
@@ -313,3 +331,14 @@ reads and three serial reads returned the exact requested identity with a
 positive response assembly timestamp and no synthesized source time. This
 admits the truthful current-observation shape only; it does not change the
 complete `AUCTIONS_ADMITTED=false` decision.
+
+On 2026-09-15, two bounded live quote reads followed by three serial reads of
+`600396.SH,000001.SZ` returned exactly two rows in request order. All five reads
+returned changing prices/volumes, stable exact field names and a positive
+optional batch timestamp; no row contained a name or its own source timestamp.
+The serial starts remained naturally separated by the live request duration,
+and the production client additionally enforces its clone-shared 500 ms start
+gate. Deterministic tests cover exact URL construction, cardinality/order,
+shares-to-lots conversion, numeric projection, Provider identity, explicit
+`DataStatus::Unavailable`, record `source_at=null`, and batch-only timestamp
+provenance.

@@ -563,11 +563,13 @@ EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.requ
 `provider=Eastmoney`、源日期、观测时间和批次 ID。
 
 官方同花顺扶摇 Provider 的选择器是 `HithinkFinance`，运行时 Key 只从
-`HITHINK_FINANCE_API_KEY` 加载。当前正式准入七项现有 operation，不增加或改写 Protobuf：
+`HITHINK_FINANCE_API_KEY` 加载。当前正式准入九项 operation，其中八项沿用现有 RPC，另含
+`CurrentAuctionObservations`；本次不增加或改写 Protobuf：
 
 | operation | 精确范围 |
 | --- | --- |
 | `HistoricalBars` | 沪深北六位股票和标准 `.SH`/`.SZ` 指数最长十年、沪深 ETF 最长五年；`Day`、显式 inclusive 起止日期、未复权，完整响应校验后取最新 caller limit |
+| `RealtimeQuotes` | 1..=60 个唯一沪深北股票；返回价量额并严格标注顶层 `provider=HithinkFinance`，逐条 `provider=Tonghuashun`、`source_at=null`、`status=Unavailable` |
 | `MarketStatistics` | 1..=100 个唯一沪深北股票；只映射 `pe_ttm`、`pe_mrq`、`pb_mrq`，负值和 `null` 保留 |
 | `LimitPools` | 显式上海交易日的 `Upper`、`Lower`、`Broken`；取完并校验所有声明页后才应用 limit；`PreviousUpper` 不支持 |
 | `Popularity` | 官方 `period=day` 24 小时热股榜，最多 100 条，保留排名、热度、排名变化和响应源时刻 |
@@ -575,7 +577,30 @@ EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.requ
 | `CorporateActions` | 单只 A 股、可选且不晚于当前上海日期的 inclusive 范围；只映射官方现金/送股每股条款和除权日；源未给批次时间时 `source_at=null` |
 | `SecurityMetadata` | 1..=32 个 A 股、标准指数或场内基金；精确身份/名称/币种，未发布的板块/上市日/涨跌停规则保持缺失并标为 `Unavailable` |
 
-此外，`Auctions` 已实现同花顺当前最终快照的显式诊断，但不属于上述七项生产准入。
+同花顺行情沿用 `magic.market.realtime_quotes.request` v1。以下脱敏记录展示缺失时间的明确标注；
+顶层响应同时返回实际胜出的 `provider=HithinkFinance`：
+
+```json
+{
+  "instrument": {"exchange":"Shanghai","code":"600396","asset_class":"Equity"},
+  "name": null,
+  "price": 13.64,
+  "previous_close": 13.40,
+  "open": 13.45,
+  "high": 13.75,
+  "low": 13.40,
+  "change_percent": {"value":1.79,"unit":"Percent"},
+  "volume": 1234.0,
+  "amount": 1680000.0,
+  "status": "Unavailable",
+  "source_at": null,
+  "observed_at": "1789453335.543000000",
+  "provider": "Tonghuashun",
+  "batch_id": "REDACTED_HITHINK_QUOTE_BATCH"
+}
+```
+
+此外，`Auctions` 已实现同花顺当前最终快照的显式诊断，但不属于上述九项生产准入。
 请求必须使用 `schema=magic.market.hithink_current_auctions.request`、
 `preferred_provider=HithinkFinance`、`allow_unadmitted=true`：
 
@@ -653,8 +678,9 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 ]}
 ```
 
-上述七项生产调用必须设置 `preferred_provider=HithinkFinance` 和
-`allow_unadmitted=false`。响应顶层
+上述八项现有 RPC 可显式设置 `preferred_provider=HithinkFinance` 和
+`allow_unadmitted=false`。`RealtimeQuotes` 未指定 Provider 时会与其他已准入实时行情源并发
+竞速，并直接返回首个包含记录的批次；不会混合、补字段或改写来源。响应顶层
 `provider=HithinkFinance` 表示官方扶摇接入，当前 Core 记录 evidence 使用
 `provider=Tonghuashun`；两者不是跨源拼接。日线逐条 `source_at` 是各自交易日；估值响应
 时间只表示本批固定五项指标中的最新有效上游时间，因此只放在批次 provenance，不能复制
@@ -667,7 +693,10 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 
 扶摇 Key 缺失或到期、认证/权限拒绝、限流、查询拒绝、
 上游不可用和响应冲突都返回闭合 typed failure 和零 records，不回退 `magic-ths-rs` 网页源。
-扶摇显式代码实时快照没有 source timestamp，因此不以 `HithinkFinance` 注册 handler。
+扶摇显式代码实时快照已经注册 `HithinkFinance` 正式 handler。它没有逐条 source timestamp，
+因此每条 `source_at` 保持 `null` 并以 `status=Unavailable` 标注；可选批次
+`data.timestamp` 只作为批次 provenance，不能构造逐条证据。显式选择 Provider 时不回退；
+未指定 Provider 时由服务端并发竞速并保留胜出数据源。
 集合竞价当前观测通过独立的 `CurrentAuctionObservations` 注册正式 handler；完整
 `Auctions` 映射仍只注册诊断。客户端不得从本地时间或其他 Provider 补齐交易日、
 `source_at` 或未匹配方向。
@@ -970,6 +999,9 @@ SecurityProfiles 与未准入路由合同，所有文件由同一 LF `manifest.s
 `EconomicCalendar` 准入状态不变。
 `2026-09-13.1` 追加第 63 个 `EconomicReleaseSchedule` RPC，正式发布 FRED 官方日期级
 发布日程。该版本不构造具体发布时间或 `source_at`，完整 `EconomicCalendar` 准入状态不变。
+`2026-09-15.1` 将官方 `HithinkFinance` 价量快照注册到现有 `RealtimeQuotes`，并将未指定
+Provider 的实时行情路由改为有界并发竞速：首个非空结果胜出，顶层与逐条来源保持真实；
+同花顺缺失的逐条 `source_at` 明确保留为 `null`，不使用批次或本地时间补造。
 
 ## 12. 客户端代码生成
 

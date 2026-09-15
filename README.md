@@ -13,7 +13,8 @@
 - 接入 TDX、Tencent、Sina、Eastmoney、CNInfo、THS、交易所及多种新闻、宏观数据源。
 - 提供 Jin10 当前公开快讯窗口内的结构化宏观发布观测；空窗口是合法结果，但不冒充
   某日完整的 CPI、PMI、非农或利率决议日历。
-- 使用 Router 按固定顺序切换数据源，同时保留每次尝试和最终来源。
+- 使用 Router 做有界顺序切源；未指定 Provider 的实时行情在 Service 层并发竞速，
+  保留每次尝试和最终来源。
 - 通过 `magic.market.v1` gRPC 查询数据、读取能力状态、订阅事件和执行有界重放。
 - 在 Windows 自动发现当前用户会话中的通达信客户端，通过固定本机 TQ-Local 只读接口
   获取价格、累计成交量和累计成交额。
@@ -35,7 +36,8 @@
   当日字段未完成或 SDK 不可用时返回无 records 的类型化失败，不填零、不回退旧数据。
 - 通过官方同花顺扶摇 Financial API 提供沪深北股票、标准指数和 ETF 的未复权完成日线，
   以及估值子集、显式日期涨停/跌停/炸板池、当前热股榜、A 股财务三表、现金/送股公司行动
-  和字段级可用性明确的证券元数据；Key 缺失、到期或无权限时返回类型化失败，不回退网页源。
+  和字段级可用性明确的证券元数据及实时价量快照；行情缺少逐条源时间时明确保留
+  `source_at=null`/`status=Unavailable`。Key 缺失、到期或无权限时返回类型化失败。
 - 为每条记录保留 Provider、批次、源时间（源能够证明时）、本地观测时间、质量状态和
   完整性证据。
 
@@ -58,11 +60,9 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前对接合同交付基线为 client-bundle `2026-08-27.3`。该版本将 `T0Evidence`
-升级为必须携带调用方精确 `requested_at` 的 v2，并增加运行构建身份与安全、有序的完整
-Provider attempts；同时修复 TDX 形成中日线、Sina 个股新闻原始 URL 查询分隔符和东财公开
-日级资金流路由（固定使用东财官方 delay 主机以兼容严格 TLS 客户端），并按深交所正式代码
-区间接受 CLS 的合法 `sz302132` 关联股票。完整逐条
+当前对接合同交付基线为 client-bundle `2026-09-15.1`。该版本在现有
+`RealtimeQuotes` RPC 注册官方 `HithinkFinance` 价量快照，并把未指定 Provider 的行情查询
+改为有界并发竞速；胜出 Provider 明确返回，缺失逐条源时间不补造。完整逐条
 evidence、空批次和失败分类合同以
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用

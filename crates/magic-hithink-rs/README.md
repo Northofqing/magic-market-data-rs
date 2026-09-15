@@ -10,7 +10,9 @@ Production admission currently covers:
 - the current 24-hour `Popularity` list;
 - recent quarterly A-share `FinancialStatements` with per-report evidence;
 - cash-dividend and bonus-share A-share `CorporateActions`;
-- exact A-share/index/exchange-fund `SecurityMetadata` with unavailable fields left absent.
+- exact A-share/index/exchange-fund `SecurityMetadata` with unavailable fields left absent;
+- current A-share `RealtimeQuotes` with numeric price/volume/turnover retained,
+  while missing record `source_at` and name remain explicit as `Unavailable`;
 - current A-share `CurrentAuctionObservations` for explicit `live` or `final`
   stage, including the provider-native signed `auction_unmatched` value.
 

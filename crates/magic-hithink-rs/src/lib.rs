@@ -5,10 +5,11 @@
 
 use magic_market_core::{
     Adjustment, AssetClass, AuctionSnapshot, Auctions, Bar, BarInterval, BarsRequest, DataBatch,
-    Exchange, FiniteNumber, HistoricalBars, InstrumentId, IsoDate, LimitPoolEntry, LimitPoolKind,
-    LimitPoolRequest, LimitPools, LoadProbeSnapshot, MarketStatistics, MarketStatisticsProvider,
-    Money, NonEmptyText, PopularityData, PopularityRank, PositiveU32, Price, ProbeRequestTracker,
-    Provenance, ProviderId, Quantity, Ratio, RatioUnit, SourceEvidence,
+    DataStatus, Exchange, FiniteNumber, HistoricalBars, InstrumentId, IsoDate, LimitPoolEntry,
+    LimitPoolKind, LimitPoolRequest, LimitPools, LoadProbeSnapshot, MarketStatistics,
+    MarketStatisticsProvider, Money, NonEmptyText, PopularityData, PopularityRank, PositiveU32,
+    Price, ProbeRequestTracker, Provenance, ProviderId, Quantity, Quote, Ratio, RatioUnit,
+    RealtimeQuotes, SourceEvidence,
 };
 use magic_market_transport::{
     EndpointPolicy, HttpMethod, HttpRequest, HttpResponse, HttpTransport, MediaType, RequestGate,
@@ -39,7 +40,8 @@ const LIMIT_DOWN_PATH: &str = "/api/a-share/special-data/limit-down-pool";
 const LIMIT_BREAK_PATH: &str = "/api/a-share/special-data/limit-break-pool";
 const HOT_STOCK_PATH: &str = "/api/a-share/special-data/hot-stock-list";
 const AUCTION_PATH: &str = "/api/a-share/auction/snapshot";
-const EXACT_PATHS: [&str; 14] = [
+const REALTIME_QUOTES_PATH: &str = "/api/a-share/prices/snapshot";
+const EXACT_PATHS: [&str; 15] = [
     HISTORICAL_PATH,
     INDEX_HISTORICAL_PATH,
     FUND_HISTORICAL_PATH,
@@ -54,6 +56,7 @@ const EXACT_PATHS: [&str; 14] = [
     LIMIT_BREAK_PATH,
     HOT_STOCK_PATH,
     AUCTION_PATH,
+    REALTIME_QUOTES_PATH,
 ];
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(500);
@@ -65,6 +68,7 @@ const LIMIT_POOL_PAGE_SIZE: u32 = 200;
 const MAX_POPULARITY_ROWS: usize = 500;
 const MAX_POPULARITY_LIMIT: u32 = 100;
 const MAX_VALUATION_INSTRUMENTS: usize = 100;
+const MAX_QUOTE_INSTRUMENTS: usize = 60;
 const MAX_TEN_YEAR_DAYS: i64 = 3_653;
 const MAX_FIVE_YEAR_DAYS: i64 = 1_827;
 
@@ -72,6 +76,9 @@ const MAX_FIVE_YEAR_DAYS: i64 = 1_827;
 pub const HISTORICAL_BARS_ADMITTED: bool = true;
 /// Production admission is enabled only after deterministic, live, and serial probes pass.
 pub const MARKET_STATISTICS_ADMITTED: bool = true;
+/// Production admission is enabled for observation-time quote snapshots. Missing record source
+/// times remain explicit and are never promoted into strict-freshness evidence.
+pub const REALTIME_QUOTES_ADMITTED: bool = true;
 /// Production admission is enabled only after deterministic, live, and serial probes pass.
 pub const LIMIT_POOLS_ADMITTED: bool = true;
 /// Production admission is enabled only after deterministic, live, and serial probes pass.
@@ -287,6 +294,41 @@ impl HithinkClient {
         normalize_valuations(instruments, &thscodes, response)
     }
 
+    /// Fetches the official Fuyao A-share quote snapshot while preserving its observation-time
+    /// evidence limitation: the response has no provider-issued timestamp for each record.
+    pub fn probe_realtime_quotes(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<Quote>, HithinkError> {
+        if instruments.is_empty() || instruments.len() > MAX_QUOTE_INSTRUMENTS {
+            return Err(HithinkError::InvalidRequest(format!(
+                "quote request must contain 1..={MAX_QUOTE_INSTRUMENTS} instruments"
+            )));
+        }
+        let mut seen = HashSet::with_capacity(instruments.len());
+        let mut thscodes = Vec::with_capacity(instruments.len());
+        for instrument in instruments {
+            if instrument.asset_class() != AssetClass::Equity {
+                return Err(HithinkError::Unsupported(
+                    "Fuyao realtime quotes support A-share equities only".into(),
+                ));
+            }
+            let thscode = instrument_to_thscode(instrument)?;
+            if !seen.insert(thscode.clone()) {
+                return Err(HithinkError::InvalidRequest(
+                    "quote instruments must be unique".into(),
+                ));
+            }
+            thscodes.push(thscode);
+        }
+        let joined = thscodes.join(",");
+        let response: Success<QuoteData> = self.get(
+            REALTIME_QUOTES_PATH,
+            [("thscodes", joined)].iter().map(pair_ref),
+        )?;
+        normalize_realtime_quotes(instruments, &thscodes, response)
+    }
+
     /// Diagnostic path used before the capability is promoted into routing.
     pub fn probe_limit_pool(
         &self,
@@ -432,6 +474,24 @@ impl MarketStatisticsProvider for HithinkClient {
     }
 }
 
+impl RealtimeQuotes for HithinkClient {
+    type Quote = Quote;
+    type Error = HithinkError;
+
+    fn realtime_quotes(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<DataBatch<Self::Quote>, Self::Error> {
+        if REALTIME_QUOTES_ADMITTED {
+            self.probe_realtime_quotes(instruments)
+        } else {
+            Err(HithinkError::Unsupported(
+                "HITHINK realtime quotes await production admission".into(),
+            ))
+        }
+    }
+}
+
 impl Auctions for HithinkClient {
     type Error = HithinkError;
 
@@ -537,6 +597,30 @@ struct ValuationItem {
     pb_mrq: Option<f64>,
     ps_ttm: Option<f64>,
     pcf_ttm: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QuoteData {
+    timestamp: Option<i64>,
+    total: usize,
+    item: Vec<QuoteItem>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QuoteItem {
+    thscode: String,
+    ticker: String,
+    last_price: f64,
+    price_change: f64,
+    price_change_ratio_pct: f64,
+    open_price: f64,
+    high_price: f64,
+    low_price: f64,
+    prev_price: f64,
+    volume: f64,
+    turnover: f64,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -905,6 +989,47 @@ fn normalize_valuations(
             }
             batch_provenance(source_millis(timestamp)?, observed_at, batch_id)?
         }
+        None => Provenance::new("HithinkFinance", observed_at)?.with_batch_id(batch_id)?,
+    };
+    Ok(DataBatch::strict(records, provenance))
+}
+
+fn normalize_realtime_quotes(
+    instruments: &[InstrumentId],
+    thscodes: &[String],
+    response: Success<QuoteData>,
+) -> Result<DataBatch<Quote>, HithinkError> {
+    if response.data.total != instruments.len() || response.data.item.len() != instruments.len() {
+        return Err(HithinkError::Protocol(
+            "quote response does not contain exactly one row per requested instrument".into(),
+        ));
+    }
+    let observed_at = now()?;
+    let batch_id = response.request_id;
+    let mut records = Vec::with_capacity(instruments.len());
+    for ((instrument, expected), item) in instruments.iter().zip(thscodes).zip(response.data.item) {
+        validate_identity(expected, instrument.code(), &item.thscode, &item.ticker)?;
+        let _price_change = FiniteNumber::new(item.price_change)?;
+        records.push(Quote::from_parts(
+            instrument.clone(),
+            None,
+            Price::new(item.last_price)?,
+            Some(Price::new(item.prev_price)?),
+            Some(Price::new(item.open_price)?),
+            Some(Price::new(item.high_price)?),
+            Some(Price::new(item.low_price)?),
+            Some(Ratio::new(item.price_change_ratio_pct, RatioUnit::Percent)?),
+            Quantity::new(item.volume / 100.0)?,
+            Some(Money::new(item.turnover)?),
+            DataStatus::Unavailable,
+            None,
+            observed_at.clone(),
+            ProviderId::Tonghuashun,
+            batch_id.clone(),
+        )?);
+    }
+    let provenance = match response.data.timestamp {
+        Some(timestamp) => batch_provenance(source_millis(timestamp)?, observed_at, batch_id)?,
         None => Provenance::new("HithinkFinance", observed_at)?.with_batch_id(batch_id)?,
     };
     Ok(DataBatch::strict(records, provenance))

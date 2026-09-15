@@ -1,6 +1,6 @@
 param(
     [string]$Destination = "target/runtime/client-bundle",
-    [string]$BundleVersion = "2026-09-13.1",
+    [string]$BundleVersion = "2026-09-15.1",
     [string]$SourceCommit = ""
 )
 
@@ -103,6 +103,7 @@ $metadata = @"
   "global_news_schema_version": 2,
   "instrument_news_schema_version": 2,
   "t0_evidence_schema_version": 2,
+  "realtime_quotes_schema_version": 1,
   "current_auction_observations_schema_version": 1,
   "economic_release_observations_schema_version": 1,
   "economic_release_schedule_schema_version": 1,

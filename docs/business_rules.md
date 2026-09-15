@@ -951,10 +951,18 @@ complete. Standard indices may expose a provider-native ticker such as
 `1B0300`; only exact `thscode` is mapped to the Core identity and the auxiliary
 ticker is validated but not rewritten into the record.
 
-Fuyao realtime quote responses with explicit `thscodes` have no source
-timestamp, and the auction response has no exact trading date, directional
-unmatched bid/ask quantities or record source time. Realtime quotes remain
-unimplemented. Auctions are available only through the provider-specific
+Production `RealtimeQuotes` accepts one through 60 unique A-share equities and
+requires exactly one response row in request order. It preserves price,
+previous close, open, high, low, percentage change, turnover and source volume
+converted from shares to Core lots. The endpoint publishes no name or
+provider-issued timestamp for each row, so every record explicitly keeps
+`source_at=null` and `DataStatus::Unavailable`; local observation time never
+fills the missing source time. A positive optional response `data.timestamp`
+is batch-only provenance and must never be copied into record evidence.
+
+The auction response has no exact trading date, directional unmatched bid/ask
+quantities or record source time. Auctions are available only through the
+provider-specific
 `magic.market.hithink_current_auctions.request` diagnostic: it fixes
 `stage=final`, validates the complete response, converts source lots to shares,
 uses the response assembly timestamp only as `observed_at`, and leaves
@@ -1100,3 +1108,22 @@ news publication time and values from another Provider must never fill them.
 FRED's date ordering is validated before same-date rows are deterministically
 ordered by release ID. A complete zero-record response proves only the exact
 queried FRED date range. It does not prove a complete global economic calendar.
+
+## BR-063 Concurrent realtime-quote route
+
+An unpinned `RealtimeQuotes` request races every repository-admitted,
+runtime-available Provider registered for that operation with the exact same
+immutable request. The first successful result containing at least one
+normalized record wins, even when record-level evidence makes the result
+incomplete or unavailable for strict freshness. Records from different
+Providers are never merged, relabeled or used to fill one another's missing
+fields. The winning `QueryResult.provider` and every record's Provider evidence
+identify the actual selected source.
+
+Each Provider permits at most one detached unpinned quote attempt at a time, so
+a timed-out or slow loser cannot create an unbounded worker backlog. A busy
+Provider contributes the safe retryable `provider_busy` attempt. Empty results
+and typed errors cannot win; after all candidates finish or are busy, the
+service returns a deterministic registration-order `ProviderRouteFailure`.
+An explicit `preferred_provider` remains pinned to that one Provider and never
+races or falls through.
