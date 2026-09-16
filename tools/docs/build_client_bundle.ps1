@@ -1,6 +1,6 @@
 param(
     [string]$Destination = "target/runtime/client-bundle",
-    [string]$BundleVersion = "2026-09-15.1",
+    [string]$BundleVersion = "2026-09-16.1",
     [string]$SourceCommit = ""
 )
 
@@ -103,6 +103,7 @@ $metadata = @"
   "global_news_schema_version": 2,
   "instrument_news_schema_version": 2,
   "t0_evidence_schema_version": 2,
+  "financial_statements_schema_version": 2,
   "realtime_quotes_schema_version": 1,
   "current_auction_observations_schema_version": 1,
   "economic_release_observations_schema_version": 1,
@@ -124,8 +125,8 @@ Source commit: $SourceCommit
 MarketDataService RPCs: $rpcCount
 
 Public contract files are covered by manifest.sha256. GlobalNews, InstrumentNews,
-and T0Evidence use schema version 2; all other request payload versions remain
-documented per method.
+T0Evidence, and FinancialStatements support the documented schema version 2;
+FinancialStatements also retains its frozen version 1 projection.
 GetHealth and GetListenerStatus expose append-only aggregate runtime observability fields.
 TLS client identities and Bearer tokens are deployment-private and are not covered by,
 or copied by, this public contract builder.

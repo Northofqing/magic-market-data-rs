@@ -1131,3 +1131,18 @@ public request as `InvalidRequest`, the original request classification is
 preserved.
 An explicit `preferred_provider` remains pinned to that one Provider and never
 races or falls through.
+
+## BR-064 Financial statement fiscal-period evidence
+
+`FinancialStatements` schema version 2 preserves a Provider's exact
+`fiscal_period` label in each record. Hithink Fuyao values such as `Q1`, `H1`,
+`Q3` and `FY` are retained as source text; they are not reconstructed from
+`report_period`, the current date or another Provider. Providers that do not
+publish a proved label return `null`.
+
+Version 1 remains accepted and its record projection omits `fiscal_period`.
+Clients that require period identity must explicitly send the existing request
+schema with `schema_version=2` and must reject or skip a missing label. A label
+does not alone prove cumulative-versus-single-quarter numeric semantics. Only a
+same-issuer, same-fiscal-year `FY` actual may be compared with a full-year
+consensus estimate without an additional period-basis contract.

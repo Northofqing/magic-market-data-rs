@@ -227,6 +227,7 @@ pub(crate) fn parse_financial_response(
             instrument: instrument.clone(),
             kind,
             report_period,
+            fiscal_period: None,
             announced_on,
             currency,
             lines,

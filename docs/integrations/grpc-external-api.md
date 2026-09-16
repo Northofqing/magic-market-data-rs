@@ -704,6 +704,82 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 `Auctions` 映射仍只注册诊断。客户端不得从本地时间或其他 Provider 补齐交易日、
 `source_at` 或未匹配方向。
 
+### 交接中易混淆的请求合同
+
+以下 operation 都使用显式 JSON 请求；`{}` 不是它们的版本化默认请求：
+
+- `Announcements` 是单证券合同，版本 1 请求为
+  `{"instrument":{...},"start":"YYYY-MM-DD","end":"YYYY-MM-DD","limit":300}`。
+  `start`/`end` 可以同时省略，但证券和 limit 必须存在。
+- `MarketAnnouncements` 是全市场发现合同，版本 1 请求为
+  `{"start":"YYYY-MM-DD","end":"YYYY-MM-DD","limit":300}`。盘后 IPO 催化需要
+  “业务日 + 全市场 + 最多 300 条”时应调用它，不能调用 `Announcements` 并发送 `{}`。
+- `BlockTrades` 是单证券日期范围合同，版本 1 请求与 `Announcements` 的单证券形状
+  相同。调用方的多 code 业务必须拆成有序的逐证券请求并分别保存批次，不得把本地
+  `codes/date` hash 当作服务端已接收的 payload。
+- `ProviderTopNRankings` 版本 1 请求必须同时包含 `kind`、`trading_date`、`limit` 和
+  `filter_identity`。Eastmoney 正式 A 股 filter identity 固定为
+  `m:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:81+s:262144+f:!2`。
+  `VolumeRatio` 和 `MainNetInflow` 是两次独立请求、两个独立 batch；只发送日期或把一份
+  response 本地拆成两份都不符合当前合同。
+- `EconomicCalendar` 的请求形状本来就是 `{"limit":20,"country":null}`，但该 operation
+  当前未准入。已发布观测应使用 `EconomicReleaseObservations`；未来日期级日程使用
+  `EconomicReleaseSchedule`。`{}` 既不表达业务意图，也不会获得版本化默认值。
+
+`Consensus` 版本 1 只接受 `{"instruments":[...]}`，返回按证券绑定的年度 EPS 汇总；它不
+接受或回显“180 日/50 份报告”窗口，也不返回逐报告、评级或目标价。逐报告必须调用
+`ResearchReports`（`scope/page/page_size`），目标价必须调用 `TargetPrices`
+（`instrument/from/through`），并由客户端保留三份独立 batch 后做有证据的组合。不能从
+评级分布反造报告序列。
+
+`BlockTrades` 当前记录保留 Eastmoney 原始 `DEAL_VOLUME` 数值而不做缩放，并保留
+`trading_date`、可选 `traded_at`、price/amount/buyer/seller 与逐批 evidence。当前来源没有
+被合同证明的稳定成交行 ID，也没有成交类型、实时确认状态或交收期字段；这些值必须标为
+不可用。调用方不得把发送时间当成交时间、把 code 当名称、把 f64 强转 u32，或固定填充
+Agreed/realtime/NextSession。需要跨重试逐行幂等时，应先发布带真实来源身份的新版本合同，
+不能用内容猜测冒充 Provider ID。
+
+### FinancialStatements v2 财务期间合同
+
+`FinancialStatements` 的请求 schema 仍为
+`magic.market.financial_statements.request`：
+
+```json
+{
+  "instruments": [
+    {"exchange":"Shanghai","code":"600519","asset_class":"Equity"}
+  ],
+  "kind": "Income"
+}
+```
+
+版本 1 继续接受，并返回原冻结记录形状。请求 `schema_version=2` 时，记录 schema 仍为
+`magic.market.financial_statement`，记录版本为 2，并追加 Provider 原始期间标签：
+
+```json
+{
+  "instrument": {"exchange":"Shanghai","code":"600519","asset_class":"Equity"},
+  "kind": "Income",
+  "report_period": "2026-03-31",
+  "fiscal_period": "Q1",
+  "announced_on": "2026-04-30",
+  "currency": "CNY",
+  "lines": [
+    {"key":"basic_eps","source_label":"basic_eps","value":20.5,"unit":"CNY/share"}
+  ],
+  "evidence": {
+    "provider": "Tonghuashun",
+    "source_at": "unix-ms:1777478400000",
+    "observed_at": "1789524224.000000000",
+    "batch_id": "REDACTED_HITHINK_FINANCIAL_BATCH"
+  }
+}
+```
+
+`fiscal_period` 仅保留上游原文；不提供该字段的 Provider 返回 `null`。它不能单独证明数值是
+累计或单季口径。年度一致预期比较至少必须满足同 issuer、同 fiscal year、实际记录为 `FY`
+且单位一致；否则应 typed skip/unavailable，不能仅凭“同一年”生成 Beat/Miss。
+
 ### CurrentAuctionObservations 当前竞价窄合同
 
 业务请求 schema 为 `magic.market.current_auction_observations.request`、版本 1：
@@ -754,6 +830,9 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 `unmatched_bid_quantity`/`unmatched_ask_quantity`。`data.timestamp` 仅是响应组装时间，
 只写入 `observed_at`。此合同没有 `trading_date`，批次和逐条 `source_at` 都为空，不能用于
 严格源时间新鲜度、历史归档日期证明或完整 Level-2 `Auctions` 判断。
+`auction_volume_ratio` 已是该记录的独立可选字段，单位为 Decimal multiple；调用方把
+`CurrentAuctionObservations` 投影成 `TopStock` 时必须原样保留，不能从涨停池记录固定填
+`None`，也不能用普通行情或旧 Top-N 跨批补值。
 
 ### EconomicReleaseObservations 滚动宏观发布观测
 
@@ -846,7 +925,7 @@ FRED `release_date` 只证明日期，不证明具体发布时间；`release_las
 
 ### 相关请求 schema
 
-所有 payload `schema_version=1`：
+本节下表中的诊断/新增 operation payload 均为 `schema_version=1`：
 
 | Operation | request schema | record schema |
 | --- | --- | --- |
@@ -1005,6 +1084,9 @@ SecurityProfiles 与未准入路由合同，所有文件由同一 LF `manifest.s
 `2026-09-15.1` 将官方 `HithinkFinance` 价量快照注册到现有 `RealtimeQuotes`，并将未指定
 Provider 的实时行情路由改为有界并发竞速：首个非空结果胜出，顶层与逐条来源保持真实；
 同花顺缺失的逐条 `source_at` 明确保留为 `null`，不使用批次或本地时间补造。
+`2026-09-16.1` 为 `FinancialStatements` 增加可选 schema version 2，逐条保留 Provider
+原始 `fiscal_period`；版本 1 仍接受且记录形状不变。本版同时明确公告、ProviderTopN、
+经济发布、Consensus 与大宗交易的真实请求/能力边界，禁止把客户端本地意图冒充 wire。
 
 ## 12. 客户端代码生成
 

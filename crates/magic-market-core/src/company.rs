@@ -43,6 +43,12 @@ pub struct FinancialStatement {
     pub instrument: InstrumentId,
     pub kind: StatementKind,
     pub report_period: IsoDate,
+    /// Provider-native fiscal-period label such as `Q1`, `H1`, `Q3` or `FY`.
+    ///
+    /// This preserves source period identity. It does not by itself assert
+    /// whether a numeric line is cumulative or single-quarter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fiscal_period: Option<NonEmptyText>,
     pub announced_on: Option<IsoDate>,
     pub currency: Option<NonEmptyText>,
     pub lines: Vec<FinancialLine>,

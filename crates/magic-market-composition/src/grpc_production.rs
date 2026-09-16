@@ -46,15 +46,15 @@ use magic_market_core::{
     EconomicCalendarRequest, EconomicReleaseObservationsProvider,
     EconomicReleaseObservationsRequest, EconomicReleaseScheduleProvider,
     EconomicReleaseScheduleRequest, EconomicSeriesProvider, EconomicSeriesRequest,
-    EvidenceTimestamp, FinancialStatements, FlowInterval, FlowScope, ForeignExchangeProvider,
-    FundFlowPoint, FundFlowRequest, FundFlowSeries, FuturesDeliveryCalendar,
-    FuturesDeliveryRequest, FxRequest, GlobalIndexProvider, GlobalIndexRequest, HistoricalBars,
-    HolderCounts, InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest,
-    InvestorQuestions, IsoDate, LimitPoolRequest, LimitPools, LockupEvents, MarginData,
-    MarketAnnouncementRequest, MarketAnnouncements, MarketDragonTigerData,
-    MarketDragonTigerRequest, MarketRankingKind, MarketStatisticsProvider, MinuteData,
-    MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider, NonEmptyText,
-    NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
+    EvidenceTimestamp, FinancialLine, FinancialStatement, FinancialStatements, FlowInterval,
+    FlowScope, ForeignExchangeProvider, FundFlowPoint, FundFlowRequest, FundFlowSeries,
+    FuturesDeliveryCalendar, FuturesDeliveryRequest, FxRequest, GlobalIndexProvider,
+    GlobalIndexRequest, HistoricalBars, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
+    InstrumentSignalRequest, InvestorQuestions, IsoDate, LimitPoolRequest, LimitPools,
+    LockupEvents, MarginData, MarketAnnouncementRequest, MarketAnnouncements,
+    MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind, MarketStatisticsProvider,
+    MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider,
+    NonEmptyText, NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
     OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks, PolicyDocuments, PolicyRequest,
     PopularityData, PositiveU32, PostCloseFlowRequest, PostCloseFlows, ProbeAdmissionPolicy,
     Provenance, ProviderId, ProviderTopNRankingRequest, ProviderTopNRankings, Quote,
@@ -96,13 +96,14 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset};
 pub const SCHEMA_VERSION: u32 = 1;
 pub const NEWS_SCHEMA_VERSION: u32 = 2;
 pub const T0_EVIDENCE_SCHEMA_VERSION: u32 = 2;
+pub const FINANCIAL_STATEMENTS_SCHEMA_VERSION: u32 = 2;
 const EMQUANT_DAILY_BARS_SCOPE: &str = "Shanghai/Shenzhen equities; explicit inclusive start/end; unadjusted completed daily CSD OHLCV/amount; at most 800 returned rows";
 const HITHINK_HISTORICAL_BARS_SCOPE: &str = "six-digit A-share equities and standard exchange indices with explicit inclusive range of at most ten years, plus Shanghai/Shenzhen ETFs at most five years; official Fuyao unadjusted completed Day bars; most recent caller limit after complete bounded response validation";
 const HITHINK_MARKET_STATISTICS_SCOPE: &str = "1..=100 unique Shanghai/Shenzhen/Beijing equities; official Fuyao PE TTM, PE MRQ and PB MRQ with source nulls preserved";
 const HITHINK_REALTIME_QUOTES_SCOPE: &str = "1..=60 unique Shanghai/Shenzhen/Beijing equities; official Fuyao current quote snapshot with numeric prices/volume/turnover; record source_at and name remain null and status remains Unavailable because the endpoint has no per-record source timestamp";
 const HITHINK_LIMIT_POOLS_SCOPE: &str = "official Fuyao Upper, Lower or Broken pool for one explicit Shanghai trading date; all declared pages validated before applying caller limit; PreviousUpper unsupported";
 const HITHINK_POPULARITY_SCOPE: &str = "official Fuyao current 24-hour hot-stock ranking; at most 100 rows with exact identity, rank, heat and response source time";
-const HITHINK_FINANCIAL_STATEMENTS_SCOPE: &str = "1..=8 unique A-share equities; most recent 20 quarterly consolidated income, balance or cash-flow statements; source nulls and per-report publication evidence preserved";
+const HITHINK_FINANCIAL_STATEMENTS_SCOPE: &str = "1..=8 unique A-share equities; most recent 20 quarterly consolidated income, balance or cash-flow statements; source nulls, provider fiscal-period labels and per-report publication evidence preserved; fiscal-period labels are published in schema v2";
 const HITHINK_CORPORATE_ACTIONS_SCOPE: &str = "one A-share equity; optional exact inclusive date range; official Fuyao implemented cash-dividend and bonus-share ex-date events; endpoint source-time absence preserved";
 const HITHINK_SECURITY_METADATA_SCOPE: &str = "1..=32 unique A-share equities, standard exchange indices or exchange-traded funds; exact Fuyao thscode/name/currency identity with unpublished board, listing and price-limit fields explicitly unavailable";
 const HITHINK_AUCTIONS_SCOPE: &str = "1..=100 unique A-share equities; current official Fuyao stage=final closed auction snapshot diagnostic; provider response assembly time is observed_at while trading date, source_at and directional unmatched queues remain absent";
@@ -382,6 +383,58 @@ impl<'a> From<&'a NewsItem> for NewsRecordPayloadV2<'a> {
     }
 }
 
+#[derive(Serialize)]
+struct FinancialStatementRecordV1<'a> {
+    instrument: &'a InstrumentId,
+    kind: StatementKind,
+    report_period: &'a IsoDate,
+    announced_on: Option<&'a IsoDate>,
+    currency: Option<&'a NonEmptyText>,
+    lines: &'a [FinancialLine],
+    evidence: &'a SourceEvidence,
+}
+
+impl<'a> From<&'a FinancialStatement> for FinancialStatementRecordV1<'a> {
+    fn from(statement: &'a FinancialStatement) -> Self {
+        Self {
+            instrument: &statement.instrument,
+            kind: statement.kind,
+            report_period: &statement.report_period,
+            announced_on: statement.announced_on.as_ref(),
+            currency: statement.currency.as_ref(),
+            lines: &statement.lines,
+            evidence: &statement.evidence,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct FinancialStatementRecordV2<'a> {
+    instrument: &'a InstrumentId,
+    kind: StatementKind,
+    report_period: &'a IsoDate,
+    fiscal_period: Option<&'a str>,
+    announced_on: Option<&'a IsoDate>,
+    currency: Option<&'a NonEmptyText>,
+    lines: &'a [FinancialLine],
+    evidence: &'a SourceEvidence,
+}
+
+impl<'a> From<&'a FinancialStatement> for FinancialStatementRecordV2<'a> {
+    fn from(statement: &'a FinancialStatement) -> Self {
+        Self {
+            instrument: &statement.instrument,
+            kind: statement.kind,
+            report_period: &statement.report_period,
+            fiscal_period: statement.fiscal_period.as_ref().map(NonEmptyText::as_str),
+            announced_on: statement.announced_on.as_ref(),
+            currency: statement.currency.as_ref(),
+            lines: &statement.lines,
+            evidence: &statement.evidence,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FinancialStatementsRequest {
@@ -598,17 +651,7 @@ fn register_extended_providers(
             "bounded Shanghai/Shenzhen equity income, balance-sheet or cash-flow statements",
         ),
         move |command| {
-            let request: FinancialStatementsRequest =
-                decode_request(&command, FINANCIAL_STATEMENTS_REQUEST_SCHEMA)?;
-            let batch = financials
-                .financial_statements(&request.instruments, request.kind)
-                .map_err(|error| provider_error(Operation::FinancialStatements, error))?;
-            provider_query_result(
-                batch,
-                "Sina",
-                FINANCIAL_STATEMENTS_RECORD_SCHEMA,
-                maximum_payload_bytes,
-            )
+            execute_financial_statements(command, &financials, "Sina", maximum_payload_bytes)
         },
     )?;
 
@@ -1424,15 +1467,10 @@ fn register_hithink(
             HITHINK_FINANCIAL_STATEMENTS_SCOPE,
         ),
         move |command| {
-            let request: FinancialStatementsRequest =
-                decode_request(&command, FINANCIAL_STATEMENTS_REQUEST_SCHEMA)?;
-            let batch = financials
-                .financial_statements(&request.instruments, request.kind)
-                .map_err(|error| provider_error(Operation::FinancialStatements, error))?;
-            provider_query_result(
-                batch,
+            execute_financial_statements(
+                command,
+                financials.as_ref(),
                 "HithinkFinance",
-                FINANCIAL_STATEMENTS_RECORD_SCHEMA,
                 maximum_payload_bytes,
             )
         },
@@ -4151,6 +4189,37 @@ fn execute_tencent_statistics(
     )
 }
 
+fn execute_financial_statements<P>(
+    command: QueryCommand,
+    provider: &P,
+    provider_name: &str,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError>
+where
+    P: FinancialStatements,
+    P::Error: Error + 'static,
+{
+    let schema_version = command.payload().schema_version();
+    if !matches!(
+        schema_version,
+        SCHEMA_VERSION | FINANCIAL_STATEMENTS_SCHEMA_VERSION
+    ) {
+        return Err(ServiceError::InvalidRequest(format!(
+            "{} requires schema {FINANCIAL_STATEMENTS_REQUEST_SCHEMA} version 1 or {FINANCIAL_STATEMENTS_SCHEMA_VERSION}",
+            command.operation().as_str()
+        )));
+    }
+    let request: FinancialStatementsRequest = decode_request_version(
+        &command,
+        FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+        schema_version,
+    )?;
+    let batch = provider
+        .financial_statements(&request.instruments, request.kind)
+        .map_err(|error| provider_error(Operation::FinancialStatements, error))?;
+    financial_statements_query_result(batch, provider_name, schema_version, maximum_payload_bytes)
+}
+
 fn execute_typed<TRequest, TRecord, TError>(
     command: QueryCommand,
     request_schema: &str,
@@ -4781,6 +4850,58 @@ fn invalid_news_evidence(
         record_index,
         message: "news evidence is incomplete or inconsistent".to_owned(),
     }
+}
+
+fn financial_statements_query_result(
+    batch: DataBatch<FinancialStatement>,
+    provider: &str,
+    schema_version: u32,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    if !matches!(
+        schema_version,
+        SCHEMA_VERSION | FINANCIAL_STATEMENTS_SCHEMA_VERSION
+    ) {
+        return Err(ServiceError::InvalidRequest(format!(
+            "FinancialStatements requires schema version 1 or {FINANCIAL_STATEMENTS_SCHEMA_VERSION}"
+        )));
+    }
+    let provenance = batch.provenance();
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        ServiceError::FailedPrecondition(format!("{provider} batch has no batch_id"))
+    })?;
+    let records = batch
+        .records()
+        .iter()
+        .map(|statement| {
+            let data = match schema_version {
+                SCHEMA_VERSION => serde_json::to_vec(&FinancialStatementRecordV1::from(statement)),
+                FINANCIAL_STATEMENTS_SCHEMA_VERSION => {
+                    serde_json::to_vec(&FinancialStatementRecordV2::from(statement))
+                }
+                _ => unreachable!("schema version checked above"),
+            }
+            .map_err(|error| {
+                ServiceError::Internal(format!("financial statement serialization failed: {error}"))
+            })?;
+            CanonicalPayload::new(
+                FINANCIAL_STATEMENTS_RECORD_SCHEMA,
+                schema_version,
+                data,
+                maximum_payload_bytes,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(QueryResult {
+        provider: provider.to_owned(),
+        batch_id: batch_id.to_owned(),
+        complete: batch.quality().is_complete(),
+        observed_at: provenance.fetched_at().to_owned(),
+        source_at: provenance.source_at().map(str::to_owned),
+        records,
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
 }
 
 fn provider_query_result<T: Serialize>(
@@ -6288,6 +6409,65 @@ mod tests {
         assert_eq!(value["release_date"], "2026-09-15");
         assert_eq!(value["evidence"]["provider"], "Fred");
         assert!(value["evidence"]["source_at"].is_null());
+    }
+
+    #[test]
+    fn financial_statement_v2_adds_fiscal_period_without_changing_v1() {
+        let observed_at = "1789453335.543000000";
+        let batch_id = "hithink-financial-test";
+        let statement = magic_market_core::FinancialStatement {
+            instrument: InstrumentId::new(
+                magic_market_core::Exchange::Shanghai,
+                "600519",
+                magic_market_core::AssetClass::Equity,
+            )
+            .unwrap(),
+            kind: StatementKind::Income,
+            report_period: IsoDate::new("2026-03-31").unwrap(),
+            fiscal_period: Some(NonEmptyText::new("Q1").unwrap()),
+            announced_on: Some(IsoDate::new("2026-04-30").unwrap()),
+            currency: Some(NonEmptyText::new("CNY").unwrap()),
+            lines: Vec::new(),
+            evidence: SourceEvidence::new(ProviderId::Tonghuashun, observed_at, batch_id)
+                .unwrap()
+                .with_source_at("unix-ms:1777478400000")
+                .unwrap(),
+        };
+        let batch = DataBatch::strict(
+            vec![statement],
+            Provenance::new("HithinkFinance", observed_at)
+                .unwrap()
+                .with_source_at("unix-ms:1777478400000")
+                .unwrap()
+                .with_batch_id(batch_id)
+                .unwrap(),
+        );
+
+        let v1 = financial_statements_query_result(
+            batch.clone(),
+            "HithinkFinance",
+            SCHEMA_VERSION,
+            4096,
+        )
+        .unwrap();
+        let v2 = financial_statements_query_result(
+            batch.clone(),
+            "HithinkFinance",
+            FINANCIAL_STATEMENTS_SCHEMA_VERSION,
+            4096,
+        )
+        .unwrap();
+        assert!(matches!(
+            financial_statements_query_result(batch, "HithinkFinance", 3, 4096),
+            Err(ServiceError::InvalidRequest(message)) if message.contains("version 1 or 2")
+        ));
+
+        assert_eq!(v1.records[0].schema_version(), SCHEMA_VERSION);
+        let v1_record: serde_json::Value = serde_json::from_slice(v1.records[0].data()).unwrap();
+        assert!(v1_record.get("fiscal_period").is_none());
+        assert_eq!(v2.records[0].schema_version(), 2);
+        let v2_record: serde_json::Value = serde_json::from_slice(v2.records[0].data()).unwrap();
+        assert_eq!(v2_record["fiscal_period"], "Q1");
     }
 
     #[test]

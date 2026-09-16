@@ -136,6 +136,12 @@ period. The live API proves that `data.timestamp` identifies the latest
 keeps its own raw `report_date_ms` as `source_at=unix-ms:<value>`; batch
 `source_at` is the latest record publication time.
 
+The Provider's validated `fiscal_period` label is preserved in
+`FinancialStatements` record schema version 2. Version 1 remains compatible and
+omits the new field. Callers must not infer a missing label from the calendar,
+and the label alone does not establish cumulative-versus-single-quarter line
+semantics.
+
 ### CorporateActions
 
 The exact request selects one A-share equity and may include both `from` and

@@ -18,6 +18,7 @@ fn statements_retain_stable_key_source_label_and_absence() {
         instrument: instrument(),
         kind: StatementKind::Income,
         report_period: IsoDate::new("2026-06-30").unwrap(),
+        fiscal_period: None,
         announced_on: None,
         currency: Some(NonEmptyText::new("CNY").unwrap()),
         lines: vec![

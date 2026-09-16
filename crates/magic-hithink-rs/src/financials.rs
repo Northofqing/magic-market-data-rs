@@ -247,6 +247,7 @@ fn normalize_statements(
                 instrument: instrument.clone(),
                 kind,
                 report_period,
+                fiscal_period: Some(NonEmptyText::new(item.fiscal_period)?),
                 announced_on: Some(IsoDate::new(announced.to_string())?),
                 currency: Some(NonEmptyText::new(item.currency)?),
                 lines: item.lines,
@@ -464,6 +465,10 @@ mod tests {
         );
         let statement = &batch.records()[0];
         assert_eq!(statement.report_period.as_str(), "2026-03-31");
+        assert_eq!(
+            statement.fiscal_period.as_ref().map(NonEmptyText::as_str),
+            Some("Q1")
+        );
         assert_eq!(
             statement.announced_on.as_ref().unwrap().as_str(),
             "2026-04-30"

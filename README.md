@@ -60,10 +60,11 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前对接合同交付基线为 client-bundle `2026-09-15.1`。该版本在现有
-`RealtimeQuotes` RPC 注册官方 `HithinkFinance` 价量快照，并把未指定 Provider 的行情查询
-改为有界并发竞速；胜出 Provider 明确返回，缺失逐条源时间不补造。完整逐条
-evidence、空批次和失败分类合同以
+当前对接合同交付基线为 client-bundle `2026-09-16.1`。该版本在保留
+`FinancialStatements` v1 记录形状的同时增加 v2 Provider 原始 `fiscal_period`，并明确
+公告、ProviderTopN、经济发布、Consensus 与大宗交易的请求/能力边界。既有
+`RealtimeQuotes` 有界并发竞速合同不变；胜出 Provider 明确返回，缺失逐条源时间不补造。
+完整逐条 evidence、空批次和失败分类合同以
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用
 LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle 内
