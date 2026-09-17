@@ -1146,3 +1146,16 @@ schema with `schema_version=2` and must reject or skip a missing label. A label
 does not alone prove cumulative-versus-single-quarter numeric semantics. Only a
 same-issuer, same-fiscal-year `FY` actual may be compared with a full-year
 consensus estimate without an additional period-basis contract.
+
+## BR-065 Provider attempt trace is closed and atomic
+
+External gRPC `provider_attempts` is a bounded, one-based, contiguous trace.
+The only valid outcomes, reason codes and boolean combinations are those
+published in `grpc-external-api.md`; Provider identity must match the exact
+case-sensitive identity advertised by the same endpoint's capability snapshot.
+
+A trace contains at most 16 entries. The server must reject an internal route
+trace of 17 or more entries as a safe `INTERNAL` error with no partial attempt
+array; it must never truncate a longer trace into an apparently complete one.
+Unknown values, gaps, duplicate ordinals or illegal retryable/terminal
+combinations are not eligible for client control decisions.

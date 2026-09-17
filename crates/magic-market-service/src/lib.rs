@@ -779,6 +779,11 @@ impl ProviderAttempt {
                 "provider attempt reason code is invalid".to_owned(),
             ));
         }
+        if !provider_attempt_state_is_valid(&outcome, &reason_code, retryable, terminal) {
+            return Err(ServiceError::Internal(
+                "provider attempt state is outside the closed contract".to_owned(),
+            ));
+        }
         Ok(Self {
             provider,
             outcome,
@@ -806,6 +811,55 @@ impl ProviderAttempt {
 
     pub const fn terminal(&self) -> bool {
         self.terminal
+    }
+}
+
+fn provider_attempt_state_is_valid(
+    outcome: &str,
+    reason_code: &str,
+    retryable: bool,
+    terminal: bool,
+) -> bool {
+    match outcome {
+        "selected" => reason_code == "selected" && !retryable && !terminal,
+        "rejected" => {
+            !retryable
+                && !terminal
+                && matches!(
+                    reason_code,
+                    "authentication_rejected"
+                        | "query_rejected"
+                        | "response_invalid"
+                        | "invalid_request"
+                        | "unsupported"
+                        | "unauthenticated"
+                        | "permission_denied"
+                        | "provider_route_exhausted"
+                        | "provider_route_stopped"
+                        | "source_precondition"
+                        | "invalid_evidence"
+                        | "internal"
+                        | "transport"
+                        | "timeout"
+                        | "rate_limited"
+                        | "no_data"
+                        | "protocol"
+                        | "quality"
+                        | "evidence"
+                        | "provider"
+                )
+        }
+        "failed" => {
+            let expected_retryable = match reason_code {
+                "transport" | "timeout" | "rate_limited" | "unavailable" | "provider_busy"
+                | "worker_unavailable" => Some(true),
+                "invalid_request" | "unsupported" | "no_data" | "protocol" | "quality"
+                | "evidence" | "provider" => Some(false),
+                _ => None,
+            };
+            expected_retryable == Some(retryable)
+        }
+        _ => false,
     }
 }
 
@@ -873,6 +927,20 @@ mod tests {
 
     fn payload() -> CanonicalPayload {
         CanonicalPayload::new("test.request", 1, br#"{"value":1}"#.to_vec(), 1024).unwrap()
+    }
+
+    #[test]
+    fn provider_attempt_contract_rejects_unknown_or_conflicting_states() {
+        assert!(ProviderAttempt::new("Tencent", "failed", "transport", true, false).is_ok());
+        assert!(ProviderAttempt::new("Tdx", "rejected", "evidence", false, false).is_ok());
+        assert!(ProviderAttempt::new("Tdx", "selected", "selected", false, false).is_ok());
+
+        assert!(ProviderAttempt::new("Tencent", "failed", "new_reason", true, false).is_err());
+        assert!(ProviderAttempt::new("Tencent", "failed", "transport", false, false).is_err());
+        assert!(ProviderAttempt::new("Tencent", "rejected", "evidence", true, false).is_err());
+        assert!(ProviderAttempt::new("Tencent", "rejected", "evidence", false, true).is_err());
+        assert!(ProviderAttempt::new("Tencent", "selected", "selected", true, false).is_err());
+        assert!(ProviderAttempt::new("Tencent", "selected", "transport", false, false).is_err());
     }
 
     fn command(operation: Operation, provider: Option<&str>) -> QueryCommand {

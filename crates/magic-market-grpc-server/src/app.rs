@@ -17,6 +17,7 @@ use crate::logging::{self, Level};
 use crate::observability::{QueryOutcome, RuntimeObservability};
 
 const ERROR_DETAIL_METADATA_KEY: &str = "magic-error-detail-bin";
+const MAX_PROVIDER_ATTEMPTS: usize = 16;
 
 #[derive(Clone)]
 pub(crate) struct GrpcApplication<G> {
@@ -670,6 +671,40 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             Vec::new(),
         ),
     };
+    if provider_attempts.len() > MAX_PROVIDER_ATTEMPTS {
+        logging::event(
+            Level::Error,
+            "grpc_server",
+            "provider_attempt_limit_exceeded",
+            format_args!(
+                "request_id={:?} operation={} attempt_count={} maximum={}",
+                safe_log_value(request_id, 128),
+                operation.as_str(),
+                provider_attempts.len(),
+                MAX_PROVIDER_ATTEMPTS,
+            ),
+        );
+        let detail = v1::ErrorDetail {
+            request_id: request_id.to_owned(),
+            operation: grpc_operation(operation) as i32,
+            provider: String::new(),
+            reason_code: "internal".to_owned(),
+            retryable: false,
+            admission: v1::AdmissionState::Unadmitted as i32,
+            evidence_code: String::new(),
+            evidence_field: String::new(),
+            record_index: 0,
+            has_record_index: false,
+            provider_attempts: Vec::new(),
+        }
+        .encode_to_vec();
+        let mut metadata = MetadataMap::new();
+        metadata.insert_bin(
+            ERROR_DETAIL_METADATA_KEY,
+            MetadataValue::from_bytes(&detail),
+        );
+        return Status::with_metadata(Code::Internal, "internal service error", metadata);
+    }
     let detail = v1::ErrorDetail {
         request_id: request_id.to_owned(),
         operation: grpc_operation(operation) as i32,
@@ -683,7 +718,6 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
         has_record_index: record_index.is_some(),
         provider_attempts: provider_attempts
             .into_iter()
-            .take(16)
             .enumerate()
             .map(|(index, attempt)| v1::ProviderAttemptDetail {
                 ordinal: u32::try_from(index + 1).unwrap_or(u32::MAX),
@@ -865,6 +899,45 @@ mod tests {
         assert_eq!(detail.provider_attempts[1].outcome, "rejected");
         assert_eq!(detail.provider_attempts[1].reason_code, "evidence");
         assert!(!detail.provider_attempts[1].retryable);
+    }
+
+    #[test]
+    fn routed_failure_rejects_attempt_overflow_instead_of_truncating() {
+        let attempts = (0..17)
+            .map(|index| {
+                ProviderAttempt::new(
+                    format!("Provider{index}"),
+                    "failed",
+                    "transport",
+                    true,
+                    false,
+                )
+                .unwrap()
+            })
+            .collect();
+        let status = status_from_error(
+            "request-route-overflow",
+            Operation::RealtimeQuotes,
+            ServiceError::ProviderRouteFailure {
+                operation: Operation::RealtimeQuotes,
+                exhausted: true,
+                attempts,
+            },
+        );
+
+        assert_eq!(status.code(), Code::Internal);
+        let detail = v1::ErrorDetail::decode(
+            status
+                .metadata()
+                .get_bin(ERROR_DETAIL_METADATA_KEY)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(detail.reason_code, "internal");
+        assert!(!detail.retryable);
+        assert!(detail.provider_attempts.is_empty());
     }
 
     #[test]

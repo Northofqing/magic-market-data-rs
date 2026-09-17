@@ -1025,6 +1025,44 @@ composition 实测后，2026-08-18 更新的部署实例通过远程 mTLS + Bear
 admission，以及可选的 `evidence_code`、`evidence_field`、`record_index`。有序路由失败还
 携带最多 16 个 `provider_attempts`，每项只有 ordinal、Provider、closed outcome/reason
 code、retryable 和 terminal；上游自由文本、URL、响应体与凭据永不进入该数组。
+
+`provider_attempts` 使用以下闭合合同：
+
+- `ordinal` 从 1 开始、严格连续且不得重复；数组顺序就是实际尝试顺序，长度为 1..=16。
+  服务端内部若产生 17 项或更多，整份 trace 返回安全 `INTERNAL/internal` 且 attempts 为空，
+  不截断为前 16 项。
+- `provider` 必须逐字匹配同一端点 `GetCapabilities` 中公布的 Provider identity，长度最多
+  64、无控制字符；客户端不得把未知字符串升级为可信 Provider。
+- `outcome=selected` 只允许 `reason_code=selected,retryable=false,terminal=false`。
+- `outcome=rejected` 只允许 `retryable=false,terminal=false`，reason 必须属于
+  `authentication_rejected`、`query_rejected`、`response_invalid`、`invalid_request`、
+  `unsupported`、`unauthenticated`、`permission_denied`、`provider_route_exhausted`、
+  `provider_route_stopped`、`source_precondition`、`invalid_evidence`、`internal`、
+  `transport`、`timeout`、`rate_limited`、`no_data`、`protocol`、`quality`、`evidence`、
+  `provider`。
+- `outcome=failed` 时，`transport`、`timeout`、`rate_limited`、`unavailable`、
+  `provider_busy`、`worker_unavailable` 必须为 `retryable=true`；`invalid_request`、
+  `unsupported`、`no_data`、`protocol`、`quality`、`evidence`、`provider` 必须为
+  `retryable=false`。`terminal` 表示该尝试是否令路由停止，与 retryable 独立，因此 failed
+  的四种布尔组合均可能合法。
+
+任一未知 outcome/reason、空数组、序号缺口/重复或非法布尔组合都不能进入重试/恢复决策。
+客户端可以保留受限原始 bytes 供审计，但必须把 attempts 解释状态标为 unsupported。安全的
+JSON 投影示例（真实 wire 位于 `magic-error-detail-bin`）如下：
+
+```json
+{
+  "request_id": "REDACTED_REQUEST",
+  "operation": "RealtimeQuotes",
+  "reason_code": "provider_route_exhausted",
+  "retryable": false,
+  "provider_attempts": [
+    {"ordinal":1,"provider":"Tencent","outcome":"failed","reason_code":"transport","retryable":true,"terminal":false},
+    {"ordinal":2,"provider":"Tdx","outcome":"rejected","reason_code":"evidence","retryable":false,"terminal":false}
+  ]
+}
+```
+
 证据拒绝固定使用 `reason_code=invalid_evidence`、`retryable=false`。GlobalNews 可用
 `record_index` 定位被拒记录；Consensus 使用安全的结构化字段路径标识 Provider 响应中
 发生冲突的 identity、年度、机构数、最小/均值/最大值或表结构，不回传敏感原文。
@@ -1087,6 +1125,9 @@ Provider 的实时行情路由改为有界并发竞速：首个非空结果胜�
 `2026-09-16.1` 为 `FinancialStatements` 增加可选 schema version 2，逐条保留 Provider
 原始 `fiscal_period`；版本 1 仍接受且记录形状不变。本版同时明确公告、ProviderTopN、
 经济发布、Consensus 与大宗交易的真实请求/能力边界，禁止把客户端本地意图冒充 wire。
+`2026-09-17.1` 闭合 `provider_attempts` 的 Provider/outcome/reason/ordinal/布尔组合合同，
+超过 16 项时整体安全拒绝而不截断；bundle metadata 可携带与真实 Health 完全对应的
+deployment build identity 及两个 SHA-256 的精确哈希口径。
 
 ## 12. 客户端代码生成
 
