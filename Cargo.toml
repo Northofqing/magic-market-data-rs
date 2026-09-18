@@ -48,10 +48,27 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/Northofqing/magic-market-data-rs"
 [workspace.dependencies]
 calamine = { version = "0.36.1", default-features = false }
+encoding_rs = "0.8"
+prost = "=0.14.3"
+regex = "1"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 sha2 = "0.10.9"
 thiserror = "2"
+# Per-crate declarations add only the features they need on top of these bases.
+time = { version = "=0.3.54", default-features = false }
+tokio = "=1.52.3"
+tonic = { version = "=0.14.6", default-features = false }
+ureq = { version = "=2.12.1", default-features = false }
+url = "=2.5.4"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+# Optimize dependencies in dev/test builds; workspace crates stay unoptimized for fast rebuilds.
+[profile.dev.package."*"]
+opt-level = 1

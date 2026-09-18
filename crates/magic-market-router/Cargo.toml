@@ -14,7 +14,7 @@ thiserror.workspace = true
 magic-tdx-rs = { path = "../magic-tdx-rs" }
 magic-tencent-rs = { path = "../magic-tencent-rs" }
 magic-ths-rs = { path = "../magic-ths-rs" }
-serde_json = "1"
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

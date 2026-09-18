@@ -111,10 +111,10 @@ fn parse_rate_payload(
             let source_columns: Vec<CurveColumn> = serde_json::from_value(
                 envelope.data.base_curve_cfg_list.clone(),
             )
-            .map_err(|_| {
-                CfetsError::Protocol(
-                    "Shibor baseCurveCfgList must be the audited object array".into(),
-                )
+            .map_err(|error| {
+                CfetsError::Protocol(format!(
+                    "Shibor baseCurveCfgList must be the audited object array: {error}"
+                ))
             })?;
             if source_columns.len() != SHIBOR_COLUMNS.len() {
                 return Err(CfetsError::Protocol(
@@ -141,8 +141,10 @@ fn parse_rate_payload(
             let headings: Vec<String> = serde_json::from_value(
                 envelope.data.base_curve_cfg_list.clone(),
             )
-            .map_err(|_| {
-                CfetsError::Protocol("LPR baseCurveCfgList must be the audited string array".into())
+            .map_err(|error| {
+                CfetsError::Protocol(format!(
+                    "LPR baseCurveCfgList must be the audited string array: {error}"
+                ))
             })?;
             if headings != ["1Y", "5Y"] {
                 return Err(CfetsError::Protocol(

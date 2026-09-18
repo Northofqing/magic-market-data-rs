@@ -150,11 +150,14 @@ where
             records: result
                 .records
                 .into_iter()
-                .map(|record| v1::CanonicalPayload {
-                    schema: record.schema().to_owned(),
-                    schema_version: record.schema_version(),
-                    content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
-                    data: record.data().to_vec(),
+                .map(|record| {
+                    let (schema, schema_version, data) = record.into_parts();
+                    v1::CanonicalPayload {
+                        schema,
+                        schema_version,
+                        content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+                        data,
+                    }
                 })
                 .collect(),
             diagnostic_blocker: result.diagnostic_blocker.unwrap_or_default(),
@@ -1145,5 +1148,27 @@ mod tests {
             magic_market_grpc_contracts::READ_OPERATIONS.len()
         );
         assert_eq!(mapped, magic_market_grpc_contracts::READ_OPERATIONS);
+    }
+
+    #[test]
+    fn service_operation_names_match_proto_enum_names() {
+        fn normalized(name: &str) -> String {
+            name.chars()
+                .filter(|character| *character != '_')
+                .flat_map(char::to_lowercase)
+                .collect()
+        }
+        for operation in magic_market_service::ALL_OPERATIONS.iter().copied() {
+            let proto_name = grpc_operation(operation)
+                .as_str_name()
+                .strip_prefix("OPERATION_")
+                .unwrap();
+            assert_eq!(
+                normalized(operation.as_str()),
+                normalized(proto_name),
+                "{operation:?}: service name {:?} diverges from proto {proto_name:?}",
+                operation.as_str()
+            );
+        }
     }
 }

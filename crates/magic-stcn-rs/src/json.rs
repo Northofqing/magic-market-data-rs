@@ -141,7 +141,7 @@ pub fn parse_quick_news(body: &[u8], limit: u32) -> Result<DataBatch<NewsItem>, 
         ));
     }
     let envelope: Envelope = serde_json::from_slice(body)
-        .map_err(|_| StcnError::Decode("quick-news JSON is invalid".into()))?;
+        .map_err(|error| StcnError::Decode(format!("quick-news JSON is invalid: {error}")))?;
     let Envelope {
         state,
         data,

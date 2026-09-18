@@ -8,7 +8,7 @@ license.workspace = true
 reqwest = { version = "=0.13.4", default-features = false, features = ["blocking", "rustls-no-provider"] }
 rustls = { version = "=0.23.42", default-features = false, features = ["ring", "std", "tls12"] }
 thiserror = { workspace = true }
-url = "=2.5.4"
+url = { workspace = true }
 
 [lints]
 workspace = true

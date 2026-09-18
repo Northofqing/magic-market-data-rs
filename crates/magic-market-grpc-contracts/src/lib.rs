@@ -292,6 +292,63 @@ mod tests {
         assert!(!v1::FILE_DESCRIPTOR_SET.is_empty());
     }
 
+    /// Lower-cases and strips separators so `OPERATION_T0_EVIDENCE`, `T0Evidence`
+    /// and `t0_evidence` all compare equal.
+    fn normalized(name: &str) -> String {
+        name.chars()
+            .filter(|character| *character != '_')
+            .flat_map(char::to_lowercase)
+            .collect()
+    }
+
+    #[test]
+    fn every_proto_operation_value_is_registered_exactly_once() {
+        let mut declared = (1..=i32::from(u8::MAX))
+            .filter_map(|value| v1::Operation::try_from(value).ok())
+            .collect::<Vec<_>>();
+        let mut registered = READ_OPERATIONS.to_vec();
+        declared.sort_unstable_by_key(|value| *value as i32);
+        registered.sort_unstable_by_key(|value| *value as i32);
+        assert_eq!(
+            declared, registered,
+            "READ_OPERATIONS must list every non-UNSPECIFIED Operation enum value"
+        );
+    }
+
+    #[test]
+    fn market_data_service_rpcs_match_read_operations_in_order() {
+        let proto = include_str!("../proto/magic/market/v1/market.proto");
+        let service = proto
+            .split("service MarketDataService {")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("MarketDataService block is present");
+        let rpcs = service
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                let name = line.strip_prefix("rpc ")?;
+                let name = name.split('(').next()?;
+                line.contains("(QueryRequest)").then(|| normalized(name))
+            })
+            .collect::<Vec<_>>();
+        let operations = READ_OPERATIONS
+            .iter()
+            .map(|operation| {
+                normalized(
+                    operation
+                        .as_str_name()
+                        .strip_prefix("OPERATION_")
+                        .expect("proto enum values carry the OPERATION_ prefix"),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rpcs, operations,
+            "each QueryRequest rpc must correspond to one Operation, in enum order"
+        );
+    }
+
     #[test]
     fn monitor_watchlist_is_typed_bounded_and_duplicate_free() {
         let valid = vec!["EQUITY:SH:600396".to_owned(), "EQUITY:SZ:000001".to_owned()];

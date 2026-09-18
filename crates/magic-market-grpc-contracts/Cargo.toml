@@ -8,8 +8,8 @@ description = "Versioned Protobuf contracts for the magic-market external API"
 publish = false
 
 [dependencies]
-prost = "=0.14.3"
-tonic = { version = "=0.14.6", default-features = false, features = ["codegen", "transport"] }
+prost = { workspace = true }
+tonic = { workspace = true, features = ["codegen", "transport"] }
 tonic-prost = "=0.14.6"
 
 [build-dependencies]

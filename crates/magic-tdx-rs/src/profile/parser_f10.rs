@@ -4,6 +4,11 @@ use regex::Regex;
 /// 解析通达信 F10 原始文本，提取结构化数据。
 /// 基于港澳资讯格式，兼容不同公司的 F10 数据差异。
 use std::collections::HashMap;
+use std::sync::LazyLock;
+
+/// 匹配 【数字.标题】 格式的章节标题
+static SECTION_TITLE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"【(\d+\.[^】]+)】").expect("static section regex is valid"));
 
 /// F10 解析结果
 #[derive(Debug, Clone, Default)]
@@ -85,10 +90,7 @@ impl F10TextParser {
     /// 按章节分割文本
     fn split_sections(&self) -> HashMap<String, String> {
         let mut sections = HashMap::new();
-        // 匹配 【数字.标题】 格式
-        let pattern = Regex::new(r"【(\d+\.[^】]+)】").unwrap();
-
-        let matches: Vec<_> = pattern.find_iter(&self.raw).collect();
+        let matches: Vec<_> = SECTION_TITLE.find_iter(&self.raw).collect();
         for (i, m) in matches.iter().enumerate() {
             let title = m
                 .as_str()

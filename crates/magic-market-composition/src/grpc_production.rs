@@ -4975,17 +4975,6 @@ fn provider_error(operation: Operation, error: impl Error + 'static) -> ServiceE
     ))
 }
 
-fn map_baidu_error(operation: Operation, error: &BaiduError) -> ServiceError {
-    match error {
-        BaiduError::InvalidRequest(message) => invalid(message),
-        BaiduError::Transport(_) => unavailable(operation, error),
-        BaiduError::Unsupported(reason) => unsupported(operation, reason),
-        BaiduError::Decode(_) | BaiduError::Protocol(_) | BaiduError::Core(_) => {
-            precondition(error)
-        }
-    }
-}
-
 fn map_cls_error(operation: Operation, error: &ClsError) -> ServiceError {
     match error {
         ClsError::InvalidRequest(message) => invalid(message),
@@ -5049,44 +5038,6 @@ fn map_emquant_error(operation: Operation, error: &EmQuantError) -> ServiceError
     }
 }
 
-fn map_nbs_error(operation: Operation, error: &NbsError) -> ServiceError {
-    match error {
-        NbsError::InvalidRequest(message) => invalid(message),
-        NbsError::Transport(_) => unavailable(operation, error),
-        NbsError::Unsupported(reason) => unsupported(operation, reason),
-        NbsError::Decode(_) | NbsError::Protocol(_) | NbsError::Core(_) => precondition(error),
-    }
-}
-
-fn map_pbc_error(operation: Operation, error: &PbcError) -> ServiceError {
-    match error {
-        PbcError::InvalidRequest(message) => invalid(message),
-        PbcError::Transport(_) => unavailable(operation, error),
-        PbcError::Unsupported(reason) => unsupported(operation, reason),
-        PbcError::Decode(_) | PbcError::Protocol(_) | PbcError::Core(_) => precondition(error),
-    }
-}
-
-fn map_stcn_error(operation: Operation, error: &StcnError) -> ServiceError {
-    match error {
-        StcnError::InvalidRequest(message) => invalid(message),
-        StcnError::Transport(_) => unavailable(operation, error),
-        StcnError::Unsupported(reason) => unsupported(operation, reason),
-        StcnError::Decode(_) | StcnError::Protocol(_) | StcnError::Core(_) => precondition(error),
-    }
-}
-
-fn map_thepaper_error(operation: Operation, error: &ThePaperError) -> ServiceError {
-    match error {
-        ThePaperError::InvalidRequest(message) => invalid(message),
-        ThePaperError::Transport(_) => unavailable(operation, error),
-        ThePaperError::Unsupported(reason) => unsupported(operation, reason),
-        ThePaperError::Decode(_) | ThePaperError::Protocol(_) | ThePaperError::Core(_) => {
-            precondition(error)
-        }
-    }
-}
-
 fn map_worldbank_error(operation: Operation, error: &WorldBankError) -> ServiceError {
     match error {
         WorldBankError::InvalidRequest(message) => invalid(message),
@@ -5095,28 +5046,6 @@ fn map_worldbank_error(operation: Operation, error: &WorldBankError) -> ServiceE
         }
         WorldBankError::Unsupported(reason) => unsupported(operation, reason),
         WorldBankError::Decode(_) | WorldBankError::Protocol(_) | WorldBankError::Core(_) => {
-            precondition(error)
-        }
-    }
-}
-
-fn map_xinhua_error(operation: Operation, error: &XinhuaError) -> ServiceError {
-    match error {
-        XinhuaError::InvalidRequest(message) => invalid(message),
-        XinhuaError::Transport(_) => unavailable(operation, error),
-        XinhuaError::Unsupported(reason) => unsupported(operation, reason),
-        XinhuaError::Decode(_) | XinhuaError::Protocol(_) | XinhuaError::Core(_) => {
-            precondition(error)
-        }
-    }
-}
-
-fn map_yicai_error(operation: Operation, error: &YicaiError) -> ServiceError {
-    match error {
-        YicaiError::InvalidRequest(message) => invalid(message),
-        YicaiError::Transport(_) => unavailable(operation, error),
-        YicaiError::Unsupported(reason) => unsupported(operation, reason),
-        YicaiError::Decode(_) | YicaiError::Protocol(_) | YicaiError::Core(_) => {
             precondition(error)
         }
     }
@@ -5162,15 +5091,36 @@ fn precondition(error: impl ToString) -> ServiceError {
     ServiceError::FailedPrecondition(error.to_string())
 }
 
-fn map_cfets_error(operation: Operation, error: &CfetsError) -> ServiceError {
-    match error {
-        CfetsError::InvalidRequest(message) => invalid(message),
-        CfetsError::Transport(_) => unavailable(operation, error),
-        CfetsError::Unsupported(reason) => unsupported(operation, reason),
-        CfetsError::Decode(_) | CfetsError::Protocol(_) | CfetsError::Core(_) => {
-            precondition(error)
-        }
-    }
+/// Providers whose error enum is exactly `InvalidRequest | Transport | Unsupported |
+/// Decode | Protocol | Core` share one mapping; adding a variant upstream breaks the
+/// generated exhaustive match, forcing an explicit mapper instead.
+macro_rules! standard_provider_error_mappers {
+    ($($mapper:ident => $error:ident),* $(,)?) => {
+        $(
+            fn $mapper(operation: Operation, error: &$error) -> ServiceError {
+                match error {
+                    $error::InvalidRequest(message) => invalid(message),
+                    $error::Transport(_) => unavailable(operation, error),
+                    $error::Unsupported(reason) => unsupported(operation, reason),
+                    $error::Decode(_) | $error::Protocol(_) | $error::Core(_) => {
+                        precondition(error)
+                    }
+                }
+            }
+        )*
+    };
+}
+
+standard_provider_error_mappers! {
+    map_baidu_error => BaiduError,
+    map_cfets_error => CfetsError,
+    map_nbs_error => NbsError,
+    map_pbc_error => PbcError,
+    map_stcn_error => StcnError,
+    map_thepaper_error => ThePaperError,
+    map_wallstreetcn_error => WallstreetCnError,
+    map_xinhua_error => XinhuaError,
+    map_yicai_error => YicaiError,
 }
 
 fn map_cninfo_error(operation: Operation, error: &CninfoError) -> ServiceError {
@@ -5395,17 +5345,6 @@ fn consensus_invalid_evidence(message: &str) -> ServiceError {
         message: format!(
             "Consensus rejected Tonghuashun evidence ({evidence_code} at {evidence_field})"
         ),
-    }
-}
-
-fn map_wallstreetcn_error(operation: Operation, error: &WallstreetCnError) -> ServiceError {
-    match error {
-        WallstreetCnError::InvalidRequest(message) => invalid(message),
-        WallstreetCnError::Transport(_) => unavailable(operation, error),
-        WallstreetCnError::Unsupported(reason) => unsupported(operation, reason),
-        WallstreetCnError::Decode(_)
-        | WallstreetCnError::Protocol(_)
-        | WallstreetCnError::Core(_) => precondition(error),
     }
 }
 

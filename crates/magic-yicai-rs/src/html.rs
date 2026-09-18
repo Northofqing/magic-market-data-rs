@@ -43,7 +43,7 @@ pub fn parse_listing(html: &str, limit: u32) -> Result<DataBatch<NewsItem>, Yica
     }
     let payload = extract_firstlist(html)?;
     let rows: Vec<SourceRow> = serde_json::from_str(payload)
-        .map_err(|_| YicaiError::Decode("firstlist JSON is invalid".into()))?;
+        .map_err(|error| YicaiError::Decode(format!("firstlist JSON is invalid: {error}")))?;
     if rows.is_empty() || rows.len() > MAX_SOURCE_ROWS {
         return Err(protocol(
             "firstlist must contain between 1 and 300 source objects",

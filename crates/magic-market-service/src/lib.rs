@@ -160,6 +160,12 @@ impl CanonicalPayload {
     pub fn data(&self) -> &[u8] {
         &self.data
     }
+
+    /// Consumes the payload as `(schema, schema_version, data)` without copying.
+    #[must_use]
+    pub fn into_parts(self) -> (String, u32, Vec<u8>) {
+        (self.schema, self.schema_version, self.data)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -444,7 +450,7 @@ impl OperationRegistry {
             let spawn = thread::Builder::new()
                 .name(format!("quote-race-{provider}"))
                 .spawn(move || {
-                    let _permit = RealtimeQuotePermit(in_flight);
+                    let permit = RealtimeQuotePermit(in_flight);
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         Self::execute_registration(&registration, worker_command)
                     }))
@@ -453,6 +459,8 @@ impl OperationRegistry {
                             "realtime quote provider worker panicked".to_owned(),
                         ))
                     });
+                    // Release before send so a request that observes this result never sees the provider as busy.
+                    drop(permit);
                     let _ = worker_sender.send((index, provider, result));
                 });
             if spawn.is_err() {
@@ -1496,6 +1504,62 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.provider, "General");
+    }
+
+    #[test]
+    fn concurrent_unpinned_realtime_quote_requests_fail_with_provider_busy() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        let seen = calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::RealtimeQuotes,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Tencent".to_owned(),
+                    exact_scope: "A-share quote".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    seen.fetch_add(1, Ordering::SeqCst);
+                    thread::sleep(Duration::from_millis(200));
+                    Ok(QueryResult {
+                        provider: "Tencent".to_owned(),
+                        batch_id: "batch-1".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-17T00:00:00Z".to_owned(),
+                        source_at: None,
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        let registry = Arc::new(registry);
+        let first_registry = registry.clone();
+        let first =
+            thread::spawn(move || first_registry.execute(command(Operation::RealtimeQuotes, None)));
+        while calls.load(Ordering::SeqCst) == 0 {
+            thread::yield_now();
+        }
+        let second = registry.execute(command(Operation::RealtimeQuotes, None));
+        let first = first.join().unwrap();
+
+        assert!(first.is_ok(), "first request should win the race");
+        let ServiceError::ProviderRouteFailure { attempts, .. } = second.unwrap_err() else {
+            panic!("second concurrent request should fail the route");
+        };
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].reason_code(), "provider_busy");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "second request never reached the provider"
+        );
     }
 
     #[test]
