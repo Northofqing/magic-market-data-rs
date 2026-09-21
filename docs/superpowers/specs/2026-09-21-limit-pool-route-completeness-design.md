@@ -130,10 +130,10 @@ call starts failing partway through the morning — which is the window dependen
 the downstream observed. The downstream monitor asks for a bounded top-N, which
 is the failing case by construction.
 
-### The same defect reaches the derived product
+### The derived product hits the same trigger but not this defect
 
 `UpperLimitPoolReview` (`per_pool_limit` is its caller bound, and BR-050 requires
-all four exact pool families) inherits it:
+all four exact pool families) fails with the same message shape:
 
 ```
 {"trading_date":"2026-09-21","per_pool_limit":50}
@@ -144,6 +144,12 @@ all four exact pool families) inherits it:
 {"trading_date":"2026-09-21","per_pool_limit":500}
 -> ok, admission=ADMITTED, provider=Eastmoney, complete=true, records=1
 ```
+
+It is **not** fixed by this design, and deliberately so. Its Eastmoney handler
+calls `client.limit_pool` directly rather than through the route, so it neither
+has other candidates to fall through to nor any candidate that could supply
+`PreviousUpper`. Its failure is Eastmoney's single-page fetch showing through,
+which is decision 5's separate Gate A.
 
 ### A second, latent stop
 
@@ -264,16 +270,20 @@ meaningful first candidate, but it changes the HTTP request pattern on a host
 carried as a provider-local reviewed exception, so it requires its own Gate A
 design and a matching `http-transports.tsv` update.
 
-Decisions 1 and 2 restore the operation without it: the route reaches
-`HithinkFinance`, which pages and returns complete batches, for every kind
-`HithinkFinance` serves.
+Decisions 1 and 2 restore the operation without it: the route advances to the
+first candidate that can prove its batch whole, which for `Upper` is
+`Tonghuashun` or `HithinkFinance` and for `Lower`/`Broken` is
+`HithinkFinance`.
 
 ## Immediate mitigation (no code change)
 
-Callers that need the pool for a date today can pin
-`preferredProvider=HithinkFinance`, which returns `complete=true` for `Upper`,
-`Lower` and `Broken`. `UpperLimitPoolReview` callers must set `per_pool_limit` at
-or above the pool size for the date. Both are caller-side and reversible.
+After decisions 1 and 2, `LimitPools` callers need no workaround, and pinning
+`preferredProvider=HithinkFinance` (which also returns `complete=true` for all
+three kinds) remains available to anyone who wants to skip the fall-through.
+
+`UpperLimitPoolReview` is unaffected by this design and still needs its caller to
+set `per_pool_limit` at or above the pool size for the date. That is caller-side
+and reversible, and decision 5's Gate A is what would remove the requirement.
 
 ## Rejected alternatives
 
@@ -324,13 +334,29 @@ or above the pool size for the date. Both are caller-side and reversible.
   line stays within the `safe_log_value` bounds.
 - Registry: `tools/compliance/check_admissions.py` passes unchanged — no scope
   string, admission state or capability count is touched.
-- Live, against the deployed binary, re-running the probes recorded above:
-  `Upper` with `limit=50` returns `complete=true` with 103 rows from
-  `HithinkFinance`; `Broken` with `limit=10` and `Lower` with `limit=1` return
-  complete batches; `UpperLimitPoolReview` with `per_pool_limit=50` returns
-  `complete=true`.
+- Live, against the deployed binary on 2026-09-21, re-running the three cases
+  recorded above as failing and one as passing
+  (`target/runtime/limit-pools-route-fix-verify.ps1`):
+
+  | kind | `limit` | before | after |
+  | --- | --- | --- | --- |
+  | `Upper` | 50 | fail `provider_route_stopped` | ok · `complete=true` · 50 rows · `Tonghuashun` |
+  | `Broken` | 10 | fail `provider_route_stopped` | ok · `complete=true` · 10 rows · `HithinkFinance` |
+  | `Lower` | 1 | fail `provider_route_stopped` | ok · `complete=true` · 1 row · `HithinkFinance` |
+  | `Broken` | 25 | ok · `Eastmoney` | ok · `complete=true` · 25 rows · `Eastmoney` |
+
+  The row count stays at the caller's `limit` because the serving Provider
+  validates the whole pool and then applies that limit, which is the registered
+  `LimitPools` semantics; `complete=true` is what certifies the pool behind those
+  rows was whole. No `provider_route_failure` line was logged during the run.
+- Live, unchanged by this design: `UpperLimitPoolReview` with
+  `per_pool_limit=50` still fails with Eastmoney's truncation message, and with
+  `per_pool_limit=103` and `500` returns `complete=true`.
 - Gate C: formatting, workspace tests, Clippy, the repository compliance checks
-  and the documentation link check.
+  and the documentation link check. Note for whoever runs this on Windows:
+  `cargo test --workspace --all-targets` cannot link there because several
+  crates ship an example named `live_probe` writing to one output path;
+  `cargo test --workspace --lib --bins --tests` is the equivalent that runs.
 
 ## Rollback
 
