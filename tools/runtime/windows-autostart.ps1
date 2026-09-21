@@ -107,7 +107,15 @@ function Start-TdxTerminalWatchdog {
         -ArgumentList $watchdogArguments `
         -WorkingDirectory $PSScriptRoot `
         -WindowStyle Hidden | Out-Null
-    [Threading.Thread]::Sleep(500)
+    # The watchdog records its pid only after a cold PowerShell start, two forced
+    # module imports, and the admitted-hash check of TdxW.exe. That takes
+    # seconds, so a fixed short sleep races it; the resulting throw aborts the
+    # rest of autostart and leaves the gRPC runtime down after a reboot. Poll
+    # with a bounded deadline instead of sleeping once.
+    $watchdogDeadline = [DateTime]::UtcNow.AddSeconds(20)
+    while (-not [IO.File]::Exists($watchdogPidPath) -and [DateTime]::UtcNow -lt $watchdogDeadline) {
+        [Threading.Thread]::Sleep(250)
+    }
     if (-not [IO.File]::Exists($watchdogPidPath)) {
         throw "TDX terminal watchdog did not remain running after startup"
     }
