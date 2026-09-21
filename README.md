@@ -43,7 +43,7 @@
 
 精确到数据族和 Provider 的当前状态以
 [准入注册表](docs/integrations/admissions.tsv) 为准；gRPC 请求与响应见
-[外部对接文档](docs/integrations/grpc-external-api.md)。当前 10 条未准入
+[外部对接文档](docs/integrations/grpc-external-api.md)。当前 11 条未准入
 Provider×operation 路径、已发现的官方接口及显式替代范围见
 [未准入路径与显式替代矩阵](docs/integrations/unadmitted-provider-routes.md)。
 

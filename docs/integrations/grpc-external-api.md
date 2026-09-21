@@ -9,7 +9,7 @@
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 63 个操作精确登记；62 个操作至少有一个正式 handler；`EconomicCalendar` 因金十免费日历/API 已退役而仅保留显式诊断路径；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
+| Unary Provider composition | 63 个操作精确登记；61 个操作至少有一个正式 handler；`EconomicCalendar` 与 `Auctions` 仅保留显式诊断路径（前者因金十免费日历/API 已退役，后者因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入）；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
 | TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额、昨收、OHLC 与三类带 Core 证据的 trigger/rearm 事件为生产数据；状态消息仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
@@ -487,7 +487,7 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
   异动 trigger/rearm 进入生产事件流；
-- unary registry 对 63 个操作逐项精确登记；除 `EconomicCalendar` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，仅保留显式诊断路径；
+- unary registry 对 63 个操作逐项精确登记；除 `EconomicCalendar` 和 `Auctions` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，竞价操作因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入，两者均仅保留显式诊断路径；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council、iWencai 与官方 `HithinkFinance` 扶摇 API 外，也可精确选择
   TDX 公共协议、Sina、SSE、SZSE、
@@ -533,7 +533,7 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   timeout 或 rate-limit failure 时，服务端才按稳定登记顺序尝试下一个已准入来源；完整空批次
   是 truthful terminal，不会触发切源。所有失败尝试只通过安全、闭合的
   `provider_attempts` 返回，不混合记录或证据；
-- 当前 10 条未准入 Provider×operation 路径及可显式选择的准入 operation 路由见
+- 当前 11 条未准入 Provider×operation 路径及可显式选择的准入 operation 路由见
   [`unadmitted-provider-routes.md`](unadmitted-provider-routes.md)。这些路由只表示相同
   operation 下的独立来源，不表示数据集或 Provider 等价；例如 NBS/PBC/WorldBank
   不能重标为 IMF，Hithink 竞价快照也不能用其它响应的日期补齐；
