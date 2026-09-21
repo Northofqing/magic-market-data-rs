@@ -606,16 +606,25 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             } else {
                 "provider_route_stopped"
             };
+            // The attempt trace is otherwise reachable only by decoding the
+            // magic-error-detail-bin trailer, which leaves an operator unable to
+            // tell which candidate stopped the route.
+            let attempt_trace = attempts
+                .iter()
+                .map(|attempt| format!("{}:{}", attempt.provider(), attempt.reason_code()))
+                .collect::<Vec<_>>()
+                .join(",");
             logging::event(
                 Level::Error,
                 "grpc_server",
                 "provider_route_failure",
                 format_args!(
-                    "stage={} request_id={:?} operation={} attempt_count={}",
+                    "stage={} request_id={:?} operation={} attempt_count={} attempts={}",
                     reason_code,
                     safe_log_value(request_id, 128),
                     routed_operation.as_str(),
                     attempts.len(),
+                    safe_log_value(&attempt_trace, 512),
                 ),
             );
             (

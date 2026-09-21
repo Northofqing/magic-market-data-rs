@@ -1019,15 +1019,33 @@ unmatched totals, auction phase or a Level-2 auction contract.
 
 ## BR-059 Limit-pool route and local-terminal supervision
 
-An unpinned `LimitPools` query may try the registered production Providers in
-their deterministic registration order only after an explicitly retryable
-availability, timeout or rate-limit failure. The exact request is unchanged on
-every attempt. A successful complete batch, including a truthful verified-empty
-batch, terminates the route immediately. Invalid requests, unsupported scopes,
-authentication failures, response/evidence conflicts and other non-retryable
-failures stop the route. An explicit `preferred_provider` never falls through.
-An exhausted or stopped route returns only bounded safe typed Provider attempts;
-it never returns stale records, mixed provenance or partial success.
+An unpinned `LimitPools` query tries the registered production Providers in their
+deterministic registration order. The exact request is unchanged on every
+attempt. A successful complete batch, including a truthful verified-empty batch,
+terminates the route immediately and is the only outcome that returns data.
+
+Two outcomes advance to the next candidate instead of terminating, because each
+is a fact about that candidate rather than about the request:
+
+- A batch whose own quality state reports it incomplete. The registered
+  completeness rules sanction a truncated best-effort batch as an explicit
+  quality state, so a candidate that cannot prove the pool is whole is recorded
+  as a bounded `rejected`/`response_invalid` attempt and the route continues.
+- A scope the candidate does not serve. The registered scopes of the production
+  candidates differ, so a candidate that declines one pool family must not deny
+  the caller the candidates that serve it; it is recorded as a bounded
+  `rejected`/`unsupported` attempt and the route continues.
+
+Every other non-retryable failure still stops the route: invalid requests,
+authentication and permission failures, response/evidence conflicts and
+transport or protocol faults. A scope that every candidate declines stays that
+unchanged unsupported-scope error. Retryable availability, timeout and
+rate-limit failures advance as before. An explicit `preferred_provider` never
+falls through.
+
+An exhausted route reports one bounded attempt per candidate it tried. An
+exhausted or stopped route returns only bounded safe typed Provider attempts; it
+never returns stale records, mixed provenance or partial success.
 
 ## BR-060 HITHINK current auction observation
 

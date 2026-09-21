@@ -527,10 +527,15 @@ impl OperationRegistry {
                 && registration.handler.is_some()
         });
         let mut attempts = Vec::new();
+        let mut declined_count = 0_usize;
+        let mut first_scope_decline = None;
         for registration in candidates {
             match Self::execute_registration(registration, command.clone()) {
                 Ok(result) if result.complete => return Ok(result),
                 Ok(_) => {
+                    // A truncated batch is a sanctioned quality state rather than
+                    // a fault, so this candidate cannot prove the pool is whole
+                    // and the route keeps looking for one that can.
                     attempts.push(ProviderAttempt::new(
                         &registration.capability.provider,
                         "rejected",
@@ -538,18 +543,21 @@ impl OperationRegistry {
                         false,
                         false,
                     )?);
-                    return Err(ServiceError::ProviderRouteFailure {
-                        operation: Operation::LimitPools,
-                        exhausted: false,
-                        attempts,
-                    });
                 }
                 Err(error) => {
                     let attempt =
                         provider_attempt_from_error(&registration.capability.provider, &error)?;
                     let retryable = attempt.retryable();
+                    // A candidate that does not serve this exact scope is not
+                    // speaking for the operation; the candidates that do can
+                    // still answer, so it must not deny the caller their batch.
+                    let scope_declined = matches!(error, ServiceError::Unsupported { .. });
+                    if scope_declined {
+                        declined_count += 1;
+                        first_scope_decline.get_or_insert(error);
+                    }
                     attempts.push(attempt);
-                    if !retryable {
+                    if !retryable && !scope_declined {
                         return Err(ServiceError::ProviderRouteFailure {
                             operation: Operation::LimitPools,
                             exhausted: false,
@@ -558,6 +566,11 @@ impl OperationRegistry {
                     }
                 }
             }
+        }
+        // A scope no registered candidate serves stays a fail-closed
+        // unsupported scope rather than a route that merely came up empty.
+        if !attempts.is_empty() && declined_count == attempts.len() {
+            return Err(first_scope_decline.expect("every candidate declined the scope"));
         }
         if attempts.is_empty() {
             return registrations
@@ -1202,7 +1215,7 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_limit_pool_is_rejected_without_falling_through() {
+    fn truncated_limit_pool_falls_through_to_a_complete_provider() {
         let second_calls = Arc::new(AtomicUsize::new(0));
         let mut registry = OperationRegistry::all_unadmitted("missing");
         registry
@@ -1244,10 +1257,59 @@ mod tests {
                 },
                 move |_| {
                     second_seen.fetch_add(1, Ordering::SeqCst);
-                    unreachable!("an incomplete response is a terminal contract failure")
+                    Ok(QueryResult {
+                        provider: "Secondary".to_owned(),
+                        batch_id: "batch-whole".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-03T01:20:00Z".to_owned(),
+                        source_at: Some("2026-09-03".to_owned()),
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
                 },
             )
             .unwrap();
+
+        let result = registry
+            .execute(command(Operation::LimitPools, None))
+            .unwrap();
+        assert_eq!(result.provider, "Secondary");
+        assert_eq!(result.batch_id, "batch-whole");
+        assert!(result.complete);
+        assert_eq!(second_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn every_truncated_limit_pool_reports_an_exhausted_route() {
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        for provider in ["Primary", "Secondary"] {
+            registry
+                .register_handler(
+                    Capability {
+                        operation: Operation::LimitPools,
+                        repository_admitted: true,
+                        runtime_available: true,
+                        provider: provider.to_owned(),
+                        exact_scope: "exact-date limit pool".to_owned(),
+                        blocker: None,
+                        diagnostic_available: false,
+                    },
+                    move |_| {
+                        Ok(QueryResult {
+                            provider: provider.to_owned(),
+                            batch_id: format!("batch-{provider}"),
+                            complete: false,
+                            observed_at: "2026-09-03T01:20:00Z".to_owned(),
+                            source_at: Some("2026-09-03".to_owned()),
+                            records: vec![payload()],
+                            repository_admitted: true,
+                            diagnostic_blocker: None,
+                        })
+                    },
+                )
+                .unwrap();
+        }
 
         let error = registry
             .execute(command(Operation::LimitPools, None))
@@ -1260,12 +1322,102 @@ mod tests {
         else {
             panic!("expected a safe provider route failure");
         };
-        assert!(!exhausted);
-        assert_eq!(attempts.len(), 1);
+        assert!(exhausted);
+        assert_eq!(attempts.len(), 2);
         assert_eq!(attempts[0].provider(), "Primary");
-        assert_eq!(attempts[0].reason_code(), "response_invalid");
-        assert!(!attempts[0].retryable());
-        assert_eq!(second_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(attempts[1].provider(), "Secondary");
+        assert!(attempts
+            .iter()
+            .all(|attempt| attempt.reason_code() == "response_invalid" && !attempt.retryable()));
+    }
+
+    #[test]
+    fn scope_declining_limit_pool_falls_through_to_a_serving_provider() {
+        let third_calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Primary".to_owned(),
+                    exact_scope: "exact-date lower pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                |_| {
+                    Err(ServiceError::Unsupported {
+                        operation: Operation::LimitPools,
+                        reason: "primary serves only the upper-limit pool".to_owned(),
+                    })
+                },
+            )
+            .unwrap();
+        let third_seen = third_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Secondary".to_owned(),
+                    exact_scope: "exact-date lower pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    third_seen.fetch_add(1, Ordering::SeqCst);
+                    Ok(QueryResult {
+                        provider: "Secondary".to_owned(),
+                        batch_id: "batch-lower".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-03T01:20:00Z".to_owned(),
+                        source_at: Some("2026-09-03".to_owned()),
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+
+        let result = registry
+            .execute(command(Operation::LimitPools, None))
+            .unwrap();
+        assert_eq!(result.provider, "Secondary");
+        assert_eq!(third_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn scope_every_limit_pool_provider_declines_stays_unsupported() {
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        for provider in ["Primary", "Secondary"] {
+            registry
+                .register_handler(
+                    Capability {
+                        operation: Operation::LimitPools,
+                        repository_admitted: true,
+                        runtime_available: true,
+                        provider: provider.to_owned(),
+                        exact_scope: "exact-date upper pool".to_owned(),
+                        blocker: None,
+                        diagnostic_available: false,
+                    },
+                    |_| {
+                        Err(ServiceError::Unsupported {
+                            operation: Operation::LimitPools,
+                            reason: "no production source exposes this pool family".to_owned(),
+                        })
+                    },
+                )
+                .unwrap();
+        }
+
+        assert!(matches!(
+            registry.execute(command(Operation::LimitPools, None)),
+            Err(ServiceError::Unsupported { .. })
+        ));
     }
 
     #[test]
