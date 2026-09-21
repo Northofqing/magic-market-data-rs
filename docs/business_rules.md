@@ -643,11 +643,14 @@ HTTP/API response does not promote admission. Response identity, protocol type,
 security or universe identity, source date, indicator labels, raw scalar
 cardinality and observed unit metadata must match the requested diagnostic family.
 
-Opening-auction production observations use one fixed query and one result table
-to expose source-returned volume in shares and amount in CNY. Matched price,
+Opening-auction observations use one fixed query and, while admitted, one result
+table exposing source-returned volume in shares and amount in CNY. Matched price,
 previous close, unmatched queues, volume ratio and provider time remain null
-unless independently proved. Market-breadth production observations use one
-fixed response containing listed total, up/down/flat and limit-up/down counts;
+unless independently proved. That one-table shape is no longer reproducible: on
+2026-09-21 the same fixed query returned three tables and no single table proved
+both units on the requested date, so the family is diagnostic only and
+`MX_OPENING_AUCTION_ADMITTED` is false. Market-breadth production observations
+use one fixed response containing listed total, up/down/flat and limit-up/down counts;
 `valid = up + down + flat` and coverage are checked. One response proves
 acquisition atomicity, while absent provider source instants keep source-time
 skew `null` rather than fabricating zero.
@@ -656,11 +659,14 @@ extra dates, identity mismatch, unit mismatch, malformed decimals or missing
 required diagnostic fields fail explicitly rather than becoming a successful
 empty or zero-filled record.
 
-When the server process has a valid Key, the exact admitted auction and breadth
-templates are default-readable production operations. `MoneyFlows` and
-`FundFlowSeries` retain their separate public-provider production routes and the
-Miaoxiang variants remain diagnostic. Without the Key, auction and breadth stay
-repository-admitted but runtime-unavailable and fail before Provider I/O.
+When the server process has a valid Key, the exact admitted breadth template is
+a default-readable production operation and the auction template is reachable
+only as an explicit diagnostic. `MoneyFlows` and `FundFlowSeries` retain their
+separate public-provider production routes and the Miaoxiang variants remain
+diagnostic. Without the Key, breadth stays repository-admitted but
+runtime-unavailable and fails before Provider I/O, while the auction diagnostic
+and the other unadmitted Miaoxiang families remain repository-unadmitted with an
+explicit blocker.
 
 ## BR-047 TDX dynamic watchlist control
 

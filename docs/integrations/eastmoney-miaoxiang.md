@@ -32,27 +32,28 @@ not establish a stable typed data contract by themselves.
 
 ## Narrow production contracts
 
-The production contracts deliberately expose less than the complete Core
-families. Each contract uses exactly one Miaoxiang response; a second query is
-never joined to fill a missing field.
+The production contract deliberately exposes less than the complete Core
+families. It uses exactly one Miaoxiang response; a second query is never joined
+to fill a missing field.
 
 | gRPC operation | Fixed request and required facts | Explicit boundary |
 | --- | --- | --- |
-| `Auctions` | one exact A-share identity and one source date; matched opening-auction quantity in `股` and matched amount in CNY `元`, both declared with `DAY` granularity in the same response | matched price, previous close, unmatched bid/ask quantities, volume ratio and provider source instant remain `null`; this is not the complete Level-2 `AuctionSnapshot` capability |
 | `MarketBreadth` | one source date and the all-A-share universe; listed total, up, down, flat, limit-up and limit-down counts from the same response | `valid = up + down + flat`, limit counts must be subsets, and `coverage = valid / listed_total`; one-response acquisition proves atomicity, but `maximum_source_skew_millis` remains `null` because the provider supplies no field-level source instants |
 
-Both contracts retain the exact source date, request identity, response request
+The contract retains the exact source date, request identity, response request
 ID and current local Asia/Shanghai observation time. A date is not promoted to
 an intraday instant: evidence may retain the exact ISO source date, while local
 `observed_at` remains distinct and is not provider source time. Missing or
 duplicate tables, wrong identity/date, field metadata mismatch, inconsistent
 counts, non-finite numbers or an incomplete response fail the whole request.
 
-`Auctions` intentionally permits the Level-2-only fields to remain JSON `null`.
-This is complete for the narrower gRPC observation and does not advertise the
-complete Core Level-2 auction capability. When the key is absent, these
-repository contracts are runtime-unavailable rather than silently routed to a
-public quote or another provider.
+`Auctions` was the second narrow production contract and intentionally permitted
+the Level-2-only fields to remain JSON `null`. It is no longer a production
+contract: the one-table answer shape its admission rested on stopped being
+reproducible, so it is now diagnostic only. See
+[Remaining diagnostic](#remaining-diagnostic). When the key is absent,
+`MarketBreadth` is runtime-unavailable and `Auctions` stays repository-unadmitted,
+rather than either being silently routed to a public quote or another provider.
 
 ## Evidence
 
@@ -86,9 +87,31 @@ The breadth source represented listed total as `5544.0`. The production parser
 accepts a decimal spelling only when its fractional part is exactly zero and the
 value is in the bounded integer domain; values such as `5544.1` still fail the
 whole response. With the successful two live plus three serial observations,
-`MX_OPENING_AUCTION_ADMITTED=true` and `MX_MARKET_BREADTH_ADMITTED=true`. The
-additional successful round is retained as supporting evidence but is not needed
-to inflate the registry counters. See [`admissions.tsv`](admissions.tsv).
+`MX_MARKET_BREADTH_ADMITTED=true`. The additional successful round is retained as
+supporting evidence but is not needed to inflate the registry counters. See
+[`admissions.tsv`](admissions.tsv).
+
+On 2026-09-21 the auction template stopped reproducing the shape that same
+admission rested on. The identical fixed query, for `600519.SH`, returned
+`code=0` with three tables in two consecutive calls, byte-identical apart from
+the response timestamp:
+
+| table | `dataTypeEnum` | metric labels | declared unit | source date |
+| --- | --- | --- | --- | --- |
+| 1 | `HQ` | opening-auction volume only | `股` | `2026-09-21 11:39` |
+| 2 | `DATA_BROWSER` | volume and amount | `股` / `元` | `2026-09-18` |
+| 3 | `HQ` | opening-auction amount only | *(none declared)* | `2026-09-21 11:39` |
+
+No single table satisfies the contract: tables 1 and 3 carry one metric each and
+table 3 declares no amount unit, while table 2 proves both units but for the
+previous trading day. Earlier the same day the identical template failed with
+`Miaoxiang source date "2026-09-18" does not match requested 2026-09-21`, a
+message downstream of the one-table check, so exactly one table was returned
+then. The returned numbers were correct — `30,341,900 / 24,100 = 1259.0`, the
+same `600519.SH` auction volume, amount and price the admitted HITHINK
+`CurrentAuctionObservations` path returned in the same session — so the fault is
+answer shape, not data, credential or transport. Because cardinality was the
+property being claimed, `MX_OPENING_AUCTION_ADMITTED` was withdrawn.
 
 ## Remaining diagnostic
 
@@ -96,6 +119,16 @@ to inflate the registry counters. See [`admissions.tsv`](admissions.tsv).
 five-bucket result is available only as an explicit diagnostic because result
 cardinality and serial stability are not a production contract. It never
 replaces the admitted public Eastmoney `FundFlowSeries`/`MoneyFlows` path.
+
+`MX_OPENING_AUCTION_ADMITTED` is now `false` for the same reason: its
+natural-language answer cardinality is not stable within one session, and the
+admitted one-table shape was not reproduced on 2026-09-21. It is available only
+as an explicit diagnostic and never replaces the admitted HITHINK
+`CurrentAuctionObservations` path. Re-admission requires two bounded live probes
+at different times of day plus three serial loads, each returning exactly one
+table with both metrics, source-declared `股` and `元` and the requested date,
+plus a same-session repeat proving the cardinality is stable. See the
+[Gate A design](../superpowers/specs/2026-09-21-miaoxiang-auction-answer-shape-design.md).
 
 Requests for CFFEX delivery returned no table. A requested five-minute K-line
 was returned at daily granularity. Requests for ranked securities returned an

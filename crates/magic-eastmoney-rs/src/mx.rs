@@ -16,7 +16,12 @@ const MAX_FUND_FLOW_ROWS: u32 = 20;
 const SOURCE_NAME: &str = "eastmoney-miaoxiang";
 
 pub const MX_DAILY_FUND_FLOW_ADMITTED: bool = false;
-pub const MX_OPENING_AUCTION_ADMITTED: bool = true;
+/// The 2026-08-18 admission rested on one fixed query returning one table.
+/// On 2026-09-21 the same query returned three tables, and no single table
+/// carried both metrics with proved units on the requested date, so the
+/// cardinality the admission claimed to have proved is not reproducible.
+/// See `docs/superpowers/specs/2026-09-21-miaoxiang-auction-answer-shape-design.md`.
+pub const MX_OPENING_AUCTION_ADMITTED: bool = false;
 pub const MX_MARKET_BREADTH_ADMITTED: bool = true;
 
 #[derive(Clone)]
@@ -469,8 +474,9 @@ impl MxResponse {
     fn single_table(&self) -> Result<&MxTable, EastmoneyError> {
         let [table] = self.tables.as_slice() else {
             return Err(EastmoneyError::Protocol(format!(
-                "Miaoxiang returned {} tables, expected exactly 1",
-                self.tables.len()
+                "Miaoxiang returned {} tables, expected exactly 1: {}",
+                self.tables.len(),
+                self.describe_tables()
             )));
         };
         Ok(table)
@@ -484,8 +490,9 @@ impl MxResponse {
             .collect::<Vec<_>>();
         let [table] = matches.as_slice() else {
             return Err(EastmoneyError::Protocol(format!(
-                "Miaoxiang returned {} tables for {label:?}, expected exactly 1",
-                matches.len()
+                "Miaoxiang returned {} tables for {label:?}, expected exactly 1: {}",
+                matches.len(),
+                self.describe_tables()
             )));
         };
         parse_source_count(table.scalar(label)?, label)
@@ -504,11 +511,28 @@ impl MxResponse {
             .collect::<Vec<_>>();
         let [table] = matches.as_slice() else {
             return Err(EastmoneyError::Protocol(format!(
-                "Miaoxiang returned {} tables for {label:?}, expected exactly 1",
-                matches.len()
+                "Miaoxiang returned {} tables for {label:?}, expected exactly 1: {}",
+                matches.len(),
+                self.describe_tables()
             )));
         };
         table.validate_field_set(label, unit, granularity)
+    }
+
+    /// Renders the whole answer shape, so a cardinality failure says which
+    /// answer arrived instead of only how many tables it held. Answer
+    /// cardinality is the property the auction admission rested on, and a
+    /// provider that splits one metric per table and a provider that repeats a
+    /// table are different faults that otherwise share one sentence.
+    fn describe_tables(&self) -> String {
+        if self.tables.is_empty() {
+            return "no tables".to_owned();
+        }
+        self.tables
+            .iter()
+            .map(MxTable::describe)
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 }
 
@@ -517,6 +541,11 @@ struct MxTable {
     code: String,
     #[serde(rename = "entityName")]
     entity_name: String,
+    /// Read only to describe an answer that failed its shape contract. It never
+    /// takes part in an acceptance decision, so no new response shape is
+    /// admitted by reading it.
+    #[serde(rename = "dataTypeEnum", default)]
+    data_type_enum: String,
     #[serde(rename = "rawTable")]
     raw_table: BTreeMap<String, Vec<String>>,
     #[serde(rename = "nameMap")]
@@ -531,6 +560,41 @@ struct MxTable {
 impl MxTable {
     fn has_label(&self, label: &str) -> bool {
         self.name_map.values().any(|value| value == label)
+    }
+
+    /// Renders one table as `<kind>[<label>(<unit>), ...] @<source date>`.
+    /// A metric whose unit the response does not declare is reported as having
+    /// no unit rather than dropped, because an undeclared unit is exactly what
+    /// makes the answer unusable.
+    fn describe(&self) -> String {
+        let kind = if self.data_type_enum.is_empty() {
+            "untyped"
+        } else {
+            self.data_type_enum.as_str()
+        };
+        let columns = self
+            .name_map
+            .iter()
+            .filter(|(key, _)| !key.starts_with("headName"))
+            .map(|(key, label)| {
+                let unit = self
+                    .field_set
+                    .iter()
+                    .find(|field| field.return_code == *key)
+                    .and_then(|field| field.unit_name.as_deref());
+                match unit {
+                    Some(unit) => format!("{label}({unit})"),
+                    None => format!("{label}(no unit)"),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let date = self
+            .dates()
+            .ok()
+            .and_then(|dates| dates.first().map(String::as_str))
+            .unwrap_or("no date");
+        format!("{kind}[{columns}] @{date}")
     }
 
     fn key_for_label(&self, label: &str) -> Result<&str, EastmoneyError> {
@@ -898,7 +962,7 @@ mod tests {
     type ObservedRequest = (String, Vec<(String, String)>, Vec<u8>);
 
     const _: () = assert!(!MX_DAILY_FUND_FLOW_ADMITTED);
-    const _: () = assert!(MX_OPENING_AUCTION_ADMITTED);
+    const _: () = assert!(!MX_OPENING_AUCTION_ADMITTED);
     const _: () = assert!(MX_MARKET_BREADTH_ADMITTED);
 
     #[derive(Clone)]
@@ -1121,6 +1185,100 @@ mod tests {
                 Err(EastmoneyError::Protocol(_))
             ));
         }
+    }
+
+    /// One `HQ` table carrying a single dated metric, as the provider returned
+    /// them on 2026-09-21: the volume table declares `股`, the amount table
+    /// declares no unit at all.
+    fn dated_hq_metric_table(
+        label: &str,
+        key: &str,
+        unit: Option<&str>,
+        value: &str,
+        head_name: &str,
+    ) -> serde_json::Value {
+        let raw = serde_json::Map::from_iter([
+            (key.to_owned(), json!([value])),
+            ("headName".to_owned(), json!([head_name])),
+        ]);
+        let names = serde_json::Map::from_iter([
+            (key.to_owned(), json!(label)),
+            ("headNameSub".to_owned(), json!("数据来源")),
+        ]);
+        let field = json!({
+            "returnCode": key,
+            "returnName": label,
+            "dateGranularity": "DAY",
+            "unitName": unit
+        });
+        json!({
+            "code": "600396.SH",
+            "entityName": "华电辽能(600396.SH)",
+            "dataTypeEnum": "HQ",
+            "rawTable": raw,
+            "nameMap": names,
+            "field": field.clone(),
+            "fieldSet": [field],
+            "entityTagDTO": entity()
+        })
+    }
+
+    fn auction_shape_failure(tables: Vec<serde_json::Value>) -> String {
+        let client = EastmoneyMxClient::with_transport(
+            "mkt_test_key",
+            FixtureTransport::new(vec![envelope("auction-shape", tables)]),
+        )
+        .unwrap();
+        match client.diagnose_opening_auction(&instrument(), &IsoDate::new("2026-09-21").unwrap()) {
+            Err(EastmoneyError::Protocol(message)) => message,
+            Err(other) => panic!("expected a protocol failure, got {other}"),
+            Ok(_) => panic!("expected a protocol failure, got an admitted batch"),
+        }
+    }
+
+    #[test]
+    fn opening_auction_shape_failure_names_the_observed_tables() {
+        // The 2026-09-21 answer: two single-metric tables dated today, one of
+        // them without a declared amount unit, plus a two-metric table whose
+        // source date is the previous trading day.
+        let split = auction_shape_failure(vec![
+            dated_hq_metric_table(
+                "开盘集合竞价成交量",
+                "AUC_VOLUME_010000_AUC_VOLUME_99",
+                Some("股"),
+                "24100",
+                "2026-09-21 11:39",
+            ),
+            opening_auction_table("股"),
+            dated_hq_metric_table(
+                "开盘集合竞价成交额",
+                "JHJJCJE_f63_3",
+                None,
+                "30341900.00",
+                "2026-09-21 11:39",
+            ),
+        ]);
+        assert!(split.contains("3 tables"), "{split}");
+        assert!(
+            split.contains("HQ[开盘集合竞价成交量(股)] @2026-09-21 11:39"),
+            "{split}"
+        );
+        assert!(
+            split.contains("HQ[开盘集合竞价成交额(no unit)] @2026-09-21 11:39"),
+            "{split}"
+        );
+        assert!(
+            split.contains("untyped[开盘集合竞价成交量(股), 开盘集合竞价成交额(元)] @2026-08-14"),
+            "{split}"
+        );
+
+        // A repeated table is a different fault, and the message says so.
+        let duplicate = auction_shape_failure(vec![
+            opening_auction_table("股"),
+            opening_auction_table("股"),
+        ]);
+        assert!(duplicate.contains("2 tables"), "{duplicate}");
+        assert!(!duplicate.contains("HQ["), "{duplicate}");
     }
 
     fn breadth_table(fields: &[(&str, &str, &str)], return_code: &str) -> serde_json::Value {

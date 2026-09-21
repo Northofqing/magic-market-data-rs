@@ -109,6 +109,13 @@ const HITHINK_SECURITY_METADATA_SCOPE: &str = "1..=32 unique A-share equities, s
 const HITHINK_AUCTIONS_SCOPE: &str = "1..=100 unique A-share equities; current official Fuyao stage=final closed auction snapshot diagnostic; provider response assembly time is observed_at while trading date, source_at and directional unmatched queues remain absent";
 const HITHINK_AUCTIONS_BLOCKER: &str = "Fuyao current auction snapshots omit the exact trading date, provider source time and directional unmatched bid/ask quantities; separate benchmark and calendar dates are not bound to snapshot records";
 const HITHINK_CURRENT_AUCTION_OBSERVATIONS_SCOPE: &str = "1..=100 unique A-share equities; explicit live/final current Fuyao auction observations preserving nullable values and signed directionless auction_unmatched; response assembly time is observed_at only";
+/// The Miaoxiang opening-auction admission rested on one fixed query returning
+/// one table with both metrics. On 2026-09-21 that query returned three tables
+/// and no single table proved both units on the requested date, so the answer
+/// cardinality is not a production contract. The admitted auction path is
+/// HITHINK `CurrentAuctionObservations`; see
+/// `docs/superpowers/specs/2026-09-21-miaoxiang-auction-answer-shape-design.md`.
+const MIAOXIANG_AUCTION_BLOCKER: &str = "natural-language answer cardinality is not stable within one session; the admitted one-table shape was not reproduced on 2026-09-21";
 const JIN10_ECONOMIC_RELEASE_OBSERVATIONS_SCOPE: &str = "at most 20 public type-1 structured economic-release observations found in Jin10's current bounded mixed flash window; optional exact source country; complete means the fetched window was fully validated, not a complete day or calendar";
 pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.request";
 pub const REALTIME_QUOTES_RECORD_SCHEMA: &str = "magic.market.quote";
@@ -1151,11 +1158,12 @@ fn register_extended_handlers(
         )?;
 
         let auctions = mx.clone();
-        registry.register_handler(
-            admitted(
+        registry.register_diagnostic_handler(
+            blocked(
                 Operation::Auctions,
                 "EastmoneyMiaoxiang",
                 "one equity and exact source date; one-response opening-auction matched volume in shares and amount in CNY; Level-2 fields remain null",
+                MIAOXIANG_AUCTION_BLOCKER,
             ),
             move |command| {
                 let request: AuctionDiagnosticRequest =
@@ -1207,11 +1215,11 @@ fn register_extended_handlers(
                 "one Shanghai/Shenzhen equity; latest bounded daily main/super-large/large/medium/small net flow in CNY",
                 "EASTMONEY_API_KEY or MX_APIKEY is not configured; source methodology and serial live stability remain repository-unadmitted",
             ),
-            runtime_unavailable(
+            blocked(
                 Operation::Auctions,
                 "EastmoneyMiaoxiang",
                 "one equity and exact source date; one-response opening-auction matched volume in shares and amount in CNY; Level-2 fields remain null",
-                "EASTMONEY_API_KEY or MX_APIKEY is not configured",
+                "EASTMONEY_API_KEY or MX_APIKEY is not configured; natural-language answer cardinality is not stable within one session",
             ),
             runtime_unavailable(
                 Operation::MarketBreadth,
@@ -6069,13 +6077,19 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 62);
+        assert_eq!(admitted.len(), 61);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
             .filter(|operation| !admitted.contains(operation))
             .collect::<Vec<_>>();
-        assert_eq!(blocked, vec![Operation::EconomicCalendar]);
+        // `Auctions` has no admitted provider: the complete Core Level-2
+        // contract was never admitted, and the narrow Miaoxiang observation
+        // that was its only admitted route is now diagnostic only.
+        assert_eq!(
+            blocked,
+            vec![Operation::Auctions, Operation::EconomicCalendar]
+        );
         let t0 = capabilities
             .iter()
             .find(|capability| capability.operation == Operation::T0Evidence)
@@ -6102,7 +6116,6 @@ mod tests {
         assert!(diagnostic.contains(&Operation::HistoricalBars));
         assert!(diagnostic.contains(&Operation::EconomicCalendar));
         for operation in [
-            Operation::Auctions,
             Operation::FuturesDelivery,
             Operation::MarketRankings,
             Operation::MarketBreadth,
@@ -6207,20 +6220,34 @@ mod tests {
         );
         assert!(!fred_schedule.diagnostic_available);
 
-        for operation in [Operation::Auctions, Operation::MarketBreadth] {
-            let capability = capabilities
-                .iter()
-                .find(|capability| {
-                    capability.operation == operation && capability.provider == "EastmoneyMiaoxiang"
-                })
-                .expect("missing admitted Miaoxiang registration");
-            assert!(capability.repository_admitted);
-            assert_eq!(
-                capability.runtime_available,
-                eastmoney_mx_key_is_configured()
-            );
-            assert!(!capability.diagnostic_available);
-        }
+        let breadth = capabilities
+            .iter()
+            .find(|capability| {
+                capability.operation == Operation::MarketBreadth
+                    && capability.provider == "EastmoneyMiaoxiang"
+            })
+            .expect("missing admitted Miaoxiang breadth registration");
+        assert!(breadth.repository_admitted);
+        assert_eq!(breadth.runtime_available, eastmoney_mx_key_is_configured());
+        assert!(!breadth.diagnostic_available);
+
+        let miaoxiang_auctions = capabilities
+            .iter()
+            .find(|capability| {
+                capability.operation == Operation::Auctions
+                    && capability.provider == "EastmoneyMiaoxiang"
+            })
+            .expect("missing Miaoxiang auction diagnostic registration");
+        assert!(!miaoxiang_auctions.repository_admitted);
+        assert!(!miaoxiang_auctions.runtime_available);
+        assert_eq!(
+            miaoxiang_auctions.diagnostic_available,
+            eastmoney_mx_key_is_configured()
+        );
+        assert!(miaoxiang_auctions
+            .blocker
+            .as_deref()
+            .is_some_and(|blocker| blocker.contains("cardinality")));
 
         let emquant_bars = capabilities
             .iter()
@@ -6272,8 +6299,10 @@ mod tests {
             hithink_key_is_configured()
         );
 
+        // `Auctions` is deliberately absent: with the Miaoxiang observation
+        // demoted, no provider holds an admitted `Auctions` capability, so the
+        // operation has no admitted route to fall back to.
         let unadmitted_with_operation_route = [
-            (Operation::Auctions, "HithinkFinance", "EastmoneyMiaoxiang"),
             (Operation::EconomicSeries, "Imf", "WorldBank"),
             (Operation::FundFlowSeries, "EastmoneyMiaoxiang", "Eastmoney"),
             (Operation::HistoricalBars, "Baidu", "Tencent"),
@@ -6283,13 +6312,31 @@ mod tests {
             (Operation::RealtimeQuotes, "EmQuant", "Tencent"),
             (Operation::GlobalNews, "SecuritiesTimes", "Cls"),
         ];
+        // Unadmitted capabilities whose own operation has no admitted route at
+        // all, so they cannot join the list above: both `Auctions`
+        // registrations, because the complete Core Level-2 contract was never
+        // admitted and the narrow Miaoxiang observation that was its only
+        // admitted route is now diagnostic only, plus `EconomicCalendar`.
+        let unadmitted_without_an_admitted_route = [
+            "auctions/EastmoneyMiaoxiang",
+            "auctions/HithinkFinance",
+            "economic_calendar/Jin10",
+        ];
+        let unadmitted = capabilities
+            .iter()
+            .filter(|capability| !capability.repository_admitted)
+            .map(|capability| format!("{}/{}", capability.operation.as_str(), capability.provider))
+            .collect::<Vec<_>>();
         assert_eq!(
-            capabilities
-                .iter()
-                .filter(|capability| !capability.repository_admitted)
-                .count(),
-            unadmitted_with_operation_route.len() + 1
+            unadmitted.len(),
+            unadmitted_with_operation_route.len() + unadmitted_without_an_admitted_route.len()
         );
+        for expected in unadmitted_without_an_admitted_route {
+            assert!(
+                unadmitted.contains(&expected.to_owned()),
+                "missing fail-closed {expected} registration"
+            );
+        }
         for (operation, provider, admitted_operation_provider) in unadmitted_with_operation_route {
             assert!(
                 capabilities.iter().any(|capability| {
