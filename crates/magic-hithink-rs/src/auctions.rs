@@ -288,16 +288,23 @@ fn normalize_observations(
             ))
         }
     };
+    // BR-060 fails the whole batch for both of these, but they are different
+    // faults and must not share one message. A `final` snapshot whose phase is
+    // not `closed` contradicts itself; that has nothing to do with the stage the
+    // caller asked for, and reporting it as a request/stage conflict sends the
+    // reader looking at the request instead of the response.
+    if data_status == CurrentAuctionDataStatus::Final && response.data.auction_phase != "closed" {
+        return Err(HithinkError::Protocol(
+            "final auction response reports a non-closed auction phase".into(),
+        ));
+    }
     let state_matches_request = matches!(
         (requested_stage, data_status),
         (CurrentAuctionStage::Live, CurrentAuctionDataStatus::Live)
             | (CurrentAuctionStage::Final, CurrentAuctionDataStatus::Final)
             | (_, CurrentAuctionDataStatus::Suspended)
     );
-    if !state_matches_request
-        || (data_status == CurrentAuctionDataStatus::Final
-            && response.data.auction_phase != "closed")
-    {
+    if !state_matches_request {
         return Err(HithinkError::Protocol(
             "auction response state contradicts the requested stage".into(),
         ));
@@ -547,6 +554,53 @@ mod tests {
             client.probe_auction_snapshots(&[instrument("600519")]),
             Err(HithinkError::Protocol(_))
         ));
+    }
+
+    #[test]
+    fn self_contradictory_final_state_is_not_reported_as_a_stage_conflict() {
+        // BR-060 rejects both of these, so the typed variant cannot tell them
+        // apart; the message is the only thing that separates a response that
+        // contradicts itself from one that merely mismatches the request.
+        let contradictory = HithinkClient::with_transport(
+            "test_key",
+            FixtureTransport::new(vec![success(
+                "auction-final-matching",
+                json!({
+                    "timestamp": 1787386686058_i64,
+                    "auction_phase": "matching",
+                    "data_status": "final",
+                    "total": 1,
+                    "item": [item("600519.SH", "600519")]
+                }),
+            )]),
+        )
+        .unwrap();
+        match contradictory
+            .current_auction_observations(&[instrument("600519")], CurrentAuctionStage::Final)
+        {
+            Err(HithinkError::Protocol(message)) => assert_eq!(
+                message,
+                "final auction response reports a non-closed auction phase"
+            ),
+            _ => panic!("expected a Protocol error for a self-contradictory final state"),
+        }
+
+        // A closed final snapshot requested as `live` is a stage conflict and
+        // keeps the request-facing message.
+        let mismatched = HithinkClient::with_transport(
+            "test_key",
+            FixtureTransport::new(vec![response(vec![item("600519.SH", "600519")])]),
+        )
+        .unwrap();
+        match mismatched
+            .current_auction_observations(&[instrument("600519")], CurrentAuctionStage::Live)
+        {
+            Err(HithinkError::Protocol(message)) => assert_eq!(
+                message,
+                "auction response state contradicts the requested stage"
+            ),
+            _ => panic!("expected a Protocol error for a stage conflict"),
+        }
     }
 
     #[test]
