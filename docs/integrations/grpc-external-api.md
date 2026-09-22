@@ -1128,6 +1128,15 @@ Provider 的实时行情路由改为有界并发竞速：首个非空结果胜�
 `2026-09-17.1` 闭合 `provider_attempts` 的 Provider/outcome/reason/ordinal/布尔组合合同，
 超过 16 项时整体安全拒绝而不截断；bundle metadata 可携带与真实 Health 完全对应的
 deployment build identity 及两个 SHA-256 的精确哈希口径。
+`2026-09-22.1` 把 `HithinkFinance` 被拒绝的 HTTP status 按状态分类：`401`/`403` 为
+`PERMISSION_DENIED`/`provider_authentication_rejected`（不重试），`429` 为
+`RESOURCE_EXHAUSTED`/`provider_rate_limited`（重试），`5xx` 保持
+`UNAVAILABLE`/`provider_unavailable`（重试），其余状态为
+`FAILED_PRECONDITION`/`external_query_rejected`（不重试）。此前这些状态一律上报为
+`provider_unavailable`，把限流与源端故障混为一谈。闭合 reason code 集合不变，仍在集合内的
+`provider_attempts` reason 随之改变（`rate_limited`、`authentication_rejected`、
+`query_rejected`）；Fuyao 在信封内的 `2001`/`2003`、`4001`、`1001..1004`、`3001`、`3004`、
+`3002`、`5001..5003` 分类与准入状态均不变，protobuf wire 字段未变化。
 
 ## 12. 客户端代码生成
 

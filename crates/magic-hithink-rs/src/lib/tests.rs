@@ -752,3 +752,48 @@ fn unsupported_families_and_shapes_fail_before_transport() {
     ));
     assert!(observed.requests.lock().unwrap().is_empty());
 }
+
+/// Transport that rejects every request with one HTTP status.
+#[derive(Clone)]
+pub(crate) struct StatusTransport(u16);
+
+impl HttpTransport for StatusTransport {
+    fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, TransportError> {
+        Ok(HttpResponse::new(self.0, request.url(), None, Vec::new()))
+    }
+}
+
+/// Transport that never reaches a response, so no status exists to classify.
+#[derive(Clone)]
+pub(crate) struct OutageTransport;
+
+impl HttpTransport for OutageTransport {
+    fn execute(&self, _request: &HttpRequest) -> Result<HttpResponse, TransportError> {
+        Err(TransportError::Network("fixture outage".into()))
+    }
+}
+
+#[test]
+fn a_rejected_http_status_keeps_its_status_instead_of_becoming_a_transport_failure() {
+    let client = HithinkClient::with_transport("test_key", StatusTransport(429)).unwrap();
+    let error = client
+        .probe_market_statistics(&[instrument(Exchange::Shanghai, "600519")])
+        .unwrap_err();
+    assert!(matches!(error, HithinkError::HttpStatus(429)));
+    assert_eq!(
+        error.to_string(),
+        "HITHINK request rejected with HTTP status 429"
+    );
+}
+
+#[test]
+fn a_transport_failure_without_a_status_keeps_the_transport_carrier() {
+    let client = HithinkClient::with_transport("test_key", OutageTransport).unwrap();
+    let error = client
+        .probe_market_statistics(&[instrument(Exchange::Shanghai, "600519")])
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        HithinkError::Transport(TransportError::Network(_))
+    ));
+}

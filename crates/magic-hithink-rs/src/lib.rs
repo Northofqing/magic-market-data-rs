@@ -116,6 +116,8 @@ pub enum HithinkError {
     NotReady { request_id: String },
     #[error(transparent)]
     Transport(#[from] TransportError),
+    #[error("HITHINK request rejected with HTTP status {0}")]
+    HttpStatus(u16),
     #[error("HITHINK response decoding failed: {0}")]
     Decode(String),
     #[error("HITHINK protocol error: {0}")]
@@ -421,6 +423,17 @@ impl HithinkClient {
     }
 
     fn execute_json<T: DeserializeOwned>(
+        &self,
+        request: &HttpRequest,
+    ) -> Result<Success<T>, HithinkError> {
+        // Every transport failure leaves the request seam through one conversion, so a
+        // rejected HTTP status cannot be flattened back into an undifferentiated
+        // transport failure by a later `?`.
+        self.execute_request(request)
+            .map_err(HithinkError::lift_http_status)
+    }
+
+    fn execute_request<T: DeserializeOwned>(
         &self,
         request: &HttpRequest,
     ) -> Result<Success<T>, HithinkError> {
@@ -1562,6 +1575,21 @@ fn now() -> Result<String, HithinkError> {
 
 fn tracker_error(message: &str) -> HithinkError {
     HithinkError::Transport(TransportError::Internal(message.into()))
+}
+
+impl HithinkError {
+    /// Retains a rejected HTTP status as its own typed fact.
+    ///
+    /// The transport reports every non-`200`, non-`3xx` response through one
+    /// variant. Collapsing them would make a throttled caller indistinguishable
+    /// from an outage, so the status is lifted out and left for the caller to
+    /// classify. Every other transport failure is returned unchanged.
+    fn lift_http_status(self) -> Self {
+        match self {
+            Self::Transport(TransportError::HttpStatus { status }) => Self::HttpStatus(status),
+            other => other,
+        }
+    }
 }
 
 #[cfg(test)]

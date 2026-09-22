@@ -5223,6 +5223,17 @@ fn map_hithink_error(operation: Operation, error: &HithinkError) -> ServiceError
             ProviderFailureKind::Unavailable,
             "category=transport".into(),
         ),
+        // A rejected status is classified exactly as `map_cls_error` classifies the
+        // same fact, so one HTTP status means one thing at the boundary.
+        HithinkError::HttpStatus(status) => {
+            let kind = match status {
+                401 | 403 => ProviderFailureKind::AuthenticationRejected,
+                429 => ProviderFailureKind::RateLimited,
+                500..=599 => ProviderFailureKind::Unavailable,
+                _ => ProviderFailureKind::QueryRejected,
+            };
+            (kind, format!("http_status={status}"))
+        }
         HithinkError::Decode(_) => (
             ProviderFailureKind::ResponseInvalid,
             "category=decode".into(),
@@ -6965,6 +6976,49 @@ mod tests {
                 provider_reason,
                 ..
             } if provider_reason == "category=not_ready request_id=hithink-not-ready"
+        ));
+        // A rejected Fuyao status keeps its own classification. Folding these into
+        // `provider_unavailable` is what made a throttle look like an outage.
+        assert!(matches!(
+            provider_error(Operation::MarketStatistics, HithinkError::HttpStatus(429)),
+            ServiceError::ProviderFailure {
+                provider,
+                kind: ProviderFailureKind::RateLimited,
+                provider_reason,
+                ..
+            } if provider == "HithinkFinance" && provider_reason == "http_status=429"
+        ));
+        assert!(matches!(
+            provider_error(Operation::MarketStatistics, HithinkError::HttpStatus(401)),
+            ServiceError::ProviderFailure {
+                kind: ProviderFailureKind::AuthenticationRejected,
+                provider_reason,
+                ..
+            } if provider_reason == "http_status=401"
+        ));
+        assert!(matches!(
+            provider_error(Operation::MarketStatistics, HithinkError::HttpStatus(403)),
+            ServiceError::ProviderFailure {
+                kind: ProviderFailureKind::AuthenticationRejected,
+                provider_reason,
+                ..
+            } if provider_reason == "http_status=403"
+        ));
+        assert!(matches!(
+            provider_error(Operation::MarketStatistics, HithinkError::HttpStatus(503)),
+            ServiceError::ProviderFailure {
+                kind: ProviderFailureKind::Unavailable,
+                provider_reason,
+                ..
+            } if provider_reason == "http_status=503"
+        ));
+        assert!(matches!(
+            provider_error(Operation::MarketStatistics, HithinkError::HttpStatus(404)),
+            ServiceError::ProviderFailure {
+                kind: ProviderFailureKind::QueryRejected,
+                provider_reason,
+                ..
+            } if provider_reason == "http_status=404"
         ));
         assert!(matches!(
             provider_error(

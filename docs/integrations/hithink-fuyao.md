@@ -283,11 +283,23 @@ The gRPC composition maps safe structured outcomes as follows:
 | `2001`, `2003` | `provider_authentication_rejected` | false |
 | `4001` | `provider_rate_limited` | true |
 | `1001..1004`, `3001`, `3004` | `external_query_rejected` | false |
-| `3002`, `5001..5003`, network failure | `provider_unavailable` | true |
+| `3002`, `5001..5003` | `provider_unavailable` | true |
+| rejected HTTP `401`, `403` | `provider_authentication_rejected` | false |
+| rejected HTTP `429` | `provider_rate_limited` | true |
+| rejected HTTP `500..=599` | `provider_unavailable` | true |
+| any other rejected HTTP status | `external_query_rejected` | false |
+| network, TLS, redirect, media type or resource-limit failure | `provider_unavailable` | true |
 | decode, identity, pagination or evidence conflict | `provider_response_invalid` | false |
 
-Only the numeric code, safe `request_id` and closed category cross the external
-boundary. Provider free text and credentials do not.
+A rejected HTTP status is a fact about the request, not a general transport
+fault, so it is classified by status exactly as the registered `Cailianpress`
+HTTP-status policy classifies it. Before 2026-09-22 every rejected status was
+reported as `provider_unavailable`, which made a throttle indistinguishable from
+an outage at the external boundary. See the
+[status-classification design](../superpowers/specs/2026-09-22-hithink-http-status-classification-design.md).
+
+Only the numeric code or HTTP status, safe `request_id` and closed category
+cross the external boundary. Provider free text and credentials do not.
 
 ## Admission evidence
 
