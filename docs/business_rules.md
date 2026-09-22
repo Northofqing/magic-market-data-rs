@@ -1000,7 +1000,12 @@ timestamps and process clocks are telemetry only and must never become Provider
 
 Unary query telemetry is recorded once at the gRPC query seam as bounded
 process-lifetime aggregate counters and durations with no Provider, instrument,
-request-ID or payload labels. Successful queries do not emit per-request logs.
+request-ID or payload labels. Successful queries do not emit per-request logs. A
+query that fails closed at the seam emits exactly one bounded server-side record
+carrying the request ID, the operation and the reason code, and never the failure
+message: an arm whose caller-visible message is scrubbed or Provider-derived must
+stay diagnosable without copying that text into the log. A failure the caller owns
+and can already read verbatim is not such a record.
 The implementation uses only a monotonic clock and relaxed atomics on the query
 path; cancellation releases the in-flight gauge. Event telemetry reuses the
 existing `EventHub` state lock and adds no lock, exporter, listener, queue or
@@ -1029,8 +1034,8 @@ deterministic registration order. The exact request is unchanged on every
 attempt. A successful complete batch, including a truthful verified-empty batch,
 terminates the route immediately and is the only outcome that returns data.
 
-Two outcomes advance to the next candidate instead of terminating, because each
-is a fact about that candidate rather than about the request:
+Three outcomes advance to the next candidate instead of terminating, because
+each is a fact about that candidate rather than about the request:
 
 - A batch whose own quality state reports it incomplete. The registered
   completeness rules sanction a truncated best-effort batch as an explicit
@@ -1040,13 +1045,23 @@ is a fact about that candidate rather than about the request:
   candidates differ, so a candidate that declines one pool family must not deny
   the caller the candidates that serve it; it is recorded as a bounded
   `rejected`/`unsupported` attempt and the route continues.
+- A date the candidate's own source has not published. A source that publishes
+  only its current trading date cannot attest another date, which is a
+  limitation of that source rather than a defect in the request, so it is
+  recorded as a bounded `rejected`/`source_precondition` attempt and the route
+  continues. The candidate's own date guard is unchanged: it still refuses a
+  date whose evidence it cannot prove. This is deliberately not counted as a
+  scope decline, because a date **no** candidate can attest is an exhausted
+  route over candidates that do serve the operation, and the caller keeps the
+  bounded attempt trace of every candidate tried.
 
 Every other non-retryable failure still stops the route: invalid requests,
 authentication and permission failures, response/evidence conflicts and
 transport or protocol faults. A scope that every candidate declines stays that
-unchanged unsupported-scope error. Retryable availability, timeout and
-rate-limit failures advance as before. An explicit `preferred_provider` never
-falls through.
+unchanged unsupported-scope error. A date that every candidate declines stays a
+non-retryable failure, reported as the exhausted route above rather than as a
+stopped one. Retryable availability, timeout and rate-limit failures advance as
+before. An explicit `preferred_provider` never falls through.
 
 An exhausted route reports one bounded attempt per candidate it tried. An
 exhausted or stopped route returns only bounded safe typed Provider attempts; it

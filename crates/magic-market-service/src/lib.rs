@@ -552,12 +552,21 @@ impl OperationRegistry {
                     // speaking for the operation; the candidates that do can
                     // still answer, so it must not deny the caller their batch.
                     let scope_declined = matches!(error, ServiceError::Unsupported { .. });
+                    // A candidate that cannot attest this exact date is speaking
+                    // for itself rather than for the request: its own source has
+                    // not published the requested date, which says nothing about
+                    // the candidates that have. It advances the route like a
+                    // scope decline but is deliberately not counted as one,
+                    // because a date no candidate could attest is an exhausted
+                    // route and keeps the bounded attempt trace of every
+                    // candidate it tried.
+                    let source_precondition = matches!(error, ServiceError::FailedPrecondition(_));
                     if scope_declined {
                         declined_count += 1;
                         first_scope_decline.get_or_insert(error);
                     }
                     attempts.push(attempt);
-                    if !retryable && !scope_declined {
+                    if !retryable && !scope_declined && !source_precondition {
                         return Err(ServiceError::ProviderRouteFailure {
                             operation: Operation::LimitPools,
                             exhausted: false,
@@ -1470,7 +1479,7 @@ mod tests {
     }
 
     #[test]
-    fn non_retryable_limit_pool_failure_stops_with_safe_attempt() {
+    fn source_precondition_limit_pool_falls_through_to_an_attesting_provider() {
         let second_calls = Arc::new(AtomicUsize::new(0));
         let mut registry = OperationRegistry::all_unadmitted("missing");
         registry
@@ -1486,7 +1495,7 @@ mod tests {
                 },
                 |_| {
                     Err(ServiceError::FailedPrecondition(
-                        "invalid source date".to_owned(),
+                        "limit-pool source date does not match the requested date".to_owned(),
                     ))
                 },
             )
@@ -1505,11 +1514,118 @@ mod tests {
                 },
                 move |_| {
                     second_seen.fetch_add(1, Ordering::SeqCst);
-                    unreachable!("a non-retryable rejection must stop the route")
+                    Ok(QueryResult {
+                        provider: "Secondary".to_owned(),
+                        batch_id: "batch-upper".to_owned(),
+                        complete: true,
+                        observed_at: "2026-09-03T01:20:00Z".to_owned(),
+                        source_at: Some("2026-09-03".to_owned()),
+                        records: vec![payload()],
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
                 },
             )
             .unwrap();
 
+        // A candidate whose own source has not published the requested date is
+        // speaking for itself rather than for the request, so it must not deny
+        // the caller the candidate that can attest that date.
+        let result = registry
+            .execute(command(Operation::LimitPools, None))
+            .unwrap();
+        assert_eq!(result.provider, "Secondary");
+        assert!(result.complete);
+        assert_eq!(second_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn every_source_precondition_limit_pool_reports_an_exhausted_route() {
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        for provider in ["Primary", "Secondary"] {
+            registry
+                .register_handler(
+                    Capability {
+                        operation: Operation::LimitPools,
+                        repository_admitted: true,
+                        runtime_available: true,
+                        provider: provider.to_owned(),
+                        exact_scope: "exact-date limit pool".to_owned(),
+                        blocker: None,
+                        diagnostic_available: false,
+                    },
+                    |_| {
+                        Err(ServiceError::FailedPrecondition(
+                            "limit-pool source date does not match the requested date".to_owned(),
+                        ))
+                    },
+                )
+                .unwrap();
+        }
+
+        // A date no candidate can attest is an exhausted route, not a scope
+        // decline: every candidate was tried, and the caller keeps the bounded
+        // attempt trace that proves it.
+        let error = registry
+            .execute(command(Operation::LimitPools, None))
+            .unwrap_err();
+        let ServiceError::ProviderRouteFailure {
+            exhausted,
+            attempts,
+            ..
+        } = error
+        else {
+            panic!("expected a safe provider route failure");
+        };
+        assert!(exhausted);
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0].provider(), "Primary");
+        assert_eq!(attempts[1].provider(), "Secondary");
+        for attempt in &attempts {
+            assert_eq!(attempt.reason_code(), "source_precondition");
+            assert!(!attempt.retryable());
+        }
+    }
+
+    #[test]
+    fn invalid_request_limit_pool_failure_stops_the_route() {
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Primary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                |_| Err(ServiceError::InvalidRequest("bad request".to_owned())),
+            )
+            .unwrap();
+        let second_seen = second_calls.clone();
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::LimitPools,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Secondary".to_owned(),
+                    exact_scope: "exact-date limit pool".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_| {
+                    second_seen.fetch_add(1, Ordering::SeqCst);
+                    unreachable!("a request fault must stop the route")
+                },
+            )
+            .unwrap();
+
+        // The date-decline advance must not widen into "every non-retryable
+        // failure advances": a request fault is still the request's fault.
         let error = registry
             .execute(command(Operation::LimitPools, None))
             .unwrap_err();
@@ -1523,8 +1639,7 @@ mod tests {
         };
         assert!(!exhausted);
         assert_eq!(attempts.len(), 1);
-        assert_eq!(attempts[0].provider(), "Primary");
-        assert_eq!(attempts[0].reason_code(), "source_precondition");
+        assert_eq!(attempts[0].reason_code(), "invalid_request");
         assert!(!attempts[0].retryable());
         assert_eq!(second_calls.load(Ordering::SeqCst), 0);
     }

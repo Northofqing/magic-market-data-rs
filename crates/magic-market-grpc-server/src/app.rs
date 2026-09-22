@@ -131,7 +131,13 @@ where
         let result = tokio::time::timeout(self.blocking_deadline, task)
             .await
             .map_err(|_| Status::deadline_exceeded("blocking provider deadline exceeded"))?
-            .map_err(|_| Status::internal("blocking provider worker failed"))?
+            .map_err(|_| {
+                // A panicked or cancelled Provider worker is the one INTERNAL
+                // that never reaches status_from_error, so it needs its own
+                // record to be diagnosable at all.
+                log_service_failure(&request_id, operation, "blocking_worker");
+                Status::internal("blocking provider worker failed")
+            })?
             .map_err(|error| status_from_error(&request_id, operation, error))?;
 
         Ok(Response::new(v1::QueryResponse {
@@ -439,6 +445,41 @@ pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
     }
 }
 
+/// Records one bounded server-side failure for operators.
+///
+/// The record carries a stable event identity, the request ID, the operation and
+/// the reason code, and deliberately never the failure message. Several of the
+/// arms that call this hand the caller a scrubbed or Provider-derived message, so
+/// the caller cannot reconstruct what happened from the response alone, and until
+/// this record existed such a request could leave no server-side trace at all.
+///
+/// `stage` is the field name `provider_failure` and `provider_route_failure` already
+/// use for their reason code, so every server-side refusal greps as one vocabulary.
+fn log_service_failure(request_id: &str, operation: Operation, reason_code: &str) {
+    logging::event(
+        Level::Error,
+        "grpc_server",
+        "service_failure",
+        format_args!(
+            "{}",
+            service_failure_record(request_id, operation, reason_code)
+        ),
+    );
+}
+
+/// The exact body of a `service_failure` record.
+///
+/// Split from `log_service_failure` so the bounded shape is directly testable:
+/// `logging::event` writes to the process stderr and has no injectable sink.
+fn service_failure_record(request_id: &str, operation: Operation, reason_code: &str) -> String {
+    format!(
+        "stage={} request_id={:?} operation={}",
+        reason_code,
+        safe_log_value(request_id, 128),
+        operation.as_str(),
+    )
+}
+
 fn status_from_error(request_id: &str, operation: Operation, error: ServiceError) -> Status {
     let (
         code,
@@ -517,17 +558,26 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
             None,
             Vec::new(),
         ),
-        ServiceError::Unavailable { reason, .. } => (
-            Code::Unavailable,
-            "provider_unavailable",
-            true,
-            reason,
-            String::new(),
-            String::new(),
-            String::new(),
-            None,
-            Vec::new(),
-        ),
+        ServiceError::Unavailable { reason, .. } => {
+            // `provider_unavailable` is the one reason code two arms produce, and
+            // only the other one (`ProviderFailure { kind: Unavailable }`) recorded
+            // it. A Provider transport outage therefore reached the caller as a
+            // retryable `UNAVAILABLE` while leaving the operator nothing: measured
+            // on 2026-09-22, a three-hour Eastmoney outage affecting four
+            // operations wrote zero records.
+            log_service_failure(request_id, operation, "provider_unavailable");
+            (
+                Code::Unavailable,
+                "provider_unavailable",
+                true,
+                reason,
+                String::new(),
+                String::new(),
+                String::new(),
+                None,
+                Vec::new(),
+            )
+        }
         ServiceError::ProviderFailure {
             operation: rejected_operation,
             provider,
@@ -643,45 +693,57 @@ fn status_from_error(request_id: &str, operation: Operation, error: ServiceError
                 attempts,
             )
         }
-        ServiceError::FailedPrecondition(message) => (
-            Code::FailedPrecondition,
-            "source_precondition_failed",
-            false,
-            message,
-            String::new(),
-            String::new(),
-            String::new(),
-            None,
-            Vec::new(),
-        ),
+        ServiceError::FailedPrecondition(message) => {
+            log_service_failure(request_id, operation, "source_precondition_failed");
+            (
+                Code::FailedPrecondition,
+                "source_precondition_failed",
+                false,
+                message,
+                String::new(),
+                String::new(),
+                String::new(),
+                None,
+                Vec::new(),
+            )
+        }
         ServiceError::InvalidEvidence {
             provider,
             evidence_code,
             evidence_field,
             record_index,
             message,
-        } => (
-            Code::FailedPrecondition,
-            "invalid_evidence",
-            false,
-            message,
-            provider,
-            evidence_code,
-            evidence_field,
-            record_index,
-            Vec::new(),
-        ),
-        ServiceError::Internal(_) => (
-            Code::Internal,
-            "internal",
-            false,
-            "internal service error".to_owned(),
-            String::new(),
-            String::new(),
-            String::new(),
-            None,
-            Vec::new(),
-        ),
+        } => {
+            log_service_failure(request_id, operation, "invalid_evidence");
+            (
+                Code::FailedPrecondition,
+                "invalid_evidence",
+                false,
+                message,
+                provider,
+                evidence_code,
+                evidence_field,
+                record_index,
+                Vec::new(),
+            )
+        }
+        ServiceError::Internal(_) => {
+            // The caller receives a scrubbed message, so this record is the only
+            // place the failure is visible at all. The message itself stays out of
+            // the log: it is not repository-authored text (BR-057).
+            log_service_failure(request_id, operation, "internal");
+            (
+                Code::Internal,
+                "internal",
+                false,
+                "internal service error".to_owned(),
+                String::new(),
+                String::new(),
+                String::new(),
+                None,
+                Vec::new(),
+            )
+        }
     };
     if provider_attempts.len() > MAX_PROVIDER_ATTEMPTS {
         logging::event(
@@ -1179,5 +1241,127 @@ mod tests {
                 operation.as_str()
             );
         }
+    }
+
+    #[test]
+    fn service_failure_record_names_the_request_operation_and_stage() {
+        assert_eq!(
+            service_failure_record(
+                "request-1",
+                Operation::LimitPools,
+                "source_precondition_failed"
+            ),
+            "stage=source_precondition_failed request_id=\"request-1\" operation=limit_pools"
+        );
+        // The request ID is caller-supplied, so it is bounded and stripped of
+        // control characters like every other logged identity.
+        assert_eq!(
+            service_failure_record("ab\r\ncd", Operation::GlobalNews, "internal"),
+            "stage=internal request_id=\"abcd\" operation=global_news"
+        );
+    }
+
+    #[test]
+    fn internal_failure_is_scrubbed_for_the_caller_and_never_logged_verbatim() {
+        // A message an operator must never see echoed into a log record: it is
+        // Provider-derived text, which BR-057 keeps out of logs.
+        let upstream = "Eastmoney protocol error: limit-pool source qdate 20260922";
+        let status = status_from_error(
+            "request-internal",
+            Operation::LimitPools,
+            ServiceError::Internal(upstream.to_owned()),
+        );
+
+        assert_eq!(status.code(), Code::Internal);
+        assert_eq!(status.message(), "internal service error");
+        assert!(!status.message().contains("qdate"));
+        // The record is the only place this failure is visible at all, and it
+        // stays bounded: classification and correlation key, no message.
+        let record = service_failure_record("request-internal", Operation::LimitPools, "internal");
+        assert_eq!(
+            record,
+            "stage=internal request_id=\"request-internal\" operation=limit_pools"
+        );
+        assert!(!record.contains("qdate"));
+        assert!(!record.contains(upstream));
+    }
+
+    #[test]
+    fn recorded_service_failure_arms_keep_their_caller_visible_status() {
+        // These arms gained a record and nothing else: the status the caller
+        // already received must be byte-identical.
+        let precondition = status_from_error(
+            "request-precondition",
+            Operation::LimitPools,
+            ServiceError::FailedPrecondition("source date does not match".to_owned()),
+        );
+        assert_eq!(precondition.code(), Code::FailedPrecondition);
+        assert_eq!(precondition.message(), "source date does not match");
+        let detail = v1::ErrorDetail::decode(
+            precondition
+                .metadata()
+                .get_bin(ERROR_DETAIL_METADATA_KEY)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(detail.reason_code, "source_precondition_failed");
+        assert!(!detail.retryable);
+
+        // A request fault the caller owns stays silent by design, so a
+        // misbehaving client cannot become the server's log volume.
+        let invalid = status_from_error(
+            "request-invalid",
+            Operation::LimitPools,
+            ServiceError::InvalidRequest("payload is not valid JSON".to_owned()),
+        );
+        assert_eq!(invalid.code(), Code::InvalidArgument);
+        assert_eq!(invalid.message(), "payload is not valid JSON");
+    }
+
+    #[test]
+    fn provider_unavailable_is_recorded_from_both_arms_that_produce_it() {
+        // `provider_unavailable` is the only reason code two arms produce, and
+        // only the `ProviderFailure` arm recorded it. An operator filtering on the
+        // reason code must see a record whichever arm fired, and the caller must
+        // receive the same status either way.
+        let reason =
+            "HTTPS transport error: https://push2.eastmoney.com/api/qt/clist/get attempt 3";
+        let transport = status_from_error(
+            "request-transport",
+            Operation::ProviderTopNRankings,
+            ServiceError::Unavailable {
+                operation: Operation::ProviderTopNRankings,
+                reason: reason.to_owned(),
+            },
+        );
+        assert_eq!(transport.code(), Code::Unavailable);
+        assert_eq!(transport.message(), reason);
+        let detail = v1::ErrorDetail::decode(
+            transport
+                .metadata()
+                .get_bin(ERROR_DETAIL_METADATA_KEY)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(detail.reason_code, "provider_unavailable");
+        assert!(detail.retryable);
+
+        // The record is bounded: the endpoint and the upstream text stay out of it.
+        let record = service_failure_record(
+            "request-transport",
+            Operation::ProviderTopNRankings,
+            "provider_unavailable",
+        );
+        assert_eq!(
+            record,
+            "stage=provider_unavailable request_id=\"request-transport\" \
+             operation=provider_top_n_rankings"
+        );
+        assert!(!record.contains("clist"));
+        assert!(!record.contains("HTTPS"));
     }
 }
