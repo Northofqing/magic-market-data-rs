@@ -10,7 +10,7 @@ unadmitted Provider never changes Provider identity after a failure.
 | Unadmitted route | Existing same-Provider interface | Admission result | Explicit admitted operation route |
 | --- | --- | --- | --- |
 | `HithinkFinance / Auctions` | Fuyao `/api/a-share/auction/snapshot` exists. `/api/a-share/auction/short-term-benchmark` and `/api/a-share/calendar/trading-days` also expose dates, but neither date is bound to a snapshot record. | Keep diagnostic: the snapshot omits its trading date, source time and directional unmatched queues. | None. The `EastmoneyMiaoxiang` narrow exact-date auction was the alternative until 2026-09-21, when it stopped reproducing its admitted one-table answer shape; see the next row. |
-| `EastmoneyMiaoxiang / Auctions` | The fixed Miaoxiang Skills query exists and returned the correct volume and amount, but on 2026-09-21 it answered with three tables instead of one, and no single table carried both metrics with source-declared units on the requested date. | Keep diagnostic: the one-table answer cardinality the admission rested on is not stable within one session. | No admitted `Auctions` route. `CurrentAuctionObservations / HithinkFinance` is the admitted current-auction observation operation and is not a full `Auctions` substitute. |
+| `EastmoneyMiaoxiang / Auctions` | The fixed Miaoxiang Skills query exists and returns the correct volume and amount. It answers a past trading date with exactly one table carrying both metrics with source-declared units on the requested date, and the current trading date with two per-metric `HQ` tables plus the previous day's `DATA_BROWSER` table in place of the single one. | Keep diagnostic: the one-table shape is returned only for a past trading date, and some dates spell the amount as a decimal the all-digits parser rejects. | No admitted `Auctions` route. `CurrentAuctionObservations / HithinkFinance` is the admitted current-auction observation operation and is not a full `Auctions` substitute. |
 | `Jin10 / EconomicCalendar` | The public flash interface still exposes bounded release-related flashes, but Jin10 ended its free calendar/API embedding service on 2025-12-01. | Keep diagnostic: a latest-flash window cannot prove a complete calendar. | `EconomicReleaseObservations / Jin10` exposes already-published structured rows; `EconomicReleaseSchedule / Fred` exposes official date-only release schedules. Neither is a complete Jin10 calendar, and both retain their own Provider identity. |
 | `Imf / EconomicSeries` | The legacy DataMapper path returns HTTP 403. The official replacement is SDMX 2.1/3.0 and its Swagger exploration requires a beta portal account. | Keep blocked until an authenticated, versioned IMF dataflow/key and observation contract is available. | No equivalent IMF-series substitute. `Fred`, `Nbs`, `Pbc` and `WorldBank` are admitted only when the caller intentionally requests those different datasets. |
 | `EastmoneyMiaoxiang / FundFlowSeries` | The fixed Miaoxiang Skills query exists and returns the five buckets, but the natural-language table/cardinality contract and serial stability are not proved. | Keep diagnostic. | `Eastmoney` public fund-flow series. |
@@ -46,8 +46,12 @@ not authorize relabeling one Provider or dataset as another.
 `EastmoneyMiaoxiang` for the exact-date narrow `Auctions` contract was in that
 list. On 2026-09-21 the identical fixed query stopped reproducing the one-table
 answer shape the admission rested on, so the route was withdrawn and the
-operation now has no admitted Provider. See `docs/integrations/eastmoney-miaoxiang.md`
-and the Gate A design at
-`docs/superpowers/specs/2026-09-21-miaoxiang-auction-answer-shape-design.md`. This
+operation now has no admitted Provider. A 2026-09-22 round showed the one-table
+shape is returned for any past trading date and never for the current one, and
+that some dates spell the amount as a decimal the all-digits parser rejects. See
+`docs/integrations/eastmoney-miaoxiang.md`, the answer-shape design at
+`docs/superpowers/specs/2026-09-21-miaoxiang-auction-answer-shape-design.md` and
+the requested-date design at
+`docs/superpowers/specs/2026-09-22-miaoxiang-auction-requested-date-design.md`. This
 document is copied into the client bundle, so it links only to other bundled
 documents and names the rest by repository path.

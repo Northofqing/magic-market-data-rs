@@ -646,9 +646,14 @@ cardinality and observed unit metadata must match the requested diagnostic famil
 Opening-auction observations use one fixed query and, while admitted, one result
 table exposing source-returned volume in shares and amount in CNY. Matched price,
 previous close, unmatched queues, volume ratio and provider time remain null
-unless independently proved. That one-table shape is no longer reproducible: on
-2026-09-21 the same fixed query returned three tables and no single table proved
-both units on the requested date, so the family is diagnostic only and
+unless independently proved. That one-table shape is returned only for a **past
+trading date**: on 2026-09-22 the same fixed query answered six past dates with
+exactly one table carrying both metrics on the requested date, and answered the
+current trading date with two per-metric `HQ` tables plus the previous day's
+`DATA_BROWSER` table, so the current date can never satisfy the shape. A second,
+independent blocker is the amount spelling: the source returns `14312202.68` and
+`9427082.0`, which the all-digits auction parser rejects, while the breadth
+parser already accepts a zero fraction. So the family is diagnostic only and
 `MX_OPENING_AUCTION_ADMITTED` is false. Market-breadth production observations
 use one fixed response containing listed total, up/down/flat and limit-up/down counts;
 `valid = up + down + flat` and coverage are checked. One response proves

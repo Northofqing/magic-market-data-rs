@@ -49,8 +49,8 @@ counts, non-finite numbers or an incomplete response fail the whole request.
 
 `Auctions` was the second narrow production contract and intentionally permitted
 the Level-2-only fields to remain JSON `null`. It is no longer a production
-contract: the one-table answer shape its admission rested on stopped being
-reproducible, so it is now diagnostic only. See
+contract: the one-table answer shape its admission rested on is reproducible only
+for a past trading date, so it is now diagnostic only. See
 [Remaining diagnostic](#remaining-diagnostic). When the key is absent,
 `MarketBreadth` is runtime-unavailable and `Auctions` stays repository-unadmitted,
 rather than either being silently routed to a public quote or another provider.
@@ -110,8 +110,45 @@ message downstream of the one-table check, so exactly one table was returned
 then. The returned numbers were correct — `30,341,900 / 24,100 = 1259.0`, the
 same `600519.SH` auction volume, amount and price the admitted HITHINK
 `CurrentAuctionObservations` path returned in the same session — so the fault is
-answer shape, not data, credential or transport. Because cardinality was the
-property being claimed, `MX_OPENING_AUCTION_ADMITTED` was withdrawn.
+answer shape, not data, credential or transport. Because the one-table shape was
+the property being claimed, `MX_OPENING_AUCTION_ADMITTED` was withdrawn.
+
+The 2026-09-21 round attributed the two readings to within-session instability. A
+2026-09-22 round shows the shape is a function of the **requested date**, and that
+both readings are the current-day behaviour at two points in the publication
+cycle:
+
+| requested date | tables | shape |
+| --- | --- | --- |
+| `2026-09-22` (current trading day) | 3 | `HQ[成交量(股)]`, `DATA_BROWSER[成交量(股), 成交额(元)] @2026-09-21`, `HQ[成交额(no unit)]` |
+| each of `2026-09-21`, `-18`, `-17`, `-16`, `-15`, `-11` | 1 | `DATA_BROWSER[成交量(股), 成交额(元)]` on the requested date |
+
+Before the requested day is published the source holds only the previous trading
+day's `DATA_BROWSER` row, which is why 09:17 returned one table dated
+`2026-09-18`; after publication it adds the two `HQ` per-metric tables, which is
+why 11:39 returned three. The six past dates each return the admitted shape; the
+current date never does.
+
+Two of those six dates fail for a second, independent reason. The source spells
+the amount as a decimal when the value is not a plain whole number, and the
+auction parser requires every byte to be an ASCII digit:
+
+| date | volume | amount | accepted |
+| --- | --- | --- | --- |
+| `2026-09-21` | `24100` | `30341900` | yes |
+| `2026-09-18` | `11332` | `14312202.68` | no — fractional |
+| `2026-09-17` | `14000` | `17611720` | yes |
+| `2026-09-16` | `7400` | `9427082.0` | no — zero fraction |
+| `2026-09-15` | `15800` | `20239800` | yes |
+| `2026-09-11` | `32020` | `41150503` | yes |
+
+`9427082.0` is mathematically a whole number, and the breadth path accepts
+exactly that spelling through `parse_source_count` (`mx.rs:855`) — it is how
+breadth admits the `5544.0` listed total recorded above. The auction path's
+`parse_nonnegative_integer` (`mx.rs:838`) does not, so two parsers of one source
+disagree about what a whole number is. A live `Auctions` probe for `2026-09-18`
+therefore passes the cardinality check and then fails with `Miaoxiang opening
+auction amount is not a non-negative integer`.
 
 ## Remaining diagnostic
 
@@ -120,15 +157,18 @@ five-bucket result is available only as an explicit diagnostic because result
 cardinality and serial stability are not a production contract. It never
 replaces the admitted public Eastmoney `FundFlowSeries`/`MoneyFlows` path.
 
-`MX_OPENING_AUCTION_ADMITTED` is now `false` for the same reason: its
-natural-language answer cardinality is not stable within one session, and the
-admitted one-table shape was not reproduced on 2026-09-21. It is available only
-as an explicit diagnostic and never replaces the admitted HITHINK
-`CurrentAuctionObservations` path. Re-admission requires two bounded live probes
-at different times of day plus three serial loads, each returning exactly one
-table with both metrics, source-declared `股` and `元` and the requested date,
-plus a same-session repeat proving the cardinality is stable. See the
-[Gate A design](../superpowers/specs/2026-09-21-miaoxiang-auction-answer-shape-design.md).
+`MX_OPENING_AUCTION_ADMITTED` is now `false`: the admitted one-table shape is
+returned only for a past trading date, the current trading date returns a
+three-table split, and the amount spelling fails the all-digits parser on some
+dates even when the shape is right. It is available only as an explicit
+diagnostic and never replaces the admitted HITHINK `CurrentAuctionObservations`
+path. Re-admission requires six past trading dates in one round, each returning
+exactly one table with both metrics, source-declared `股` and `元` and the
+requested date, with the amount-spelling blocker resolved first and one
+current-day probe retained as the counter-example. See the
+[requested-date design](../superpowers/specs/2026-09-22-miaoxiang-auction-requested-date-design.md)
+and the
+[answer-shape design](../superpowers/specs/2026-09-21-miaoxiang-auction-answer-shape-design.md).
 
 Requests for CFFEX delivery returned no table. A requested five-minute K-line
 was returned at daily granularity. Requests for ranked securities returned an
