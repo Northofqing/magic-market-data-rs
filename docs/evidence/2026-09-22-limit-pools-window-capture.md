@@ -33,10 +33,13 @@ Boundaries as recorded by the capture itself:
 2026-09-22T09:27:08.538+08:00 ===== capture end =====
 ```
 
-The 9535 bytes the server wrote over those 14 minutes hold 36 records: 35
-`provider_route_failure` (all below) and one `provider_failure` —
-`stage=provider_response_invalid request_id="win-HithinkFinance-40"
-provider="HithinkFinance" provider_reason="category=decode"`.
+The 9535 bytes the server wrote over those 14 minutes hold 36 records: the 35
+`provider_route_failure` records transcribed below, and this one, the only other
+record the window produced:
+
+```text
+2026-09-22T09:27:08.538+08:00 SERVERLOG ts=2026-09-22T01:26:28.3748086Z level=ERROR target=grpc_server event=provider_failure stage=provider_response_invalid request_id="win-HithinkFinance-40" operation=limit_pools provider="HithinkFinance" provider_reason="category=decode"
+```
 
 The capture file also holds 83 probe-result lines, which are the capture's own
 reading of each call's status and are not server records: 41 for the unpinned
