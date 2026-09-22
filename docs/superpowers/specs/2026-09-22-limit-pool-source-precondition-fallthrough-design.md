@@ -66,10 +66,19 @@ level=ERROR target=grpc_server event=provider_route_failure
 stage=provider_route_stopped attempt_count=1 attempts=Eastmoney:source_precondition
 ```
 
+The capture those 35 lines are counted from is committed whole, with all 35
+records and the pinned per-candidate calls taken in the same window, as
+[`docs/evidence/2026-09-22-limit-pools-window-capture.md`](../../evidence/2026-09-22-limit-pools-window-capture.md).
+
+That artifact also dates the recovery more tightly than the monitor's report: the
+server's last stop is 09:24:44 and its first success is 09:25:04, so the boundary
+is 09:25 local rather than 09:30. The two are not reconciled here — a monitor
+reports the samples it took, not the server's first success.
+
 During the window Eastmoney's `qdate` is still the previous trading date, so the
 guard fires, the route stops at candidate 1, and the two candidates that could have
 answered are never called. After the open `qdate` becomes the requested date and the
-route self-heals — exactly the observed 09:30 recovery.
+route self-heals.
 
 The same guard fires for a past-date request, which is why a past trading date is a
 deterministic stand-in for a window that only recurs pre-open.
