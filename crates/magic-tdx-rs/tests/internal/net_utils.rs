@@ -413,3 +413,35 @@ fn context_fetch_fails_closed_on_transport_parse_and_empty_pages() {
     );
     assert!(empty.is_empty());
 }
+
+#[test]
+fn declares_rows_without_payload_matches_the_measured_liar_servers() {
+    // 2026-09-23 实测: 11 台服务器对 CMD_SECURITY_BARS 固定回 body 恰好 2 字节
+    // `20 03` (= 800), 一个行的字节都没有。
+    assert!(declares_rows_without_payload(&[0x20, 0x03]));
+
+    // 同一请求打到正常服务器是 17284 字节 / 800 行, 前两字节相同。
+    let mut healthy = vec![0x20, 0x03];
+    healthy.resize(17284, 0);
+    assert!(!declares_rows_without_payload(&healthy));
+
+    // 完整的 5 行响应 (600519 实测 body_len=109)。
+    let mut five_rows = vec![0x05, 0x00];
+    five_rows.resize(109, 0);
+    assert!(!declares_rows_without_payload(&five_rows));
+
+    // 声明 0 行的正常空响应走原有的空响应换台路径, 不算服务器故障。
+    assert!(!declares_rows_without_payload(&[0x00, 0x00]));
+
+    // 装得下一行就是能解码, 交给解析器判断 (哪怕行内容有问题)。
+    let mut one_row = vec![0x01, 0x00];
+    one_row.resize(18, 0);
+    assert!(!declares_rows_without_payload(&one_row));
+
+    // 声称有行却连 2 字节的计数都凑不齐, 同样是没有数据。
+    assert!(declares_rows_without_payload(&[]));
+    assert!(declares_rows_without_payload(&[0x05]));
+
+    // 声明了行数但装不下一行 —— 这正是 E2103 "row 0 is truncated" 的输入。
+    assert!(declares_rows_without_payload(&[0x28, 0x00, 0x00, 0x00]));
+}

@@ -15,6 +15,16 @@ use crate::protocol::types::*;
 use crate::sync;
 use crate::{logd, loge, logi, logw};
 
+/// 日K及以上周期拿到空响应时的换台次数 (历史行为, 分钟线不换)
+const EMPTY_RETRY_ATTEMPTS: usize = 3;
+
+/// 服务器谎报行数 (声明 N 行却一个字节都不给) 时的换台次数。
+///
+/// 一次调用连续撞上多台不供数的服务器是常态 —— 2026-09-23 实测 PRIMARY 十台
+/// 全部如此 —— 所以预算给足。每撞上一台就拉黑一台, 后续调用不会再撞同一台,
+/// 因此这个上限只影响一轮的收敛速度, 不会让调用方一直等下去。
+const SERVER_FAULT_ATTEMPTS: usize = 8;
+
 /// 缓存条目
 struct CacheEntry<T> {
     data: T,
@@ -698,15 +708,65 @@ impl TdxHqClient {
 
         // 日K线空响应自动重试 (仅对日K及以上周期，分钟线不重试)
         let should_retry_empty = category >= 4;
-        let max_retry = if should_retry_empty { 3 } else { 1 };
+        // 服务器谎报行数 (声明 N 行却一个字节都不给) 是服务器故障, 与周期无关,
+        // 所以每个周期都要换台。预算单列, 不改动分钟线的空响应语义。
+        let max_attempts = if should_retry_empty {
+            EMPTY_RETRY_ATTEMPTS
+        } else {
+            SERVER_FAULT_ATTEMPTS
+        };
 
         let mut bars = Vec::new();
         let mut retry_count = 0;
+        let mut faulty_servers: Vec<(String, u16)> = Vec::new();
 
-        for attempt in 0..max_retry {
+        for attempt in 0..max_attempts {
             let packet =
                 utils::build_security_bars_packet(category, market, code, start, count, fq);
             let body = self.send_and_recv_limited(&packet, &self.rate_limiter_daily)?;
+
+            // 谎报行数的服务器: 换台, 而不是把 E2103 抛给调用方。见
+            // utils::declares_rows_without_payload 对 2026-09-23 实测的记录。
+            if utils::declares_rows_without_payload(&body) {
+                let declared = if body.len() >= 2 {
+                    u16::from_le_bytes([body[0], body[1]])
+                } else {
+                    0
+                };
+                let current = self.connected_server();
+                if let Some((ref ip, port)) = current {
+                    self.block_server(ip, port);
+                    if !faulty_servers.iter().any(|(i, p)| i == ip && *p == port) {
+                        faulty_servers.push((ip.clone(), port));
+                    }
+                }
+                retry_count += 1;
+
+                if attempt + 1 == max_attempts {
+                    logw!(
+                        "hq",
+                        "all {} attempts hit servers that declared rows and delivered none for {}",
+                        max_attempts,
+                        code
+                    );
+                    // 保留显式失败, 不用空结果掩盖
+                    return Err(ErrorCode::RESPONSE_LENGTH_MISMATCH.err(format!(
+                        "server {current:?} declared {declared} rows and delivered no row bytes for {code}"
+                    )));
+                }
+
+                logw!(
+                    "hq",
+                    "attempt {}/{}: server {current:?} declared {} rows and delivered no row bytes for {}; blocking and switching",
+                    attempt + 1,
+                    max_attempts,
+                    declared,
+                    code
+                );
+                self.reconnect_to_another_server(&faulty_servers);
+                continue;
+            }
+
             let parsed = parse_security_bars(&body, category)?;
 
             if !parsed.is_empty() || !should_retry_empty {
@@ -720,11 +780,11 @@ impl TdxHqClient {
                 "hq",
                 "attempt {}/{}: empty K-line for {}, switching server",
                 attempt + 1,
-                max_retry,
+                max_attempts,
                 code
             );
 
-            if attempt < max_retry - 1 {
+            if attempt < max_attempts - 1 {
                 self.reconnect_to_another_server(&[]);
             }
         }
@@ -734,7 +794,7 @@ impl TdxHqClient {
             logw!(
                 "hq",
                 "all {} attempts returned empty K-line for {}",
-                max_retry,
+                max_attempts,
                 code
             );
         } else if retry_count > 0 && !bars.is_empty() {

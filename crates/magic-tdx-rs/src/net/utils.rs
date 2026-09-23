@@ -361,6 +361,32 @@ pub fn build_index_bars_packet(
     build_security_bars_packet(category, market, code, start, count, fq)
 }
 
+/// 服务器是否"声明了行数却一个字节都不给"。
+///
+/// 部分 TDX 服务器对 `CMD_SECURITY_BARS` 固定回 `count=800` 且 payload 为空 ——
+/// body 恰好 2 字节, 内容是 `20 03`。这**不是**解码缺陷: 解析器发现 800 行装不下
+/// 完全正确。但把它当解码错误抛出, 会让 `get_security_bars` 里的"空响应换台"
+/// 逻辑永远不触发, 于是客户端会钉死在一台不供数的服务器上, 每次调用都失败。
+///
+/// 2026-09-23 逐台实测 (87 台候选, 18 台可达): PRIMARY_SERVERS 十台**全部**如此,
+/// 而 ALL_KNOWN_SERVERS 里的国泰君安 8/9/10/11/12/13/14 正常返回请求的 5 行。
+/// Tdx 日线 100% 失败即由此而来 —— 它排在 PRIMARY, 第一跳就撞上。
+///
+/// 判据: body 装不下哪怕一行 (2 字节行数头 + 16 字节最小行), 而声明的行数 > 0。
+/// 一个字节都没有的 body 同样算"没给数据"。声明 0 行的正常空响应不在此列, 它走
+/// 原有的空响应换台路径。
+pub fn declares_rows_without_payload(body: &[u8]) -> bool {
+    /// datetime(4) + 4 个至少 1 字节的差分价 + vol(4) + amount(4)
+    const MIN_ONE_ROW: usize = 2 + 16;
+    if body.len() >= MIN_ONE_ROW {
+        return false;
+    }
+    if body.len() < 2 {
+        return true;
+    }
+    u16::from_le_bytes([body[0], body[1]]) > 0
+}
+
 // ================================================================
 // 握手 / 响应处理
 // ================================================================
