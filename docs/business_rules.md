@@ -260,8 +260,20 @@ at most five official AllNewsStock HTTPS page URLs from the exact
 exchange-prefixed symbol and never follows a page-supplied URL. Every page must
 repeat that exact symbol in its server-rendered `page_symbol`, contain the
 requested page marker, use the verified GBK-family HTML MIME, and expose a
-non-empty company-news `datelist`. Every page remains source newest-first. Sina
-may repeat an overlapping time window at a page boundary; the newest and oldest
+non-empty company-news `datelist`. Every page remains source newest-first once
+the source's own pinned placements are set aside: a row whose title the source
+marks with a leading `[置顶]` is a pinned placement rather than a time-ordered
+news row, so it is validated like any other source row -- identity, MIME,
+published time and future-time all still hold -- and then excluded from
+admission, from the newest-first check and from the page's time extrema, and it
+can neither invert a page nor widen its window (measured 2026-09-23: `sz002131`
+page 1 led with a pinned `2026-09-23 00:52` row above news rows dated from
+`16:39` while pages 2 through 5 were clean, which failed that instrument's
+30-minute calls with `instrument-news page is not newest-first`). That marker
+never admits, identifies or reorders anything: instrument identity still comes
+only from the validated request URL plus exact page marker, and an unmarked row
+that inverts its page still fails. Sina may repeat an overlapping time window at
+a page boundary; the newest and oldest
 extrema of successive page windows must still be non-increasing. Valid overlap
 is deduplicated and stably sorted by original publication time before the
 inclusive start/end filter and limit are finalized. Pagination may stop for a

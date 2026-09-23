@@ -169,6 +169,99 @@ fn a_limit_that_fills_every_allowed_page_is_proven_by_the_page_oldest_row() {
     );
 }
 
+/// The production shape measured on `sz002131` page 1 on 2026-09-23: a pinned placement
+/// dated below the news rows it is pinned above.
+const PINNED_URL: &str = "https://wq.finance.sina.com.cn/company/detail/1017/1";
+
+#[test]
+fn a_source_pinned_placement_is_excluded_from_order_and_admission() {
+    let news = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";
+    let transport = FixtureTransport::new(HashMap::from([(
+        url(1),
+        response(page(
+            "sh600396",
+            1,
+            &[
+                row("2026-07-24 22:20", PINNED_URL, "[置顶] 置顶推广"),
+                row("2026-07-24 22:35", news, "来源标题"),
+            ],
+            false,
+        )),
+    )]));
+    let client = SinaClient::with_transport(transport.clone());
+
+    let batch = client.instrument_news(&request(2)).unwrap();
+
+    assert_eq!(transport.requested(), vec![url(1)]);
+    assert_eq!(
+        batch
+            .records()
+            .iter()
+            .map(|record| record.canonical_url.as_str())
+            .collect::<Vec<_>>(),
+        vec![news],
+        "a pinned placement is never admitted as company news"
+    );
+    assert!(batch.quality().is_complete());
+}
+
+#[test]
+fn a_pinned_placement_cannot_end_pagination_before_the_range() {
+    let one = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";
+    let two = "https://finance.sina.com.cn/roll/2026-07-24/doc-two.shtml";
+    let three = "https://finance.sina.com.cn/roll/2026-07-24/doc-three.shtml";
+    let transport = FixtureTransport::new(HashMap::from([
+        (
+            url(1),
+            response(page(
+                "sh600396",
+                1,
+                &[
+                    row("2026-07-20 09:00", PINNED_URL, "[置顶] 置顶推广"),
+                    row("2026-07-24 22:35", one, "一"),
+                    row("2026-07-24 22:34", two, "二"),
+                ],
+                true,
+            )),
+        ),
+        (
+            url(2),
+            response_at(
+                page(
+                    "sh600396",
+                    2,
+                    &[row("2026-07-24 22:30", three, "三")],
+                    false,
+                ),
+                OBSERVED_UNIX + 1,
+            ),
+        ),
+    ]));
+    let client = SinaClient::with_transport(transport.clone());
+    let request = request(3)
+        .with_range(
+            IsoDate::new("2026-07-24").unwrap(),
+            IsoDate::new("2026-07-24").unwrap(),
+        )
+        .unwrap();
+
+    let batch = client.instrument_news(&request).unwrap();
+
+    assert_eq!(
+        transport.requested(),
+        vec![url(1), url(2)],
+        "the pinned row's older date must not read as a page before the requested start"
+    );
+    assert_eq!(
+        batch
+            .records()
+            .iter()
+            .map(|record| record.canonical_url.as_str())
+            .collect::<Vec<_>>(),
+        vec![one, two, three]
+    );
+}
+
 #[test]
 fn a_limit_the_page_bound_cannot_prove_fails_explicitly() {
     let transport = paged_transport(5, 39);

@@ -15,6 +15,9 @@ const MAX_PAGE_ROWS: usize = 50;
 const MIN_SOURCE_DATE: &str = "2000-01-01";
 const SOURCE_NAME: &str = "sina-company-news";
 const PUBLISHER: &str = "新浪财经";
+/// The source's own marker for a pinned placement, measured on `sz002131` page 1 on
+/// 2026-09-23.
+const PINNED_MARKER: &str = "[置顶]";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RawNews {
@@ -276,14 +279,26 @@ fn parse_page(
                 "instrument-news source title is empty for {canonical_url}"
             )));
         }
-        records.push(RawNews {
+        let record = RawNews {
             title: anchor.title,
             canonical_url,
             published_at,
             published_date,
             published_unix,
             observed_at: observed_at.clone(),
-        });
+        };
+        // Sina pins a commercial placement at the head of some symbols' datelist and marks
+        // its title with a leading `[置顶]`. The source places that row by pin, not by
+        // publication time, so it is not part of newest-first ordering and must not set the
+        // page's time extrema: measured on 2026-09-23, sz002131 page 1 led with a pinned
+        // 00:52 row above news rows dated from 16:39, which both inverted the page and gave
+        // the page a newest row older than every news row on it. Such a row is validated
+        // like any other source row -- identity, MIME, time and future-time all still hold --
+        // and then excluded from admission, from the ordering check and from the extrema.
+        if record.title.trim_start().starts_with(PINNED_MARKER) {
+            continue;
+        }
+        records.push(record);
         if records.len() > MAX_PAGE_ROWS {
             return Err(SinaError::Protocol(format!(
                 "instrument-news page exceeds {MAX_PAGE_ROWS} rows"
