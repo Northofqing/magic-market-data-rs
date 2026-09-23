@@ -302,6 +302,11 @@ cargo run -p magic-sina-rs --example instrument_news_probe --release --locked --
 canonical URL 和批次 provenance。任一证券返回协议空页、错误身份、不完整证据或
 普通空批次会退出非零。
 
+每只证券的条数上限可用 `MAGIC_SINA_LIMIT` 覆盖（默认 3，上限 200），用于在真实
+页面上测量分页证书：2026-09-23 用该旋钮测得第 1 页 39 行、第 2 至 5 页各 40 行，
+`MAGIC_SINA_LIMIT=161` 及以上在旧的“本页最新时间戳”证书下显式失败，改为“本页最旧
+时间戳”后 200 条可在五页内证明。
+
 有界并发探针：
 
 ```bash

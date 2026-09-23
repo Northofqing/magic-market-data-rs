@@ -142,9 +142,17 @@ impl NewsProvider for SinaClient {
                     .published_unix
                     .cmp(&unique[*left].published_unix)
             });
+            // The proof boundary is the current page's *oldest* row: every later page
+            // lies strictly below it, so once a limit's worth of rows has been retained
+            // and that boundary can no longer outrank the retained limit, no later page
+            // can displace it. Comparing against the page's newest row instead asked a
+            // page to prove itself redundant against rows it had just contributed, which
+            // certified only one page's worth per page read: with MAX_NEWS_PAGES = 5 and
+            // the ~40 rows per page Sina served on 2026-09-23, a 200-row request could
+            // never be certified and every InstrumentNews call failed explicitly.
             let limit_is_proven = selected.len() >= limit
-                && page_newest
-                    .is_some_and(|newest| newest <= unique[selected[limit - 1]].published_unix);
+                && page_oldest
+                    .is_some_and(|oldest| oldest <= unique[selected[limit - 1]].published_unix);
             let page_is_before_start = request.start().is_some_and(|start| {
                 page_newest_date
                     .as_deref()

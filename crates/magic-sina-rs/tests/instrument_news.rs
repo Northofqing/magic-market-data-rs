@@ -117,6 +117,69 @@ fn response_at(body: Vec<u8>, observed_unix: u64) -> DocumentResponse {
     DocumentResponse::new(200, "text/html; charset=gbk", body, observed_unix)
 }
 
+/// Newest-first rows one minute apart, strictly descending so a later page's window sits
+/// below the previous page's: the shape Sina served on 2026-09-23, where page 1 carried 39
+/// rows and pages 2-5 carried 40 each.
+fn descending_rows(count: usize) -> Vec<String> {
+    (0..count)
+        .map(|index| {
+            let minute = (22 * 60 + 35) - index as u32;
+            let published = format!("2026-07-24 {:02}:{:02}", minute / 60, minute % 60);
+            let canonical =
+                format!("https://finance.sina.com.cn/roll/2026-07-24/doc-page-row-{index}.shtml");
+            row(&published, &canonical, &format!("标题{index}"))
+        })
+        .collect()
+}
+
+fn paged_transport(pages: u32, rows_per_page: usize) -> FixtureTransport {
+    let all = descending_rows(pages as usize * rows_per_page);
+    let mut fixtures = HashMap::new();
+    for page_number in 1..=pages {
+        let start = (page_number as usize - 1) * rows_per_page;
+        // Every fixture page advertises a next page, including the last: the provider does
+        // that in production too, so the page bound -- not a missing link -- must end the loop.
+        fixtures.insert(
+            url(page_number),
+            response(page(
+                "sh600396",
+                page_number,
+                &all[start..start + rows_per_page],
+                true,
+            )),
+        );
+    }
+    FixtureTransport::new(fixtures)
+}
+
+#[test]
+fn a_limit_that_fills_every_allowed_page_is_proven_by_the_page_oldest_row() {
+    let transport = paged_transport(5, 40);
+    let client = SinaClient::with_transport(transport.clone());
+
+    let batch = client.instrument_news(&request(200)).unwrap();
+
+    assert_eq!(transport.requested(), (1..=5).map(url).collect::<Vec<_>>());
+    assert_eq!(batch.records().len(), 200);
+    assert!(batch.quality().is_complete());
+    assert!(
+        batch.provenance().batch_id().unwrap().ends_with(":pages-5"),
+        "batch id must record all five pages: {:?}",
+        batch.provenance().batch_id()
+    );
+}
+
+#[test]
+fn a_limit_the_page_bound_cannot_prove_fails_explicitly() {
+    let transport = paged_transport(5, 39);
+    let client = SinaClient::with_transport(transport);
+
+    assert!(matches!(
+        client.instrument_news(&request(200)),
+        Err(SinaError::Protocol(message)) if message.contains("news pagination exceeds the 5-page bound")
+    ));
+}
+
 #[test]
 fn instrument_news_uses_exact_symbol_url_and_complete_evidence() {
     let canonical = "https://finance.sina.com.cn/roll/2026-07-24/doc-one.shtml";

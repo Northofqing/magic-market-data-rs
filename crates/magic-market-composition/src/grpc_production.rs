@@ -4462,9 +4462,12 @@ fn execute_instrument_news(
         .map_err(|error| ServiceError::Internal(format!("invalid China offset: {error}")))?;
     let cutoff_date = IsoDate::new(captured_through.to_offset(china_offset).date().to_string())
         .map_err(|error| ServiceError::Internal(error.to_string()))?;
-    let provider_limit =
-        PositiveU32::new(200).map_err(|error| ServiceError::Internal(error.to_string()))?;
-    let mut provider_request = InstrumentDateRangeRequest::new(request.instrument, provider_limit)
+    // The caller's limit, not the provider's 200 maximum. Asking for the maximum made
+    // every InstrumentNews call depend on the page budget being able to certify 200 rows,
+    // which failed for every caller limit (measured 2026-09-23); the sibling global-news
+    // handler above likewise asks for what the caller asked for. The complete returned
+    // batch is still validated before the caller cutoff applies.
+    let mut provider_request = InstrumentDateRangeRequest::new(request.instrument, request.limit)
         .map_err(|error| ServiceError::InvalidRequest(error.to_string()))?;
     match (request.start, request.end) {
         (Some(start), Some(end)) => {

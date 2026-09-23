@@ -12,6 +12,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse::<u64>())
         .transpose()?
         .unwrap_or(10);
+    let limit = std::env::var("MAGIC_SINA_LIMIT")
+        .ok()
+        .map(|value| value.parse::<u32>())
+        .transpose()?
+        .unwrap_or(3);
     let client = SinaClient::with_timeout(Duration::from_secs(timeout))?;
     let instruments = [
         InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)?,
@@ -19,7 +24,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     ];
 
     for instrument in instruments {
-        let request = InstrumentDateRangeRequest::new(instrument.clone(), PositiveU32::new(3)?)?;
+        let request =
+            InstrumentDateRangeRequest::new(instrument.clone(), PositiveU32::new(limit)?)?;
         let batch = client.instrument_news(&request)?;
         if batch.records().is_empty() {
             return Err(format!(

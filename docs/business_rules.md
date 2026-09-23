@@ -265,8 +265,11 @@ may repeat an overlapping time window at a page boundary; the newest and oldest
 extrema of successive page windows must still be non-increasing. Valid overlap
 is deduplicated and stably sorted by original publication time before the
 inclusive start/end filter and limit are finalized. Pagination may stop for a
-limit only after the current page's newest timestamp proves that no later page
-can outrank the retained limit. Canonical URL is the business
+limit only after the current page's oldest timestamp proves that no later page
+can outrank the retained limit: every later page lies strictly below the
+current page's oldest row, so that extremum is the proof boundary, and a page
+is never asked to prove itself redundant against rows it just contributed.
+Canonical URL is the business
 identity: fully equivalent duplicates are stably collapsed to the first source
 occurrence, while title or published-time conflicts fail the atomic batch.
 Equivalent duplicate comparison uses source facts only; different local
