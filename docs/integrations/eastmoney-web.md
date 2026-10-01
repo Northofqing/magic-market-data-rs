@@ -129,10 +129,29 @@ CNY 元。三次负载请求均成功，实际最小请求起始间隔 1000 ms�
 2026-08-27 复验发现旧 `push2his` `daykline` 路径持续提前终止 TLS，而主
 `push2.eastmoney.com` 在 Rust 严格传输中会返回数据后缺少 TLS `close_notify`。同一 Provider
 已登记的官方 `push2delay.eastmoney.com` 当前 `kline/get` 路径使用 `klt=101` 返回日级源日期
-以及主力、超大、大、中、小五档净流入。因此生产 `MoneyFlows` 的单条日记录固定使用该精确
+以及主力、超大、大、中、小五档净流入。因此当时生产 `MoneyFlows` 的单条日记录固定使用该精确
 官方 delay 主机；分钟记录仍使用主 `push2` 主机。实现不会跨 Provider 补值、不会把 Quote/
 成交额推算为资金流，也不会放宽 TLS 校验。确定性测试分别锁定两种 interval 的精确主机、
 路径和 `klt`，响应仍需通过证券 identity、日期和逐字段解析校验。
+
+2026-10-02 的限定源码修复按一方股票页改用
+`push2his.eastmoney.com/api/qt/stock/fflow/daykline/get`，仅限 Day1。
+请求保留 Core 正整数上限作为 `lmt`，附网页公开 `ut` 和本地固定 `cb=emProbe`；
+只移除精确 `emProbe(` / `);` 外框及框外 ASCII 空白，内部仍严格按 JSON 数据解析。
+任何脚本、错误回调、追加调用、源错误码、证券/市场错配和非法日期/金额均拒绝。
+真实官网原始样本的公开 `FundFlowSeries` 回归已在旧实现上失败、修复后通过；
+Minute1、BoardFlows、Core/proto、TLS、HTTP 依赖、超时、体积和请求节奏保持不变。
+详见[限定设计与证据边界](../superpowers/specs/2026-10-02-eastmoney-daily-flow-repair-design.md)。
+
+本次正常 Rust Provider 对 SZ 300005 的 Day1 `lmt=1`、`lmt=2` 各读取一次，
+两次均在 HTTP 状态行前以 typed Transport error 失败，原文为缺少 TLS `close_notify`。
+请求门记录最大并发 1、最小起始间隔 1.0002855 秒；失败不计入成功负载或准入数字。
+这项源码修复尚未部署、没有候选同构建 gRPC 业务回执，也未证明实网恢复。
+2026-08-17 的注册表 2 live + 3 serial 是历史路径证据，不是此次新路径验收；
+不增加其计数，不把单次 curl 成功或确定性样本回放提升为当前生产准入。
+限定原生探针命令为
+`cargo run -p magic-eastmoney-rs --example fund_flow_day1_probe --locked --offline`，
+仅输出标准化批次或 typed error 与请求门快照，不启动 RPC、不输出原始 HTTP 响应或凭据。
 
 2026-08-16 诊断观察到公开排名响应中部分行缺少量比 `f10` 或主力净流入 `f62`，
 因此完整 `MarketRankings` 仍原子失败。gRPC 的显式 UNADMITTED 诊断可返回有字段的

@@ -13,11 +13,11 @@ pub const PUBLIC_FUND_FLOW_ADMITTED: bool = true;
 use serde_json::Value;
 
 const MINUTE_ENDPOINT: &str = "https://push2.eastmoney.com/api/qt/stock/fflow/kline/get";
-// Eastmoney's current `kline` contract accepts `klt=101` and returns the same
-// date plus five net-flow fields used by this adapter. The exact official
-// delay host is used for daily reads because the primary currently closes its
-// TLS stream without the authenticated close required by the Rust transport.
-const DAILY_ENDPOINT: &str = "https://push2delay.eastmoney.com/api/qt/stock/fflow/kline/get";
+// The first-party daily fund-flow page uses this distinct daykline route.
+// The public page token is not a credential; the callback is fixed locally.
+const DAILY_ENDPOINT: &str = "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get";
+const DAILY_PAGE_TOKEN: &str = "b2884a393a59ad64002292a3e90d46a5";
+const DAILY_CALLBACK: &str = "emProbe";
 
 impl FundFlowSeries for EastmoneyClient {
     type Error = EastmoneyError;
@@ -40,30 +40,32 @@ impl FundFlowSeries for EastmoneyClient {
                 )))
             }
         };
-        let url = query_url(
-            endpoint,
-            &[
-                ("secid", secid(instrument)?),
-                (
-                    "klt",
-                    if request.interval() == FlowInterval::Minute1 {
-                        "1".into()
-                    } else {
-                        "101".into()
-                    },
-                ),
-                ("lmt", request.limit().get().to_string()),
-                ("fields1", "f1,f2,f3,f7".into()),
-                (
-                    "fields2",
-                    if request.interval() == FlowInterval::Minute1 {
-                        "f51,f52,f53,f54,f55,f56,f57".into()
-                    } else {
-                        "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65".into()
-                    },
-                ),
-            ],
-        );
+        let mut params = vec![
+            ("secid", secid(instrument)?),
+            (
+                "klt",
+                if request.interval() == FlowInterval::Minute1 {
+                    "1".into()
+                } else {
+                    "101".into()
+                },
+            ),
+            ("lmt", request.limit().get().to_string()),
+            ("fields1", "f1,f2,f3,f7".into()),
+            (
+                "fields2",
+                if request.interval() == FlowInterval::Minute1 {
+                    "f51,f52,f53,f54,f55,f56,f57".into()
+                } else {
+                    "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65".into()
+                },
+            ),
+        ];
+        if request.interval() == FlowInterval::Day1 {
+            params.push(("ut", DAILY_PAGE_TOKEN.into()));
+            params.push(("cb", DAILY_CALLBACK.into()));
+        }
+        let url = query_url(endpoint, &params);
         let bytes = self.get(
             &url,
             &[
@@ -72,12 +74,28 @@ impl FundFlowSeries for EastmoneyClient {
                 ("Origin", "https://quote.eastmoney.com"),
             ],
         )?;
+        let payload = if request.interval() == FlowInterval::Day1 {
+            daily_json_payload(&bytes)?
+        } else {
+            &bytes
+        };
         parse_fund_flow(
-            &bytes,
+            payload,
             FlowScope::Instrument(instrument.clone()),
             request.interval(),
         )
     }
+}
+
+fn daily_json_payload(bytes: &[u8]) -> Result<&[u8], EastmoneyError> {
+    bytes
+        .trim_ascii()
+        .strip_prefix(DAILY_CALLBACK.as_bytes())
+        .and_then(|bytes| bytes.strip_prefix(b"("))
+        .and_then(|bytes| bytes.strip_suffix(b");"))
+        .ok_or_else(|| {
+            EastmoneyError::Protocol("daily fund-flow response is not fixed emProbe JSONP".into())
+        })
 }
 
 fn parse_fund_flow(
