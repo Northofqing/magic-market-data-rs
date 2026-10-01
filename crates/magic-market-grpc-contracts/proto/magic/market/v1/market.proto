@@ -67,6 +67,8 @@ enum Operation {
   OPERATION_CURRENT_AUCTION_OBSERVATIONS = 61;
   OPERATION_ECONOMIC_RELEASE_OBSERVATIONS = 62;
   OPERATION_ECONOMIC_RELEASE_SCHEDULE = 63;
+  OPERATION_OFFICIAL_PUBLICATIONS = 64;
+  OPERATION_OFFICIAL_PUBLICATION = 65;
 }
 
 enum AdmissionState {
@@ -377,6 +379,8 @@ service MarketDataService {
   rpc CurrentAuctionObservations(QueryRequest) returns (QueryResponse);
   rpc EconomicReleaseObservations(QueryRequest) returns (QueryResponse);
   rpc EconomicReleaseSchedule(QueryRequest) returns (QueryResponse);
+  rpc OfficialPublications(QueryRequest) returns (QueryResponse);
+  rpc OfficialPublication(QueryRequest) returns (QueryResponse);
 }
 
 service MarketEventService {

@@ -99,6 +99,8 @@ fn global_news_accepts_exact_first_party_metadata_links() {
     for host in [
         "futures.eastmoney.com",
         "bond.eastmoney.com",
+        "bank.eastmoney.com",
+        "forex.eastmoney.com",
         "hk.eastmoney.com",
     ] {
         let expected = format!("https://{host}/a/202607253821086055.html");
@@ -169,6 +171,9 @@ fn global_news_rejects_duplicate_id_url_and_noncanonical_urls() {
         "https://finance.eastmoney.com/a/not-digits.html",
         "https://finance.eastmoney.com/a/202607253821086055.html?x=1",
         "https://finance.eastmoney.com.example/a/202607253821086055.html",
+        "https://forex.eastmoney.com.example/a/202607253821086055.html",
+        "https://evil.forex.eastmoney.com/a/202607253821086055.html",
+        "https://forex.eastmoney.com/b/202607253821086055.html",
     ] {
         assert!(normalize_global_article_url(invalid).is_err(), "{invalid}");
     }
@@ -261,6 +266,8 @@ fn global_news_row_and_attribute_parser_reject_every_ambiguous_shape() {
         "relative",
         "https://finance.eastmoney.com",
         "https://finance.eastmoney.com/a/123.html#fragment",
+        "https://bank.eastmoney.com.evil.example/a/123.html",
+        "https://evil.bank.eastmoney.com/a/123.html",
         "https://finance.eastmoney.com/a/.html",
     ] {
         assert!(normalize_global_article_url(invalid).is_err(), "{invalid}");

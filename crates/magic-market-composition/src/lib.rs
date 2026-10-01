@@ -5,11 +5,28 @@
 //! composition boundary where a route may require a concrete provider type so
 //! downstream wrappers cannot impersonate an admitted source.
 
+mod content_discovery;
 mod derived_products;
 mod eastmoney_provider_top_n_rankings;
 mod grpc_production;
 mod local_terminal_monitor;
+mod official_collection;
+mod official_publications;
 
+pub use official_collection::{
+    collect_official_publications_round, OfficialCollectionError, OfficialCollectionSummary,
+};
+
+pub use official_publications::{
+    official_publication_registry, OFFICIAL_PUBLICATIONS_REQUEST_SCHEMA,
+    OFFICIAL_PUBLICATION_LISTING_SCHEMA, OFFICIAL_PUBLICATION_REQUEST_SCHEMA,
+    OFFICIAL_PUBLICATION_SCHEMA,
+};
+
+pub use content_discovery::{
+    discover_disclosures, search_recent_news, DisclosureCandidate, DisclosureKind, DisclosureQuery,
+    DiscoveryPage, DiscoveryScope, DiscoveryStatus, EntityQuery, NewsCandidate, SourceOutcome,
+};
 pub use derived_products::{
     DerivedProductContractError, IndexQuotesRequest, IntradayShapeRecord, IntradayShapeRequest,
     OutcomeDailyBarsRecord, OutcomeDailyBarsRequest, T0EvidenceRecord, T0EvidenceRequest,

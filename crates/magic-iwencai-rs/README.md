@@ -15,6 +15,8 @@ Read-only iWencai SkillHub semantic-search adapter.
   production request starts are at least one second apart.
 - `semantic_search` is admitted for the bounded `Report` query slice after the
   2026-08-14 authorized live/load evidence; runtime calls still require a valid key.
+- `News`, `Announcement`, and `General` return typed `Unsupported` before I/O;
+  a valid Report key or diagnostic response does not admit those channels.
 - The bounded load probe is capped at three requests and reports errors, RPS,
   and p50/p95/p99/max latency.
 

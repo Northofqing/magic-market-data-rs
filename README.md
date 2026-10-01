@@ -11,6 +11,8 @@
 
 - 获取实时行情、K 线、分时、逐笔、五档、证券元数据、财务与公司行动等标准化数据。
 - 接入 TDX、Tencent、Sina、Eastmoney、CNInfo、THS、交易所及多种新闻、宏观数据源。
+- 提供八个国内官方机构的当前发布列表与同域原文，并保留真实日期标签、正文及响应证据；
+  可显式启动定时采集程序，将逐源成功和失败追加到 NDJSON 日志。
 - 提供 Jin10 当前公开快讯窗口内的结构化宏观发布观测；空窗口是合法结果，但不冒充
   某日完整的 CPI、PMI、非农或利率决议日历。
 - 使用 Router 做有界顺序切源；未指定 Provider 的实时行情在 Service 层并发竞速，
@@ -31,6 +33,7 @@
 - 提供东财单响应的有界市场排名快照，以及妙想单响应的全 A 宽度和开盘竞价窄合同；
   排名不冒充完整市场分页，竞价的 Level-2 专属字段保持空值，妙想能力需要运行时 Key。
 - 提供版本化的 2026 CFFEX IF/IH/IC/IM 月度交割日历；正式调用使用仓库内固定表，
+  schema v2 明确标记为计划交割日（`Planned`），不冒充已确认交割公告；
   不依赖运行时明文 HTTP，也不会用日期公式扩展到其他年份。
 - 通过官方 EMQuant/Choice SDK 提供沪深股票的显式日期范围、未复权完成日线；权限到期、
   当日字段未完成或 SDK 不可用时返回无 records 的类型化失败，不填零、不回退旧数据。
@@ -60,19 +63,61 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前对接合同交付基线为 client-bundle `2026-09-22.1`。该版本把 `HithinkFinance` 被拒绝的
-HTTP status 按状态分类：`429` 为可重试的 `provider_rate_limited`，`401`/`403` 为不可重试的
-`provider_authentication_rejected`，`5xx` 保持 `provider_unavailable`，其余状态为不可重试的
-`external_query_rejected`；此前这些状态一律上报为 `provider_unavailable`。上一基线
-`2026-09-17.1` 在保留 `FinancialStatements` v1 记录形状的同时增加 v2 Provider 原始
-`fiscal_period`，并明确公告、ProviderTopN、经济发布、Consensus 与大宗交易的请求/能力边界；
-同时闭合 `provider_attempts` 词表/组合/数量合同并可携带精确部署 build identity。既有
-`RealtimeQuotes` 有界并发竞速合同不变；胜出 Provider 明确返回，缺失逐条源时间不补造。
-完整逐条 evidence、空批次和失败分类合同以
-[gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。bundle 由
-[`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，并使用
-LF 格式的 `manifest.sha256` 做跨平台校验；精确来源提交以 bundle 内
-`bundle-metadata.json` 的 `source_commit` 为准。
+Rust 组合层提供有界[资讯候选检索](crates/magic-market-composition/src/content_discovery.rs)：
+可在已准入的最新新闻窗口中用实体别名组筛选科技报道，或在巨潮公告的单日/单证券日期
+窗口中筛选 14 类公告候选，包括年报、半年报、业绩预告、增减持、回购股份减持、
+发行融资、控制权变更、股份转让、质押/解除、冻结/解冻、回购、激励及员工持股。
+示例命令：
+
+```text
+cargo run -p magic-market-composition --example content_discovery -- news "NVIDIA|英伟达" "Rubin|鲁宾"
+cargo run -p magic-market-composition --example content_discovery -- issuer SH 600519 2025-01-01 2025-12-31 annual
+cargo run -p magic-market-composition --example content_discovery -- issuer SZ 000001 2026-01-01 2026-09-30 shareholder-increase
+```
+
+它保留逐源失败和原始记录，不保证 Rubin/Muse 历史新闻已被当前滚动窗口收录，也不把标题
+命中当作已核实的财务事件或数值。iWencai 只有 `Report` 频道通过正式准入，其它频道
+会在 HTTP 前明确拒绝；外部科技垂直来源和统一 gRPC 历史检索仍需独立准入与版本化合同。
+
+### 国内官方发布
+
+[国内官方发布原文](docs/integrations/official-domestic-publications.md)同时提供 Rust API 和
+统一 gRPC 接口。当前正式准入限于以下栏目，读取当前一页及列表对应的同域 HTML 正文：
+
+| `preferred_provider` | 发布机构 | 已准入范围 |
+| --- | --- | --- |
+| `Nbs` | 国家统计局 | 最新发布 |
+| `Pbc` | 中国人民银行 | 沟通交流 |
+| `Ndrc` | 国家发展改革委 | 新闻发布 |
+| `Mof` | 财政部 | 综合司政策发布 |
+| `Miit` | 工业和信息化部 | 部领导活动 |
+| `Mofcom` | 商务部 | 日常新闻发布 |
+| `Nea` | 国家能源局 | 新闻中心两个各五条的局工作动态窗口 |
+| `Csrc` | 中国证监会 | 要闻聚合页及其中同域领导活动原文 |
+
+`OfficialPublications` 返回列表，`OfficialPublication` 读取原文，请求与记录 schema 均为
+v1。来源名称区分大小写，未指定时默认 `Nbs`；列表 `limit` 为 1–20。接口保留日期、
+分钟或秒级的来源标签及标签位置，不推断时区或补成精确时刻，`QueryResponse.source_at`
+保持为空。海关 `Gacc` 尚未准入；这些栏目不代表机构全站、全部政策或完整历史覆盖。
+
+### 当前部署与客户端
+
+2026-10-01 的 Windows 工作站服务已更新。实际 mTLS + Bearer 端点验证通过了八源各一次
+列表及原文读取，共 16 次请求；现有 `GlobalNews` v2 和 `FuturesDelivery` v2 兼容性也已
+验证。当前客户端 bundle 为 `2026-10-01.3`，包含 65 个 RPC，其中 63 个操作有正式准入且
+可用的 handler。定时采集器尚未常驻；这次部署验证的是按需调用。
+[部署记录](docs/evidence/2026-10-01-official-publication-service-deployment.md)保留构建身份、
+探针结果和回滚证据。运行二进制绑定构建时的本地不可变源码快照；后续提交源码不会
+改变该二进制的 `source_revision`。
+
+完整逐条 evidence、空批次、失败分类和各操作版本以
+[gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。
+`FinancialStatements` 支持 v2 的 Provider 原始 `fiscal_period`，同时保留 v1 投影；
+[期货交割 v2](docs/integrations/grpc-futures-delivery-v2.md)需要显式指定 2026 年及 1–12 月。
+bundle 由 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，
+默认版本为 `2026-10-01.3`，使用 LF 格式的 `manifest.sha256` 校验公开合同文件。
+精确来源提交以 `bundle-metadata.json` 的 `source_commit` 为准；包含部署身份时，还需与
+`GetHealth.build_identity` 核对。
 
 运行时 stderr 日志统一携带 UTC RFC3339 时间戳。`GetHealth` 还返回源码 revision、协议
 descriptor 与当前二进制 SHA-256；`GetHealth` 和
@@ -179,6 +224,7 @@ TdxW.exe
 | `magic-market-monitor-server` | Windows TDX 发现、轮询和监控进程 |
 | `magic-market-tdx-agent` | TDX 主机到 gRPC 服务的出站 Agent |
 | `magic-market-transport` | 固定 HTTPS allowlist、超时、body 上限和节流 |
+| `magic-official-news-rs` | 八个官方机构的有界发布列表、同域原文与原生来源证据 |
 
 其余 `magic-*-rs` crate 是各数据源的独立适配器。
 
@@ -207,6 +253,7 @@ cargo run -p magic-tencent-rs --example live_probe --release --locked
 cargo run -p magic-sina-rs --example live_probe --release --locked
 cargo run -p magic-emquant-rs --example daily_bars_probe --release --locked --offline
 cargo run -p magic-hithink-rs --example live_probe --release --locked
+cargo run -p magic-official-news-rs --example live_probe --locked --offline -- nbs
 ```
 
 真实探针会访问外部数据源，不属于离线测试。部分 Provider 需要运行时凭据或厂商授权；
@@ -216,6 +263,17 @@ gRPC 的 TLS、Bearer Token、启动参数、客户端证书和调用示例见
 [部署手册](docs/DEPLOYMENT.md)与
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)。Protobuf 文件位于
 [`market.proto`](crates/magic-market-grpc-contracts/proto/magic/market/v1/market.proto)。
+
+官方发布采集器可先执行一轮，检查本地日志：
+
+```bash
+cargo run -p magic-market-composition --bin official-news-collector --locked --offline -- --output target/official-news.ndjson --interval-secs 300 --limit 5 --rounds 1
+```
+
+去掉 `--rounds 1` 后持续运行，每轮串行访问八源，在整轮结束后等待 300 秒；Ctrl+C
+停止。每次列表或原文查询独立记录成功或失败，成功行包含完整证据，保留重复观察。
+输出目录必须存在，同一日志只允许一个采集器写入；操作者负责文件轮换。
+它直接调用 Rust 组合层，不依赖 gRPC 连接，也没有自动安装为系统服务。
 
 Windows 工作站可将完整 gRPC/TDX runtime 配置为当前用户登录后自动启动：
 
@@ -227,6 +285,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/runtime/install-wi
 重复进程。它有意使用当前用户的交互会话，不以 `SYSTEM` 身份运行，否则 TDX 同用户/同会话
 验证以及用户级 Provider 凭据会失真。移除启动项使用
 `tools/runtime/uninstall-windows-autostart.ps1`。
+该启动项只启动 gRPC/TDX runtime；官方发布采集器仍需单独启动。
 
 ## 如何扩展
 
@@ -274,7 +333,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/runtime/install-wi
 - TDX 本地监听使用有界队列；累计成交额慢路径与价格/成交量快路径隔离。
 - 事件订阅和 replay 同时受事件数与字节数限制；慢消费者不会无限占用内存。
 - Provider client 应长期复用，共享连接池和限速器；不要为每条记录创建新 client。
-- Router 不做缓存或跨源聚合，避免隐藏延迟和来源污染；缓存、存储和批量调度由调用方负责。
+- Router 不做缓存或跨源聚合，避免隐藏延迟和来源污染；应用的缓存、存储和批量调度由
+  调用方负责。可选的官方发布采集器只提供按轮追加的本地查询日志。
 
 实际吞吐取决于 Provider 限速、网络、监控标的数量和请求类型。本仓库不发布脱离这些
 条件的统一 QPS/SLA 数字；部署时应使用目标数据源的 load probe 选择并发、超时和容量。
@@ -305,6 +365,9 @@ bash tools/release/package.sh
 - [TDX 能力矩阵](docs/TDX_CAPABILITIES.md)
 - [TDX 本地终端监听](docs/integrations/tdx-local-terminal.md)
 - [同花顺扶摇 Financial API](docs/integrations/hithink-fuyao.md)
+- [国内官方发布原文：八源准入与精度](docs/integrations/official-domestic-publications.md)
+- [官方发布服务部署与实测记录](docs/evidence/2026-10-01-official-publication-service-deployment.md)
+- [期货交割 v2 合同与调用](docs/integrations/grpc-futures-delivery-v2.md)
 - [Provider 准入注册表](docs/integrations/admissions.tsv)
 - [未准入 Provider 路径与显式替代](docs/integrations/unadmitted-provider-routes.md)
 - [HTTP 传输注册表](docs/integrations/http-transports.tsv)

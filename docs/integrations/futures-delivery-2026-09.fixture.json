@@ -1,0 +1,35 @@
+{
+  "requestId": "r08-fixture-2026-09",
+  "operation": "OPERATION_FUTURES_DELIVERY",
+  "admission": "ADMISSION_STATE_ADMITTED",
+  "selectedProvider": "Cffex",
+  "batchId": "cffex-equity-index-planned-delivery-2026-v2:09",
+  "complete": true,
+  "observedAt": "1790478510.469882800",
+  "records": [
+    {
+      "schema": "magic.market.futures_delivery_event",
+      "schemaVersion": 2,
+      "contentType": "application/json; charset=utf-8",
+      "data": "eyJwcm9kdWN0IjoiSWYiLCJjb250cmFjdF9jb2RlIjoiSUYyNjA5IiwibGFzdF90cmFkaW5nX2RhdGUiOiIyMDI2LTA5LTE4IiwiZGVsaXZlcnlfZGF0ZSI6IjIwMjYtMDktMTgiLCJtZXRob2QiOiJDYXNoIiwic2NoZWR1bGVfc3RhdHVzIjoiUGxhbm5lZCIsImRhdGVfYmFzaXMiOiJDZmZleFJ1bGVBbmRQdWJsaXNoZWRIb2xpZGF5cyIsInJ1bGVfdXJsIjoiaHR0cHM6Ly93d3cuY2ZmZXguY29tLmNuL2NuL2hzMzAwLmh0bWwiLCJob2xpZGF5X2NhbGVuZGFyX3VybCI6Imh0dHBzOi8vd3d3Lmdvdi5jbi9nb25nYmFvLzIwMjUvaXNzdWVfMTI0MDYvbWF0ZXJpYWwvZ3d5Z2IyMDI1MzIucGRmIiwiZXZpZGVuY2UiOnsicHJvdmlkZXIiOiJDZmZleCIsInNvdXJjZV9hdCI6bnVsbCwib2JzZXJ2ZWRfYXQiOiIxNzkwNDc4NTEwLjQ2OTg4MjgwMCIsImJhdGNoX2lkIjoiY2ZmZXgtZXF1aXR5LWluZGV4LXBsYW5uZWQtZGVsaXZlcnktMjAyNi12MjowOSJ9fQ=="
+    },
+    {
+      "schema": "magic.market.futures_delivery_event",
+      "schemaVersion": 2,
+      "contentType": "application/json; charset=utf-8",
+      "data": "eyJwcm9kdWN0IjoiSWgiLCJjb250cmFjdF9jb2RlIjoiSUgyNjA5IiwibGFzdF90cmFkaW5nX2RhdGUiOiIyMDI2LTA5LTE4IiwiZGVsaXZlcnlfZGF0ZSI6IjIwMjYtMDktMTgiLCJtZXRob2QiOiJDYXNoIiwic2NoZWR1bGVfc3RhdHVzIjoiUGxhbm5lZCIsImRhdGVfYmFzaXMiOiJDZmZleFJ1bGVBbmRQdWJsaXNoZWRIb2xpZGF5cyIsInJ1bGVfdXJsIjoiaHR0cHM6Ly93d3cuY2ZmZXguY29tLmNuL2NuL3N6NTBnenFoLmh0bWwiLCJob2xpZGF5X2NhbGVuZGFyX3VybCI6Imh0dHBzOi8vd3d3Lmdvdi5jbi9nb25nYmFvLzIwMjUvaXNzdWVfMTI0MDYvbWF0ZXJpYWwvZ3d5Z2IyMDI1MzIucGRmIiwiZXZpZGVuY2UiOnsicHJvdmlkZXIiOiJDZmZleCIsInNvdXJjZV9hdCI6bnVsbCwib2JzZXJ2ZWRfYXQiOiIxNzkwNDc4NTEwLjQ2OTg4MjgwMCIsImJhdGNoX2lkIjoiY2ZmZXgtZXF1aXR5LWluZGV4LXBsYW5uZWQtZGVsaXZlcnktMjAyNi12MjowOSJ9fQ=="
+    },
+    {
+      "schema": "magic.market.futures_delivery_event",
+      "schemaVersion": 2,
+      "contentType": "application/json; charset=utf-8",
+      "data": "eyJwcm9kdWN0IjoiSWMiLCJjb250cmFjdF9jb2RlIjoiSUMyNjA5IiwibGFzdF90cmFkaW5nX2RhdGUiOiIyMDI2LTA5LTE4IiwiZGVsaXZlcnlfZGF0ZSI6IjIwMjYtMDktMTgiLCJtZXRob2QiOiJDYXNoIiwic2NoZWR1bGVfc3RhdHVzIjoiUGxhbm5lZCIsImRhdGVfYmFzaXMiOiJDZmZleFJ1bGVBbmRQdWJsaXNoZWRIb2xpZGF5cyIsInJ1bGVfdXJsIjoiaHR0cHM6Ly93d3cuY2ZmZXguY29tLmNuL2NuL3p6NTAwLmh0bWwiLCJob2xpZGF5X2NhbGVuZGFyX3VybCI6Imh0dHBzOi8vd3d3Lmdvdi5jbi9nb25nYmFvLzIwMjUvaXNzdWVfMTI0MDYvbWF0ZXJpYWwvZ3d5Z2IyMDI1MzIucGRmIiwiZXZpZGVuY2UiOnsicHJvdmlkZXIiOiJDZmZleCIsInNvdXJjZV9hdCI6bnVsbCwib2JzZXJ2ZWRfYXQiOiIxNzkwNDc4NTEwLjQ2OTg4MjgwMCIsImJhdGNoX2lkIjoiY2ZmZXgtZXF1aXR5LWluZGV4LXBsYW5uZWQtZGVsaXZlcnktMjAyNi12MjowOSJ9fQ=="
+    },
+    {
+      "schema": "magic.market.futures_delivery_event",
+      "schemaVersion": 2,
+      "contentType": "application/json; charset=utf-8",
+      "data": "eyJwcm9kdWN0IjoiSW0iLCJjb250cmFjdF9jb2RlIjoiSU0yNjA5IiwibGFzdF90cmFkaW5nX2RhdGUiOiIyMDI2LTA5LTE4IiwiZGVsaXZlcnlfZGF0ZSI6IjIwMjYtMDktMTgiLCJtZXRob2QiOiJDYXNoIiwic2NoZWR1bGVfc3RhdHVzIjoiUGxhbm5lZCIsImRhdGVfYmFzaXMiOiJDZmZleFJ1bGVBbmRQdWJsaXNoZWRIb2xpZGF5cyIsInJ1bGVfdXJsIjoiaHR0cHM6Ly93d3cuY2ZmZXguY29tLmNuL3p6MTAwMC8iLCJob2xpZGF5X2NhbGVuZGFyX3VybCI6Imh0dHBzOi8vd3d3Lmdvdi5jbi9nb25nYmFvLzIwMjUvaXNzdWVfMTI0MDYvbWF0ZXJpYWwvZ3d5Z2IyMDI1MzIucGRmIiwiZXZpZGVuY2UiOnsicHJvdmlkZXIiOiJDZmZleCIsInNvdXJjZV9hdCI6bnVsbCwib2JzZXJ2ZWRfYXQiOiIxNzkwNDc4NTEwLjQ2OTg4MjgwMCIsImJhdGNoX2lkIjoiY2ZmZXgtZXF1aXR5LWluZGV4LXBsYW5uZWQtZGVsaXZlcnktMjAyNi12MjowOSJ9fQ=="
+    }
+  ]
+}

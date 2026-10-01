@@ -1,0 +1,642 @@
+{
+  "verified_at_utc": "2026-10-01T13:42:11.069719+00:00",
+  "endpoint": "https://10.211.55.3:50051",
+  "tls_server_name": "magic-market.local",
+  "source_snapshot_kind": "local immutable runtime source snapshot, not a published release",
+  "health": {
+    "requestId": "deploy-official-health-6815a96e",
+    "live": true,
+    "ready": true,
+    "state": "ready",
+    "observability": {
+      "processStartedAtUnixMs": "1790862122793",
+      "uptimeMillis": "7652",
+      "queryStarted": "0",
+      "querySucceeded": "0",
+      "queryFailed": "0",
+      "queryCancelled": "0",
+      "queryInFlight": "0",
+      "queryRejected": "0",
+      "queryTimedOut": "0",
+      "queryDurationMicrosTotal": "0",
+      "queryDurationMicrosMax": "0",
+      "unaryConcurrencyLimit": "16",
+      "unaryConcurrencyAvailable": "16",
+      "blockingConcurrencyLimit": "8",
+      "blockingConcurrencyAvailable": "8"
+    },
+    "buildIdentity": {
+      "serviceVersion": "0.2.0",
+      "sourceRevision": "67c832e43f36f188e4d769f409691c0b1d9a2ea2",
+      "contractSha256": "abf28a3e0028488a7579da4d961e1a7c1408482bdc0500122c1956d225e480cf",
+      "binarySha256": "9302a3036c7ed272fdf24dd84b4a66881ab682649e9af76b68ef62b2ad083854",
+      "identityError": ""
+    }
+  },
+  "source_checks": [
+    {
+      "source": "Nbs",
+      "listing_rows": 15,
+      "returned_items": 1,
+      "listing_response_url": "https://www.stats.gov.cn/sj/zxfb/",
+      "listing_response_sha256": "40064f27414db06a7d2eaf62c5fac94d177ed2707db9827b9a679642fe772fcd",
+      "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html",
+      "title": "2026年9月中国采购经理指数运行情况",
+      "published_date": "2026-09-30",
+      "publication_label": "2026/09/30 09:30",
+      "precision": "Minute",
+      "publication_label_origin": "ArticleMetadata",
+      "article_response_sha256": "5793799202066c330332cce23b6c312f1ab2a24df40f6732cf6b3b71a16c2e1f",
+      "content_chars": 4998,
+      "source_at_empty": true,
+      "listing_batch_id": "official-2ffc602f388faffcf3dbccbe54881b0b002d679594a33b77757753cb2c049f0a",
+      "article_batch_id": "official-e462ef601834770b124595903c8a37905eb717c3415ceedbab8b2fcb226afc6f"
+    },
+    {
+      "source": "Pbc",
+      "listing_rows": 15,
+      "returned_items": 1,
+      "listing_response_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+      "listing_response_sha256": "7da4b61e81c171531f107fa20ca56cac9b66ab192956f616fabeb0e24c805e18",
+      "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917153548424/index.html",
+      "title": "财政部、中国人民银行、金融监管总局有关负责人就实施居民购房贷款贴息政策答记者问",
+      "published_date": "2026-09-29",
+      "publication_label": "2026-09-29",
+      "precision": "Date",
+      "publication_label_origin": "ArticleMetadata",
+      "article_response_sha256": "5e0b272dbff39f0db8d9bfec071fec4a4226ad68e4119033897d1e72df52aabd",
+      "content_chars": 1826,
+      "source_at_empty": true,
+      "listing_batch_id": "official-9aa9ab4b6b146ab5940394e7dc88c68d94e6c8c04afe29616d50fd5a49d04cdd",
+      "article_batch_id": "official-e4fb9cedbcff6a49ca17121b469888aca90945212ab17782243d8ae1b5b8b74e"
+    },
+    {
+      "source": "Ndrc",
+      "listing_rows": 25,
+      "returned_items": 1,
+      "listing_response_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+      "listing_response_sha256": "6482ab4e14cd2e59449ecfe6ee566764fc0a7cad5aa7b7af7ba97bd73829e1e4",
+      "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260930_1407977.html",
+      "title": "国家发展改革委举行升国旗仪式庆祝中华人民共和国成立77周年",
+      "published_date": "2026-09-30",
+      "publication_label": "2026-09-30 16:43:37",
+      "precision": "Second",
+      "publication_label_origin": "ArticleMetadata",
+      "article_response_sha256": "e189615bdd5f5f883a63771ec26231e736ae73d95ac414d45c1e8b4dd6ed0817",
+      "content_chars": 678,
+      "source_at_empty": true,
+      "listing_batch_id": "official-a52e870418e438baac356195fd368c3231290229e5dee11c23f9d7e51e970c2d",
+      "article_batch_id": "official-b181591286cbbac0f4076a49c9dcadbf147fe4238623dfacbf8d1919e86af7f2"
+    },
+    {
+      "source": "Mof",
+      "listing_rows": 10,
+      "returned_items": 1,
+      "listing_response_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+      "listing_response_sha256": "4755667a48492b136df7af6ceabc69beced14c95ee5df55e122e919e60921319",
+      "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260826_3996112.htm",
+      "title": "中华人民共和国财政部公告2026年第24号",
+      "published_date": "2026-08-26",
+      "publication_label": "发布日期：2026年08月26日",
+      "precision": "Date",
+      "publication_label_origin": "VisibleArticleDate",
+      "article_response_sha256": "78cd31e83d54cb0a37e2bce7167863688747a51a3356dd7470a8d6c6f4810a93",
+      "content_chars": 4024,
+      "source_at_empty": true,
+      "listing_batch_id": "official-db58b7552ef06e5c4b75278101d0ba15a70bae10ce1c4ae27ea12dc45b23995c",
+      "article_batch_id": "official-7d4cc2cc30d4c3e91c1ea446288e309f8d147d89c17e3316f76e7ffa190068ec"
+    },
+    {
+      "source": "Miit",
+      "listing_rows": 24,
+      "returned_items": 1,
+      "listing_response_url": "https://www.miit.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=buildstatic&webId=8d828e408d90447786ddbe128d495e9e&tplSetId=209741b2109044b5b7695700b2bec37e&pageType=column&tagId=%E5%8F%B3%E4%BE%A7%E5%86%85%E5%AE%B9&editType=null&pageId=d3e2bede1bc045e2875fc7161c01db7d",
+      "listing_response_sha256": "9664c430d3fb079903a01b6db5aca54042b5fb18869ee6df377541aaee22796c",
+      "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_c37cffd9af9a4b3aa6379d153ed83620.html",
+      "title": "工业和信息化部举行升国旗仪式 庆祝中华人民共和国成立77周年",
+      "published_date": "2026-09-30",
+      "publication_label": "发布时间：2026-09-30 16:27",
+      "precision": "Minute",
+      "publication_label_origin": "VisibleArticleDate",
+      "article_response_sha256": "6b1d93b8d1e643531e340e39b6dd4d65ac91c0da3e240e717851aad7e75c25fd",
+      "content_chars": 445,
+      "source_at_empty": true,
+      "listing_batch_id": "official-8a369e31dc2d6c19714144546fbde5abe986721ee13ef82519c35bb0b8b686f6",
+      "article_batch_id": "official-f68d2596bba6a0c9583e832934a0f704c0584484f149ed4e113a1fdd3a1854d9"
+    },
+    {
+      "source": "Mofcom",
+      "listing_rows": 15,
+      "returned_items": 1,
+      "listing_response_url": "https://www.mofcom.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=8f43c7ad3afc411fb56f281724b73708&tplSetId=52551ea0e2c14bca8c84792f7aa37ead&pageType=column&tagId=%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=95d89972d8aa4fcea511701cd0f212d9",
+      "listing_response_sha256": "4cb0c8fff586a027678659e087d8f137b6a0239811bafcace2a1e54b2aa6639e",
+      "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7922bc64c4b7410c9d4a54af10921130.html",
+      "title": "国家金融监督管理总局 商务部发布《关于加强商务和保险协同 做好内贸险有关工作的通知》",
+      "published_date": "2026-09-29",
+      "publication_label": "2026-09-29 17:03",
+      "precision": "Minute",
+      "publication_label_origin": "ArticleMetadata",
+      "article_response_sha256": "7258aa0742d16ca25b407eaa38da6ccc671a01387c85520c349e680c25ebe2e6",
+      "content_chars": 562,
+      "source_at_empty": true,
+      "listing_batch_id": "official-67507ea60cf1cc51c9927003e5f4e101cc202857c83c23e51231db3ac5eedada",
+      "article_batch_id": "official-039b05e323d3c6e5ca9e362ced32c31671aa0dc1bfa76a0f1abf7363903951eb"
+    },
+    {
+      "source": "Nea",
+      "listing_rows": 10,
+      "returned_items": 1,
+      "listing_response_url": "https://www.nea.gov.cn/xwzx/index.htm",
+      "listing_response_sha256": "8a02ac3a217b68641bef1cda11d13ad8bf9a6386862fa15b405609b957c654d6",
+      "canonical_url": "https://www.nea.gov.cn/20260930/9ca69805239243efad85690747000ff9/c.html",
+      "title": "国家能源局举行升国旗仪式 庆祝中华人民共和国成立77周年",
+      "published_date": "2026-09-30",
+      "publication_label": "发布时间：2026-09-30",
+      "precision": "Date",
+      "publication_label_origin": "VisibleArticleDate",
+      "article_response_sha256": "274e097deede0de1a52aeb7f28b6f82891bbc99d07363e660777ee5f64b4a316",
+      "content_chars": 569,
+      "source_at_empty": true,
+      "listing_batch_id": "official-05e8e62c88ea23fe027ceb4079f645a658e1f947353b7af2e536fb3e4a5419d9",
+      "article_batch_id": "official-38bbf15014f113704ed6f20d4cfcf7f67d26fba67632217032cf72994cd7b82c"
+    },
+    {
+      "source": "Csrc",
+      "listing_rows": 18,
+      "returned_items": 1,
+      "listing_response_url": "https://www.csrc.gov.cn/searchList/a1a078ee0bc54721ab6b148884c784a8?_isAgg=true&_isJson=true&_pageSize=18&_template=index&_rangeTimeGte=&_channelName=&page=1",
+      "listing_response_sha256": "a701ca397061fbcca66ef2fa12bb90afc5c7d6fc83ddce2761ad104fd88e2fc1",
+      "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7661513/content.shtml",
+      "title": "湖北证监局原党委书记、局长王广幼被开除党籍",
+      "published_date": "2026-09-28",
+      "publication_label": "日期：2026-09-28 来源：证监会",
+      "precision": "Date",
+      "publication_label_origin": "VisibleArticleDate",
+      "article_response_sha256": "e97a3b8c8c3ca2e16c82106e8548badd8b62af12543acf8b3ec7e9a83e52b154",
+      "content_chars": 650,
+      "source_at_empty": true,
+      "listing_batch_id": "official-c115b5acf2b2ada23c5f84d9f317f97f8fb8b4c266527e61ddbc55568c4ecfcf",
+      "article_batch_id": "official-3b585ae4961becc007b5d4a739ef3e3bd76772ea4e9234254068972fc109328e"
+    }
+  ],
+  "failures": [],
+  "registered_operation_count": 65,
+  "formal_operation_count": 63,
+  "official_capabilities": [
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Nbs",
+      "exactScope": "NBS latest releases: https://www.stats.gov.cn/sj/zxfb/; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Pbc",
+      "exactScope": "PBC communication releases: https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Ndrc",
+      "exactScope": "NDRC news releases: https://www.ndrc.gov.cn/xwdt/xwfb/; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Mof",
+      "exactScope": "MOF comprehensive department policy releases: https://zhs.mof.gov.cn/zhengcefabu/; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Miit",
+      "exactScope": "MIIT ministry leadership activities: https://www.miit.gov.cn/xwfb/bldhd/index.html; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Mofcom",
+      "exactScope": "MOFCOM daily news releases: https://www.mofcom.gov.cn/xwfb/rcxwfb/index.html; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_UNADMITTED",
+      "runtimeAvailable": false,
+      "provider": "Gacc",
+      "exactScope": "GACC unverified listing/original templates: https://www.customs.gov.cn/; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "official source listing/original contract and normal TLS remain unadmitted",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Nea",
+      "exactScope": "NEA news-center top two five-row bureau-work windows only: https://www.nea.gov.cn/xwzx/index.htm; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATIONS",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Csrc",
+      "exactScope": "CSRC current aggregated news page including same-host leadership activities: https://www.csrc.gov.cn/csrc/c100028/common_xq_list.shtml; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Nbs",
+      "exactScope": "NBS latest releases: https://www.stats.gov.cn/sj/zxfb/; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Pbc",
+      "exactScope": "PBC communication releases: https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Ndrc",
+      "exactScope": "NDRC news releases: https://www.ndrc.gov.cn/xwdt/xwfb/; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Mof",
+      "exactScope": "MOF comprehensive department policy releases: https://zhs.mof.gov.cn/zhengcefabu/; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Miit",
+      "exactScope": "MIIT ministry leadership activities: https://www.miit.gov.cn/xwfb/bldhd/index.html; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Mofcom",
+      "exactScope": "MOFCOM daily news releases: https://www.mofcom.gov.cn/xwfb/rcxwfb/index.html; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_UNADMITTED",
+      "runtimeAvailable": false,
+      "provider": "Gacc",
+      "exactScope": "GACC unverified listing/original templates: https://www.customs.gov.cn/; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "official source listing/original contract and normal TLS remain unadmitted",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Nea",
+      "exactScope": "NEA news-center top two five-row bureau-work windows only: https://www.nea.gov.cn/xwzx/index.htm; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    },
+    {
+      "operation": "OPERATION_OFFICIAL_PUBLICATION",
+      "repositoryAdmission": "ADMISSION_STATE_ADMITTED",
+      "runtimeAvailable": true,
+      "provider": "Csrc",
+      "exactScope": "CSRC current aggregated news page including same-host leadership activities: https://www.csrc.gov.cn/csrc/c100028/common_xq_list.shtml; same-host verified original HTML paths; native labels/precision/evidence; no history or publication instant",
+      "blocker": "",
+      "diagnosticAvailable": false
+    }
+  ],
+  "reflected_market_rpc_count": 65,
+  "same_python_tls_client_with_certificate_control_passed": true,
+  "missing_client_certificate_tls_rejection": "[WinError 10053] 你的主机中的软件中止了一个已建立的连接。",
+  "missing_client_certificate_grpcurl_error": "Failed to dial target host \"10.211.55.3:50051\": context deadline exceeded",
+  "security_checks": {
+    "valid_mtls_and_bearer_passed": true,
+    "missing_bearer_rejected": true,
+    "missing_client_certificate_rejected": true,
+    "tls_server_name_verified": true
+  },
+  "gacc_remains_blocked": true,
+  "existing_global_news_v2": {
+    "provider": "WallstreetCn",
+    "complete": true,
+    "record_schema": "magic.market.news_item",
+    "record_version": 2,
+    "batch_id": "wallstreetcn:2026-10-01T13:42:31.5171697Z"
+  },
+  "retained_futures_delivery_v2": {
+    "monthly_checks": [
+      {
+        "month": 1,
+        "planned_delivery_date": "2026-01-16",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:01",
+        "passed": true
+      },
+      {
+        "month": 2,
+        "planned_delivery_date": "2026-02-24",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:02",
+        "passed": true
+      },
+      {
+        "month": 3,
+        "planned_delivery_date": "2026-03-20",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:03",
+        "passed": true
+      },
+      {
+        "month": 4,
+        "planned_delivery_date": "2026-04-17",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:04",
+        "passed": true
+      },
+      {
+        "month": 5,
+        "planned_delivery_date": "2026-05-15",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:05",
+        "passed": true
+      },
+      {
+        "month": 6,
+        "planned_delivery_date": "2026-06-22",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:06",
+        "passed": true
+      },
+      {
+        "month": 7,
+        "planned_delivery_date": "2026-07-17",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:07",
+        "passed": true
+      },
+      {
+        "month": 8,
+        "planned_delivery_date": "2026-08-21",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:08",
+        "passed": true
+      },
+      {
+        "month": 9,
+        "planned_delivery_date": "2026-09-18",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:09",
+        "passed": true
+      },
+      {
+        "month": 10,
+        "planned_delivery_date": "2026-10-16",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:10",
+        "passed": true
+      },
+      {
+        "month": 11,
+        "planned_delivery_date": "2026-11-20",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:11",
+        "passed": true
+      },
+      {
+        "month": 12,
+        "planned_delivery_date": "2026-12-18",
+        "records": 4,
+        "batch_id": "cffex-equity-index-planned-delivery-2026-v2:12",
+        "passed": true
+      }
+    ],
+    "negative_checks": [
+      {
+        "case": "v1",
+        "grpc_code": 3,
+        "message": "futures_delivery requires schema magic.market.futures_delivery.request version 2",
+        "passed": true
+      },
+      {
+        "case": "missing_year",
+        "grpc_code": 3,
+        "message": "invalid futures_delivery request: missing field `year` at line 1 column 12",
+        "passed": true
+      },
+      {
+        "case": "missing_month",
+        "grpc_code": 3,
+        "message": "invalid futures_delivery request: missing field `month` at line 1 column 14",
+        "passed": true
+      },
+      {
+        "case": "zero_month",
+        "grpc_code": 3,
+        "message": "invalid futures_delivery request: invalid positive_u32: 0 (must be positive) at line 1 column 26",
+        "passed": true
+      },
+      {
+        "case": "month_13",
+        "grpc_code": 3,
+        "message": "invalid futures_delivery request: invalid request: futures delivery month must be in 1..=12",
+        "passed": true
+      },
+      {
+        "case": "unsupported_year",
+        "grpc_code": 12,
+        "message": "formal CFFEX futures delivery is admitted only for 2026; requested 2027",
+        "passed": true
+      }
+    ]
+  },
+  "listener_status": {
+    "requestId": "deploy-official-listener-status-e3b1ced9",
+    "state": "agent_connected_production",
+    "terminalGeneration": "00003c4c-0000-4000-818d-6b9d538825e4:waiting",
+    "latest": {
+      "generation": "00003c4c-0000-4000-818d-6b9d538825e4:waiting",
+      "sequence": "15"
+    },
+    "capabilities": [],
+    "desiredWatchlistRevision": "0",
+    "desiredInstruments": [
+      "EQUITY:SH:600396"
+    ],
+    "appliedWatchlistRevision": "0",
+    "appliedInstruments": [
+      "EQUITY:SH:600396"
+    ],
+    "maximumWatchlistInstruments": 8,
+    "admittedEventFamilies": [
+      "local_terminal_price",
+      "local_terminal_cumulative_volume",
+      "local_terminal_cumulative_amount",
+      "local_terminal_previous_close",
+      "local_terminal_ohlc",
+      "local_price_change_anomaly",
+      "local_amount_change_anomaly",
+      "local_volume_change_anomaly"
+    ],
+    "replayOldest": {
+      "generation": "00003c4c-0000-4000-818d-6b9d538825e4:waiting",
+      "sequence": "1"
+    },
+    "replayEventCount": "15",
+    "replayBytes": "4652",
+    "activeSubscribers": "0",
+    "agentConnectionsTotal": "1",
+    "agentDisconnectsTotal": "0",
+    "eventsPublishedTotal": "15",
+    "replayEvictionsTotal": "0"
+  },
+  "protected_configuration_credentials_and_helpers_unchanged": true,
+  "protected_file_count": 20,
+  "health_after_queries": {
+    "requestId": "deploy-official-health-2a8cee3a",
+    "live": true,
+    "ready": true,
+    "state": "ready",
+    "observability": {
+      "processStartedAtUnixMs": "1790862122793",
+      "uptimeMillis": "35447",
+      "queryStarted": "36",
+      "querySucceeded": "29",
+      "queryFailed": "7",
+      "queryCancelled": "0",
+      "queryInFlight": "0",
+      "queryRejected": "0",
+      "queryTimedOut": "0",
+      "queryDurationMicrosTotal": "7427329",
+      "queryDurationMicrosMax": "1310348",
+      "unaryConcurrencyLimit": "16",
+      "unaryConcurrencyAvailable": "16",
+      "blockingConcurrencyLimit": "8",
+      "blockingConcurrencyAvailable": "8"
+    },
+    "buildIdentity": {
+      "serviceVersion": "0.2.0",
+      "sourceRevision": "67c832e43f36f188e4d769f409691c0b1d9a2ea2",
+      "contractSha256": "abf28a3e0028488a7579da4d961e1a7c1408482bdc0500122c1956d225e480cf",
+      "binarySha256": "9302a3036c7ed272fdf24dd84b4a66881ab682649e9af76b68ef62b2ad083854",
+      "identityError": ""
+    }
+  },
+  "success": true,
+  "elapsed_seconds": 28.498,
+  "deployment": {
+    "deployed_at_utc": "2026-10-01T13:42:08.1679192+00:00",
+    "build_target": "x86_64-pc-windows-msvc",
+    "previous_binary_sha256": "517e0b4c31bb42330f4bc2a0395e3af385a164212414a65775bed40c9eb87ae3",
+    "source_snapshot_revision": "67c832e43f36f188e4d769f409691c0b1d9a2ea2",
+    "parent_working_branch_revision": "0554654dcc03718f272580d3d7bed447de5892fb",
+    "working_branch_and_index_preserved": true,
+    "source_input_files_verified": 583,
+    "normalized_source_manifest_sha256": "61c9211d36fa9a0ce44a478abde1eb1a75df794191bb8e322446dacc4abb3c2d",
+    "release_build_log_sha256": "e48471491bed9f6b33fa18367d7bb50f43a3c32f9be05fefada6b6aa81570c53",
+    "collector_started": false,
+    "retained_previous_source_commit": "4e4995f8d3f2c7cd504d1dec0f238e6d4b4fc02c",
+    "status": "final combined runtime deployed and verified"
+  },
+  "client_bundle": {
+    "bundle_version": "2026-10-01.3",
+    "verified_manifest_files": 9,
+    "market_data_rpc_count": 65,
+    "futures_delivery_schema_version": 2,
+    "official_native_schema_versions": [
+      1,
+      1
+    ],
+    "matches_deployed_build_identity": true,
+    "protected_files_unchanged": 20
+  },
+  "verification": {
+    "workspace_tests_passed": 1979,
+    "workspace_tests_failed": 0,
+    "workspace_tests_ignored": 3,
+    "clippy_passed": true,
+    "formatting_passed": true,
+    "compliance_passed": true,
+    "rust_docs_passed": true,
+    "rust_documentation_entry_files": 42,
+    "checked_in_document_wrapper_passed": true,
+    "git_diff_check_passed": true
+  },
+  "final_health": {
+    "requestId": "deploy-official-health-fcb02ae1",
+    "live": true,
+    "ready": true,
+    "state": "ready",
+    "observability": {
+      "processStartedAtUnixMs": "1790862122793",
+      "uptimeMillis": "475042",
+      "queryStarted": "36",
+      "querySucceeded": "29",
+      "queryFailed": "7",
+      "queryCancelled": "0",
+      "queryInFlight": "0",
+      "queryRejected": "0",
+      "queryTimedOut": "0",
+      "queryDurationMicrosTotal": "7427329",
+      "queryDurationMicrosMax": "1310348",
+      "unaryConcurrencyLimit": "16",
+      "unaryConcurrencyAvailable": "16",
+      "blockingConcurrencyLimit": "8",
+      "blockingConcurrencyAvailable": "8"
+    },
+    "buildIdentity": {
+      "serviceVersion": "0.2.0",
+      "sourceRevision": "67c832e43f36f188e4d769f409691c0b1d9a2ea2",
+      "contractSha256": "abf28a3e0028488a7579da4d961e1a7c1408482bdc0500122c1956d225e480cf",
+      "binarySha256": "9302a3036c7ed272fdf24dd84b4a66881ab682649e9af76b68ef62b2ad083854",
+      "identityError": ""
+    }
+  },
+  "running_processes": {
+    "server_pid": 10964,
+    "agent_pid": 15436,
+    "monitor_pid": 9852,
+    "collector_running": false
+  },
+  "finalized_at_utc": "2026-10-01T13:54:31.140124+00:00"
+}

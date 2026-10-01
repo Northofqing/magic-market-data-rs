@@ -486,7 +486,8 @@ the source `财经` category, use a calendar-valid newest-first minute timestamp
 have matching attribute/visible titles, and use a unique numeric article ID at
 the canonical `/a/<id>.html` path on exactly `finance.eastmoney.com`,
 `global.eastmoney.com`, `biz.eastmoney.com`, `stock.eastmoney.com`,
-`futures.eastmoney.com`, `bond.eastmoney.com`, or `hk.eastmoney.com`. These hosts are retained as
+`fund.eastmoney.com`, `futures.eastmoney.com`, `bond.eastmoney.com`,
+`bank.eastmoney.com`, `forex.eastmoney.com`, or `hk.eastmoney.com`. These hosts are retained as
 metadata links only and are not fetched by this operation. The public page does
 not provide structured security identity, so records keep an empty instrument
 list and may not be presented as instrument news.
@@ -819,13 +820,19 @@ ordinary empty record, fixture result, partial bundle or client-selected
 
 ## BR-051 CFFEX fixed schedule and plaintext notice diagnostic boundary
 
-The production `FuturesDeliveryCalendar` is a versioned checked-in 2026 schedule
+The production `FuturesDeliveryCalendar` is a versioned checked-in 2026 planned schedule
 for IF/IH/IC/IM only. It performs no runtime network I/O, returns exact monthly
 delivery/last-trading dates with `Cash` settlement, and rejects every non-2026
 request before I/O. A new year requires a new reviewed revision and tests; the
 runtime never extends dates by a calendar formula. The revision is grounded in
 the official [equity-index futures contract rule](https://www.cffex.com.cn/hs300/)
 and [2026 holiday closure notice](https://www.cffex.com.cn/jystz/20251217/46425.html).
+The public gRPC contract is schema v2: `schedule_status=Planned`, product-specific
+`rule_url`, and an official `holiday_calendar_url`. The legacy `notice_url`
+is not projected to clients: no monthly notice or completed settlement is
+claimed. Static plans are conditional on no extraordinary non-trading or later
+exchange adjustment; confirmed-event reminders must fail closed until separate
+month-specific confirmation exists. Version 1 public requests are rejected.
 
 The separate explicit diagnostic may read only the
 public, credential-free HTTP origin `http://www.cffex.com.cn` and only the exact
@@ -1218,3 +1225,78 @@ trace of 17 or more entries as a safe `INTERNAL` error with no partial attempt
 array; it must never truncate a longer trace into an apparently complete one.
 Unknown values, gaps, duplicate ordinals or illegal retryable/terminal
 combinations are not eligible for client control decisions.
+
+## BR-066 Bounded content discovery and semantic-channel admission
+
+An unpinned `GlobalNews` production query prefers the explicitly configured
+`WallstreetCn` handler rather than registration order. An explicitly selected
+Provider remains pinned. This preference does not silently merge, retry or
+substitute source records after a selected Provider fails.
+
+iWencai `SemanticSearch` repository admission covers the exact `Report` channel
+only. `News`, `Announcement` and `General` return typed `Unsupported` before
+transport even when a runtime API key is present. A diagnostic response cannot
+promote a channel, and unsafe source URLs cannot be rewritten or omitted from an
+otherwise strict Provider batch.
+
+Composition-level content discovery may select candidates only from the
+already admitted, bounded source windows. A news query inspects at most 20
+records per admitted Provider and reports every attempted Provider's success or
+failure; a failed source is never represented as zero matching news. A Cninfo
+disclosure query inspects at most 300 records for one market day or 200 records
+for one issuer's explicit date range. Title-derived labels remain discovery
+candidates, not verified company events, amounts, dates or source categories.
+Original canonical payloads and source evidence are retained; cross-Provider
+records are not wrapped into one fabricated atomic `DataBatch`. No result from
+these bounded windows claims complete historical or full-market coverage.
+
+## BR-067 Official publication evidence and disclosure candidates
+
+The native domestic-publication client has a closed publisher/channel catalog
+with independent BR-009 admission for each source. Formal listing and original
+methods reject unadmitted sources before I/O. Probe methods cannot elevate
+admission. Only the verified current source page and exact same-host original
+HTML paths are eligible; every source row is validated before caller limit.
+Canonical URLs, exact source date labels and precision, actual response URL,
+observation time and response-byte SHA-256 remain evidence. Date-only labels
+never become midnight instants, and page generation time never substitutes for
+publication time. Ambiguous publication metadata is an explicit failure.
+Separate listing and article requests are not a single atomic source snapshot.
+
+The native `publication_label_origin` distinguishes HTML listing rows, list API
+fields, original metadata and visible original date/time lines. The exact
+source-specific visible labels are authoritative for MOF, CSRC, MIIT and NEA;
+their missing or ambiguous labels fail without a metadata fallback. MOF, CSRC
+and NEA originals retain date precision, while MIIT retains the visible minute
+precision. Conflicting page metadata does not supply a publication instant.
+MOF admission covers the comprehensive department's policy-release column;
+MIIT covers ministry leadership activities; NEA covers the news-center's two
+verified five-row bureau-work windows. These bounded scopes do not admit the
+previous mixed-HTTP or empty dynamic source columns.
+
+Bounded Cninfo discovery supports fourteen title-derived disclosure candidates:
+annual and half-year reports, earnings forecasts, shareholder reductions,
+repurchased-share reductions, shareholder increases, equity issuance, control
+changes, share transfers, pledges/releases, freezes/releases, share repurchases,
+equity incentives and employee ownership. Mixed or unsupported titles remain
+unclassified. A plan, approval or implementation title preserves its original
+wording and is never promoted to a completed event, ownership amount, stake
+percentage, effective date or control graph. Current source windows do not
+prove exhaustive history or full-market coverage.
+
+## BR-068 Official publication service and collection journal
+
+`OfficialPublications` and `OfficialPublication` expose BR-067 native evidence
+as one versioned canonical envelope per source response. The exact selected
+publisher is retained, `source_at` stays absent without proven time-zone
+evidence, and bounded-response completeness never claims complete history.
+Service operations share a source client's limiter and cannot widen its
+15-second HTTP timeout. Gacc has no formal or diagnostic service handler.
+
+The opt-in periodic collector uses these registered operations serially, with
+positive bounded limits and a delay after each completed round. Each successful
+response and each failed query is recorded separately in an append-only journal;
+a failed original never erases its successful listing or becomes an empty
+success. Observations are not deduplicated into a fabricated atomic snapshot.
+Collection file errors fail explicitly; no provider SDK owns persistence or
+installs a background scheduler.

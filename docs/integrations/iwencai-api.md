@@ -34,7 +34,9 @@ https://openapi.iwencai.com/v1/comprehensive/search
 公开的 typed `semantic_search` 方法已经实现。2026-08-14 使用获授权 Key 完成两次
 release live（每次 7 条）和同一客户端三次串行 load（3/3 成功、共 21 条、最小请求
 起始间隔 1000 ms、最大并发 1），因此精确的 `Report` 频道、非空查询、limit ≤ 50
-语义搜索范围已准入。路由器仍不会因 fixture 或仅存在 Key 而扩大准入范围。
+语义搜索范围已准入。`News`、`Announcement`、`General` 频道尚未通过频道级准入，
+Provider 会在任何 HTTP 调用前返回类型化 `Unsupported`；只有 `Report` 能进入已准入路径。
+路由器仍不会因 fixture、仅存在 Key 或一次诊断返回而扩大准入范围。
 
 ## 探针
 
@@ -57,3 +59,8 @@ clone 共享门、响应上限和 URL 白名单。真实 probe 不打印 Key；�
 API 权限、字段和频率取决于账号授权。本 crate 不绕过鉴权、不保存 Key，也不声明
 未通过真实探针的数据族。自然语言查询结果属于盘后研究输入，不应用作 5 秒行情或
 交易所事实。
+
+2026-09-25 的有界诊断显示，News 请求可能返回科技新闻候选，但正式权限、技能标识、
+展示/保存许可和来源分类仍待确认；部分 News 结果还含非 HTTPS 原文链接，因此现有
+严格 URL 合同会拒绝整批，既不静默丢行，也不把 `http://` 机械改写成 `https://`。
+详见[News 搜索验证](../evidence/2026-09-25-iwencai-news-search-validation.md)。

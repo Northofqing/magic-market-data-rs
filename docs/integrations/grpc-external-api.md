@@ -5,15 +5,19 @@
 | 项目 | 状态 |
 | --- | --- |
 | Protobuf v1 合同 | 已建立，可生成客户端 |
-| 63 个只读数据族 RPC | 已进入 v1 Proto；新增 `EconomicReleaseSchedule` FRED 官方日期级发布日程窄合同 |
+| 65 个只读数据族 RPC | 已进入 v1 Proto；新增 `OfficialPublications` 与 `OfficialPublication` 原生官方发布证据合同 |
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 63 个操作精确登记；61 个操作至少有一个正式 handler；`EconomicCalendar` 与 `Auctions` 仅保留显式诊断路径（前者因金十免费日历/API 已退役，后者因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入）；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
+| Unary Provider composition | 65 个操作精确登记；63 个操作至少有一个正式 handler；`EconomicCalendar` 与 `Auctions` 仅保留显式诊断路径（前者因金十免费日历/API 已退役，后者因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入）；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
 | TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额、昨收、OHLC 与三类带 Core 证据的 trigger/rearm 事件为生产数据；状态消息仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
 Token 仍属于部署材料而不是稳定公共地址；迁移主机、IP 或证书后必须重新交付连接包。
+2026-10-01 该工作站联调实例已更新，`OfficialPublications` 与 `OfficialPublication`
+已通过实际 mTLS + Bearer 连接完成八源列表和原文抽检。部署的源码快照为
+`67c832e43f36f188e4d769f409691c0b1d9a2ea2`；GetHealth 返回的程序与协议 SHA-256 已核对。
+其他实例仍应以自身 GetHealth / GetCapabilities 为准。定时采集程序尚未常驻。
 
 ## 2. 合同源文件
 
@@ -124,6 +128,8 @@ data           = UTF-8 JSON 字节
 JSON 为 `{"limit":N}`。返回的每个 `magic.market.news_item` 记录同样是版本 `2`，并且
 必须携带该条记录自己的完整 `evidence`。`QueryResponse.source_at` 只表示批次中最新记录
 的来源时间，绝不能用它创建、补齐或覆盖逐条 evidence。
+未指定 `preferred_provider` 时，生产注册表显式优先选择已准入的 `WallstreetCn`，
+不依赖 Provider 注册顺序；指定来源的请求仍固定使用该来源，不会悄悄换源。
 
 以下是两条发布时间不同的完整响应业务示例；Provider 原始 `source_at` 字符串保持不变，
 而 `published_at` 可以规范化为 RFC3339，但两者必须表示同一时间点：
@@ -480,14 +486,14 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 
 ## 10. 当前实现状态
 
-- Protobuf/descriptor、63 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
+- Protobuf/descriptor、65 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
   blocking 调用隔离均已实现；
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
   异动 trigger/rearm 进入生产事件流；
-- unary registry 对 63 个操作逐项精确登记；除 `EconomicCalendar` 和 `Auctions` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，竞价操作因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入，两者均仅保留显式诊断路径；
+- unary registry 对 65 个操作逐项精确登记；除 `EconomicCalendar` 和 `Auctions` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，竞价操作因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入，两者均仅保留显式诊断路径；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council、iWencai 与官方 `HithinkFinance` 扶摇 API 外，也可精确选择
   TDX 公共协议、Sina、SSE、SZSE、
@@ -543,6 +549,9 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   unavailable 且无 records，不是 `ADMITTED` 空批次，也不会回退到其他 Provider。
 - 2026-08-14 当前实例通过 `SemanticSearch` + `preferred_provider=Iwencai` 实测返回
   10 条 `Report` 记录；Key 只从服务进程环境加载，不进入请求、日志或证据。
+- iWencai 的生产 `SemanticSearch` 准入仅覆盖 `Report` 频道。`News`、
+  `Announcement`、`General` 在网络调用前返回 `Unsupported`；频道字段出现在请求模型中
+  不表示这些频道已获账号授权或仓库准入。
 
 EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.request`、
 `schema_version=1`、`preferred_provider=EmQuant`、`allow_unadmitted=false`，payload 示例：
@@ -932,7 +941,7 @@ FRED `release_date` 只证明日期，不证明具体发布时间；`release_las
 | `TechnicalBars` | `magic.market.technical_bars.request` (`BarsRequest`) | `magic.market.technical_bar` |
 | `FundFlowSeries` | `magic.market.fund_flow_series.request` (`FundFlowRequest`) | `magic.market.fund_flow_point` |
 | `MoneyFlows` | `magic.market.money_flows.request` (`{"instruments":[...]}`，精确 1 个) | `magic.market.money_flow` |
-| `FuturesDelivery` | `magic.market.futures_delivery.request` (`FuturesDeliveryRequest`) | `magic.market.futures_delivery_event` |
+| `FuturesDelivery` | `magic.market.futures_delivery.request` v2 (`FuturesDeliveryRequest`) | `magic.market.futures_delivery_event` v2; [planned-calendar contract](grpc-futures-delivery-v2.md) |
 | `PostCloseFlows` | `magic.market.post_close_flows.request` (`PostCloseFlowRequest`) | `magic.market.post_close_flow` |
 | `MarketRankings` | `magic.market.market_rankings.request` (`{"kind":...,"limit":...}`) | `magic.market.market_ranking_diagnostic_entry` |
 | `Auctions` / `EastmoneyMiaoxiang` | `magic.market.auctions.request` (`{"instrument":...,"trading_date":"YYYY-MM-DD"}`) | `magic.market.opening_auction_diagnostic` |
@@ -1005,6 +1014,9 @@ composition 实测后，2026-08-18 更新的部署实例通过远程 mTLS + Bear
 当前 `FuturesDelivery`、`preferred_provider=Cffex` 在 `allow_unadmitted=false` 下正式
 准入，读取 CFFEX 固定官方交割日历；客户端不得继续把旧 bundle 中的
 `provider_unsupported` 解释为当前服务能力。
+2026 年日期仅是规则与假期表推导的**预排**交割日，不是已发生的交割事实。
+v1 请求不再接受；具体 v2 字段、证据边界与失败语义见
+[FuturesDelivery v2 合同](grpc-futures-delivery-v2.md)。
 
 ## 11. gRPC 错误处理
 
@@ -1187,7 +1199,7 @@ Go 项目正式接入前可在自己的 Proto 镜像中补 `go_package` 映射�
 
 发布者使用 `tools/docs/build_client_bundle.ps1` 从同一工作树复制 `market.proto`、本文、
 `grpc-derived-products.md`、`tdx-public-security-profile.md` 和
-`unadmitted-provider-routes.md`。脚本拒绝 MarketDataService RPC 数不是 63 的 proto、拒绝
+`unadmitted-provider-routes.md`。脚本拒绝 MarketDataService RPC 数不是 65 的 proto、拒绝
 bundle 内任一 Markdown 相对链接缺失，并生成 `bundle-metadata.json` 与
 `manifest.sha256`；对接方必须同时校验 bundle version、source commit 和文件摘要，不能
 混用不同提交的“最新版”文件。
@@ -1199,3 +1211,50 @@ bundle 内任一 Markdown 相对链接缺失，并生成 `bundle-metadata.json` 
 5. 每个已启用方法的 canonical request/record schema fixture；
 6. TDX 各原始/异动 family 的独立 admission 状态；
 7. 版本升级和字段废弃通知周期。
+
+## 15. 官方发布列表与原文（2026-10-01）
+
+`OfficialPublications=64`、`OfficialPublication=65` 追加到 v1，不改变原有编号。
+client-bundle `2026-10-01.1` 发布两个独立的 v1 原生证据合同。
+`preferred_provider` 精确选择 `Nbs`、`Pbc`、`Ndrc`、`Mof`、`Miit`、`Mofcom`、
+`Nea` 或 `Csrc`；默认 `Nbs`。这些名称区分大小写，表示原站机构。
+`Gacc` 在 GetCapabilities 中禁用，`allow_unadmitted=true` 也不会开放它。
+
+列表请求 schema 为 `magic.market.official_publications.request`，schema_version=1：
+
+```json
+{"limit":5}
+```
+
+limit 范围 1..20，无历史翻页或调用方自定义列表 URL。返回一条
+`magic.market.official_publication_listing` v1 envelope，含 `source`、
+`listing_url`、实际 `response_url`、`observed_at`、`response_sha256`、
+整页验证数 `source_rows` 和按 limit 选择的 `items`。每个 item 含原始标题、
+canonical_url、published_date、publication_label、precision 与 publication_label_origin。
+
+原文请求 schema 为 `magic.market.official_publication.request`，schema_version=1：
+
+```json
+{"url":"https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html"}
+```
+
+URL 须来自所选来源允许的精确 HTTPS 原文路径；此示例需选择 Nbs，实际调用应取当前
+列表的 canonical_url。返回一条 `magic.market.official_publication` v1 envelope，
+保留 `source`、canonical_url、原始 title、content、published_date、publication_label、
+precision、publication_label_origin、observed_at 和原始响应字节的 response_sha256。
+未知请求字段、超范围 limit、错误来源或不安全 URL 显式失败。
+
+两个方法均保持 QueryResponse.source_at 为空，日期/分钟/秒标签不证明时区或精确
+instant。`complete=true` 仅证明本次有界响应通过完整验证，不代表全部政策或新闻。
+每次 batch_id 绑定完整返回 envelope；列表、原文及不同来源是独立查询。
+同一服务 registry 的两个方法共用每源请求门，起始间隔至少一秒。
+
+准入范围分别为统计局最新发布、央行沟通交流、发改委新闻发布、财政部综合司政策发布、
+工信部部领导活动、商务部日常新闻发布、能源局顶部十条局工作动态窗口及证监会要闻
+聚合页（含同域领导活动）。不承诺整站政策栏目、附件/PDF、历史或全文检索。
+失败使用现有 typed gRPC error；429 可重试、源协议/证据错误不可重试，不跨源替换。
+
+服务注册查询 handler；定时采集另由显式启动的 `official-news-collector` 程序执行。
+它串行遍历八源，每轮完成后默认等待 300 秒，把独立成功 envelope 和失败追加为
+NDJSON，不创建 OS 任务或变更运行中的服务。部署后的 capability/build identity 必须
+与交付连接包重新核对。

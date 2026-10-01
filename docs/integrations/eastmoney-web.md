@@ -60,7 +60,8 @@ hk.eastmoney.com
 带 UTF-8 charset 的 `text/html` 且不超过 2 MiB。完整 `#artList` 中每条都必须为
 `财经` 分类、分钟时间倒序、标题内外一致，并使用
 `finance.eastmoney.com`、`global.eastmoney.com`、`biz.eastmoney.com`、
-`stock.eastmoney.com`、`fund.eastmoney.com`、`futures.eastmoney.com`、`bond.eastmoney.com` 或
+`stock.eastmoney.com`、`fund.eastmoney.com`、`futures.eastmoney.com`、`bond.eastmoney.com`、
+`bank.eastmoney.com`、`forex.eastmoney.com` 或
 `hk.eastmoney.com` 上的
 `/a/<纯数字 ID>.html`。这些地址只作为来源元数据保存，不会抓取文章正文。页面没有证券身份，故
 `NewsItem::instruments` 为空，不得转成个股新闻。
@@ -75,8 +76,12 @@ typed error。
 GlobalNews 的 `published_at` 规范化为 RFC3339，逐条 evidence 和批次首条时间保留
 Provider 原始 `YYYY-MM-DD HH:MM`。曾导致持续 `invalid_evidence` 的真实漂移是官方
 滚动页开始依次返回 `stock.eastmoney.com`、`fund.eastmoney.com`、`futures.eastmoney.com`、
-`bond.eastmoney.com` 和 `hk.eastmoney.com` 文章元数据；当前只对这些精确 HTTPS 主机和既有纯数字文章路径
+`bond.eastmoney.com`、`bank.eastmoney.com`、`forex.eastmoney.com` 和 `hk.eastmoney.com`
+文章元数据；当前只对上述精确一方主机和既有纯数字文章路径
 放行，不借用其他新闻源补齐。
+
+2026-09-28 的滚动页还给出 `forex.eastmoney.com/a/202609283885142237.html`
+文章元数据；该精确一方频道主机按同一数字文章路径准入，文章页仍不由此操作抓取。
 
 - 成交金额、资金流和市值统一为 CNY 元；
 - 比率保留 `RatioUnit::Percent`，不会混成 0–1 小数；

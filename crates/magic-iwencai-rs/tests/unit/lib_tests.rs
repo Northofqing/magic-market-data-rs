@@ -1,6 +1,6 @@
 use super::*;
 use std::io::{self, Read};
-use std::sync::{mpsc, Mutex};
+use std::sync::{atomic::AtomicUsize, mpsc, Mutex};
 
 const FIXTURE: &str = r#"{
       "status_code": 0,
@@ -31,6 +31,18 @@ const FIXTURE: &str = r#"{
 struct FixtureTransport {
     response: HttpResponse,
     request: Mutex<Option<HttpRequest>>,
+}
+
+#[derive(Debug)]
+struct CountingTransport {
+    calls: Arc<AtomicUsize>,
+}
+
+impl IwencaiTransport for CountingTransport {
+    fn post(&self, _request: &HttpRequest) -> Result<HttpResponse, IwencaiError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(HttpResponse::new(200, FIXTURE.as_bytes().to_vec()))
+    }
 }
 
 impl IwencaiTransport for FixtureTransport {
@@ -99,6 +111,36 @@ fn request(limit: u32) -> SemanticSearchRequest {
         magic_market_core::PositiveU32::new(limit).expect("positive"),
     )
     .expect("request")
+}
+
+#[test]
+fn unadmitted_channels_are_rejected_before_transport() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client = IwencaiClient::with_transport(
+        "fixture-key",
+        CountingTransport {
+            calls: calls.clone(),
+        },
+    )
+    .expect("client");
+
+    for channel in [
+        SemanticChannel::News,
+        SemanticChannel::Announcement,
+        SemanticChannel::General,
+    ] {
+        let request = SemanticSearchRequest::new(
+            "Rubin",
+            channel,
+            magic_market_core::PositiveU32::new(1).expect("positive"),
+        )
+        .expect("request");
+        assert!(matches!(
+            client.semantic_search(&request),
+            Err(IwencaiError::Unsupported(_))
+        ));
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]

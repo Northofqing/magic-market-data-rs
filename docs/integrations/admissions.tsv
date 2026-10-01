@@ -50,3 +50,12 @@ magic-eastmoney-rs	Eastmoney	MX_MARKET_BREADTH_ADMITTED	true	docs/integrations/e
 magic-eastmoney-rs	Eastmoney	BOUNDED_MARKET_RANKINGS_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-18	2	3	-
 magic-eastmoney-rs	Eastmoney	PUBLIC_FUND_FLOW_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-17	2	3	-
 magic-eastmoney-rs	Eastmoney	PUBLIC_POST_CLOSE_FLOW_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-17	2	3	-
+magic-official-news-rs	Nbs	NBS_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-
+magic-official-news-rs	Pbc	PBC_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-
+magic-official-news-rs	Ndrc	NDRC_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-
+magic-official-news-rs	Mof	MOF_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-
+magic-official-news-rs	Miit	MIIT_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-
+magic-official-news-rs	Mofcom	MOFCOM_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-
+magic-official-news-rs	Gacc	GACC_PUBLICATIONS_ADMITTED	false	docs/integrations/official-domestic-publications.md	blocked	2026-10-01	0	0	Shared native Rust request fails before a valid HTTP response; Windows default TLS reports name mismatch and chain errors; templates unverified with no TLS bypass
+magic-official-news-rs	Nea	NEA_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-
+magic-official-news-rs	Csrc	CSRC_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-

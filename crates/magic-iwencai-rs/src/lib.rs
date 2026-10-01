@@ -21,7 +21,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_LIMIT: u32 = 50;
 
-/// Repository admission for the bounded authorized semantic-search slice.
+/// Repository admission for the bounded Report-only semantic-search slice.
 pub const SEMANTIC_SEARCH_ADMITTED: bool = true;
 const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 static TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -30,6 +30,8 @@ static TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub enum IwencaiError {
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    #[error("iWencai channel is not repository-admitted: {0}")]
+    Unsupported(String),
     #[error("iWencai authentication failed: {0}")]
     Authentication(String),
     #[error("HTTPS transport error: {0}")]
@@ -242,6 +244,12 @@ impl IwencaiClient {
         &self,
         request: &SemanticSearchRequest,
     ) -> Result<DataBatch<SemanticSearchDocument>, IwencaiError> {
+        if request.channel() != SemanticChannel::Report {
+            return Err(IwencaiError::Unsupported(format!(
+                "{}; only Report has completed admission",
+                channel_name(request.channel())
+            )));
+        }
         if request.limit().get() > MAX_LIMIT {
             return Err(IwencaiError::InvalidRequest(format!(
                 "iWencai semantic-search limit must be at most {MAX_LIMIT}"

@@ -47,10 +47,12 @@ fn malformed_or_unrequested_metadata_fails_closed() {
     )
     .is_err());
 
-    let duplicate = include_str!("fixtures/national-monthly.json").replace(
-        "]}\n    ],",
-        ", {\"code\":\"A010101\",\"name\":\"重复\",\"unit\":\"点\"}]}\n    ],",
-    );
+    let duplicate = include_str!("fixtures/national-monthly.json")
+        .replace("\r\n", "\n")
+        .replace(
+            "]}\n    ],",
+            ", {\"code\":\"A010101\",\"name\":\"重复\",\"unit\":\"点\"}]}\n    ],",
+        );
     assert!(
         parse_national_monthly_payload(duplicate.as_bytes(), &request(), "observed", "batch")
             .is_err()

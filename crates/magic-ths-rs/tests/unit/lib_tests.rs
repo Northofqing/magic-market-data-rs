@@ -425,13 +425,15 @@ fn present_wrong_typed_popularity_metadata_is_rejected() {
             .append_pair("list_type", "normal");
         url.to_string()
     };
-    let fixture = include_str!("../fixtures/popularity.json");
-    for malformed in [
+    let fixture = include_str!("../fixtures/popularity.json").replace("\r\n", "\n");
+    for (case_index, malformed) in [
         fixture.replace(
             r#""tag": {
           "concept_tag": ["存储芯片", "中芯国际概念"],
           "popularity_tag": "持续上榜"
-        }"#,
+        }"#
+            .replace("\r\n", "\n")
+            .as_str(),
             r#""tag": []"#,
         ),
         fixture.replace(
@@ -447,7 +449,14 @@ fn present_wrong_typed_popularity_metadata_is_rejected() {
             r#""popularity_tag": {"name":"持续上榜"}"#,
         ),
         fixture.replace(r#""name": "德明利""#, r#""name": ["德明利"]"#),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_ne!(
+            malformed, fixture,
+            "case {case_index} did not mutate fixture"
+        );
         let client = ThsClient::with_test_transport(FixtureTransport::new(vec![json_response(
             &expected_url,
             &malformed,

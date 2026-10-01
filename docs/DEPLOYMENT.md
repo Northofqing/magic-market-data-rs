@@ -166,6 +166,15 @@ cd target/dist/GIT_SHA
 shasum -a 256 -c SHA256SUMS
 ```
 
+## 当前工作站的官方发布服务更新
+
+2026-10-01，现有 Windows 联调实例已更新并启动。`OfficialPublications` 与
+`OfficialPublication` 的八源列表、原文已通过实际认证端点抽检；海关保持未准入。
+原有地址、证书和 Token 保持不变，旧程序与公共连接包文件已备份。
+该次构建采用本地冻结源码快照，未改动工作分支或其索引，也未发布 Git release。
+定时采集程序尚未常驻。具体构建身份、验证结果和回退材料见
+[部署证据](evidence/2026-10-01-official-publication-service-deployment.md)。
+
 ## 平台矩阵
 
 | 组件 | macOS | Linux | Windows | 说明 |
@@ -175,7 +184,7 @@ shasum -a 256 -c SHA256SUMS
 | `magic-tdx-local-rs` | 支持 | 支持 | 支持 | 安全协议/监督状态机与官方 TQ-Local loopback HTTP；五类观察字段已按 family 准入 |
 | `magic-market-monitor` | 支持 | 支持 | 支持 | 纯确定性价格窗口与有界 replay；无 I/O |
 | `magic-market-monitor-server` | typed Unsupported | typed Unsupported | Windows 生产叶子服务 | 自动发现 TDX、固定 TQ-Local 轮询与 4 字节大端长度前缀 JSON；无入站监听；状态消息与缺失字段保持未准入 |
-| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；63 个查询精确登记，61 个操作至少有一个正式 handler；`T0Evidence`、`PostCloseFlows`、`CurrentAuctionObservations` 与 FRED `EconomicReleaseSchedule` 使用观察时间且不伪造 `source_at`；`EconomicReleaseObservations` 仅表示 Jin10 当前公开滚动窗口；东财妙想与 EMQuant 诊断均要求精确 Provider 加 `allow_unadmitted=true` |
+| `magic-market-grpc-server` | 支持 | 支持 | 支持 | HTTP/2 gRPC；loopback 可明文，远程绑定必须 mTLS；65 个查询精确登记，63 个操作至少有一个正式 handler；`T0Evidence`、`PostCloseFlows`、`CurrentAuctionObservations` 与 FRED `EconomicReleaseSchedule` 使用观察时间且不伪造 `source_at`；`EconomicReleaseObservations` 仅表示 Jin10 当前公开滚动窗口；东财妙想与 EMQuant 诊断均要求精确 Provider 加 `allow_unadmitted=true` |
 | `magic-market-tdx-agent` | typed Unsupported | typed Unsupported | 诊断出站 Agent | 固定同目录 monitor/helper；不开放入站端口，不提升 admission |
 | `magic-tdx-native-bridge --discover` | typed Unsupported | typed Unsupported | 仅发现 | Windows 同用户/会话 `TdxW.exe` 发现和版本证据；不获取行情 |
 | `magic-market-transport` 与新官方数据源 | 支持 | 支持 | 支持 | Reqwest/Rustls HTTPS；PBC、CFETS 和三家新闻按 family 已准入，其余保持显式诊断/关闭 |
@@ -216,7 +225,7 @@ VC++ 2010 SP1 x64 运行库。Linux bridge 仍未适配。任一平台的 SDK、
 | SSE/SZSE/HKEX official | `query.sse.com.cn:443`、`www.szse.cn:443`、`www.hkex.com.hk:443` | 无持久缓存 |
 | CFFEX diagnostic | `www.cffex.com.cn:443` | 无持久缓存；仅有界显式 probe |
 | State Council | `sousuo.www.gov.cn:443`；返回链接仅允许 `www.gov.cn:443` | 无持久缓存 |
-| NBS | `www.stats.gov.cn:443` | 无持久缓存；landing 可访问，但机器序列合同未证明，只有显式诊断 |
+| NBS | `www.stats.gov.cn:443` | 无持久缓存；机器经济序列仍仅诊断；最新发布列表及固定同域原文按独立原生合同准入 |
 | PBC | `www.pbc.gov.cn:443`，仅精确编目 HTML | 无持久缓存 |
 | CFETS | `www.chinamoney.com.cn:443`，仅 `/ags/ms/` 下已审计 JSON | 无持久缓存 |
 | FRED | `api.stlouisfed.org:443` | `FRED_API_KEY` 只由环境/secret 注入，不落盘或进入日志 |
