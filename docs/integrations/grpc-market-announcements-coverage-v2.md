@@ -47,6 +47,12 @@ Hashes bind the exact inspected bytes; they do not themselves provide original
 bytes, source signatures, revision guarantees or point-in-time publication state.
 The full envelope and original gRPC payload bytes belong in the public RPC receipt.
 
+The native `source_total_pages` is preserved as received; this endpoint uses
+the integer quotient of total rows divided by page size. It is not the same
+field as `expected_request_pages`, the locally calculated ceiling needed to
+inspect all declared rows. For the observed 722-row query they are 24 and 25.
+Neither value alone proves a terminal page was consumed.
+
 ## Verification plan
 
 The read-only `correlated_query_probe` example captures business RPCs without
