@@ -26,7 +26,7 @@ fn monthly_request() -> EconomicSeriesRequest {
 }
 
 fn fixture() -> String {
-    include_str!("../../tests/fixtures/national-monthly.json").to_owned()
+    include_str!("../../tests/fixtures/national-monthly.json").replace("\r\n", "\n")
 }
 
 fn rejected(body: String) {

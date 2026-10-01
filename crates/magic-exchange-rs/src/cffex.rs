@@ -29,8 +29,15 @@ const USER_AGENT: &str =
 /// performs no runtime HTTP and therefore cannot downgrade transport security.
 pub const CFFEX_2026_FUTURES_DELIVERY_ADMITTED: bool = true;
 const FIXED_SCHEDULE_YEAR: u32 = 2026;
-const FIXED_SCHEDULE_REVISION: &str = "cffex-equity-index-delivery-2026-v1";
-const FIXED_SCHEDULE_NOTICE_URL: &str = "https://www.cffex.com.cn/jystz/20251217/46425.html";
+const FIXED_SCHEDULE_REVISION: &str = "cffex-equity-index-planned-delivery-2026-v2";
+// The internal legacy `notice_url` field holds a standing product rule URL.
+// The external v2 projection names it `rule_url`, not a monthly notice.
+const FIXED_SCHEDULE_RULE_URLS: [&str; 4] = [
+    "https://www.cffex.com.cn/cn/hs300.html",
+    "https://www.cffex.com.cn/cn/sz50gzqh.html",
+    "https://www.cffex.com.cn/cn/zz500.html",
+    "https://www.cffex.com.cn/zz1000/",
+];
 const FIXED_DELIVERY_DATES: [&str; 12] = [
     "2026-01-16",
     "2026-02-24",
@@ -464,7 +471,6 @@ fn fixed_2026_futures_delivery_calendar(
     let provenance = Provenance::new(FIXED_SCHEDULE_REVISION, observed_at.clone())?
         .with_batch_id(batch_id.clone())?;
     let evidence = SourceEvidence::new(ProviderId::Cffex, observed_at, batch_id)?;
-    let notice_url = HttpsUrl::new(FIXED_SCHEDULE_NOTICE_URL)?;
     let suffix = format!("{:02}{month:02}", FIXED_SCHEDULE_YEAR % 100);
     let records = [
         (FuturesProduct::If, "IF"),
@@ -473,14 +479,15 @@ fn fixed_2026_futures_delivery_calendar(
         (FuturesProduct::Im, "IM"),
     ]
     .into_iter()
-    .map(|(product, prefix)| {
+    .enumerate()
+    .map(|(index, (product, prefix))| {
         Ok(FuturesDeliveryEvent {
             product,
             contract_code: NonEmptyText::new(format!("{prefix}{suffix}"))?,
             last_trading_date: Some(delivery_date.clone()),
             delivery_date: delivery_date.clone(),
             method: FuturesDeliveryMethod::Cash,
-            notice_url: notice_url.clone(),
+            notice_url: HttpsUrl::new(FIXED_SCHEDULE_RULE_URLS[index])?,
             evidence: evidence.clone(),
         })
     })
@@ -937,12 +944,17 @@ mod tests {
         let client = CffexClient::with_transport(CffexConfig::default(), RejectTransport).unwrap();
         let batch = client.futures_delivery_calendar(&request()).unwrap();
         assert_eq!(batch.records().len(), 4);
-        for (record, (product, code)) in batch.records().iter().zip([
-            (FuturesProduct::If, "IF2602"),
-            (FuturesProduct::Ih, "IH2602"),
-            (FuturesProduct::Ic, "IC2602"),
-            (FuturesProduct::Im, "IM2602"),
-        ]) {
+        for (index, (record, (product, code))) in batch
+            .records()
+            .iter()
+            .zip([
+                (FuturesProduct::If, "IF2602"),
+                (FuturesProduct::Ih, "IH2602"),
+                (FuturesProduct::Ic, "IC2602"),
+                (FuturesProduct::Im, "IM2602"),
+            ])
+            .enumerate()
+        {
             assert_eq!(record.product, product);
             assert_eq!(record.contract_code.as_str(), code);
             assert_eq!(record.delivery_date.as_str(), "2026-02-24");
@@ -951,7 +963,7 @@ mod tests {
                 Some(&record.delivery_date)
             );
             assert_eq!(record.method, FuturesDeliveryMethod::Cash);
-            assert_eq!(record.notice_url.as_str(), FIXED_SCHEDULE_NOTICE_URL);
+            assert_eq!(record.notice_url.as_str(), FIXED_SCHEDULE_RULE_URLS[index]);
             assert_eq!(
                 record.evidence.batch_id(),
                 batch.provenance().batch_id().unwrap()
@@ -985,11 +997,11 @@ mod tests {
             .unwrap();
             let batch = client.futures_delivery_calendar(&request).unwrap();
             assert_eq!(batch.records().len(), 4);
-            assert!(batch.records().iter().all(|record| {
+            assert!(batch.records().iter().enumerate().all(|(index, record)| {
                 record.delivery_date.as_str() == expected
                     && record.last_trading_date.as_ref() == Some(&record.delivery_date)
                     && record.method == FuturesDeliveryMethod::Cash
-                    && record.notice_url.as_str() == FIXED_SCHEDULE_NOTICE_URL
+                    && record.notice_url.as_str() == FIXED_SCHEDULE_RULE_URLS[index]
             }));
         }
         for year in [2025, 2027] {

@@ -11,8 +11,10 @@ magic-hithink-rs	shared	-	true	target	-
 magic-imf-rs	shared	-	true	target	-
 magic-iwencai-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
 magic-jin10-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack; migrate behind shared transport
+magic-market-composition	shared	-	true	target	-
 magic-market-transport	infrastructure	reqwest,rustls	false	target	-
 magic-nbs-rs	shared	-	true	target	-
+magic-official-news-rs	shared	-	true	target	-
 magic-pbc-rs	shared	-	true	target	-
 magic-sec-rs	shared	-	true	target	-
 magic-sina-rs	legacy-direct	ureq	false	legacy	existing provider-local ureq stack with exact fixed hosts including quotes.sina.cn for K-line/financial endpoints; migrate behind shared transport

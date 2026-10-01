@@ -30,9 +30,10 @@ https://static.cninfo.com.cn/
 - 规范详情 URL 与 PDF URL；
 - 对应证券和完整 `SourceEvidence`。
 
-全市场公告发现使用空 `stock` 的官方公告查询，在本地 limit 或交易所过滤之前读取
-并验证全部远程页。`totalAnnouncement`、`totalRecordNum`、`totalpages`、
-`hasMore`、累计条数和公告 ID 必须一致。每条股票公告同时保留证券代码与
+全市场公告发现使用空 `stock` 的官方公告查询，读取并验证受请求 limit 约束的
+远程前缀；达到 limit 或源总数即停止，不证明已读完该日期的所有公告。
+已读取页的 `totalAnnouncement`、`totalRecordNum`、`totalpages`、
+`hasMore`、累计条数、源顺序和公告 ID 必须一致。每条股票公告同时保留证券代码与
 `secName` 股票名称；缺失名称、非股票代码或证券/交易所不一致都会失败。
 
 互动易映射为 `InvestorQuestion`：
@@ -44,8 +45,8 @@ https://static.cninfo.com.cn/
 
 ## 分页、限流与错误
 
-- 个股公告请求最多 300 条；全市场发现请求最多 10,000 条；
-- 每页最多 30 条；个股最多自动读取 10 页，全市场最多 334 页；
+- 个股公告与全市场发现请求均最多 300 条；候选发现另将个股窗口限制为 200 条；
+- 每页最多 30 条；分页读取受客户端配置限制，默认最多 10 页；
 - 单响应最多 8 MiB；
 - 默认超时 15 秒；
 - 所有客户端克隆共享串行请求门，完整响应读取期间并发为 1；

@@ -375,6 +375,8 @@ implement_query_service! {
         current_auction_observations => CurrentAuctionObservations,
         economic_release_observations => EconomicReleaseObservations,
         economic_release_schedule => EconomicReleaseSchedule,
+        official_publications => OfficialPublications,
+        official_publication => OfficialPublication,
 }
 
 pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
@@ -442,6 +444,8 @@ pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
         Operation::CurrentAuctionObservations => v1::Operation::CurrentAuctionObservations,
         Operation::EconomicReleaseObservations => v1::Operation::EconomicReleaseObservations,
         Operation::EconomicReleaseSchedule => v1::Operation::EconomicReleaseSchedule,
+        Operation::OfficialPublications => v1::Operation::OfficialPublications,
+        Operation::OfficialPublication => v1::Operation::OfficialPublication,
     }
 }
 
@@ -832,6 +836,220 @@ mod tests {
     use magic_market_service::{Capability, OperationRegistry, ProviderAttempt, QueryResult};
 
     use super::*;
+
+    async fn official_wire_client(
+        registry: OperationRegistry,
+    ) -> (
+        v1::market_data_service_client::MarketDataServiceClient<tonic::transport::Channel>,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let application = GrpcApplication::new(
+            Arc::new(registry),
+            2 * 1024 * 1024,
+            2,
+            2,
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        let (shutdown, stop) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(
+            tonic::transport::Server::builder()
+                .add_service(
+                    v1::market_data_service_server::MarketDataServiceServer::new(application),
+                )
+                .serve_with_incoming_shutdown(
+                    tokio_stream::wrappers::TcpListenerStream::new(listener),
+                    async {
+                        let _ = stop.await;
+                    },
+                ),
+        );
+        let client = v1::market_data_service_client::MarketDataServiceClient::connect(format!(
+            "http://{address}"
+        ))
+        .await
+        .unwrap();
+        (client, shutdown, task)
+    }
+
+    fn official_request(
+        provider: &str,
+        schema: &str,
+        value: serde_json::Value,
+    ) -> v1::QueryRequest {
+        v1::QueryRequest {
+            context: Some(v1::RequestContext {
+                protocol_version: PROTOCOL_VERSION,
+                request_id: "official-wire-fixture".into(),
+            }),
+            preferred_provider: provider.into(),
+            payload: Some(v1::CanonicalPayload {
+                schema: schema.into(),
+                schema_version: 1,
+                content_type: CANONICAL_JSON_CONTENT_TYPE.into(),
+                data: serde_json::to_vec(&value).unwrap(),
+            }),
+            allow_unadmitted: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn official_rpc_methods_preserve_date_only_payloads_over_real_grpc() {
+        use magic_market_composition::{
+            OFFICIAL_PUBLICATIONS_REQUEST_SCHEMA, OFFICIAL_PUBLICATION_LISTING_SCHEMA,
+            OFFICIAL_PUBLICATION_REQUEST_SCHEMA, OFFICIAL_PUBLICATION_SCHEMA,
+        };
+        let mut registry = OperationRegistry::all_unadmitted("fixture unavailable");
+        for (operation, request_schema, record_schema) in [
+            (
+                Operation::OfficialPublications,
+                OFFICIAL_PUBLICATIONS_REQUEST_SCHEMA,
+                OFFICIAL_PUBLICATION_LISTING_SCHEMA,
+            ),
+            (
+                Operation::OfficialPublication,
+                OFFICIAL_PUBLICATION_REQUEST_SCHEMA,
+                OFFICIAL_PUBLICATION_SCHEMA,
+            ),
+        ] {
+            registry.register_handler(Capability {operation, repository_admitted:true, runtime_available:true,
+                provider:"Mof".into(), exact_scope:"fixture date-only official response".into(), blocker:None, diagnostic_available:false},
+                move |command| {
+                    assert_eq!(command.operation(), operation);
+                    assert_eq!(command.payload().schema(), request_schema);
+                    Ok(QueryResult {provider:"Mof".into(), batch_id:"fixture-official-evidence".into(), complete:true,
+                        observed_at:"2026-10-01T01:00:00Z".into(), source_at:None,
+                        records:vec![CanonicalPayload::new(record_schema, 1,
+                            br#"{"source":"Mof","precision":"Date","publication_label":"2026-09-30"}"#.to_vec(),4096)?],
+                        repository_admitted:true, diagnostic_blocker:None})
+                }).unwrap();
+        }
+        let (mut client, shutdown, task) = official_wire_client(registry).await;
+        let list = client
+            .official_publications(official_request(
+                "Mof",
+                OFFICIAL_PUBLICATIONS_REQUEST_SCHEMA,
+                serde_json::json!({"limit":1}),
+            ))
+            .await
+            .unwrap()
+            .into_inner();
+        let article = client
+            .official_publication(official_request(
+                "Mof",
+                OFFICIAL_PUBLICATION_REQUEST_SCHEMA,
+                serde_json::json!({"url":"https://fixture.example.test/original"}),
+            ))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(list.operation, 64);
+        assert_eq!(article.operation, 65);
+        for response in [list, article] {
+            assert_eq!(response.selected_provider, "Mof");
+            assert!(response.source_at.is_empty());
+            assert_eq!(response.admission, v1::AdmissionState::Admitted as i32);
+            let value: serde_json::Value =
+                serde_json::from_slice(&response.records[0].data).unwrap();
+            assert_eq!(value["precision"], "Date");
+            assert_eq!(value["publication_label"], "2026-09-30");
+        }
+        shutdown.send(()).unwrap();
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "bounded live probe of eight public official sources over gRPC"]
+    async fn official_publications_live_grpc_probe() {
+        use magic_market_composition::{
+            official_publication_registry, OFFICIAL_PUBLICATIONS_REQUEST_SCHEMA,
+            OFFICIAL_PUBLICATION_REQUEST_SCHEMA,
+        };
+        let registry = tokio::task::spawn_blocking(|| {
+            official_publication_registry(Duration::from_secs(15), 2 * 1024 * 1024).unwrap()
+        })
+        .await
+        .unwrap();
+        let (mut client, shutdown, task) = official_wire_client(registry).await;
+        let mut failures = Vec::new();
+        for round in 1..=2 {
+            for provider in ["Nbs", "Pbc", "Ndrc", "Mof", "Miit", "Mofcom", "Nea", "Csrc"] {
+                let list = client
+                    .official_publications(official_request(
+                        provider,
+                        OFFICIAL_PUBLICATIONS_REQUEST_SCHEMA,
+                        serde_json::json!({"limit":1}),
+                    ))
+                    .await;
+                let list = match list {
+                    Ok(response) => response.into_inner(),
+                    Err(error) => {
+                        failures.push(format!("round={round} {provider} listing: {error}"));
+                        continue;
+                    }
+                };
+                assert_eq!(list.operation, 64);
+                assert_eq!(list.selected_provider, provider);
+                assert!(list.complete && list.source_at.is_empty());
+                assert_eq!(list.admission, v1::AdmissionState::Admitted as i32);
+                let value: serde_json::Value =
+                    serde_json::from_slice(&list.records[0].data).unwrap();
+                assert_eq!(value["source"], provider);
+                assert_eq!(value["response_sha256"].as_str().unwrap().len(), 64);
+                let url = value["items"][0]["canonical_url"].as_str().unwrap();
+                let article = client
+                    .official_publication(official_request(
+                        provider,
+                        OFFICIAL_PUBLICATION_REQUEST_SCHEMA,
+                        serde_json::json!({"url":url}),
+                    ))
+                    .await;
+                let article = match article {
+                    Ok(response) => response.into_inner(),
+                    Err(error) => {
+                        failures.push(format!("round={round} {provider} original: {error}"));
+                        continue;
+                    }
+                };
+                assert_eq!(article.operation, 65);
+                assert_eq!(article.selected_provider, provider);
+                assert!(article.complete && article.source_at.is_empty());
+                assert_eq!(article.admission, v1::AdmissionState::Admitted as i32);
+                let original: serde_json::Value =
+                    serde_json::from_slice(&article.records[0].data).unwrap();
+                assert_eq!(original["canonical_url"], url);
+                assert!(!original["content"].as_str().unwrap().trim().is_empty());
+                println!(
+                    "{}",
+                    serde_json::json!({"round":round,"provider":provider,"url":url,
+                    "list_batch_id":list.batch_id,"article_batch_id":article.batch_id,
+                    "list_response_sha256":value["response_sha256"],"article_response_sha256":original["response_sha256"],
+                    "observed_at":original["observed_at"],"precision":original["precision"],
+                    "publication_label":original["publication_label"],"origin":original["publication_label_origin"]})
+                );
+            }
+        }
+        let mut blocked = official_request(
+            "Gacc",
+            OFFICIAL_PUBLICATIONS_REQUEST_SCHEMA,
+            serde_json::json!({"limit":1}),
+        );
+        blocked.allow_unadmitted = true;
+        assert_eq!(
+            client
+                .official_publications(blocked)
+                .await
+                .unwrap_err()
+                .code(),
+            Code::Unimplemented
+        );
+        shutdown.send(()).unwrap();
+        task.await.unwrap().unwrap();
+        assert!(failures.is_empty(), "{failures:#?}");
+    }
 
     struct SlowGateway {
         delay: Duration,

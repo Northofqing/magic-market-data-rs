@@ -4,6 +4,7 @@ members = [
     "crates/magic-market-router",
     "crates/magic-market-composition",
     "crates/magic-market-transport",
+    "crates/magic-official-news-rs",
     "crates/magic-nbs-rs",
     "crates/magic-pbc-rs",
     "crates/magic-cfets-rs",

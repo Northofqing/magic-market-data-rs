@@ -127,6 +127,7 @@ fn rejects_date_channel_calendar_schema_and_incomplete_top_ten() {
 
     let incomplete = String::from_utf8(DAILY.to_vec())
         .unwrap()
+        .replace("\r\n", "\n")
         .replace(
             ",\n            {\"td\": [[\"10\", \"2156\", \"TONGFU MICROELECTRONICS\", \"1,878,077,820\"]]}",
             "",

@@ -23,6 +23,8 @@ magic-market-monitor = { path = "../magic-market-monitor", version = "=0.2.0" }
 magic-market-router = { path = "../magic-market-router", version = "=0.2.0" }
 magic-market-service = { path = "../magic-market-service", version = "=0.2.0" }
 magic-nbs-rs = { path = "../magic-nbs-rs", version = "=0.2.0" }
+magic-official-news-rs = { path = "../magic-official-news-rs", version = "=0.2.0" }
+magic-market-transport = { path = "../magic-market-transport", version = "=0.2.0" }
 magic-pbc-rs = { path = "../magic-pbc-rs", version = "=0.2.0" }
 magic-sec-rs = { path = "../magic-sec-rs", version = "=0.2.0" }
 magic-sina-rs = { path = "../magic-sina-rs", version = "=0.2.0" }

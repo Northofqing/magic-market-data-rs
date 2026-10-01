@@ -1,0 +1,2536 @@
+{
+  "access_mode": "formal",
+  "sources": 8,
+  "successful_http_responses": 74,
+  "failed_runs": 0,
+  "groups": [
+    [
+      {
+        "source": "nbs",
+        "access_mode": "formal",
+        "kind": "probe-1",
+        "started_utc": "2026-10-01T10:27:37.249867+00:00",
+        "seconds": 3.957,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Nbs",
+            "listing_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "response_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "observed_at": "2026-10-01T10:27:39.2450497Z",
+            "response_sha256": "40064f27414db06a7d2eaf62c5fac94d177ed2707db9827b9a679642fe772fcd",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Nbs",
+                "title": "2026年9月中国采购经理指数运行情况",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nbs",
+                "title": "2026年1—8月份全国规模以上工业企业利润增长15.7%",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260928_1965425.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Nbs",
+            "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html",
+            "title": "2026年9月中国采购经理指数运行情况",
+            "published_date": "2026-09-30",
+            "publication_label": "2026/09/30 09:30",
+            "precision": "Minute",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:40.1404437Z",
+            "response_sha256": "5793799202066c330332cce23b6c312f1ab2a24df40f6732cf6b3b71a16c2e1f",
+            "body_chars": 4998
+          },
+          {
+            "source": "Nbs",
+            "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260928_1965425.html",
+            "title": "2026年1—8月份全国规模以上工业企业利润增长15.7%",
+            "published_date": "2026-09-28",
+            "publication_label": "2026/09/28 09:30",
+            "precision": "Minute",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:41.1453577Z",
+            "response_sha256": "7731d5e18d8f41630e495201dd02f3948751c8412598bddca9b4e5c06ffad06e",
+            "body_chars": 5839
+          }
+        ]
+      },
+      {
+        "source": "nbs",
+        "access_mode": "formal",
+        "kind": "probe-2",
+        "started_utc": "2026-10-01T10:27:42.209708+00:00",
+        "seconds": 2.479,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Nbs",
+            "listing_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "response_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "observed_at": "2026-10-01T10:27:42.8034001Z",
+            "response_sha256": "40064f27414db06a7d2eaf62c5fac94d177ed2707db9827b9a679642fe772fcd",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Nbs",
+                "title": "2026年9月中国采购经理指数运行情况",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nbs",
+                "title": "2026年1—8月份全国规模以上工业企业利润增长15.7%",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260928_1965425.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Nbs",
+            "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html",
+            "title": "2026年9月中国采购经理指数运行情况",
+            "published_date": "2026-09-30",
+            "publication_label": "2026/09/30 09:30",
+            "precision": "Minute",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:43.7355598Z",
+            "response_sha256": "5793799202066c330332cce23b6c312f1ab2a24df40f6732cf6b3b71a16c2e1f",
+            "body_chars": 4998
+          },
+          {
+            "source": "Nbs",
+            "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260928_1965425.html",
+            "title": "2026年1—8月份全国规模以上工业企业利润增长15.7%",
+            "published_date": "2026-09-28",
+            "publication_label": "2026/09/28 09:30",
+            "precision": "Minute",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:44.6404046Z",
+            "response_sha256": "7731d5e18d8f41630e495201dd02f3948751c8412598bddca9b4e5c06ffad06e",
+            "body_chars": 5839
+          }
+        ]
+      },
+      {
+        "source": "nbs",
+        "access_mode": "formal",
+        "kind": "serial-load",
+        "started_utc": "2026-10-01T10:27:45.697915+00:00",
+        "seconds": 2.444,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Nbs",
+            "listing_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "response_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "observed_at": "2026-10-01T10:27:46.3524058Z",
+            "response_sha256": "40064f27414db06a7d2eaf62c5fac94d177ed2707db9827b9a679642fe772fcd",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Nbs",
+                "title": "2026年9月中国采购经理指数运行情况",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nbs",
+                "title": "2026年1—8月份全国规模以上工业企业利润增长15.7%",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260928_1965425.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Nbs",
+            "listing_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "response_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "observed_at": "2026-10-01T10:27:46.9316164Z",
+            "response_sha256": "40064f27414db06a7d2eaf62c5fac94d177ed2707db9827b9a679642fe772fcd",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Nbs",
+                "title": "2026年9月中国采购经理指数运行情况",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nbs",
+                "title": "2026年1—8月份全国规模以上工业企业利润增长15.7%",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260928_1965425.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Nbs",
+            "listing_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "response_url": "https://www.stats.gov.cn/sj/zxfb/",
+            "observed_at": "2026-10-01T10:27:48.0001397Z",
+            "response_sha256": "40064f27414db06a7d2eaf62c5fac94d177ed2707db9827b9a679642fe772fcd",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Nbs",
+                "title": "2026年9月中国采购经理指数运行情况",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260930_1965449.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nbs",
+                "title": "2026年1—8月份全国规模以上工业企业利润增长15.7%",
+                "canonical_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260928_1965425.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "source": "pbc",
+        "access_mode": "formal",
+        "kind": "probe-1",
+        "started_utc": "2026-10-01T10:27:37.250548+00:00",
+        "seconds": 3.749,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Pbc",
+            "listing_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "response_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "observed_at": "2026-10-01T10:27:38.9809022Z",
+            "response_sha256": "7da4b61e81c171531f107fa20ca56cac9b66ab192956f616fabeb0e24c805e18",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Pbc",
+                "title": "财政部、中国人民银行、金融监管总局有关负责人就实施居民购房贷款贴息政策答记者问",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917153548424/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Pbc",
+                "title": "财政部 中国人民银行 金融监管总局关于实施居民购房贷款贴息政策的通知",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917051440583/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Pbc",
+            "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917153548424/index.html",
+            "title": "财政部、中国人民银行、金融监管总局有关负责人就实施居民购房贷款贴息政策答记者问",
+            "published_date": "2026-09-29",
+            "publication_label": "2026-09-29",
+            "precision": "Date",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:39.789165Z",
+            "response_sha256": "5e0b272dbff39f0db8d9bfec071fec4a4226ad68e4119033897d1e72df52aabd",
+            "body_chars": 1826
+          },
+          {
+            "source": "Pbc",
+            "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917051440583/index.html",
+            "title": "财政部 中国人民银行 金融监管总局关于实施居民购房贷款贴息政策的通知",
+            "published_date": "2026-09-29",
+            "publication_label": "2026-09-29",
+            "precision": "Date",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:40.7804228Z",
+            "response_sha256": "2e923e0edbcedc462597b9e82d6fbe01671e545aa21411a815e54cd7bd6d1ebb",
+            "body_chars": 1472
+          }
+        ]
+      },
+      {
+        "source": "pbc",
+        "access_mode": "formal",
+        "kind": "probe-2",
+        "started_utc": "2026-10-01T10:27:42.007358+00:00",
+        "seconds": 2.081,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Pbc",
+            "listing_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "response_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "observed_at": "2026-10-01T10:27:42.384969Z",
+            "response_sha256": "7da4b61e81c171531f107fa20ca56cac9b66ab192956f616fabeb0e24c805e18",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Pbc",
+                "title": "财政部、中国人民银行、金融监管总局有关负责人就实施居民购房贷款贴息政策答记者问",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917153548424/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Pbc",
+                "title": "财政部 中国人民银行 金融监管总局关于实施居民购房贷款贴息政策的通知",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917051440583/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Pbc",
+            "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917153548424/index.html",
+            "title": "财政部、中国人民银行、金融监管总局有关负责人就实施居民购房贷款贴息政策答记者问",
+            "published_date": "2026-09-29",
+            "publication_label": "2026-09-29",
+            "precision": "Date",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:43.0824332Z",
+            "response_sha256": "5e0b272dbff39f0db8d9bfec071fec4a4226ad68e4119033897d1e72df52aabd",
+            "body_chars": 1826
+          },
+          {
+            "source": "Pbc",
+            "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917051440583/index.html",
+            "title": "财政部 中国人民银行 金融监管总局关于实施居民购房贷款贴息政策的通知",
+            "published_date": "2026-09-29",
+            "publication_label": "2026-09-29",
+            "precision": "Date",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:44.0822964Z",
+            "response_sha256": "2e923e0edbcedc462597b9e82d6fbe01671e545aa21411a815e54cd7bd6d1ebb",
+            "body_chars": 1472
+          }
+        ]
+      },
+      {
+        "source": "pbc",
+        "access_mode": "formal",
+        "kind": "serial-load",
+        "started_utc": "2026-10-01T10:27:45.090049+00:00",
+        "seconds": 2.151,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Pbc",
+            "listing_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "response_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "observed_at": "2026-10-01T10:27:45.3804882Z",
+            "response_sha256": "7da4b61e81c171531f107fa20ca56cac9b66ab192956f616fabeb0e24c805e18",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Pbc",
+                "title": "财政部、中国人民银行、金融监管总局有关负责人就实施居民购房贷款贴息政策答记者问",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917153548424/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Pbc",
+                "title": "财政部 中国人民银行 金融监管总局关于实施居民购房贷款贴息政策的通知",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917051440583/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Pbc",
+            "listing_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "response_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "observed_at": "2026-10-01T10:27:46.1810976Z",
+            "response_sha256": "7da4b61e81c171531f107fa20ca56cac9b66ab192956f616fabeb0e24c805e18",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Pbc",
+                "title": "财政部、中国人民银行、金融监管总局有关负责人就实施居民购房贷款贴息政策答记者问",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917153548424/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Pbc",
+                "title": "财政部 中国人民银行 金融监管总局关于实施居民购房贷款贴息政策的通知",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917051440583/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Pbc",
+            "listing_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "response_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html",
+            "observed_at": "2026-10-01T10:27:47.1798528Z",
+            "response_sha256": "7da4b61e81c171531f107fa20ca56cac9b66ab192956f616fabeb0e24c805e18",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Pbc",
+                "title": "财政部、中国人民银行、金融监管总局有关负责人就实施居民购房贷款贴息政策答记者问",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917153548424/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Pbc",
+                "title": "财政部 中国人民银行 金融监管总局关于实施居民购房贷款贴息政策的通知",
+                "canonical_url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026092917051440583/index.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026-09-29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "source": "ndrc",
+        "access_mode": "formal",
+        "kind": "probe-1",
+        "started_utc": "2026-10-01T10:27:37.251421+00:00",
+        "seconds": 3.701,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Ndrc",
+            "listing_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "response_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "observed_at": "2026-10-01T10:27:39.0011159Z",
+            "response_sha256": "6482ab4e14cd2e59449ecfe6ee566764fc0a7cad5aa7b7af7ba97bd73829e1e4",
+            "source_rows": 25,
+            "items": [
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行升国旗仪式庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260930_1407977.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026/09/30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行专题新闻发布会 介绍推进服务业扩能提质有关情况",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260929_1407929.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026/09/29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Ndrc",
+            "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260930_1407977.html",
+            "title": "国家发展改革委举行升国旗仪式庆祝中华人民共和国成立77周年",
+            "published_date": "2026-09-30",
+            "publication_label": "2026-09-30 16:43:37",
+            "precision": "Second",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:39.7841498Z",
+            "response_sha256": "e189615bdd5f5f883a63771ec26231e736ae73d95ac414d45c1e8b4dd6ed0817",
+            "body_chars": 678
+          },
+          {
+            "source": "Ndrc",
+            "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260929_1407929.html",
+            "title": "国家发展改革委举行专题新闻发布会 介绍推进服务业扩能提质有关情况",
+            "published_date": "2026-09-29",
+            "publication_label": "2026-09-29 17:02:58",
+            "precision": "Second",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:40.9285316Z",
+            "response_sha256": "c4aa7a16359ebabad50c60b21d926684d53fbc4ac8a93c0207ad7b30c50dd12b",
+            "body_chars": 280
+          }
+        ]
+      },
+      {
+        "source": "ndrc",
+        "access_mode": "formal",
+        "kind": "probe-2",
+        "started_utc": "2026-10-01T10:27:41.956642+00:00",
+        "seconds": 2.079,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Ndrc",
+            "listing_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "response_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "observed_at": "2026-10-01T10:27:42.2838131Z",
+            "response_sha256": "6482ab4e14cd2e59449ecfe6ee566764fc0a7cad5aa7b7af7ba97bd73829e1e4",
+            "source_rows": 25,
+            "items": [
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行升国旗仪式庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260930_1407977.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026/09/30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行专题新闻发布会 介绍推进服务业扩能提质有关情况",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260929_1407929.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026/09/29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Ndrc",
+            "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260930_1407977.html",
+            "title": "国家发展改革委举行升国旗仪式庆祝中华人民共和国成立77周年",
+            "published_date": "2026-09-30",
+            "publication_label": "2026-09-30 16:43:37",
+            "precision": "Second",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:43.028032Z",
+            "response_sha256": "e189615bdd5f5f883a63771ec26231e736ae73d95ac414d45c1e8b4dd6ed0817",
+            "body_chars": 678
+          },
+          {
+            "source": "Ndrc",
+            "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260929_1407929.html",
+            "title": "国家发展改革委举行专题新闻发布会 介绍推进服务业扩能提质有关情况",
+            "published_date": "2026-09-29",
+            "publication_label": "2026-09-29 17:02:58",
+            "precision": "Second",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:44.0288587Z",
+            "response_sha256": "c4aa7a16359ebabad50c60b21d926684d53fbc4ac8a93c0207ad7b30c50dd12b",
+            "body_chars": 280
+          }
+        ]
+      },
+      {
+        "source": "ndrc",
+        "access_mode": "formal",
+        "kind": "serial-load",
+        "started_utc": "2026-10-01T10:27:45.037047+00:00",
+        "seconds": 2.216,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Ndrc",
+            "listing_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "response_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "observed_at": "2026-10-01T10:27:45.306515Z",
+            "response_sha256": "6482ab4e14cd2e59449ecfe6ee566764fc0a7cad5aa7b7af7ba97bd73829e1e4",
+            "source_rows": 25,
+            "items": [
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行升国旗仪式庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260930_1407977.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026/09/30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行专题新闻发布会 介绍推进服务业扩能提质有关情况",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260929_1407929.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026/09/29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Ndrc",
+            "listing_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "response_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "observed_at": "2026-10-01T10:27:46.1038652Z",
+            "response_sha256": "6482ab4e14cd2e59449ecfe6ee566764fc0a7cad5aa7b7af7ba97bd73829e1e4",
+            "source_rows": 25,
+            "items": [
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行升国旗仪式庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260930_1407977.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026/09/30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行专题新闻发布会 介绍推进服务业扩能提质有关情况",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260929_1407929.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026/09/29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Ndrc",
+            "listing_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "response_url": "https://www.ndrc.gov.cn/xwdt/xwfb/",
+            "observed_at": "2026-10-01T10:27:47.1034176Z",
+            "response_sha256": "6482ab4e14cd2e59449ecfe6ee566764fc0a7cad5aa7b7af7ba97bd73829e1e4",
+            "source_rows": 25,
+            "items": [
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行升国旗仪式庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260930_1407977.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026/09/30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Ndrc",
+                "title": "国家发展改革委举行专题新闻发布会 介绍推进服务业扩能提质有关情况",
+                "canonical_url": "https://www.ndrc.gov.cn/xwdt/xwfb/202609/t20260929_1407929.html",
+                "published_date": "2026-09-29",
+                "publication_label": "2026/09/29",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "source": "mof",
+        "access_mode": "formal",
+        "kind": "probe-1",
+        "started_utc": "2026-10-01T10:27:37.252684+00:00",
+        "seconds": 3.884,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Mof",
+            "listing_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "response_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "observed_at": "2026-10-01T10:27:39.0782013Z",
+            "response_sha256": "4755667a48492b136df7af6ceabc69beced14c95ee5df55e122e919e60921319",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Mof",
+                "title": "中华人民共和国财政部公告2026年第24号",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260826_3996112.htm",
+                "published_date": "2026-08-26",
+                "publication_label": "2026-08-26",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mof",
+                "title": "财政部关于印发《彩票市场调控资金管理办法》的通知",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260814_3995456.htm",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Mof",
+            "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260826_3996112.htm",
+            "title": "中华人民共和国财政部公告2026年第24号",
+            "published_date": "2026-08-26",
+            "publication_label": "发布日期：2026年08月26日",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:39.7884348Z",
+            "response_sha256": "78cd31e83d54cb0a37e2bce7167863688747a51a3356dd7470a8d6c6f4810a93",
+            "body_chars": 4024
+          },
+          {
+            "source": "Mof",
+            "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260814_3995456.htm",
+            "title": "财政部关于印发《彩票市场调控资金管理办法》的通知",
+            "published_date": "2026-08-14",
+            "publication_label": "发布日期：2026年08月14日",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:40.951624Z",
+            "response_sha256": "a1d1903fb8687506dcb66d6728b2e33bfc4457ea4406238446b48d5315167567",
+            "body_chars": 4563
+          }
+        ]
+      },
+      {
+        "source": "mof",
+        "access_mode": "formal",
+        "kind": "probe-2",
+        "started_utc": "2026-10-01T10:27:42.142963+00:00",
+        "seconds": 2.115,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Mof",
+            "listing_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "response_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "observed_at": "2026-10-01T10:27:42.5781064Z",
+            "response_sha256": "4755667a48492b136df7af6ceabc69beced14c95ee5df55e122e919e60921319",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Mof",
+                "title": "中华人民共和国财政部公告2026年第24号",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260826_3996112.htm",
+                "published_date": "2026-08-26",
+                "publication_label": "2026-08-26",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mof",
+                "title": "财政部关于印发《彩票市场调控资金管理办法》的通知",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260814_3995456.htm",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Mof",
+            "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260826_3996112.htm",
+            "title": "中华人民共和国财政部公告2026年第24号",
+            "published_date": "2026-08-26",
+            "publication_label": "发布日期：2026年08月26日",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:43.278316Z",
+            "response_sha256": "78cd31e83d54cb0a37e2bce7167863688747a51a3356dd7470a8d6c6f4810a93",
+            "body_chars": 4024
+          },
+          {
+            "source": "Mof",
+            "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260814_3995456.htm",
+            "title": "财政部关于印发《彩票市场调控资金管理办法》的通知",
+            "published_date": "2026-08-14",
+            "publication_label": "发布日期：2026年08月14日",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:44.2480508Z",
+            "response_sha256": "a1d1903fb8687506dcb66d6728b2e33bfc4457ea4406238446b48d5315167567",
+            "body_chars": 4563
+          }
+        ]
+      },
+      {
+        "source": "mof",
+        "access_mode": "formal",
+        "kind": "serial-load",
+        "started_utc": "2026-10-01T10:27:45.260109+00:00",
+        "seconds": 2.24,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Mof",
+            "listing_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "response_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "observed_at": "2026-10-01T10:27:45.5801198Z",
+            "response_sha256": "4755667a48492b136df7af6ceabc69beced14c95ee5df55e122e919e60921319",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Mof",
+                "title": "中华人民共和国财政部公告2026年第24号",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260826_3996112.htm",
+                "published_date": "2026-08-26",
+                "publication_label": "2026-08-26",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mof",
+                "title": "财政部关于印发《彩票市场调控资金管理办法》的通知",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260814_3995456.htm",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Mof",
+            "listing_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "response_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "observed_at": "2026-10-01T10:27:46.3902418Z",
+            "response_sha256": "4755667a48492b136df7af6ceabc69beced14c95ee5df55e122e919e60921319",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Mof",
+                "title": "中华人民共和国财政部公告2026年第24号",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260826_3996112.htm",
+                "published_date": "2026-08-26",
+                "publication_label": "2026-08-26",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mof",
+                "title": "财政部关于印发《彩票市场调控资金管理办法》的通知",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260814_3995456.htm",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Mof",
+            "listing_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "response_url": "https://zhs.mof.gov.cn/zhengcefabu/",
+            "observed_at": "2026-10-01T10:27:47.395565Z",
+            "response_sha256": "4755667a48492b136df7af6ceabc69beced14c95ee5df55e122e919e60921319",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Mof",
+                "title": "中华人民共和国财政部公告2026年第24号",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260826_3996112.htm",
+                "published_date": "2026-08-26",
+                "publication_label": "2026-08-26",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mof",
+                "title": "财政部关于印发《彩票市场调控资金管理办法》的通知",
+                "canonical_url": "https://zhs.mof.gov.cn/zhengcefabu/202608/t20260814_3995456.htm",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "source": "miit",
+        "access_mode": "formal",
+        "kind": "probe-1",
+        "started_utc": "2026-10-01T10:27:47.242943+00:00",
+        "seconds": 2.24,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Miit",
+            "listing_url": "https://www.miit.gov.cn/xwfb/bldhd/index.html",
+            "response_url": "https://www.miit.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=buildstatic&webId=8d828e408d90447786ddbe128d495e9e&tplSetId=209741b2109044b5b7695700b2bec37e&pageType=column&tagId=%E5%8F%B3%E4%BE%A7%E5%86%85%E5%AE%B9&editType=null&pageId=d3e2bede1bc045e2875fc7161c01db7d",
+            "observed_at": "2026-10-01T10:27:47.7900017Z",
+            "response_sha256": "60a5d6cd0b9efc46e37c9b68d2ec5eeb760e724adbf4a695be7fab1156833031",
+            "source_rows": 24,
+            "items": [
+              {
+                "source": "Miit",
+                "title": "工业和信息化部举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_c37cffd9af9a4b3aa6379d153ed83620.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Miit",
+                "title": "工业和信息化系统国际合作工作座谈会在哈尔滨召开",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_b6f2e487b7a74338aa4999e8fd91ecc2.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Miit",
+            "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_c37cffd9af9a4b3aa6379d153ed83620.html",
+            "title": "工业和信息化部举行升国旗仪式 庆祝中华人民共和国成立77周年",
+            "published_date": "2026-09-30",
+            "publication_label": "发布时间：2026-09-30 16:27",
+            "precision": "Minute",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:48.5336024Z",
+            "response_sha256": "f874d46c57cdc89c08264d3bf1e11e71d37eb40b583dac651d8e6e064d9fec8f",
+            "body_chars": 445
+          },
+          {
+            "source": "Miit",
+            "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_b6f2e487b7a74338aa4999e8fd91ecc2.html",
+            "title": "工业和信息化系统国际合作工作座谈会在哈尔滨召开",
+            "published_date": "2026-09-28",
+            "publication_label": "发布时间：2026-09-28 19:19",
+            "precision": "Minute",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:49.4388662Z",
+            "response_sha256": "40547f5abaf5fecebf3823d3813e173ba91996a78fa022e987f667f04a9354f8",
+            "body_chars": 618
+          }
+        ]
+      },
+      {
+        "source": "miit",
+        "access_mode": "formal",
+        "kind": "probe-2",
+        "started_utc": "2026-10-01T10:27:50.493880+00:00",
+        "seconds": 2.299,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Miit",
+            "listing_url": "https://www.miit.gov.cn/xwfb/bldhd/index.html",
+            "response_url": "https://www.miit.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=buildstatic&webId=8d828e408d90447786ddbe128d495e9e&tplSetId=209741b2109044b5b7695700b2bec37e&pageType=column&tagId=%E5%8F%B3%E4%BE%A7%E5%86%85%E5%AE%B9&editType=null&pageId=d3e2bede1bc045e2875fc7161c01db7d",
+            "observed_at": "2026-10-01T10:27:51.1065207Z",
+            "response_sha256": "60a5d6cd0b9efc46e37c9b68d2ec5eeb760e724adbf4a695be7fab1156833031",
+            "source_rows": 24,
+            "items": [
+              {
+                "source": "Miit",
+                "title": "工业和信息化部举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_c37cffd9af9a4b3aa6379d153ed83620.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Miit",
+                "title": "工业和信息化系统国际合作工作座谈会在哈尔滨召开",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_b6f2e487b7a74338aa4999e8fd91ecc2.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Miit",
+            "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_c37cffd9af9a4b3aa6379d153ed83620.html",
+            "title": "工业和信息化部举行升国旗仪式 庆祝中华人民共和国成立77周年",
+            "published_date": "2026-09-30",
+            "publication_label": "发布时间：2026-09-30 16:27",
+            "precision": "Minute",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:51.8288838Z",
+            "response_sha256": "f874d46c57cdc89c08264d3bf1e11e71d37eb40b583dac651d8e6e064d9fec8f",
+            "body_chars": 445
+          },
+          {
+            "source": "Miit",
+            "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_b6f2e487b7a74338aa4999e8fd91ecc2.html",
+            "title": "工业和信息化系统国际合作工作座谈会在哈尔滨召开",
+            "published_date": "2026-09-28",
+            "publication_label": "发布时间：2026-09-28 19:19",
+            "precision": "Minute",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:52.779337Z",
+            "response_sha256": "40547f5abaf5fecebf3823d3813e173ba91996a78fa022e987f667f04a9354f8",
+            "body_chars": 618
+          }
+        ]
+      },
+      {
+        "source": "miit",
+        "access_mode": "formal",
+        "kind": "serial-load",
+        "started_utc": "2026-10-01T10:27:53.795956+00:00",
+        "seconds": 2.304,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Miit",
+            "listing_url": "https://www.miit.gov.cn/xwfb/bldhd/index.html",
+            "response_url": "https://www.miit.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=buildstatic&webId=8d828e408d90447786ddbe128d495e9e&tplSetId=209741b2109044b5b7695700b2bec37e&pageType=column&tagId=%E5%8F%B3%E4%BE%A7%E5%86%85%E5%AE%B9&editType=null&pageId=d3e2bede1bc045e2875fc7161c01db7d",
+            "observed_at": "2026-10-01T10:27:54.3392066Z",
+            "response_sha256": "60a5d6cd0b9efc46e37c9b68d2ec5eeb760e724adbf4a695be7fab1156833031",
+            "source_rows": 24,
+            "items": [
+              {
+                "source": "Miit",
+                "title": "工业和信息化部举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_c37cffd9af9a4b3aa6379d153ed83620.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Miit",
+                "title": "工业和信息化系统国际合作工作座谈会在哈尔滨召开",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_b6f2e487b7a74338aa4999e8fd91ecc2.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Miit",
+            "listing_url": "https://www.miit.gov.cn/xwfb/bldhd/index.html",
+            "response_url": "https://www.miit.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=buildstatic&webId=8d828e408d90447786ddbe128d495e9e&tplSetId=209741b2109044b5b7695700b2bec37e&pageType=column&tagId=%E5%8F%B3%E4%BE%A7%E5%86%85%E5%AE%B9&editType=null&pageId=d3e2bede1bc045e2875fc7161c01db7d",
+            "observed_at": "2026-10-01T10:27:55.0801087Z",
+            "response_sha256": "60a5d6cd0b9efc46e37c9b68d2ec5eeb760e724adbf4a695be7fab1156833031",
+            "source_rows": 24,
+            "items": [
+              {
+                "source": "Miit",
+                "title": "工业和信息化部举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_c37cffd9af9a4b3aa6379d153ed83620.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Miit",
+                "title": "工业和信息化系统国际合作工作座谈会在哈尔滨召开",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_b6f2e487b7a74338aa4999e8fd91ecc2.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Miit",
+            "listing_url": "https://www.miit.gov.cn/xwfb/bldhd/index.html",
+            "response_url": "https://www.miit.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=buildstatic&webId=8d828e408d90447786ddbe128d495e9e&tplSetId=209741b2109044b5b7695700b2bec37e&pageType=column&tagId=%E5%8F%B3%E4%BE%A7%E5%86%85%E5%AE%B9&editType=null&pageId=d3e2bede1bc045e2875fc7161c01db7d",
+            "observed_at": "2026-10-01T10:27:56.0359858Z",
+            "response_sha256": "60a5d6cd0b9efc46e37c9b68d2ec5eeb760e724adbf4a695be7fab1156833031",
+            "source_rows": 24,
+            "items": [
+              {
+                "source": "Miit",
+                "title": "工业和信息化部举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_c37cffd9af9a4b3aa6379d153ed83620.html",
+                "published_date": "2026-09-30",
+                "publication_label": "2026-09-30",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Miit",
+                "title": "工业和信息化系统国际合作工作座谈会在哈尔滨召开",
+                "canonical_url": "https://www.miit.gov.cn/xwfb/bldhd/art/2026/art_b6f2e487b7a74338aa4999e8fd91ecc2.html",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "source": "mofcom",
+        "access_mode": "formal",
+        "kind": "probe-1",
+        "started_utc": "2026-10-01T10:27:47.254570+00:00",
+        "seconds": 2.226,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Mofcom",
+            "listing_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/index.html",
+            "response_url": "https://www.mofcom.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=8f43c7ad3afc411fb56f281724b73708&tplSetId=52551ea0e2c14bca8c84792f7aa37ead&pageType=column&tagId=%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=95d89972d8aa4fcea511701cd0f212d9",
+            "observed_at": "2026-10-01T10:27:48.079266Z",
+            "response_sha256": "868949db408800b9adde5ce9fcb4971eb65d41ba78f9685ec84855c306185968",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Mofcom",
+                "title": "国家金融监督管理总局 商务部发布《关于加强商务和保险协同 做好内贸险有关工作的通知》",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7922bc64c4b7410c9d4a54af10921130.html",
+                "published_date": "2026-09-29",
+                "publication_label": "[2026-09-29]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mofcom",
+                "title": "商务部公布中美贸易理事会和“300亿对300亿”对等降税框架有关情况",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7f879be341ec4137a22f6d0360a5a291.html",
+                "published_date": "2026-09-28",
+                "publication_label": "[2026-09-28]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Mofcom",
+            "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7922bc64c4b7410c9d4a54af10921130.html",
+            "title": "国家金融监督管理总局 商务部发布《关于加强商务和保险协同 做好内贸险有关工作的通知》",
+            "published_date": "2026-09-29",
+            "publication_label": "2026-09-29 17:03",
+            "precision": "Minute",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:48.451394Z",
+            "response_sha256": "9e18ff9d8cf34be70d3e2d8c8ca9494200259d9af15d154a2bad12e3dc493c46",
+            "body_chars": 562
+          },
+          {
+            "source": "Mofcom",
+            "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7f879be341ec4137a22f6d0360a5a291.html",
+            "title": "商务部公布中美贸易理事会和“300亿对300亿”对等降税框架有关情况",
+            "published_date": "2026-09-28",
+            "publication_label": "2026-09-28 11:13",
+            "precision": "Minute",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:49.399192Z",
+            "response_sha256": "7ebea082e9da536896ce2640e7cfac86f45d50ae8817975b026830d44ce616d9",
+            "body_chars": 771
+          }
+        ]
+      },
+      {
+        "source": "mofcom",
+        "access_mode": "formal",
+        "kind": "probe-2",
+        "started_utc": "2026-10-01T10:27:50.493585+00:00",
+        "seconds": 2.267,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Mofcom",
+            "listing_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/index.html",
+            "response_url": "https://www.mofcom.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=8f43c7ad3afc411fb56f281724b73708&tplSetId=52551ea0e2c14bca8c84792f7aa37ead&pageType=column&tagId=%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=95d89972d8aa4fcea511701cd0f212d9",
+            "observed_at": "2026-10-01T10:27:51.0824214Z",
+            "response_sha256": "739d5d0d4fde3385b54aab86eae92254de0ac86c0b084fa6319be2b551bf23c7",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Mofcom",
+                "title": "国家金融监督管理总局 商务部发布《关于加强商务和保险协同 做好内贸险有关工作的通知》",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7922bc64c4b7410c9d4a54af10921130.html",
+                "published_date": "2026-09-29",
+                "publication_label": "[2026-09-29]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mofcom",
+                "title": "商务部公布中美贸易理事会和“300亿对300亿”对等降税框架有关情况",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7f879be341ec4137a22f6d0360a5a291.html",
+                "published_date": "2026-09-28",
+                "publication_label": "[2026-09-28]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Mofcom",
+            "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7922bc64c4b7410c9d4a54af10921130.html",
+            "title": "国家金融监督管理总局 商务部发布《关于加强商务和保险协同 做好内贸险有关工作的通知》",
+            "published_date": "2026-09-29",
+            "publication_label": "2026-09-29 17:03",
+            "precision": "Minute",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:51.7591114Z",
+            "response_sha256": "9e18ff9d8cf34be70d3e2d8c8ca9494200259d9af15d154a2bad12e3dc493c46",
+            "body_chars": 562
+          },
+          {
+            "source": "Mofcom",
+            "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7f879be341ec4137a22f6d0360a5a291.html",
+            "title": "商务部公布中美贸易理事会和“300亿对300亿”对等降税框架有关情况",
+            "published_date": "2026-09-28",
+            "publication_label": "2026-09-28 11:13",
+            "precision": "Minute",
+            "publication_label_origin": "ArticleMetadata",
+            "observed_at": "2026-10-01T10:27:52.7330037Z",
+            "response_sha256": "7ebea082e9da536896ce2640e7cfac86f45d50ae8817975b026830d44ce616d9",
+            "body_chars": 771
+          }
+        ]
+      },
+      {
+        "source": "mofcom",
+        "access_mode": "formal",
+        "kind": "serial-load",
+        "started_utc": "2026-10-01T10:27:53.788576+00:00",
+        "seconds": 2.252,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Mofcom",
+            "listing_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/index.html",
+            "response_url": "https://www.mofcom.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=8f43c7ad3afc411fb56f281724b73708&tplSetId=52551ea0e2c14bca8c84792f7aa37ead&pageType=column&tagId=%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=95d89972d8aa4fcea511701cd0f212d9",
+            "observed_at": "2026-10-01T10:27:54.3064988Z",
+            "response_sha256": "7b5f3cadb41c16faa8e52e921754ac7d6f6b4cf0a264a8cb2a7d0f61706f5bf3",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Mofcom",
+                "title": "国家金融监督管理总局 商务部发布《关于加强商务和保险协同 做好内贸险有关工作的通知》",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7922bc64c4b7410c9d4a54af10921130.html",
+                "published_date": "2026-09-29",
+                "publication_label": "[2026-09-29]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mofcom",
+                "title": "商务部公布中美贸易理事会和“300亿对300亿”对等降税框架有关情况",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7f879be341ec4137a22f6d0360a5a291.html",
+                "published_date": "2026-09-28",
+                "publication_label": "[2026-09-28]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Mofcom",
+            "listing_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/index.html",
+            "response_url": "https://www.mofcom.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=8f43c7ad3afc411fb56f281724b73708&tplSetId=52551ea0e2c14bca8c84792f7aa37ead&pageType=column&tagId=%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=95d89972d8aa4fcea511701cd0f212d9",
+            "observed_at": "2026-10-01T10:27:54.9788472Z",
+            "response_sha256": "06bce692b6d25367a0aa82f2a70459abfe876360361f4ec0eed0266d8c3ab34c",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Mofcom",
+                "title": "国家金融监督管理总局 商务部发布《关于加强商务和保险协同 做好内贸险有关工作的通知》",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7922bc64c4b7410c9d4a54af10921130.html",
+                "published_date": "2026-09-29",
+                "publication_label": "[2026-09-29]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mofcom",
+                "title": "商务部公布中美贸易理事会和“300亿对300亿”对等降税框架有关情况",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7f879be341ec4137a22f6d0360a5a291.html",
+                "published_date": "2026-09-28",
+                "publication_label": "[2026-09-28]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Mofcom",
+            "listing_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/index.html",
+            "response_url": "https://www.mofcom.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=8f43c7ad3afc411fb56f281724b73708&tplSetId=52551ea0e2c14bca8c84792f7aa37ead&pageType=column&tagId=%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=95d89972d8aa4fcea511701cd0f212d9",
+            "observed_at": "2026-10-01T10:27:55.9801727Z",
+            "response_sha256": "02d7c60507c3bc787c419798f898f17a149fb71740fd4373ea8ea049ed303509",
+            "source_rows": 15,
+            "items": [
+              {
+                "source": "Mofcom",
+                "title": "国家金融监督管理总局 商务部发布《关于加强商务和保险协同 做好内贸险有关工作的通知》",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7922bc64c4b7410c9d4a54af10921130.html",
+                "published_date": "2026-09-29",
+                "publication_label": "[2026-09-29]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Mofcom",
+                "title": "商务部公布中美贸易理事会和“300亿对300亿”对等降税框架有关情况",
+                "canonical_url": "https://www.mofcom.gov.cn/xwfb/rcxwfb/art/2026/art_7f879be341ec4137a22f6d0360a5a291.html",
+                "published_date": "2026-09-28",
+                "publication_label": "[2026-09-28]",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "source": "nea",
+        "access_mode": "formal",
+        "kind": "probe-1",
+        "started_utc": "2026-10-01T10:27:47.501513+00:00",
+        "seconds": 2.353,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Nea",
+            "listing_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "response_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "observed_at": "2026-10-01T10:27:48.1475853Z",
+            "response_sha256": "8a02ac3a217b68641bef1cda11d13ad8bf9a6386862fa15b405609b957c654d6",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Nea",
+                "title": "国家能源局举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.nea.gov.cn/20260930/9ca69805239243efad85690747000ff9/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nea",
+                "title": "第五次中法能源对话在北京举办",
+                "canonical_url": "https://www.nea.gov.cn/20260930/43d82ce9487a4199a0022e76211c3224/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Nea",
+            "canonical_url": "https://www.nea.gov.cn/20260930/9ca69805239243efad85690747000ff9/c.html",
+            "title": "国家能源局举行升国旗仪式 庆祝中华人民共和国成立77周年",
+            "published_date": "2026-09-30",
+            "publication_label": "发布时间：2026-09-30",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:48.8285154Z",
+            "response_sha256": "274e097deede0de1a52aeb7f28b6f82891bbc99d07363e660777ee5f64b4a316",
+            "body_chars": 569
+          },
+          {
+            "source": "Nea",
+            "canonical_url": "https://www.nea.gov.cn/20260930/43d82ce9487a4199a0022e76211c3224/c.html",
+            "title": "第五次中法能源对话在北京举办",
+            "published_date": "2026-09-30",
+            "publication_label": "发布时间：2026-09-30",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:49.8381187Z",
+            "response_sha256": "cd64f6d2b440f6be52e6dfd18687815971d4eb13e0278ef9c4f7968f1c2f0015",
+            "body_chars": 391
+          }
+        ]
+      },
+      {
+        "source": "nea",
+        "access_mode": "formal",
+        "kind": "probe-2",
+        "started_utc": "2026-10-01T10:27:50.856463+00:00",
+        "seconds": 2.54,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Nea",
+            "listing_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "response_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "observed_at": "2026-10-01T10:27:51.3410107Z",
+            "response_sha256": "8a02ac3a217b68641bef1cda11d13ad8bf9a6386862fa15b405609b957c654d6",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Nea",
+                "title": "国家能源局举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.nea.gov.cn/20260930/9ca69805239243efad85690747000ff9/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nea",
+                "title": "第五次中法能源对话在北京举办",
+                "canonical_url": "https://www.nea.gov.cn/20260930/43d82ce9487a4199a0022e76211c3224/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Nea",
+            "canonical_url": "https://www.nea.gov.cn/20260930/9ca69805239243efad85690747000ff9/c.html",
+            "title": "国家能源局举行升国旗仪式 庆祝中华人民共和国成立77周年",
+            "published_date": "2026-09-30",
+            "publication_label": "发布时间：2026-09-30",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:52.0278244Z",
+            "response_sha256": "274e097deede0de1a52aeb7f28b6f82891bbc99d07363e660777ee5f64b4a316",
+            "body_chars": 569
+          },
+          {
+            "source": "Nea",
+            "canonical_url": "https://www.nea.gov.cn/20260930/43d82ce9487a4199a0022e76211c3224/c.html",
+            "title": "第五次中法能源对话在北京举办",
+            "published_date": "2026-09-30",
+            "publication_label": "发布时间：2026-09-30",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:53.351924Z",
+            "response_sha256": "cd64f6d2b440f6be52e6dfd18687815971d4eb13e0278ef9c4f7968f1c2f0015",
+            "body_chars": 391
+          }
+        ]
+      },
+      {
+        "source": "nea",
+        "access_mode": "formal",
+        "kind": "serial-load",
+        "started_utc": "2026-10-01T10:27:54.436038+00:00",
+        "seconds": 2.297,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Nea",
+            "listing_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "response_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "observed_at": "2026-10-01T10:27:54.8501443Z",
+            "response_sha256": "8a02ac3a217b68641bef1cda11d13ad8bf9a6386862fa15b405609b957c654d6",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Nea",
+                "title": "国家能源局举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.nea.gov.cn/20260930/9ca69805239243efad85690747000ff9/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nea",
+                "title": "第五次中法能源对话在北京举办",
+                "canonical_url": "https://www.nea.gov.cn/20260930/43d82ce9487a4199a0022e76211c3224/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Nea",
+            "listing_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "response_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "observed_at": "2026-10-01T10:27:55.606604Z",
+            "response_sha256": "8a02ac3a217b68641bef1cda11d13ad8bf9a6386862fa15b405609b957c654d6",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Nea",
+                "title": "国家能源局举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.nea.gov.cn/20260930/9ca69805239243efad85690747000ff9/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nea",
+                "title": "第五次中法能源对话在北京举办",
+                "canonical_url": "https://www.nea.gov.cn/20260930/43d82ce9487a4199a0022e76211c3224/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          },
+          {
+            "source": "Nea",
+            "listing_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "response_url": "https://www.nea.gov.cn/xwzx/index.htm",
+            "observed_at": "2026-10-01T10:27:56.6095269Z",
+            "response_sha256": "8a02ac3a217b68641bef1cda11d13ad8bf9a6386862fa15b405609b957c654d6",
+            "source_rows": 10,
+            "items": [
+              {
+                "source": "Nea",
+                "title": "国家能源局举行升国旗仪式 庆祝中华人民共和国成立77周年",
+                "canonical_url": "https://www.nea.gov.cn/20260930/9ca69805239243efad85690747000ff9/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              },
+              {
+                "source": "Nea",
+                "title": "第五次中法能源对话在北京举办",
+                "canonical_url": "https://www.nea.gov.cn/20260930/43d82ce9487a4199a0022e76211c3224/c.html",
+                "published_date": "2026-09-30",
+                "publication_label": "(2026-09-30)",
+                "precision": "Date",
+                "publication_label_origin": "ListingHtml"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "source": "csrc",
+        "access_mode": "formal",
+        "kind": "probe-1",
+        "started_utc": "2026-10-01T10:27:48.143174+00:00",
+        "seconds": 3.239,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Csrc",
+            "listing_url": "https://www.csrc.gov.cn/csrc/c100028/common_xq_list.shtml",
+            "response_url": "https://www.csrc.gov.cn/searchList/a1a078ee0bc54721ab6b148884c784a8?_isAgg=true&_isJson=true&_pageSize=18&_template=index&_rangeTimeGte=&_channelName=&page=1",
+            "observed_at": "2026-10-01T10:27:48.8437838Z",
+            "response_sha256": "a701ca397061fbcca66ef2fa12bb90afc5c7d6fc83ddce2761ad104fd88e2fc1",
+            "source_rows": 18,
+            "items": [
+              {
+                "source": "Csrc",
+                "title": "湖北证监局原党委书记、局长王广幼被开除党籍",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7661513/content.shtml",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28 15:15:26",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会拟对17起案件线索的“吹哨人”给予奖励",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7659506/content.shtml",
+                "published_date": "2026-09-18",
+                "publication_label": "2026-09-18 15:27:06",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "河南证监局原党委书记、局长牛雪峰接受纪律审查和监察调查",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658935/content.shtml",
+                "published_date": "2026-09-16",
+                "publication_label": "2026-09-16 15:32:57",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《期货公司监督管理办法》及配套实施公告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658236/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 18:03:38",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会严肃查处*ST卓然严重财务造假案件",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658185/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 17:13:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "国新办举行“开局起步‘十五五’”系列主题新闻发布会 介绍金融领域贯彻落实“十五五”规划、推动金融强国建设有关情况",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7657861/content.shtml",
+                "published_date": "2026-09-10",
+                "publication_label": "2026-09-10 17:06:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见沙特投资部助理大臣穆巴拉克",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657131/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:33:27",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见阿曼金融服务管理局执行总裁萨尔米",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657128/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:30:58",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会召开树立和践行正确政绩观学习教育总结会议",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656853/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 18:49:39",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会就《私募投资基金募集监督管理办法（征求意见稿）》公开征求意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656676/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 15:58:04",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "关于资本市场支持构建房地产发展新模式的意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655027/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:25:29",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《关于资本市场支持构建房地产发展新模式的意见》",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655025/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:24:10",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布上市公司2025年年度财务报告会计监管报告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7652148/content.shtml",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14 16:12:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席出席人民币国债期货在港交所挂牌上市仪式并致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649538/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 16:30:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "深化务实合作  密切协同发展 共创“十五五”资本市场高水平开放新局面——吴清主席在香港推出人民币国债期货上市仪式上的致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7649382/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 09:47:42",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会同意焦炭期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649078/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:25:09",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "金融监管总局 中国人民银行 中国证监会 财政部关于健全金融机构治理的实施意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649076/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:22:47",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "证监会同意热轧卷板、不锈钢期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7647255/content.shtml",
+                "published_date": "2026-07-24",
+                "publication_label": "2026-07-24 15:37:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              }
+            ]
+          },
+          {
+            "source": "Csrc",
+            "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7661513/content.shtml",
+            "title": "湖北证监局原党委书记、局长王广幼被开除党籍",
+            "published_date": "2026-09-28",
+            "publication_label": "日期：2026-09-28 来源：证监会",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:49.4380624Z",
+            "response_sha256": "e97a3b8c8c3ca2e16c82106e8548badd8b62af12543acf8b3ec7e9a83e52b154",
+            "body_chars": 650
+          },
+          {
+            "source": "Csrc",
+            "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7659506/content.shtml",
+            "title": "中国证监会拟对17起案件线索的“吹哨人”给予奖励",
+            "published_date": "2026-09-18",
+            "publication_label": "日期：2026-09-18 来源：证监会",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:50.3903486Z",
+            "response_sha256": "b2656f9c3eea81e6b3e289e430f286a83e23b1383412db43e6c6758b6561bb32",
+            "body_chars": 1305
+          },
+          {
+            "source": "Csrc",
+            "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657131/content.shtml",
+            "title": "吴清主席会见沙特投资部助理大臣穆巴拉克",
+            "published_date": "2026-09-07",
+            "publication_label": "日期：2026-09-07 来源：证监会",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:51.3310417Z",
+            "response_sha256": "0c306212ba8ed340d4775c0f06f9fee84207898b11d93382213abe5bdbeaa5cc",
+            "body_chars": 111
+          }
+        ]
+      },
+      {
+        "source": "csrc",
+        "access_mode": "formal",
+        "kind": "probe-2",
+        "started_utc": "2026-10-01T10:27:52.384490+00:00",
+        "seconds": 3.214,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Csrc",
+            "listing_url": "https://www.csrc.gov.cn/csrc/c100028/common_xq_list.shtml",
+            "response_url": "https://www.csrc.gov.cn/searchList/a1a078ee0bc54721ab6b148884c784a8?_isAgg=true&_isJson=true&_pageSize=18&_template=index&_rangeTimeGte=&_channelName=&page=1",
+            "observed_at": "2026-10-01T10:27:53.0372474Z",
+            "response_sha256": "a701ca397061fbcca66ef2fa12bb90afc5c7d6fc83ddce2761ad104fd88e2fc1",
+            "source_rows": 18,
+            "items": [
+              {
+                "source": "Csrc",
+                "title": "湖北证监局原党委书记、局长王广幼被开除党籍",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7661513/content.shtml",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28 15:15:26",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会拟对17起案件线索的“吹哨人”给予奖励",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7659506/content.shtml",
+                "published_date": "2026-09-18",
+                "publication_label": "2026-09-18 15:27:06",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "河南证监局原党委书记、局长牛雪峰接受纪律审查和监察调查",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658935/content.shtml",
+                "published_date": "2026-09-16",
+                "publication_label": "2026-09-16 15:32:57",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《期货公司监督管理办法》及配套实施公告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658236/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 18:03:38",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会严肃查处*ST卓然严重财务造假案件",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658185/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 17:13:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "国新办举行“开局起步‘十五五’”系列主题新闻发布会 介绍金融领域贯彻落实“十五五”规划、推动金融强国建设有关情况",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7657861/content.shtml",
+                "published_date": "2026-09-10",
+                "publication_label": "2026-09-10 17:06:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见沙特投资部助理大臣穆巴拉克",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657131/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:33:27",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见阿曼金融服务管理局执行总裁萨尔米",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657128/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:30:58",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会召开树立和践行正确政绩观学习教育总结会议",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656853/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 18:49:39",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会就《私募投资基金募集监督管理办法（征求意见稿）》公开征求意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656676/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 15:58:04",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "关于资本市场支持构建房地产发展新模式的意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655027/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:25:29",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《关于资本市场支持构建房地产发展新模式的意见》",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655025/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:24:10",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布上市公司2025年年度财务报告会计监管报告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7652148/content.shtml",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14 16:12:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席出席人民币国债期货在港交所挂牌上市仪式并致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649538/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 16:30:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "深化务实合作  密切协同发展 共创“十五五”资本市场高水平开放新局面——吴清主席在香港推出人民币国债期货上市仪式上的致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7649382/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 09:47:42",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会同意焦炭期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649078/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:25:09",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "金融监管总局 中国人民银行 中国证监会 财政部关于健全金融机构治理的实施意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649076/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:22:47",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "证监会同意热轧卷板、不锈钢期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7647255/content.shtml",
+                "published_date": "2026-07-24",
+                "publication_label": "2026-07-24 15:37:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              }
+            ]
+          },
+          {
+            "source": "Csrc",
+            "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7661513/content.shtml",
+            "title": "湖北证监局原党委书记、局长王广幼被开除党籍",
+            "published_date": "2026-09-28",
+            "publication_label": "日期：2026-09-28 来源：证监会",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:53.6789156Z",
+            "response_sha256": "e97a3b8c8c3ca2e16c82106e8548badd8b62af12543acf8b3ec7e9a83e52b154",
+            "body_chars": 650
+          },
+          {
+            "source": "Csrc",
+            "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7659506/content.shtml",
+            "title": "中国证监会拟对17起案件线索的“吹哨人”给予奖励",
+            "published_date": "2026-09-18",
+            "publication_label": "日期：2026-09-18 来源：证监会",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:54.5822941Z",
+            "response_sha256": "b2656f9c3eea81e6b3e289e430f286a83e23b1383412db43e6c6758b6561bb32",
+            "body_chars": 1305
+          },
+          {
+            "source": "Csrc",
+            "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657131/content.shtml",
+            "title": "吴清主席会见沙特投资部助理大臣穆巴拉克",
+            "published_date": "2026-09-07",
+            "publication_label": "日期：2026-09-07 来源：证监会",
+            "precision": "Date",
+            "publication_label_origin": "VisibleArticleDate",
+            "observed_at": "2026-10-01T10:27:55.5854221Z",
+            "response_sha256": "0c306212ba8ed340d4775c0f06f9fee84207898b11d93382213abe5bdbeaa5cc",
+            "body_chars": 111
+          }
+        ]
+      },
+      {
+        "source": "csrc",
+        "access_mode": "formal",
+        "kind": "serial-load",
+        "started_utc": "2026-10-01T10:27:56.600592+00:00",
+        "seconds": 2.505,
+        "exit_code": 0,
+        "stderr": "",
+        "records": [
+          {
+            "source": "Csrc",
+            "listing_url": "https://www.csrc.gov.cn/csrc/c100028/common_xq_list.shtml",
+            "response_url": "https://www.csrc.gov.cn/searchList/a1a078ee0bc54721ab6b148884c784a8?_isAgg=true&_isJson=true&_pageSize=18&_template=index&_rangeTimeGte=&_channelName=&page=1",
+            "observed_at": "2026-10-01T10:27:57.384313Z",
+            "response_sha256": "a701ca397061fbcca66ef2fa12bb90afc5c7d6fc83ddce2761ad104fd88e2fc1",
+            "source_rows": 18,
+            "items": [
+              {
+                "source": "Csrc",
+                "title": "湖北证监局原党委书记、局长王广幼被开除党籍",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7661513/content.shtml",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28 15:15:26",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会拟对17起案件线索的“吹哨人”给予奖励",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7659506/content.shtml",
+                "published_date": "2026-09-18",
+                "publication_label": "2026-09-18 15:27:06",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "河南证监局原党委书记、局长牛雪峰接受纪律审查和监察调查",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658935/content.shtml",
+                "published_date": "2026-09-16",
+                "publication_label": "2026-09-16 15:32:57",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《期货公司监督管理办法》及配套实施公告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658236/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 18:03:38",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会严肃查处*ST卓然严重财务造假案件",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658185/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 17:13:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "国新办举行“开局起步‘十五五’”系列主题新闻发布会 介绍金融领域贯彻落实“十五五”规划、推动金融强国建设有关情况",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7657861/content.shtml",
+                "published_date": "2026-09-10",
+                "publication_label": "2026-09-10 17:06:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见沙特投资部助理大臣穆巴拉克",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657131/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:33:27",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见阿曼金融服务管理局执行总裁萨尔米",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657128/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:30:58",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会召开树立和践行正确政绩观学习教育总结会议",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656853/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 18:49:39",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会就《私募投资基金募集监督管理办法（征求意见稿）》公开征求意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656676/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 15:58:04",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "关于资本市场支持构建房地产发展新模式的意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655027/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:25:29",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《关于资本市场支持构建房地产发展新模式的意见》",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655025/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:24:10",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布上市公司2025年年度财务报告会计监管报告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7652148/content.shtml",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14 16:12:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席出席人民币国债期货在港交所挂牌上市仪式并致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649538/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 16:30:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "深化务实合作  密切协同发展 共创“十五五”资本市场高水平开放新局面——吴清主席在香港推出人民币国债期货上市仪式上的致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7649382/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 09:47:42",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会同意焦炭期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649078/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:25:09",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "金融监管总局 中国人民银行 中国证监会 财政部关于健全金融机构治理的实施意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649076/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:22:47",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "证监会同意热轧卷板、不锈钢期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7647255/content.shtml",
+                "published_date": "2026-07-24",
+                "publication_label": "2026-07-24 15:37:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              }
+            ]
+          },
+          {
+            "source": "Csrc",
+            "listing_url": "https://www.csrc.gov.cn/csrc/c100028/common_xq_list.shtml",
+            "response_url": "https://www.csrc.gov.cn/searchList/a1a078ee0bc54721ab6b148884c784a8?_isAgg=true&_isJson=true&_pageSize=18&_template=index&_rangeTimeGte=&_channelName=&page=1",
+            "observed_at": "2026-10-01T10:27:57.9945972Z",
+            "response_sha256": "a701ca397061fbcca66ef2fa12bb90afc5c7d6fc83ddce2761ad104fd88e2fc1",
+            "source_rows": 18,
+            "items": [
+              {
+                "source": "Csrc",
+                "title": "湖北证监局原党委书记、局长王广幼被开除党籍",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7661513/content.shtml",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28 15:15:26",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会拟对17起案件线索的“吹哨人”给予奖励",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7659506/content.shtml",
+                "published_date": "2026-09-18",
+                "publication_label": "2026-09-18 15:27:06",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "河南证监局原党委书记、局长牛雪峰接受纪律审查和监察调查",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658935/content.shtml",
+                "published_date": "2026-09-16",
+                "publication_label": "2026-09-16 15:32:57",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《期货公司监督管理办法》及配套实施公告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658236/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 18:03:38",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会严肃查处*ST卓然严重财务造假案件",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658185/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 17:13:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "国新办举行“开局起步‘十五五’”系列主题新闻发布会 介绍金融领域贯彻落实“十五五”规划、推动金融强国建设有关情况",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7657861/content.shtml",
+                "published_date": "2026-09-10",
+                "publication_label": "2026-09-10 17:06:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见沙特投资部助理大臣穆巴拉克",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657131/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:33:27",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见阿曼金融服务管理局执行总裁萨尔米",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657128/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:30:58",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会召开树立和践行正确政绩观学习教育总结会议",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656853/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 18:49:39",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会就《私募投资基金募集监督管理办法（征求意见稿）》公开征求意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656676/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 15:58:04",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "关于资本市场支持构建房地产发展新模式的意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655027/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:25:29",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《关于资本市场支持构建房地产发展新模式的意见》",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655025/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:24:10",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布上市公司2025年年度财务报告会计监管报告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7652148/content.shtml",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14 16:12:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席出席人民币国债期货在港交所挂牌上市仪式并致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649538/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 16:30:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "深化务实合作  密切协同发展 共创“十五五”资本市场高水平开放新局面——吴清主席在香港推出人民币国债期货上市仪式上的致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7649382/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 09:47:42",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会同意焦炭期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649078/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:25:09",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "金融监管总局 中国人民银行 中国证监会 财政部关于健全金融机构治理的实施意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649076/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:22:47",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "证监会同意热轧卷板、不锈钢期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7647255/content.shtml",
+                "published_date": "2026-07-24",
+                "publication_label": "2026-07-24 15:37:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              }
+            ]
+          },
+          {
+            "source": "Csrc",
+            "listing_url": "https://www.csrc.gov.cn/csrc/c100028/common_xq_list.shtml",
+            "response_url": "https://www.csrc.gov.cn/searchList/a1a078ee0bc54721ab6b148884c784a8?_isAgg=true&_isJson=true&_pageSize=18&_template=index&_rangeTimeGte=&_channelName=&page=1",
+            "observed_at": "2026-10-01T10:27:59.0906812Z",
+            "response_sha256": "a701ca397061fbcca66ef2fa12bb90afc5c7d6fc83ddce2761ad104fd88e2fc1",
+            "source_rows": 18,
+            "items": [
+              {
+                "source": "Csrc",
+                "title": "湖北证监局原党委书记、局长王广幼被开除党籍",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7661513/content.shtml",
+                "published_date": "2026-09-28",
+                "publication_label": "2026-09-28 15:15:26",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会拟对17起案件线索的“吹哨人”给予奖励",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7659506/content.shtml",
+                "published_date": "2026-09-18",
+                "publication_label": "2026-09-18 15:27:06",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "河南证监局原党委书记、局长牛雪峰接受纪律审查和监察调查",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658935/content.shtml",
+                "published_date": "2026-09-16",
+                "publication_label": "2026-09-16 15:32:57",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《期货公司监督管理办法》及配套实施公告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658236/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 18:03:38",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会严肃查处*ST卓然严重财务造假案件",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7658185/content.shtml",
+                "published_date": "2026-09-11",
+                "publication_label": "2026-09-11 17:13:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "国新办举行“开局起步‘十五五’”系列主题新闻发布会 介绍金融领域贯彻落实“十五五”规划、推动金融强国建设有关情况",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7657861/content.shtml",
+                "published_date": "2026-09-10",
+                "publication_label": "2026-09-10 17:06:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见沙特投资部助理大臣穆巴拉克",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657131/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:33:27",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席会见阿曼金融服务管理局执行总裁萨尔米",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7657128/content.shtml",
+                "published_date": "2026-09-07",
+                "publication_label": "2026-09-07 19:30:58",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会召开树立和践行正确政绩观学习教育总结会议",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656853/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 18:49:39",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会就《私募投资基金募集监督管理办法（征求意见稿）》公开征求意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7656676/content.shtml",
+                "published_date": "2026-09-04",
+                "publication_label": "2026-09-04 15:58:04",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "关于资本市场支持构建房地产发展新模式的意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655027/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:25:29",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布《关于资本市场支持构建房地产发展新模式的意见》",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7655025/content.shtml",
+                "published_date": "2026-08-28",
+                "publication_label": "2026-08-28 15:24:10",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会发布上市公司2025年年度财务报告会计监管报告",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7652148/content.shtml",
+                "published_date": "2026-08-14",
+                "publication_label": "2026-08-14 16:12:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "吴清主席出席人民币国债期货在港交所挂牌上市仪式并致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649538/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 16:30:19",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "深化务实合作  密切协同发展 共创“十五五”资本市场高水平开放新局面——吴清主席在香港推出人民币国债期货上市仪式上的致辞",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c106311/c7649382/content.shtml",
+                "published_date": "2026-08-03",
+                "publication_label": "2026-08-03 09:47:42",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "中国证监会同意焦炭期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649078/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:25:09",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "金融监管总局 中国人民银行 中国证监会 财政部关于健全金融机构治理的实施意见",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7649076/content.shtml",
+                "published_date": "2026-07-31",
+                "publication_label": "2026-07-31 15:22:47",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              },
+              {
+                "source": "Csrc",
+                "title": "证监会同意热轧卷板、不锈钢期权注册",
+                "canonical_url": "https://www.csrc.gov.cn/csrc/c100028/c7647255/content.shtml",
+                "published_date": "2026-07-24",
+                "publication_label": "2026-07-24 15:37:28",
+                "precision": "Second",
+                "publication_label_origin": "ListingApi"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  ]
+}

@@ -223,6 +223,9 @@ pub const MONEY_FLOWS_REQUEST_SCHEMA: &str = "magic.market.money_flows.request";
 pub const MONEY_FLOWS_RECORD_SCHEMA: &str = "magic.market.money_flow";
 pub const FUTURES_DELIVERY_REQUEST_SCHEMA: &str = "magic.market.futures_delivery.request";
 pub const FUTURES_DELIVERY_RECORD_SCHEMA: &str = "magic.market.futures_delivery_event";
+const FUTURES_DELIVERY_SCHEMA_VERSION: u32 = 2;
+const FUTURES_DELIVERY_HOLIDAY_CALENDAR_URL: &str =
+    "https://www.gov.cn/gongbao/2025/issue_12406/material/gwygb202532.pdf";
 pub const INDEX_QUOTES_REQUEST_SCHEMA: &str = "magic.market.index_quotes.request";
 pub const INDEX_QUOTES_RECORD_SCHEMA: &str = REALTIME_QUOTES_RECORD_SCHEMA;
 pub const INTRADAY_SHAPE_REQUEST_SCHEMA: &str = "magic.market.intraday_shape.request";
@@ -268,6 +271,8 @@ const TENCENT_STATISTICS_SCOPE: &str =
 
 #[derive(Debug, Error)]
 pub enum ProductionRegistryError {
+    #[error("official publication client initialization failed: {0}")]
+    OfficialPublication(#[from] magic_official_news_rs::OfficialNewsError),
     #[error("Baidu production client initialization failed: {0}")]
     Baidu(#[from] BaiduError),
     #[error("invalid production registry limit: {0}")]
@@ -721,6 +726,7 @@ fn register_extended_providers(
             )
         },
     )?;
+    registry.set_default_provider(Operation::GlobalNews, "WallstreetCn")?;
     register_global_news_parity(registry, provider_timeout, maximum_payload_bytes)?;
     register_sina_parity(registry, sina, maximum_payload_bytes)?;
 
@@ -801,6 +807,11 @@ fn register_extended_providers(
     )?;
     register_additional_providers(registry, provider_timeout, maximum_payload_bytes)?;
     register_extended_handlers(registry, provider_timeout, maximum_payload_bytes)?;
+    crate::official_publications::register_official_publications(
+        registry,
+        provider_timeout,
+        maximum_payload_bytes,
+    )?;
     register_exact_blockers(registry)?;
     Ok(())
 }
@@ -1280,18 +1291,19 @@ fn register_extended_handlers(
         admitted(
             Operation::FuturesDelivery,
             "Cffex",
-            "versioned 2026 CFFEX equity-index futures delivery schedule; cash settlement; no runtime network transport",
+            "versioned 2026 rule-derived planned CFFEX equity-index futures delivery schedule; conditional on no exchange adjustment; no runtime network transport",
         ),
         move |command| {
-            let request: FuturesDeliveryRequest =
-                decode_request(&command, FUTURES_DELIVERY_REQUEST_SCHEMA)?;
+            let request: FuturesDeliveryRequest = decode_request_version(
+                &command,
+                FUTURES_DELIVERY_REQUEST_SCHEMA,
+                FUTURES_DELIVERY_SCHEMA_VERSION,
+            )?;
             let batch = cffex
                 .futures_delivery_calendar(&request)
                 .map_err(|error| provider_error(Operation::FuturesDelivery, error))?;
-            provider_query_result(
+            futures_delivery_query_result(
                 batch,
-                "Cffex",
-                FUTURES_DELIVERY_RECORD_SCHEMA,
                 maximum_payload_bytes,
             )
         },
@@ -2664,7 +2676,7 @@ fn register_iwencai(
         registry.register_unavailable(blocked(
             Operation::SemanticSearch,
             "Iwencai",
-            "authorized bounded semantic research search",
+            "authorized bounded Report-channel semantic research search",
             "repository semantic-search admission is disabled",
         ))?;
         return Ok(());
@@ -2674,7 +2686,7 @@ fn register_iwencai(
         registry.register_unavailable(runtime_unavailable(
             Operation::SemanticSearch,
             "Iwencai",
-            "authorized bounded semantic research search",
+            "authorized bounded Report-channel semantic research search",
             "MAGIC_IWENCAI_API_KEY is not present in the server process environment",
         ))?;
         return Ok(());
@@ -2684,7 +2696,7 @@ fn register_iwencai(
         admitted(
             Operation::SemanticSearch,
             "Iwencai",
-            "authorized bounded semantic research search",
+            "authorized bounded Report-channel semantic research search",
         ),
         move |command| {
             execute_typed(
@@ -4915,6 +4927,53 @@ fn financial_statements_query_result(
     })
 }
 
+fn futures_delivery_query_result(
+    batch: DataBatch<magic_market_core::FuturesDeliveryEvent>,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let provenance = batch.provenance();
+    let batch_id = provenance
+        .batch_id()
+        .ok_or_else(|| ServiceError::FailedPrecondition("Cffex batch has no batch_id".into()))?;
+    let records = batch
+        .records()
+        .iter()
+        .map(|record| {
+            let value = serde_json::json!({
+                "product": record.product,
+                "contract_code": record.contract_code,
+                "last_trading_date": record.last_trading_date,
+                "delivery_date": record.delivery_date,
+                "method": record.method,
+                "schedule_status": "Planned",
+                "date_basis": "CffexRuleAndPublishedHolidays",
+                "rule_url": record.notice_url.as_str(),
+                "holiday_calendar_url": FUTURES_DELIVERY_HOLIDAY_CALENDAR_URL,
+                "evidence": record.evidence,
+            });
+            let data = serde_json::to_vec(&value).map_err(|error| {
+                ServiceError::Internal(format!("futures delivery serialization failed: {error}"))
+            })?;
+            CanonicalPayload::new(
+                FUTURES_DELIVERY_RECORD_SCHEMA,
+                FUTURES_DELIVERY_SCHEMA_VERSION,
+                data,
+                maximum_payload_bytes,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(QueryResult {
+        provider: "Cffex".to_owned(),
+        batch_id: batch_id.to_owned(),
+        complete: batch.quality().is_complete(),
+        observed_at: provenance.fetched_at().to_owned(),
+        source_at: provenance.source_at().map(str::to_owned),
+        records,
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
 fn provider_query_result<T: Serialize>(
     batch: DataBatch<T>,
     provider: &str,
@@ -5257,6 +5316,7 @@ fn map_hithink_error(operation: Operation, error: &HithinkError) -> ServiceError
 fn map_iwencai_error(operation: Operation, error: &IwencaiError) -> ServiceError {
     match error {
         IwencaiError::InvalidRequest(message) => invalid(message),
+        IwencaiError::Unsupported(reason) => unsupported(operation, reason),
         IwencaiError::Authentication(_) => ServiceError::PermissionDenied(error.to_string()),
         IwencaiError::Transport(_) => unavailable(operation, error),
         IwencaiError::Decode(_) | IwencaiError::Protocol(_) | IwencaiError::Core(_) => {
@@ -5414,6 +5474,42 @@ mod tests {
     use magic_tencent_rs::SnapshotTransport;
 
     use super::*;
+
+    #[test]
+    fn futures_delivery_v2_projection_marks_planned_rule_derived_dates() {
+        let client = CffexClient::new().unwrap();
+        let request = FuturesDeliveryRequest::new(
+            PositiveU32::new(2026).unwrap(),
+            PositiveU32::new(9).unwrap(),
+        )
+        .unwrap();
+        let batch = client.futures_delivery_calendar(&request).unwrap();
+        let result = futures_delivery_query_result(batch, 4096).unwrap();
+        assert!(result.complete);
+        assert_eq!(result.records.len(), 4);
+        assert!(result.source_at.is_none());
+        for (index, payload) in result.records.iter().enumerate() {
+            assert_eq!(payload.schema(), FUTURES_DELIVERY_RECORD_SCHEMA);
+            assert_eq!(payload.schema_version(), 2);
+            let record: serde_json::Value = serde_json::from_slice(payload.data()).unwrap();
+            assert_eq!(record["schedule_status"], "Planned");
+            assert_eq!(record["date_basis"], "CffexRuleAndPublishedHolidays");
+            assert_eq!(record["delivery_date"], "2026-09-18");
+            assert_eq!(
+                record["holiday_calendar_url"],
+                FUTURES_DELIVERY_HOLIDAY_CALENDAR_URL
+            );
+            assert!(record.get("notice_url").is_none());
+            assert!(record["rule_url"]
+                .as_str()
+                .unwrap()
+                .starts_with("https://www.cffex.com.cn/"));
+            assert_eq!(
+                record["contract_code"],
+                ["IF2609", "IH2609", "IC2609", "IM2609"][index]
+            );
+        }
+    }
 
     fn news_record(
         id: &str,
@@ -6068,6 +6164,10 @@ mod tests {
     #[test]
     fn production_registry_is_exhaustive_and_only_enables_evidence_backed_operations() {
         let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
+        assert_eq!(
+            registry.default_provider(Operation::GlobalNews),
+            Some("WallstreetCn")
+        );
         let quote = registry
             .capabilities()
             .into_iter()
@@ -6091,7 +6191,7 @@ mod tests {
             .filter(|capability| capability.repository_admitted)
             .map(|capability| capability.operation)
             .collect::<BTreeSet<_>>();
-        assert_eq!(admitted.len(), 61);
+        assert_eq!(admitted.len(), 63);
         let blocked = magic_market_service::ALL_OPERATIONS
             .iter()
             .copied()
@@ -6325,6 +6425,8 @@ mod tests {
             (Operation::OrderBooks, "EmQuant", "Tencent"),
             (Operation::RealtimeQuotes, "EmQuant", "Tencent"),
             (Operation::GlobalNews, "SecuritiesTimes", "Cls"),
+            (Operation::OfficialPublications, "Gacc", "Nbs"),
+            (Operation::OfficialPublication, "Gacc", "Nbs"),
         ];
         // Unadmitted capabilities whose own operation has no admitted route at
         // all, so they cannot join the list above: both `Auctions`

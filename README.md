@@ -60,7 +60,31 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
-当前对接合同交付基线为 client-bundle `2026-09-22.1`。该版本把 `HithinkFinance` 被拒绝的
+Rust 组合层提供有界[资讯候选检索](crates/magic-market-composition/src/content_discovery.rs)：
+可在已准入的最新新闻窗口中用实体别名组筛选科技报道，或在巨潮公告的单日/单证券日期
+窗口中筛选 14 类公告候选，包括年报、半年报、业绩预告、增减持、回购股份减持、
+发行融资、控制权变更、股份转让、质押/解除、冻结/解冻、回购、激励及员工持股。
+示例命令：
+
+```text
+cargo run -p magic-market-composition --example content_discovery -- news "NVIDIA|英伟达" "Rubin|鲁宾"
+cargo run -p magic-market-composition --example content_discovery -- issuer SH 600519 2025-01-01 2025-12-31 annual
+cargo run -p magic-market-composition --example content_discovery -- issuer SZ 000001 2026-01-01 2026-09-30 shareholder-increase
+```
+
+它保留逐源失败和原始记录，不保证 Rubin/Muse 历史新闻已被当前滚动窗口收录，也不把标题
+命中当作已核实的财务事件或数值。iWencai 只有 `Report` 频道通过正式准入，其它频道
+会在 HTTP 前明确拒绝；外部科技垂直来源和统一 gRPC 历史检索仍需独立准入与版本化合同。
+
+另有 [国内官方发布原文](docs/integrations/official-domestic-publications.md) Rust 与统一 gRPC 接口，
+已准入统计局、央行、发改委、商务部，以及财政部综合司政策发布、工信部部领导活动、
+能源局十条局工作动态窗口、证监会要闻聚合页。它保留日期、分钟或秒级的来源标签及
+标签位置，不将日期补成精确时间；调用方可读取当前列表及同域 HTML 正文。海关仍未准入。
+统一服务新增 `OfficialPublications` / `OfficialPublication`，可精确选择八个来源；
+`official-news-collector` 程序支持串行定时采集并追加完整证据与失败日志。
+
+本工作树默认生成 client-bundle `2026-10-01.1`，追加两个官方发布 RPC；运行中的实例需
+单独更新。此前对接合同基线 `2026-09-22.1` 把 `HithinkFinance` 被拒绝的
 HTTP status 按状态分类：`429` 为可重试的 `provider_rate_limited`，`401`/`403` 为不可重试的
 `provider_authentication_rejected`，`5xx` 保持 `provider_unavailable`，其余状态为不可重试的
 `external_query_rejected`；此前这些状态一律上报为 `provider_unavailable`。上一基线
@@ -305,6 +329,7 @@ bash tools/release/package.sh
 - [TDX 能力矩阵](docs/TDX_CAPABILITIES.md)
 - [TDX 本地终端监听](docs/integrations/tdx-local-terminal.md)
 - [同花顺扶摇 Financial API](docs/integrations/hithink-fuyao.md)
+- [国内官方发布原文：八源准入与精度](docs/integrations/official-domestic-publications.md)
 - [Provider 准入注册表](docs/integrations/admissions.tsv)
 - [未准入 Provider 路径与显式替代](docs/integrations/unadmitted-provider-routes.md)
 - [HTTP 传输注册表](docs/integrations/http-transports.tsv)

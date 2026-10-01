@@ -1,6 +1,6 @@
 param(
     [string]$Destination = "target/runtime/client-bundle",
-    [string]$BundleVersion = "2026-09-22.1",
+    [string]$BundleVersion = "2026-10-01.1",
     [string]$SourceCommit = "",
     [string]$ServiceVersion = "",
     [string]$ContractSha256 = "",
@@ -59,6 +59,8 @@ if ($hasDeploymentIdentity) {
 $publicFiles = @(
     @("market.proto", "crates/magic-market-grpc-contracts/proto/magic/market/v1/market.proto"),
     @("grpc-external-api.md", "docs/integrations/grpc-external-api.md"),
+    @("grpc-futures-delivery-v2.md", "docs/integrations/grpc-futures-delivery-v2.md"),
+    @("futures-delivery-2026-09.fixture.json", "docs/integrations/futures-delivery-2026-09.fixture.json"),
     @("grpc-derived-products.md", "docs/integrations/grpc-derived-products.md"),
     @("tdx-public-security-profile.md", "docs/integrations/tdx-public-security-profile.md"),
     @("unadmitted-provider-routes.md", "docs/integrations/unadmitted-provider-routes.md")
@@ -115,8 +117,8 @@ if (-not $serviceMatch.Success) {
     throw "market.proto has no MarketDataService block"
 }
 $rpcCount = [regex]::Matches($serviceMatch.Groups['body'].Value, '\brpc\s+').Count
-if ($rpcCount -ne 63) {
-    throw "client bundle must contain exactly 63 MarketDataService RPCs, got $rpcCount"
+if ($rpcCount -ne 65) {
+    throw "client bundle must contain exactly 65 MarketDataService RPCs, got $rpcCount"
 }
 
 $generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
@@ -146,6 +148,9 @@ $metadata = @"
   "current_auction_observations_schema_version": 1,
   "economic_release_observations_schema_version": 1,
   "economic_release_schedule_schema_version": 1,
+  "futures_delivery_schema_version": 2,
+  "official_publications_schema_version": 1,
+  "official_publication_schema_version": 1,
   "deployment_build_identity": $deploymentIdentity,
   "generated_at_utc": "$generatedAt"
 }
@@ -166,6 +171,10 @@ MarketDataService RPCs: $rpcCount
 Public contract files are covered by manifest.sha256. GlobalNews, InstrumentNews,
 T0Evidence, and FinancialStatements support the documented schema version 2;
 FinancialStatements also retains its frozen version 1 projection.
+FuturesDelivery schema version 2 and a full 2026-09 wire fixture are documented
+in grpc-futures-delivery-v2.md and futures-delivery-2026-09.fixture.json.
+OfficialPublications and OfficialPublication expose native evidence envelopes in version 1;
+publication date labels never supply QueryResponse.source_at.
 GetHealth and GetListenerStatus expose append-only aggregate runtime observability fields.
 When deployment_build_identity is non-null, compare every field with GetHealth.build_identity
 before admitting the endpoint; the documented hash scopes are exact and case-sensitive.
@@ -189,6 +198,8 @@ On macOS, where sha256sum is not installed by default:
 $manifestFiles = @(
     "market.proto",
     "grpc-external-api.md",
+    "grpc-futures-delivery-v2.md",
+    "futures-delivery-2026-09.fixture.json",
     "grpc-derived-products.md",
     "tdx-public-security-profile.md",
     "unadmitted-provider-routes.md",

@@ -297,6 +297,8 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
             | "fund.eastmoney.com"
             | "futures.eastmoney.com"
             | "bond.eastmoney.com"
+            | "bank.eastmoney.com"
+            | "forex.eastmoney.com"
             | "hk.eastmoney.com"
     ) {
         return Err(EastmoneyError::Protocol(format!(

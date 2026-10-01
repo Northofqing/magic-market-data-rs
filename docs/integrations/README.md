@@ -27,6 +27,9 @@ silently diverge.
 
 - [`async-blocking.md`](async-blocking.md) explains how to call the current
   synchronous HTTP providers from Tokio without blocking executor workers.
+- [`official-domestic-publications.md`](official-domestic-publications.md)
+  records the eight admitted original-publication scopes and blocked customs source,
+  native date precision, unified service/gRPC contracts and the opt-in serial collection journal.
 - [`http-transports.tsv`](http-transports.tsv) records the reviewed production
   HTTP dependency boundary and is checked against tracked Cargo manifests.
 - [`tdx-local-terminal.md`](tdx-local-terminal.md) records automatic TDX process

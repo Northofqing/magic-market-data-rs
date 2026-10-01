@@ -129,6 +129,7 @@ fn rejects_wrong_envelope_and_non_terminal_cursor_shapes() {
     assert!(parse_quick_news(br#"{"state":1,"data":[],"page_time":2,"last_time":1}"#, 1).is_err());
 
     let fixture = String::from_utf8(FIXTURE.to_vec()).expect("UTF-8");
+    let fixture = fixture.replace("\r\n", "\n");
     let missing_page_time = fixture.replace(",\n  \"page_time\": 2", "");
     assert!(parse_quick_news(missing_page_time.as_bytes(), 1).is_err());
     let null_page_time = fixture.replace("\"page_time\": 2", "\"page_time\": null");

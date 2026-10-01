@@ -98,6 +98,8 @@ define_operations! {
     CurrentAuctionObservations => "current_auction_observations",
     EconomicReleaseObservations => "economic_release_observations",
     EconomicReleaseSchedule => "economic_release_schedule",
+    OfficialPublications => "official_publications",
+    OfficialPublication => "official_publication",
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -269,6 +271,7 @@ struct Registration {
 #[derive(Clone)]
 pub struct OperationRegistry {
     registrations: BTreeMap<Operation, Vec<Registration>>,
+    default_providers: BTreeMap<Operation, String>,
 }
 
 impl OperationRegistry {
@@ -297,7 +300,47 @@ impl OperationRegistry {
                 )
             })
             .collect();
-        Self { registrations }
+        Self {
+            registrations,
+            default_providers: BTreeMap::new(),
+        }
+    }
+
+    /// Select an admitted default without making registration order part of the contract.
+    pub fn set_default_provider(
+        &mut self,
+        operation: Operation,
+        provider: &str,
+    ) -> Result<(), ServiceError> {
+        if matches!(operation, Operation::LimitPools | Operation::RealtimeQuotes) {
+            return Err(ServiceError::InvalidRequest(
+                "routed operations do not accept a single default provider".to_owned(),
+            ));
+        }
+        let registered = self
+            .registrations
+            .get(&operation)
+            .is_some_and(|registrations| {
+                registrations.iter().any(|registration| {
+                    registration.capability.provider == provider
+                        && registration.capability.repository_admitted
+                        && registration.capability.runtime_available
+                        && registration.handler.is_some()
+                })
+            });
+        if !registered {
+            return Err(ServiceError::InvalidRequest(format!(
+                "default provider {provider} is not an admitted, available handler for {operation:?}"
+            )));
+        }
+        self.default_providers
+            .insert(operation, provider.to_owned());
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn default_provider(&self, operation: Operation) -> Option<&str> {
+        self.default_providers.get(&operation).map(String::as_str)
     }
 
     pub fn register_unavailable(&mut self, capability: Capability) -> Result<(), ServiceError> {
@@ -385,13 +428,19 @@ impl OperationRegistry {
                     reason: format!("provider {preferred} is not registered for this operation"),
                 })?
         } else {
-            registrations
-                .iter()
-                .find(|registration| {
-                    registration.capability.repository_admitted
-                        && registration.capability.runtime_available
-                        && registration.handler.is_some()
+            let eligible = |registration: &&Registration| {
+                registration.capability.repository_admitted
+                    && registration.capability.runtime_available
+                    && registration.handler.is_some()
+            };
+            self.default_providers
+                .get(&command.operation)
+                .and_then(|provider| {
+                    registrations.iter().find(|registration| {
+                        registration.capability.provider == *provider && eligible(registration)
+                    })
                 })
+                .or_else(|| registrations.iter().find(eligible))
                 .or_else(|| registrations.first())
                 .ok_or_else(|| {
                     ServiceError::Internal("operation has no registrations".to_owned())
@@ -1035,6 +1084,64 @@ mod tests {
             .unwrap();
         assert_eq!(result.provider, "Tencent");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn configured_default_news_provider_is_independent_of_registration_order() {
+        let mut registry = OperationRegistry::all_unadmitted("missing");
+        for provider in ["Eastmoney", "WallstreetCn"] {
+            let name = provider.to_owned();
+            registry
+                .register_handler(
+                    Capability {
+                        operation: Operation::GlobalNews,
+                        repository_admitted: true,
+                        runtime_available: true,
+                        provider: name.clone(),
+                        exact_scope: "bounded news".to_owned(),
+                        blocker: None,
+                        diagnostic_available: false,
+                    },
+                    move |_| {
+                        Ok(QueryResult {
+                            provider: name.clone(),
+                            batch_id: "batch".to_owned(),
+                            complete: true,
+                            observed_at: "2026-09-25T00:00:00Z".to_owned(),
+                            source_at: None,
+                            records: vec![payload()],
+                            repository_admitted: true,
+                            diagnostic_blocker: None,
+                        })
+                    },
+                )
+                .unwrap();
+        }
+        registry
+            .set_default_provider(Operation::GlobalNews, "WallstreetCn")
+            .unwrap();
+        assert_eq!(
+            registry.default_provider(Operation::GlobalNews),
+            Some("WallstreetCn")
+        );
+        assert!(registry
+            .set_default_provider(Operation::GlobalNews, "missing")
+            .is_err());
+
+        assert_eq!(
+            registry
+                .execute(command(Operation::GlobalNews, None))
+                .unwrap()
+                .provider,
+            "WallstreetCn"
+        );
+        assert_eq!(
+            registry
+                .execute(command(Operation::GlobalNews, Some("Eastmoney")))
+                .unwrap()
+                .provider,
+            "Eastmoney"
+        );
     }
 
     #[test]
