@@ -83,6 +83,21 @@ fn public_daily_fund_flow_replays_native_jsonp_with_exact_identity_and_cny_value
 }
 
 #[test]
+fn public_daily_fund_flow_rejects_native_rows_exceeding_the_requested_limit() {
+    let scope = FlowScope::Instrument(
+        InstrumentId::new(Exchange::Shenzhen, "300005", AssetClass::Equity).unwrap(),
+    );
+    let client = EastmoneyClient::with_transport(ScriptedTransport::from_bodies([NATIVE_DAY1]));
+    let request =
+        FundFlowRequest::new(scope, FlowInterval::Day1, PositiveU32::new(1).unwrap()).unwrap();
+    let result = client.fund_flow_series(&request);
+    assert!(
+        matches!(&result, Err(EastmoneyError::Protocol(message)) if message.contains("2") && message.contains("1") && message.contains("limit")),
+        "two source rows must not become a complete one-row response: {result:?}"
+    );
+}
+
+#[test]
 fn public_daily_fund_flow_rejects_scripts_and_invalid_source_payloads() {
     let request =
         FundFlowRequest::new(scope(), FlowInterval::Day1, PositiveU32::new(1).unwrap()).unwrap();

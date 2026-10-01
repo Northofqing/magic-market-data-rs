@@ -79,11 +79,21 @@ impl FundFlowSeries for EastmoneyClient {
         } else {
             &bytes
         };
-        parse_fund_flow(
+        let batch = parse_fund_flow(
             payload,
             FlowScope::Instrument(instrument.clone()),
             request.interval(),
-        )
+        )?;
+        if request.interval() == FlowInterval::Day1
+            && batch.records().len() > request.limit().get() as usize
+        {
+            return Err(EastmoneyError::Protocol(format!(
+                "daily fund-flow returned {} rows exceeding requested limit {}",
+                batch.records().len(),
+                request.limit().get()
+            )));
+        }
+        Ok(batch)
     }
 }
 

@@ -137,6 +137,8 @@ CNY 元。三次负载请求均成功，实际最小请求起始间隔 1000 ms�
 2026-10-02 的限定源码修复按一方股票页改用
 `push2his.eastmoney.com/api/qt/stock/fflow/daykline/get`，仅限 Day1。
 请求保留 Core 正整数上限作为 `lmt`，附网页公开 `ut` 和本地固定 `cb=emProbe`；
+Day1 公开入口还核对实际标准化行数不超过调用方 limit：上游超量时整批返回
+typed Protocol error，不截断、不选择末行后升级完整性、不回退到别的来源。
 只移除精确 `emProbe(` / `);` 外框及框外 ASCII 空白，内部仍严格按 JSON 数据解析。
 任何脚本、错误回调、追加调用、源错误码、证券/市场错配和非法日期/金额均拒绝。
 真实官网原始样本的公开 `FundFlowSeries` 回归已在旧实现上失败、修复后通过；
