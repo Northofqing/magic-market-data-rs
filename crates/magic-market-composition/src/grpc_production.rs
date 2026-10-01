@@ -51,10 +51,10 @@ use magic_market_core::{
     FuturesDeliveryCalendar, FuturesDeliveryRequest, FxRequest, GlobalIndexProvider,
     GlobalIndexRequest, HistoricalBars, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
     InstrumentSignalRequest, InvestorQuestions, IsoDate, LimitPoolRequest, LimitPools,
-    LockupEvents, MarginData, MarketAnnouncementRequest, MarketAnnouncements,
-    MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind, MarketStatisticsProvider,
-    MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider,
-    NonEmptyText, NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
+    LockupEvents, MarginData, MarketAnnouncementRequest, MarketDragonTigerData,
+    MarketDragonTigerRequest, MarketRankingKind, MarketStatisticsProvider, MinuteData,
+    MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider, NonEmptyText,
+    NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
     OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks, PolicyDocuments, PolicyRequest,
     PopularityData, PositiveU32, PostCloseFlowRequest, PostCloseFlows, ProbeAdmissionPolicy,
     Provenance, ProviderId, ProviderTopNRankingRequest, ProviderTopNRankings, Quote,
@@ -149,6 +149,7 @@ pub const INSTRUMENT_NEWS_REQUEST_SCHEMA: &str = "magic.market.instrument_news.r
 pub const ANNOUNCEMENTS_REQUEST_SCHEMA: &str = "magic.market.announcements.request";
 pub const ANNOUNCEMENTS_RECORD_SCHEMA: &str = "magic.market.announcement";
 pub const MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA: &str = "magic.market.market_announcements.request";
+pub const MARKET_ANNOUNCEMENTS_COVERAGE_SCHEMA: &str = "magic.market.market_announcements.coverage";
 pub const INVESTOR_QUESTIONS_REQUEST_SCHEMA: &str = "magic.market.investor_questions.request";
 pub const INVESTOR_QUESTIONS_RECORD_SCHEMA: &str = "magic.market.investor_question";
 pub const POLICY_DOCUMENTS_REQUEST_SCHEMA: &str = "magic.market.policy_documents.request";
@@ -754,18 +755,13 @@ fn register_extended_providers(
         admitted(
             Operation::MarketAnnouncements,
             "Cninfo",
-            "bounded all-market announcements for an exact date range",
+            "bounded CNInfo native date-range query; incomplete prefixes explicit; schema v2 includes page/count/terminal coverage",
         ),
         move |command| {
-            execute_typed(
+            execute_market_announcements(
                 command,
-                MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA,
-                ANNOUNCEMENTS_RECORD_SCHEMA,
-                "Cninfo",
+                &market_announcements,
                 maximum_payload_bytes,
-                |request: &MarketAnnouncementRequest| {
-                    market_announcements.market_announcements(request)
-                },
             )
         },
     )?;
@@ -4650,6 +4646,64 @@ fn filter_instrument_news_batch(
     Ok(DataBatch::strict(retained, provenance))
 }
 
+fn execute_market_announcements(
+    command: QueryCommand,
+    client: &CninfoClient,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let version = command.payload().schema_version();
+    if !matches!(version, 1 | 2) {
+        return Err(ServiceError::InvalidRequest(
+            "MarketAnnouncements requires request schema version 1 or 2".into(),
+        ));
+    }
+    let request: MarketAnnouncementRequest =
+        decode_request_version(&command, MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA, version)?;
+    let outcome = client
+        .market_announcements_with_coverage(&request)
+        .map_err(|error| provider_error(command.operation(), error))?;
+    if version == 1 {
+        return provider_query_result(
+            outcome.into_batch(),
+            "Cninfo",
+            ANNOUNCEMENTS_RECORD_SCHEMA,
+            maximum_payload_bytes,
+        );
+    }
+    let batch = outcome.batch();
+    let provenance = batch.provenance();
+    let batch_id = provenance
+        .batch_id()
+        .ok_or_else(|| ServiceError::FailedPrecondition("Cninfo batch has no batch_id".into()))?;
+    let envelope = serde_json::json!({
+        "request_id": command.request_id(),
+        "request_payload_sha256": format!("{:x}", Sha256::digest(command.payload().data())),
+        "request": request,
+        "coverage_scope": "CninfoNativeDateRangeQuery",
+        "pit_guarantee": false,
+        "exchange_event_universe_complete": false,
+        "result": outcome,
+    });
+    let data = serde_json::to_vec(&envelope).map_err(|error| {
+        ServiceError::Internal(format!("coverage serialization failed: {error}"))
+    })?;
+    Ok(QueryResult {
+        provider: "Cninfo".into(),
+        batch_id: batch_id.to_owned(),
+        complete: batch.quality().is_complete(),
+        observed_at: provenance.fetched_at().to_owned(),
+        source_at: provenance.source_at().map(str::to_owned),
+        records: vec![CanonicalPayload::new(
+            MARKET_ANNOUNCEMENTS_COVERAGE_SCHEMA,
+            2,
+            data,
+            maximum_payload_bytes,
+        )?],
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
 fn decode_request<T: DeserializeOwned>(
     command: &QueryCommand,
     required_schema: &str,
@@ -5474,6 +5528,182 @@ mod tests {
     use magic_tencent_rs::SnapshotTransport;
 
     use super::*;
+
+    struct CoverageCninfoTransport {
+        row_count: u64,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl magic_cninfo_rs::CninfoTransport for CoverageCninfoTransport {
+        fn execute(
+            &self,
+            request: &magic_cninfo_rs::HttpRequest,
+        ) -> Result<magic_cninfo_rs::HttpResponse, CninfoError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let rows = (0..self.row_count)
+                .map(|index| {
+                    serde_json::json!({
+                        "secCode": "600396",
+                        "secName": "华电辽能",
+                        "orgId": "gssh0600396",
+                        "announcementId": format!("coverage-{index}"),
+                        "announcementTitle": format!("title {index}"),
+                        "announcementTime": 1784822400000_i64,
+                        "pageColumn": "SHMB",
+                    })
+                })
+                .collect::<Vec<_>>();
+            Ok(magic_cninfo_rs::HttpResponse {
+                status: 200,
+                final_url: request.url.clone(),
+                content_type: Some("application/json".into()),
+                body: serde_json::to_vec(&serde_json::json!({
+                    "totalAnnouncement": self.row_count,
+                    "totalRecordNum": self.row_count,
+                    "totalpages": self.row_count / 30,
+                    "hasMore": false,
+                    "announcements": rows,
+                }))
+                .unwrap(),
+            })
+        }
+    }
+
+    fn coverage_cninfo_client(row_count: u64) -> (CninfoClient, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = CninfoClient::with_transport(
+            magic_cninfo_rs::CninfoConfig::default(),
+            CoverageCninfoTransport {
+                row_count,
+                calls: calls.clone(),
+            },
+        )
+        .unwrap();
+        (client, calls)
+    }
+
+    fn coverage_command(version: u32, schema: &str) -> QueryCommand {
+        QueryCommand::new(
+            "coverage-request-1",
+            Operation::MarketAnnouncements,
+            Some("Cninfo".into()),
+            CanonicalPayload::new(
+                schema,
+                version,
+                br#"{ "start": "2026-07-24", "end": "2026-07-24", "limit": 1 }"#.to_vec(),
+                65_536,
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn market_announcements_v2_binds_original_request_and_reports_incomplete_coverage() {
+        let (client, calls) = coverage_cninfo_client(2);
+        let command = coverage_command(2, MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA);
+        let expected_hash = format!("{:x}", Sha256::digest(command.payload().data()));
+        let result = execute_market_announcements(command, &client, 65_536).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!result.complete);
+        assert_eq!(result.records.len(), 1);
+        let payload = &result.records[0];
+        assert_eq!(payload.schema(), MARKET_ANNOUNCEMENTS_COVERAGE_SCHEMA);
+        assert_eq!(payload.schema_version(), 2);
+        let envelope: serde_json::Value = serde_json::from_slice(payload.data()).unwrap();
+        assert_eq!(envelope["request_id"], "coverage-request-1");
+        assert_eq!(envelope["request_payload_sha256"], expected_hash);
+        assert_eq!(envelope["request"]["limit"], 1);
+        assert_eq!(envelope["pit_guarantee"], false);
+        assert_eq!(envelope["exchange_event_universe_complete"], false);
+        let coverage = &envelope["result"]["coverage"];
+        assert_eq!(coverage["source_total"], 2);
+        assert_eq!(coverage["inspected_raw_rows"], 2);
+        assert_eq!(coverage["unique_rows"], 2);
+        assert_eq!(coverage["returned_rows"], 1);
+        assert_eq!(coverage["source_exhausted"], true);
+        assert_eq!(coverage["caller_limit_truncated"], true);
+        assert_eq!(envelope["result"]["batch"]["quality"]["complete"], false);
+        assert_eq!(
+            envelope["result"]["batch"]["records"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            envelope["result"]["batch"]["provenance"]["batch_id"],
+            result.batch_id
+        );
+    }
+
+    #[test]
+    fn market_announcements_v1_keeps_record_shape_and_incomplete_quality() {
+        let (client, _) = coverage_cninfo_client(2);
+        let result = execute_market_announcements(
+            coverage_command(1, MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA),
+            &client,
+            65_536,
+        )
+        .unwrap();
+        assert!(!result.complete);
+        assert_eq!(result.records.len(), 1);
+        assert_eq!(result.records[0].schema(), ANNOUNCEMENTS_RECORD_SCHEMA);
+        assert_eq!(result.records[0].schema_version(), 1);
+        let record: serde_json::Value = serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(record["announcement_id"], "coverage-0");
+        assert!(record.get("result").is_none());
+        assert_eq!(record["evidence"]["batch_id"], result.batch_id);
+    }
+
+    #[test]
+    fn market_announcements_v2_verified_empty_keeps_one_coverage_envelope() {
+        let (client, _) = coverage_cninfo_client(0);
+        let result = execute_market_announcements(
+            coverage_command(2, MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA),
+            &client,
+            65_536,
+        )
+        .unwrap();
+        assert!(result.complete);
+        assert!(result.source_at.is_none());
+        assert_eq!(result.records.len(), 1);
+        let envelope: serde_json::Value = serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(envelope["result"]["coverage"]["verified_empty"], true);
+        assert_eq!(envelope["result"]["coverage"]["source_total"], 0);
+        assert!(envelope["result"]["batch"]["records"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn market_announcements_rejects_unknown_version_or_schema_before_io() {
+        for (version, schema) in [
+            (3, MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA),
+            (2, "wrong.schema"),
+        ] {
+            let (client, calls) = coverage_cninfo_client(2);
+            assert!(matches!(
+                execute_market_announcements(coverage_command(version, schema), &client, 65_536),
+                Err(ServiceError::InvalidRequest(_))
+            ));
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+        }
+    }
+
+    #[test]
+    fn market_announcements_v2_obeys_response_payload_bound() {
+        let (client, _) = coverage_cninfo_client(2);
+        assert!(matches!(
+            execute_market_announcements(
+                coverage_command(2, MARKET_ANNOUNCEMENTS_REQUEST_SCHEMA),
+                &client,
+                64,
+            ),
+            Err(ServiceError::ResourceExhausted(_))
+        ));
+    }
 
     #[test]
     fn futures_delivery_v2_projection_marks_planned_rule_derived_dates() {

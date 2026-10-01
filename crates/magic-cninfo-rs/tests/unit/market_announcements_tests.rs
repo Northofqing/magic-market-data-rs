@@ -105,6 +105,45 @@ fn complete_pages_continue_until_unique_limit_or_declared_total() {
     let requests = requests.lock().unwrap();
     assert_eq!(requests.len(), 2);
     assert!(String::from_utf8_lossy(&requests[1].body).contains("pageNum=2"));
+    assert!(
+        !batch.quality().is_complete(),
+        "overlap cannot prove complete source coverage"
+    );
+}
+
+#[test]
+fn unexhausted_market_prefix_must_not_claim_complete() {
+    let rows = (0..30)
+        .map(|index| row(&format!("id-{index:02}"), &format!("title {index:02}")))
+        .collect();
+    let batch = client(SequenceTransport::new(vec![page(31, 1, true, rows)]))
+        .market_announcements(&request(30))
+        .unwrap();
+
+    assert_eq!(batch.records().len(), 30);
+    assert!(
+        !batch.quality().is_complete(),
+        "30 of 31 is not complete coverage"
+    );
+    assert!(!batch.quality().issues().is_empty());
+}
+
+#[test]
+fn caller_truncation_must_not_claim_complete_even_after_source_exhaustion() {
+    let batch = client(SequenceTransport::new(vec![page(
+        2,
+        0,
+        false,
+        vec![row("id-00", "title 00"), row("id-01", "title 01")],
+    )]))
+    .market_announcements(&request(1))
+    .unwrap();
+
+    assert_eq!(batch.records().len(), 1);
+    assert!(
+        !batch.quality().is_complete(),
+        "a caller-truncated exhausted page is not complete output"
+    );
 }
 
 #[test]
@@ -130,6 +169,129 @@ fn caller_limit_does_not_hide_an_invalid_row_on_the_complete_source_page() {
         error,
         CninfoError::Unsupported(message) if message.contains("pageColumn")
     ));
+}
+
+#[test]
+fn coverage_retains_all_ten_page_hashes_for_the_300_of_722_prefix() {
+    let documents = (0..10)
+        .map(|page_index| {
+            let rows = (page_index * 30..page_index * 30 + 30)
+                .map(|index| row(&format!("id-{index:03}"), &format!("title {index:03}")))
+                .collect();
+            page(722, 24, true, rows)
+        })
+        .collect::<Vec<_>>();
+    let transport = SequenceTransport::new(documents.clone());
+    let requests = transport.requests.clone();
+    let outcome = client(transport)
+        .market_announcements_with_coverage(&request(300))
+        .unwrap();
+    let coverage = outcome.coverage();
+
+    assert!(!outcome.batch().quality().is_complete());
+    assert_eq!(coverage.source_total, 722);
+    assert_eq!(coverage.expected_request_pages, 25);
+    assert_eq!(coverage.pages_read, 10);
+    assert_eq!(coverage.inspected_raw_rows, 300);
+    assert_eq!(coverage.unique_rows, 300);
+    assert_eq!(coverage.returned_rows, 300);
+    assert!(!coverage.source_exhausted);
+    assert!(coverage.terminal_has_more);
+    assert!(!coverage.caller_limit_truncated);
+    assert!(!coverage.verified_empty);
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 10);
+    for (index, evidence) in coverage.pages.iter().enumerate() {
+        assert_eq!(evidence.requested_page, index as u32 + 1);
+        assert_eq!(evidence.source_total, 722);
+        assert_eq!(evidence.source_total_pages, 24);
+        assert_eq!(evidence.row_count, 30);
+        assert!(evidence.has_more);
+        let raw = serde_json::to_vec(&documents[index]).unwrap();
+        assert_eq!(evidence.response_bytes, raw.len() as u64);
+        assert_eq!(
+            evidence.response_body_sha256,
+            format!("{:x}", Sha256::digest(raw))
+        );
+        assert_eq!(
+            evidence.request_body_sha256,
+            format!("{:x}", Sha256::digest(&requests[index].body))
+        );
+    }
+    let batch_id = outcome.batch().provenance().batch_id().unwrap();
+    assert!(batch_id.contains("total=722:limit=300:raw=300:unique=300:returned=300"));
+    for record in outcome.batch().records() {
+        assert_eq!(record.evidence.batch_id(), batch_id);
+        assert_eq!(
+            record.evidence.observed_at(),
+            outcome.batch().provenance().fetched_at()
+        );
+    }
+}
+
+#[test]
+fn complete_source_pagination_and_verified_empty_have_explicit_terminals() {
+    let first_rows = (0..30)
+        .map(|index| row(&format!("id-{index:02}"), &format!("title {index:02}")))
+        .collect();
+    let outcome = client(SequenceTransport::new(vec![
+        page(31, 1, true, first_rows),
+        page(31, 1, false, vec![row("id-30", "title 30")]),
+    ]))
+    .market_announcements_with_coverage(&request(31))
+    .unwrap();
+    assert!(outcome.batch().quality().is_complete());
+    assert!(outcome.coverage().source_exhausted);
+    assert!(!outcome.coverage().terminal_has_more);
+    assert!(!outcome.coverage().caller_limit_truncated);
+    assert_eq!(outcome.coverage().equivalent_duplicate_rows, 0);
+    assert_eq!(outcome.coverage().returned_rows, 31);
+    assert_eq!(outcome.coverage().pages_read, 2);
+
+    let empty = client(SequenceTransport::new(vec![page(0, 0, false, Vec::new())]))
+        .market_announcements_with_coverage(&request(3))
+        .unwrap();
+    assert!(empty.batch().quality().is_complete());
+    assert!(empty.coverage().verified_empty);
+    assert!(empty.coverage().source_exhausted);
+    assert!(!empty.coverage().terminal_has_more);
+    assert_eq!(empty.coverage().expected_request_pages, 1);
+    assert_eq!(empty.coverage().pages[0].source_total_pages, 0);
+    assert_eq!(empty.coverage().pages_read, 1);
+    assert_eq!(empty.coverage().inspected_raw_rows, 0);
+    assert!(empty.batch().provenance().source_at().is_none());
+}
+
+#[test]
+fn coverage_distinguishes_exhaustion_from_limit_truncation_and_overlap() {
+    let truncated = client(SequenceTransport::new(vec![page(
+        2,
+        0,
+        false,
+        vec![row("id-00", "title 00"), row("id-01", "title 01")],
+    )]))
+    .market_announcements_with_coverage(&request(1))
+    .unwrap();
+    assert!(truncated.coverage().source_exhausted);
+    assert!(truncated.coverage().caller_limit_truncated);
+    assert_eq!(truncated.coverage().unique_rows, 2);
+    assert_eq!(truncated.coverage().returned_rows, 1);
+    assert!(!truncated.batch().quality().is_complete());
+
+    let overlap = client(SequenceTransport::new(vec![page(
+        2,
+        0,
+        false,
+        vec![row("id-00", "title 00"), row("id-00", "title 00")],
+    )]))
+    .market_announcements_with_coverage(&request(2))
+    .unwrap();
+    assert!(overlap.coverage().source_exhausted);
+    assert!(!overlap.coverage().caller_limit_truncated);
+    assert_eq!(overlap.coverage().equivalent_duplicate_rows, 1);
+    assert_eq!(overlap.coverage().inspected_raw_rows, 2);
+    assert_eq!(overlap.coverage().unique_rows, 1);
+    assert!(!overlap.batch().quality().is_complete());
 }
 
 #[test]

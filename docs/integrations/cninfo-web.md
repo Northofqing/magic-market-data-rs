@@ -32,6 +32,11 @@ https://static.cninfo.com.cn/
 
 全市场公告发现使用空 `stock` 的官方公告查询，读取并验证受请求 limit 约束的
 远程前缀；达到 limit 或源总数即停止，不证明已读完该日期的所有公告。
+未耗尽源总数、被 caller limit 截断或出现等价重复身份时，
+`quality.complete=false` 并保留质量问题；只有源查询穷尽且输出无截断、
+无重复覆盖缺口才为完整。gRPC v1 保持原记录形状，v2 另提供
+[总数、终态与分页哈希合同](grpc-market-announcements-coverage-v2.md)，绑定
+请求 ID 和原始请求字节 SHA-256。哈希不代表源签名、修订终态或 PIT 保证。
 已读取页的 `totalAnnouncement`、`totalRecordNum`、`totalpages`、
 `hasMore`、累计条数、源顺序和公告 ID 必须一致。每条股票公告同时保留证券代码与
 `secName` 股票名称；缺失名称、非股票代码或证券/交易所不一致都会失败。
@@ -51,7 +56,10 @@ https://static.cninfo.com.cn/
 - 默认超时 15 秒；
 - 所有客户端克隆共享串行请求门，完整响应读取期间并发为 1；
 - 请求起始间隔至少 1 秒；
-- 空结果、字段不完整、总数/分页矛盾、非法 URL 或源端错误都返回 typed error。
+- 非零总数的空页、字段不完整、总数/分页矛盾、非法 URL 或源端错误都返回 typed error。
+- 全市场第一页总数字段均为零、`hasMore=false` 且无记录时，返回有证据的
+  verified-empty；普通空页或非零总数的空页仍失败。合法前缀可返回 incomplete，
+  缺失或失败的必要页仍返回 typed error，不把部分结果伪装为完整。
 
 capability 声明个股公告、全市场公告发现和互动问答；个股新闻与全球新闻明确不支持。
 

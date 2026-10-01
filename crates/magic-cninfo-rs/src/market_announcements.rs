@@ -7,11 +7,70 @@ use magic_market_core::{
     Announcement, AssetClass, DataBatch, Exchange, InstrumentId, MarketAnnouncementRequest,
     MarketAnnouncements, NonEmptyText, ProviderId, SourceEvidence,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 const MARKET_COLUMN: &str = "szse";
+
+/// Evidence for one completely validated native query page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MarketAnnouncementPageEvidence {
+    pub requested_page: u32,
+    pub source_total: u64,
+    pub source_total_pages: u64,
+    pub has_more: bool,
+    pub row_count: u64,
+    pub request_body_sha256: String,
+    pub response_body_sha256: String,
+    pub response_bytes: u64,
+}
+
+/// Native-query coverage, not exchange-wide event finality or PIT evidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MarketAnnouncementCoverage {
+    pub source_total: u64,
+    pub expected_request_pages: u64,
+    pub pages_read: u32,
+    pub inspected_raw_rows: u64,
+    pub unique_rows: u64,
+    pub returned_rows: u64,
+    pub equivalent_duplicate_rows: u64,
+    pub terminal_has_more: bool,
+    pub source_exhausted: bool,
+    pub caller_limit_truncated: bool,
+    pub verified_empty: bool,
+    pub pages: Vec<MarketAnnouncementPageEvidence>,
+}
+
+/// Records and source coverage produced by the same pagination run.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MarketAnnouncementResult {
+    batch: DataBatch<Announcement>,
+    coverage: MarketAnnouncementCoverage,
+}
+
+impl MarketAnnouncementResult {
+    pub fn batch(&self) -> &DataBatch<Announcement> {
+        &self.batch
+    }
+
+    pub fn coverage(&self) -> &MarketAnnouncementCoverage {
+        &self.coverage
+    }
+
+    pub fn into_batch(self) -> DataBatch<Announcement> {
+        self.batch
+    }
+}
+
+struct MarketAnnouncementPageRead {
+    document: MarketAnnouncementPage,
+    request_body_sha256: String,
+    response_body_sha256: String,
+    response_bytes: u64,
+}
 
 #[derive(Debug, Deserialize)]
 struct MarketAnnouncementPage {
@@ -69,7 +128,7 @@ impl CninfoClient {
         &self,
         request: &MarketAnnouncementRequest,
         page: u32,
-    ) -> Result<MarketAnnouncementPage, CninfoError> {
+    ) -> Result<MarketAnnouncementPageRead, CninfoError> {
         let body = encode_form(&[
             ("stock", String::new()),
             ("tabName", "fulltext".into()),
@@ -88,6 +147,7 @@ impl CninfoClient {
             ("sortType", String::new()),
             ("isHLtitle", "false".into()),
         ]);
+        let request_body_sha256 = format!("{:x}", Sha256::digest(&body));
         let response = self.execute(HttpRequest {
             method: HttpMethod::Post,
             url: self.config.announcement_url.clone(),
@@ -98,18 +158,21 @@ impl CninfoClient {
             body,
         })?;
         ensure_json(&response)?;
-        serde_json::from_slice(&response.body)
-            .map_err(|error| CninfoError::Decode(error.to_string()))
+        Ok(MarketAnnouncementPageRead {
+            document: serde_json::from_slice(&response.body)
+                .map_err(|error| CninfoError::Decode(error.to_string()))?,
+            request_body_sha256,
+            response_body_sha256: format!("{:x}", Sha256::digest(&response.body)),
+            response_bytes: response.body.len() as u64,
+        })
     }
-}
 
-impl MarketAnnouncements for CninfoClient {
-    type Error = CninfoError;
-
-    fn market_announcements(
+    /// Reads bounded native pages and reports explicitly whether the output
+    /// covers the declared source result. Existing transport bounds are unchanged.
+    pub fn market_announcements_with_coverage(
         &self,
         request: &MarketAnnouncementRequest,
-    ) -> Result<DataBatch<Announcement>, Self::Error> {
+    ) -> Result<MarketAnnouncementResult, CninfoError> {
         let limit = request.limit().get() as usize;
         let mut expected_total = None;
         let mut consumed_rows = 0_u64;
@@ -117,6 +180,8 @@ impl MarketAnnouncements for CninfoClient {
         let mut previous_source_at: Option<String> = None;
         let mut seen = HashMap::<String, ValidatedAnnouncement>::new();
         let mut validated = Vec::with_capacity(limit);
+        let mut pages = Vec::new();
+        let mut equivalent_duplicate_rows = 0_u64;
 
         while validated.len() < limit {
             let page = pages_read.checked_add(1).ok_or_else(|| {
@@ -128,21 +193,32 @@ impl MarketAnnouncements for CninfoClient {
                     self.config.max_pages
                 )));
             }
-            let document = self.market_announcement_page(request, page)?;
+            let native_page = self.market_announcement_page(request, page)?;
+            let source_total_pages = native_page
+                .document
+                .total_pages
+                .ok_or_else(|| CninfoError::Schema("market totalpages is missing".into()))?;
+            let has_more = native_page
+                .document
+                .has_more
+                .ok_or_else(|| CninfoError::Schema("market hasMore is missing".into()))?;
             let (total, rows) =
-                validate_market_page(document, page, expected_total, consumed_rows)?;
+                validate_market_page(native_page.document, page, expected_total, consumed_rows)?;
             expected_total = Some(total);
             pages_read = page;
+            pages.push(MarketAnnouncementPageEvidence {
+                requested_page: page,
+                source_total: total,
+                source_total_pages,
+                has_more,
+                row_count: rows.len() as u64,
+                request_body_sha256: native_page.request_body_sha256,
+                response_body_sha256: native_page.response_body_sha256,
+                response_bytes: native_page.response_bytes,
+            });
 
             if total == 0 {
-                let observed_at = now()?;
-                let batch_id = format!(
-                    "cninfo:{observed_at}:market-announcements:{}:{}:pages=1:total=0",
-                    request.start().as_str(),
-                    request.end().as_str()
-                );
-                let provenance = provenance("cninfo-market", &observed_at, &batch_id, None)?;
-                return Ok(DataBatch::strict(Vec::new(), provenance));
+                break;
             }
 
             consumed_rows = consumed_rows
@@ -162,7 +238,9 @@ impl MarketAnnouncements for CninfoClient {
                 }
                 previous_source_at = Some(row.published_at.clone());
                 match seen.get(&row.announcement_id) {
-                    Some(existing) if existing == &row => {}
+                    Some(existing) if existing == &row => {
+                        equivalent_duplicate_rows += 1;
+                    }
                     Some(_) => {
                         return Err(CninfoError::Schema(format!(
                             "conflicting market announcement {} across pages",
@@ -184,9 +262,38 @@ impl MarketAnnouncements for CninfoClient {
         let total = expected_total.ok_or_else(|| {
             CninfoError::Incomplete("market announcement source total is unavailable".into())
         })?;
+        let unique_rows = validated.len() as u64;
+        let returned_rows = validated.len().min(limit) as u64;
+        let source_exhausted = consumed_rows == total;
+        let caller_limit_truncated = returned_rows < unique_rows;
+        let terminal_has_more = pages
+            .last()
+            .ok_or_else(|| {
+                CninfoError::Incomplete("market announcement page evidence is unavailable".into())
+            })?
+            .has_more;
+        let mut issues = Vec::new();
+        if !source_exhausted {
+            issues.push(format!(
+                "source pagination incomplete: inspected {consumed_rows} of {total} declared rows"
+            ));
+        }
+        if caller_limit_truncated {
+            issues.push(format!(
+                "caller limit truncates {unique_rows} inspected unique records to {returned_rows}"
+            ));
+        }
+        if equivalent_duplicate_rows > 0 {
+            issues.push(format!(
+                "source identity overlap: {equivalent_duplicate_rows} equivalent duplicate rows cannot prove complete unique coverage"
+            ));
+        }
+        let pages_json =
+            serde_json::to_vec(&pages).map_err(|error| CninfoError::Decode(error.to_string()))?;
+        let pages_sha256 = format!("{:x}", Sha256::digest(&pages_json));
         let observed_at = now()?;
         let batch_id = format!(
-            "cninfo:{observed_at}:market-announcements:{}:{}:pages={pages_read}:total={total}",
+            "cninfo:{observed_at}:market-announcements:{}:{}:pages={pages_read}:total={total}:limit={limit}:raw={consumed_rows}:unique={unique_rows}:returned={returned_rows}:pages-sha256={pages_sha256}",
             request.start().as_str(),
             request.end().as_str()
         );
@@ -197,7 +304,35 @@ impl MarketAnnouncements for CninfoClient {
             .collect::<Result<Vec<_>, _>>()?;
         let source_at = records.first().map(|record| record.published_at.as_str());
         let provenance = provenance("cninfo-market", &observed_at, &batch_id, source_at)?;
-        Ok(DataBatch::strict(records, provenance))
+        Ok(MarketAnnouncementResult {
+            batch: DataBatch::best_effort(records, provenance, issues)?,
+            coverage: MarketAnnouncementCoverage {
+                source_total: total,
+                expected_request_pages: total.div_ceil(u64::from(PAGE_SIZE)).max(1),
+                pages_read,
+                inspected_raw_rows: consumed_rows,
+                unique_rows,
+                returned_rows,
+                equivalent_duplicate_rows,
+                terminal_has_more,
+                source_exhausted,
+                caller_limit_truncated,
+                verified_empty: total == 0,
+                pages,
+            },
+        })
+    }
+}
+
+impl MarketAnnouncements for CninfoClient {
+    type Error = CninfoError;
+
+    fn market_announcements(
+        &self,
+        request: &MarketAnnouncementRequest,
+    ) -> Result<DataBatch<Announcement>, Self::Error> {
+        self.market_announcements_with_coverage(request)
+            .map(MarketAnnouncementResult::into_batch)
     }
 }
 

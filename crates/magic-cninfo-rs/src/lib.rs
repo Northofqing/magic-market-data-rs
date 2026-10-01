@@ -4,6 +4,9 @@
 mod market_announcements;
 mod transport;
 
+pub use market_announcements::{
+    MarketAnnouncementCoverage, MarketAnnouncementPageEvidence, MarketAnnouncementResult,
+};
 pub use transport::{CninfoTransport, HttpMethod, HttpRequest, HttpResponse};
 
 use magic_market_core::{

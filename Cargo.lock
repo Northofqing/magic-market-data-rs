@@ -903,6 +903,7 @@ dependencies = [
  "magic-market-core",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "ureq",
  "url",
@@ -1080,6 +1081,9 @@ version = "0.2.0"
 dependencies = [
  "prost",
  "protoc-bin-vendored",
+ "serde_json",
+ "sha2",
+ "tokio",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",

@@ -10,6 +10,7 @@ description = "Bounded read-only CNInfo announcements and investor-interaction p
 magic-market-core = { path = "../magic-market-core", version = "=0.2.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 ureq = { workspace = true, features = ["tls"] }
 url = { workspace = true }

@@ -62,6 +62,8 @@ $publicFiles = @(
     @("grpc-futures-delivery-v2.md", "docs/integrations/grpc-futures-delivery-v2.md"),
     @("futures-delivery-2026-09.fixture.json", "docs/integrations/futures-delivery-2026-09.fixture.json"),
     @("grpc-derived-products.md", "docs/integrations/grpc-derived-products.md"),
+    @("grpc-market-announcements-coverage-v2.md", "docs/integrations/grpc-market-announcements-coverage-v2.md"),
+    @("grpc-historical-bars-records.md", "docs/integrations/grpc-historical-bars-records.md"),
     @("tdx-public-security-profile.md", "docs/integrations/tdx-public-security-profile.md"),
     @("unadmitted-provider-routes.md", "docs/integrations/unadmitted-provider-routes.md")
 )
@@ -144,6 +146,7 @@ $metadata = @"
   "instrument_news_schema_version": 2,
   "t0_evidence_schema_version": 2,
   "financial_statements_schema_version": 2,
+  "market_announcements_supported_schema_versions": [1, 2],
   "realtime_quotes_schema_version": 1,
   "current_auction_observations_schema_version": 1,
   "economic_release_observations_schema_version": 1,
@@ -171,6 +174,11 @@ MarketDataService RPCs: $rpcCount
 Public contract files are covered by manifest.sha256. GlobalNews, InstrumentNews,
 T0Evidence, and FinancialStatements support the documented schema version 2;
 FinancialStatements also retains its frozen version 1 projection.
+MarketAnnouncements accepts request schema versions 1 and 2. Version 2 returns
+one coverage envelope with request-byte hash, page hashes and exact terminal counts;
+incomplete prefixes are never full-market coverage in either version.
+HistoricalBars record fields, units and precise coverage limits are documented
+in grpc-historical-bars-records.md; complete is not a trading-day or PIT certificate.
 FuturesDelivery schema version 2 and a full 2026-09 wire fixture are documented
 in grpc-futures-delivery-v2.md and futures-delivery-2026-09.fixture.json.
 OfficialPublications and OfficialPublication expose native evidence envelopes in version 1;
@@ -201,6 +209,8 @@ $manifestFiles = @(
     "grpc-futures-delivery-v2.md",
     "futures-delivery-2026-09.fixture.json",
     "grpc-derived-products.md",
+    "grpc-market-announcements-coverage-v2.md",
+    "grpc-historical-bars-records.md",
     "tdx-public-security-profile.md",
     "unadmitted-provider-routes.md",
     "bundle-metadata.json",

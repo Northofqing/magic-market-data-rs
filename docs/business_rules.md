@@ -347,6 +347,19 @@ announcement IDs collapse to the first source occurrence; conflicting rows
 with one announcement ID fail the atomic batch. Source newest-first order is
 preserved and publication times must not increase across or within pages.
 
+A bounded source prefix or caller-truncated output is explicitly incomplete,
+even when every inspected page is valid. Complete output requires declared
+source exhaustion, no caller truncation and no equivalent duplicate overlap;
+an overlap can displace another declared source row and therefore cannot prove
+complete unique coverage. Valid incomplete output retains records, provenance
+and quality issues. This differs from a missing, malformed or failed requested
+page, which still rejects the query. Version 2 gRPC coverage envelopes retain
+declared, raw, unique and returned counts, terminal hasMore, ordered page
+request/response hashes, exact request ID and original request-byte SHA-256.
+Version 1 record/request shapes remain unchanged; both versions obey the
+same strict completeness rule. Verified empty proves only the native CNInfo
+date-range query, not an exchange-wide event universe or revision finality.
+
 Every record requires the source-supplied announcement ID, security code,
 organization ID, publication time and exact `pageColumn`. `SHMB` and `SHKCP`
 map to Shanghai equity, `SZMB` and `SZCY` map to Shenzhen equity, and `BJS`

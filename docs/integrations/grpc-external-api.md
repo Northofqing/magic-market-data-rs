@@ -721,6 +721,11 @@ Provider 补齐。该诊断不能替代 `magic.market.auctions.request` 的精�
 - `MarketAnnouncements` 是全市场发现合同，版本 1 请求为
   `{"start":"YYYY-MM-DD","end":"YYYY-MM-DD","limit":300}`。盘后 IPO 催化需要
   “业务日 + 全市场 + 最多 300 条”时应调用它，不能调用 `Announcements` 并发送 `{}`。
+  版本 2 使用相同请求字段和 `schema`，将 `schema_version` 设为 2；响应为单条
+  `magic.market.market_announcements.coverage` v2 envelope，包含公告、源总数、逐页
+  请求/响应 hash、终点和截断证据。版本 1 保持逐公告形状，但有界前缀、caller limit
+  截断或等价重复页均明确 `complete=false`。原生查询的零结果不等于全交易所事件
+  universe 的权威空结果；详见[公告覆盖合同](grpc-market-announcements-coverage-v2.md)。
 - `BlockTrades` 是单证券日期范围合同，版本 1 请求与 `Announcements` 的单证券形状
   相同。调用方的多 code 业务必须拆成有序的逐证券请求并分别保存批次，不得把本地
   `codes/date` hash 当作服务端已接收的 payload。
