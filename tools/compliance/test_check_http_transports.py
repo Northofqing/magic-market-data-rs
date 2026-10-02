@@ -393,9 +393,26 @@ class HttpTransportCheckerTests(unittest.TestCase):
         providers.mkdir()
         (providers / "loop").symlink_to("loop", target_is_directory=True)
         self.write_rows()
-        self.assertIn(
-            "workspace member manifest cannot be resolved",
-            "\n".join(self.errors()),
+        # Resolution can reject during dependency discovery or member validation.
+        # Exception reprs escape Windows separators; keep category and target bound.
+        self.assertRegex(
+            "\n".join(self.errors()).replace("\\\\", "\\").replace("\\", "/"),
+            r"cannot be resolved:[^\n]*/providers/loop/Cargo\.toml(?:['\"]|$)",
+        )
+        result = subprocess.run(
+            [sys.executable, "-B", str(MODULE_PATH), "--root", str(self.root)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertRegex(
+            result.stderr.replace("\\\\", "\\").replace("\\", "/"),
+            r"(?m)^HTTP transport boundary error: [^\n]*cannot be resolved:"
+            r"[^\n]*/providers/loop/Cargo\.toml(?:['\"]|$)",
         )
 
 
