@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import re
 import subprocess
 import sys
 import tempfile
@@ -395,9 +396,19 @@ class HttpTransportCheckerTests(unittest.TestCase):
         self.write_rows()
         # Resolution can reject during dependency discovery or member validation.
         # Exception reprs escape Windows separators; keep category and target bound.
+        target_paths = {
+            str(root / "providers/loop/Cargo.toml").replace("\\", "/")
+            for root in (self.root, self.root.resolve())
+        }
+        resolution_pattern = (
+            r"(?:\[dependencies\] dependency loop\.path|workspace member manifest)"
+            r" cannot be resolved:[^\n]*(?:"
+            + "|".join(re.escape(path) for path in sorted(target_paths))
+            + r")(?:['\"]|$)"
+        )
         self.assertRegex(
             "\n".join(self.errors()).replace("\\\\", "\\").replace("\\", "/"),
-            r"cannot be resolved:[^\n]*/providers/loop/Cargo\.toml(?:['\"]|$)",
+            resolution_pattern,
         )
         result = subprocess.run(
             [sys.executable, "-B", str(MODULE_PATH), "--root", str(self.root)],
@@ -411,8 +422,7 @@ class HttpTransportCheckerTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertRegex(
             result.stderr.replace("\\\\", "\\").replace("\\", "/"),
-            r"(?m)^HTTP transport boundary error: [^\n]*cannot be resolved:"
-            r"[^\n]*/providers/loop/Cargo\.toml(?:['\"]|$)",
+            r"(?m)^HTTP transport boundary error: [^\n]*" + resolution_pattern,
         )
 
 
