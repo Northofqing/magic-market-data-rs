@@ -1,5 +1,11 @@
 # HithinkFinance HistoricalBars records and coverage limits
 
+The source successor corrects actual local caller-limit truncation to
+`complete=false` and adds an opt-in
+[version-2 observation envelope](grpc-historical-bars-coverage-v2.md).
+The production observations below remain unchanged historical receipts, not
+evidence that this successor is deployed.
+
 This is the public record contract for Mac consumers of the existing
 `HistoricalBars` RPC, not a new endpoint or a coverage admission. Production
 source `67c832e43f36f188e4d769f409691c0b1d9a2ea2` returns exact-range daily

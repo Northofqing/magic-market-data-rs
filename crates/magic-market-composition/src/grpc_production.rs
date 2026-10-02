@@ -121,6 +121,7 @@ pub const REALTIME_QUOTES_REQUEST_SCHEMA: &str = "magic.market.realtime_quotes.r
 pub const REALTIME_QUOTES_RECORD_SCHEMA: &str = "magic.market.quote";
 pub const HISTORICAL_BARS_REQUEST_SCHEMA: &str = "magic.market.historical_bars.request";
 pub const HISTORICAL_BARS_RECORD_SCHEMA: &str = "magic.market.bar";
+pub const HISTORICAL_BARS_COVERAGE_SCHEMA: &str = "magic.market.historical_bars.coverage";
 pub const MINUTE_DATA_REQUEST_SCHEMA: &str = "magic.market.minute_data.request";
 pub const MINUTE_DATA_RECORD_SCHEMA: &str = "magic.market.minute_point";
 pub const ORDER_BOOKS_REQUEST_SCHEMA: &str = "magic.market.order_books.request";
@@ -1400,16 +1401,7 @@ fn register_hithink(
             "HithinkFinance",
             HITHINK_HISTORICAL_BARS_SCOPE,
         ),
-        move |command| {
-            execute_typed(
-                command,
-                HISTORICAL_BARS_REQUEST_SCHEMA,
-                HISTORICAL_BARS_RECORD_SCHEMA,
-                "HithinkFinance",
-                maximum_payload_bytes,
-                |request: &BarsRequest| bars.historical_bars(request),
-            )
-        },
+        move |command| execute_hithink_historical_bars(command, &bars, maximum_payload_bytes),
     )?;
 
     let quotes = client.clone();
@@ -4646,6 +4638,62 @@ fn filter_instrument_news_batch(
     Ok(DataBatch::strict(retained, provenance))
 }
 
+fn execute_hithink_historical_bars(
+    command: QueryCommand,
+    client: &HithinkClient,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let version = command.payload().schema_version();
+    if !matches!(version, 1 | 2) {
+        return Err(ServiceError::InvalidRequest(
+            "Hithink HistoricalBars requires request schema version 1 or 2".into(),
+        ));
+    }
+    let request: BarsRequest =
+        decode_request_version(&command, HISTORICAL_BARS_REQUEST_SCHEMA, version)?;
+    let outcome = client
+        .historical_bars_with_coverage(&request)
+        .map_err(|error| provider_error(command.operation(), error))?;
+    if version == 1 {
+        return provider_query_result(
+            outcome.into_batch(),
+            "HithinkFinance",
+            HISTORICAL_BARS_RECORD_SCHEMA,
+            maximum_payload_bytes,
+        );
+    }
+    let batch = outcome.batch();
+    let provenance = batch.provenance();
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        ServiceError::FailedPrecondition("Hithink historical batch has no batch_id".into())
+    })?;
+    let envelope = serde_json::json!({
+        "request_id": command.request_id(),
+        "request_payload_sha256": format!("{:x}", Sha256::digest(command.payload().data())),
+        "request": request,
+        "coverage_scope": "HithinkNativeDateRangeResponseObservationOnly",
+        "result": outcome,
+    });
+    let data = serde_json::to_vec(&envelope).map_err(|error| {
+        ServiceError::Internal(format!("historical coverage serialization failed: {error}"))
+    })?;
+    Ok(QueryResult {
+        provider: "HithinkFinance".into(),
+        batch_id: batch_id.to_owned(),
+        complete: batch.quality().is_complete(),
+        observed_at: provenance.fetched_at().to_owned(),
+        source_at: provenance.source_at().map(str::to_owned),
+        records: vec![CanonicalPayload::new(
+            HISTORICAL_BARS_COVERAGE_SCHEMA,
+            2,
+            data,
+            maximum_payload_bytes,
+        )?],
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
 fn execute_market_announcements(
     command: QueryCommand,
     client: &CninfoClient,
@@ -5528,6 +5576,205 @@ mod tests {
     use magic_tencent_rs::SnapshotTransport;
 
     use super::*;
+
+    struct HistoricalHithinkTransport {
+        body: Vec<u8>,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl magic_market_transport::HttpTransport for HistoricalHithinkTransport {
+        fn execute(
+            &self,
+            request: &magic_market_transport::HttpRequest,
+        ) -> Result<magic_market_transport::HttpResponse, magic_market_transport::TransportError>
+        {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(magic_market_transport::HttpResponse::new(
+                200,
+                request.url(),
+                Some("application/json".into()),
+                self.body.clone(),
+            ))
+        }
+    }
+
+    fn historical_hithink_registry(
+        empty: bool,
+        maximum_payload_bytes: usize,
+    ) -> (OperationRegistry, Arc<AtomicUsize>, Vec<u8>) {
+        let rows =
+            if empty {
+                Vec::new()
+            } else {
+                [1787068800000_i64, 1786982400000_i64].map(|date_ms| serde_json::json!({
+                "date_ms":date_ms, "open_price":10.0, "high_price":11.0, "low_price":9.0,
+                "close_price":10.5, "volume":1200.0, "turnover":12000.0
+            })).to_vec()
+            };
+        let body = format!(" \n{}\n", serde_json::to_string_pretty(&serde_json::json!({
+            "code":0, "message":"success", "request_id":"native-history",
+            "data":{"thscode":"600519.SH", "interval":"1d", "adjust":"none", "timestamp":1787068800000_i64, "item":rows}
+        })).unwrap()).into_bytes();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = HithinkClient::with_transport(
+            "test_key",
+            HistoricalHithinkTransport {
+                body: body.clone(),
+                calls: calls.clone(),
+            },
+        )
+        .unwrap();
+        let mut registry = OperationRegistry::all_unadmitted("fixture operation is unavailable");
+        registry
+            .register_handler(
+                admitted(
+                    Operation::HistoricalBars,
+                    "HithinkFinance",
+                    HITHINK_HISTORICAL_BARS_SCOPE,
+                ),
+                move |command| {
+                    execute_hithink_historical_bars(command, &client, maximum_payload_bytes)
+                },
+            )
+            .unwrap();
+        (registry, calls, body)
+    }
+
+    fn historical_hithink_command(version: u32, schema: &str, limit: u32) -> QueryCommand {
+        let data = format!(r#"{{ "instrument":{{"exchange":"Shanghai","code":"600519","asset_class":"Equity"}}, "interval":"Day", "start":"2026-08-18", "end":"2026-08-19", "limit":{limit} }}"#).into_bytes();
+        QueryCommand::new(
+            "historical-coverage-request",
+            Operation::HistoricalBars,
+            Some("HithinkFinance".into()),
+            CanonicalPayload::new(schema, version, data, 65_536).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn hithink_historical_v2_binds_request_and_reports_observed_coverage_only() {
+        let (registry, calls, body) = historical_hithink_registry(false, 65_536);
+        let command = historical_hithink_command(2, HISTORICAL_BARS_REQUEST_SCHEMA, 1);
+        let request_hash = format!("{:x}", Sha256::digest(command.payload().data()));
+        let result = registry.execute(command).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!result.complete);
+        assert_eq!(result.provider, "HithinkFinance");
+        assert_eq!(result.batch_id, "native-history");
+        assert_eq!(result.records.len(), 1);
+        let payload = &result.records[0];
+        assert_eq!(payload.schema(), "magic.market.historical_bars.coverage");
+        assert_eq!(payload.schema_version(), 2);
+        let envelope: serde_json::Value = serde_json::from_slice(payload.data()).unwrap();
+        assert_eq!(envelope["request_id"], "historical-coverage-request");
+        assert_eq!(envelope["request_payload_sha256"], request_hash);
+        assert_eq!(envelope["request"]["limit"], 1);
+        assert_eq!(
+            envelope["coverage_scope"],
+            "HithinkNativeDateRangeResponseObservationOnly"
+        );
+        let coverage = &envelope["result"]["coverage"];
+        assert_eq!(coverage["validated_source_rows"], 2);
+        assert_eq!(coverage["returned_rows"], 1);
+        assert_eq!(coverage["caller_limit_truncated"], true);
+        assert_eq!(coverage["authority_calendar_coverage"], "Unknown");
+        assert_eq!(coverage["source_revision"], "NotProvided");
+        assert_eq!(coverage["pit_guarantee"], false);
+        assert_eq!(
+            coverage["response_receipt"]["body_sha256"],
+            format!("{:x}", Sha256::digest(&body))
+        );
+        let batch = &envelope["result"]["batch"];
+        assert_eq!(batch["quality"]["complete"], false);
+        assert_eq!(batch["records"][0]["bar_start"], "2026-08-19");
+        assert_eq!(batch["records"][0]["batch_id"], result.batch_id);
+        assert_eq!(batch["provenance"]["batch_id"], result.batch_id);
+    }
+
+    #[test]
+    fn hithink_historical_v1_keeps_record_shape_and_corrected_truncation_quality() {
+        for (limit, count, complete) in [(1, 1, false), (2, 2, true), (15, 2, true)] {
+            let (registry, calls, _) = historical_hithink_registry(false, 65_536);
+            let result = registry
+                .execute(historical_hithink_command(
+                    1,
+                    HISTORICAL_BARS_REQUEST_SCHEMA,
+                    limit,
+                ))
+                .unwrap();
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            assert_eq!(result.complete, complete);
+            assert_eq!(result.records.len(), count);
+            for payload in &result.records {
+                assert_eq!(payload.schema(), HISTORICAL_BARS_RECORD_SCHEMA);
+                assert_eq!(payload.schema_version(), 1);
+                let record: serde_json::Value = serde_json::from_slice(payload.data()).unwrap();
+                assert_eq!(record["provider"], "Tonghuashun");
+                assert_eq!(record["volume"], 12.0);
+                assert_eq!(record["amount"], 12000.0);
+                assert_eq!(record["batch_id"], result.batch_id);
+                assert!(record.get("result").is_none());
+                assert!(record.get("coverage").is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn hithink_historical_v2_no_deletion_or_empty_never_promotes_unknown_coverage() {
+        for (empty, count) in [(false, 2), (true, 0)] {
+            let (registry, _, _) = historical_hithink_registry(empty, 65_536);
+            let result = registry
+                .execute(historical_hithink_command(
+                    2,
+                    HISTORICAL_BARS_REQUEST_SCHEMA,
+                    15,
+                ))
+                .unwrap();
+            assert!(result.complete);
+            assert_eq!(result.records.len(), 1);
+            let envelope: serde_json::Value =
+                serde_json::from_slice(result.records[0].data()).unwrap();
+            let coverage = &envelope["result"]["coverage"];
+            assert_eq!(coverage["validated_source_rows"], count);
+            assert_eq!(coverage["returned_rows"], count);
+            assert_eq!(coverage["caller_limit_truncated"], false);
+            assert_eq!(coverage["source_exhaustion"], "Unknown");
+            assert_eq!(coverage["authority_calendar_coverage"], "Unknown");
+            assert_eq!(coverage["missing_date_reasons"], "Unknown");
+            assert_eq!(coverage["historical_publication_time"], "NotProvided");
+            assert_eq!(coverage["pit_guarantee"], false);
+            assert!(coverage.get("verified_empty").is_none());
+            assert_eq!(
+                envelope["result"]["batch"]["records"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                count
+            );
+        }
+    }
+
+    #[test]
+    fn hithink_historical_rejects_version_schema_and_payload_bounds() {
+        for (version, schema) in [(3, HISTORICAL_BARS_REQUEST_SCHEMA), (2, "wrong.schema")] {
+            let (registry, calls, _) = historical_hithink_registry(false, 65_536);
+            assert!(matches!(
+                registry.execute(historical_hithink_command(version, schema, 1)),
+                Err(ServiceError::InvalidRequest(_))
+            ));
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+        }
+        let (registry, calls, _) = historical_hithink_registry(false, 64);
+        assert!(matches!(
+            registry.execute(historical_hithink_command(
+                2,
+                HISTORICAL_BARS_REQUEST_SCHEMA,
+                1
+            )),
+            Err(ServiceError::ResourceExhausted(_))
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
 
     struct CoverageCninfoTransport {
         row_count: u64,

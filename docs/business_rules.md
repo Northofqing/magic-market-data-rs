@@ -952,6 +952,16 @@ the response timestamp must identify the latest returned bar, volume converts
 source shares to Core lots by dividing by 100, and amount stays in source
 currency units. No completed row may be filled or inferred.
 
+Actual local HistoricalBars caller-limit deletion creates a nonempty quality
+issue and `complete=false`; no deletion retains the existing strict quality.
+The independent gRPC canonical version-2 observation envelope binds original
+request bytes and preserves validated row counts, actual truncation, response
+body hash/length/final URL, and only native fields actually returned. Optional
+native adjustment omission and null are distinct. Source exhaustion, authority
+calendar coverage and missing-date reasons remain Unknown; revision and
+historical publication time remain NotProvided; PIT is not certified. A true
+validation/quality flag or an empty source row set cannot promote these claims.
+
 Production `MarketStatistics` accepts one through 100 unique A-share equities
 and requires exactly one response row in request order. It maps only `pe_ttm`,
 `pe_mrq` and `pb_mrq`; `null` and negative values are preserved. The batch

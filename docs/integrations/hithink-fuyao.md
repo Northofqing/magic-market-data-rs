@@ -68,6 +68,14 @@ enforced by Core; source volume in shares is divided by 100 to Core lots and
 turnover is preserved as amount. Each bar keeps its own date as `source_at`;
 the batch keeps the raw provider millisecond time as `unix-ms:<value>`.
 
+Actual local caller-limit deletion creates a quality issue and incomplete
+batch. `historical_bars_with_coverage` shares the same request/validation and
+returns observation-only counts, native response fields and the exact transport
+body hash. The opt-in [gRPC coverage version 2](grpc-historical-bars-coverage-v2.md)
+does not certify source exhaustion, authority calendar coverage, missing-date
+reasons, historical publication/revision state or PIT. Native omitted/null
+adjustment is preserved distinctly. No API key is part of this outcome.
+
 ### MarketStatistics
 
 The exact request contains 1..=100 unique A-share identities. Response count,

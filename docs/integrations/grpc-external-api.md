@@ -584,6 +584,12 @@ EMQuant 生产日线请求必须使用 `schema=magic.market.historical_bars.requ
 | `CorporateActions` | 单只 A 股、可选且不晚于当前上海日期的 inclusive 范围；只映射官方现金/送股每股条款和除权日；源未给批次时间时 `source_at=null` |
 | `SecurityMetadata` | 1..=32 个 A 股、标准指数或场内基金；精确身份/名称/币种，未发布的板块/上市日/涨跌停规则保持缺失并标为 `Unavailable` |
 
+Hithink `HistoricalBars` 实际按 caller limit 删行后，批次及外层 `complete=false`；
+v1 请求/记录字段保持不变。显式选择 `HithinkFinance` 并使用原请求 schema 的
+version 2 可取得一个[观察型覆盖 envelope](grpc-historical-bars-coverage-v2.md)：
+保留实际源行数、删行标记、原始响应 body hash 和实际 native echo；未知交易日覆盖、
+源穷尽、修订及历史发布时间不作补全。它不是 PIT 或权威覆盖能力。
+
 同花顺行情沿用 `magic.market.realtime_quotes.request` v1。以下脱敏记录展示缺失时间的明确标注；
 顶层响应同时返回实际胜出的 `provider=HithinkFinance`：
 

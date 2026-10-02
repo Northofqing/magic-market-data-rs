@@ -976,6 +976,7 @@ dependencies = [
  "magic-market-transport",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "time",
  "url",

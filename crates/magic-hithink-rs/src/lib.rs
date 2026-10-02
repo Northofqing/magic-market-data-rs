@@ -100,6 +100,9 @@ mod auctions;
 pub use auctions::{CurrentAuctionDataStatus, CurrentAuctionObservation, CurrentAuctionStage};
 mod corporate_actions;
 mod financials;
+pub mod historical_coverage;
+pub use historical_coverage::HistoricalBarsOutcome;
+use historical_coverage::{HistoricalResponseReceipt, NativeAdjustment, NativeHistoricalResponse};
 mod metadata;
 
 #[derive(Debug, Error)]
@@ -211,6 +214,28 @@ impl HithinkClient {
         &self,
         request: &BarsRequest,
     ) -> Result<DataBatch<Bar>, HithinkError> {
+        self.query_historical_with_coverage(request)
+            .map(HistoricalBarsOutcome::into_batch)
+    }
+
+    /// One validated response and observation-only coverage. Unknown source
+    /// exhaustion/calendar/revision/publication evidence is never inferred.
+    pub fn historical_bars_with_coverage(
+        &self,
+        request: &BarsRequest,
+    ) -> Result<HistoricalBarsOutcome, HithinkError> {
+        if !HISTORICAL_BARS_ADMITTED {
+            return Err(HithinkError::Unsupported(
+                "HITHINK historical bars await production admission".into(),
+            ));
+        }
+        self.query_historical_with_coverage(request)
+    }
+
+    fn query_historical_with_coverage(
+        &self,
+        request: &BarsRequest,
+    ) -> Result<HistoricalBarsOutcome, HithinkError> {
         validate_historical_request(request)?;
         let start = request.start().ok_or_else(|| {
             HithinkError::InvalidRequest("explicit start date is required".into())
@@ -238,21 +263,22 @@ impl HithinkClient {
                 .to_string(),
             ),
         ];
-        let (expected_adjust, response) = match request.instrument().asset_class() {
+        let (expected_adjust, (response, receipt)) = match request.instrument().asset_class() {
             AssetClass::Equity => {
                 let mut query = common_query.to_vec();
                 query.push(("adjust", "none".to_owned()));
                 query.push(("offset", "0".to_owned()));
-                let response = self.get(HISTORICAL_PATH, query.iter().map(pair_ref))?;
+                let response = self.get_historical(HISTORICAL_PATH, query.iter().map(pair_ref))?;
                 (Some("none"), response)
             }
             AssetClass::Index => {
                 let response =
-                    self.get(INDEX_HISTORICAL_PATH, common_query.iter().map(pair_ref))?;
+                    self.get_historical(INDEX_HISTORICAL_PATH, common_query.iter().map(pair_ref))?;
                 (None, response)
             }
             AssetClass::Fund => {
-                let response = self.get(FUND_HISTORICAL_PATH, common_query.iter().map(pair_ref))?;
+                let response =
+                    self.get_historical(FUND_HISTORICAL_PATH, common_query.iter().map(pair_ref))?;
                 (None, response)
             }
             _ => {
@@ -261,7 +287,15 @@ impl HithinkClient {
                 ));
             }
         };
-        normalize_historical(request, response, start_date, end_date, expected_adjust)
+        let source_rows = response.data.item.len();
+        let native_response = NativeHistoricalResponse::capture(&response);
+        let batch = normalize_historical(request, response, start_date, end_date, expected_adjust)?;
+        Ok(HistoricalBarsOutcome::validated(
+            batch,
+            source_rows,
+            native_response,
+            receipt,
+        ))
     }
 
     /// Diagnostic path used before the capability is promoted into routing.
@@ -400,6 +434,28 @@ impl HithinkClient {
         path: &str,
         query: impl Iterator<Item = (&'a str, &'a str)>,
     ) -> Result<Success<T>, HithinkError> {
+        let request = self.build_request(path, query)?;
+        self.execute_json(&request)
+    }
+
+    fn get_historical<'a>(
+        &self,
+        path: &str,
+        query: impl Iterator<Item = (&'a str, &'a str)>,
+    ) -> Result<(Success<HistoricalData>, HistoricalResponseReceipt), HithinkError> {
+        let request = self.build_request(path, query)?;
+        let response = self
+            .execute_response(&request)
+            .map_err(HithinkError::lift_http_status)?;
+        let receipt = HistoricalResponseReceipt::capture(&response);
+        Ok((parse_envelope(response)?, receipt))
+    }
+
+    fn build_request<'a>(
+        &self,
+        path: &str,
+        query: impl Iterator<Item = (&'a str, &'a str)>,
+    ) -> Result<HttpRequest, HithinkError> {
         if !EXACT_PATHS.contains(&path) {
             return Err(HithinkError::InvalidRequest(
                 "endpoint is not in the closed HITHINK contract".into(),
@@ -419,7 +475,7 @@ impl HithinkClient {
             ],
             Vec::new(),
         )?;
-        self.execute_json(&request)
+        Ok(request)
     }
 
     fn execute_json<T: DeserializeOwned>(
@@ -429,14 +485,13 @@ impl HithinkClient {
         // Every transport failure leaves the request seam through one conversion, so a
         // rejected HTTP status cannot be flattened back into an undifferentiated
         // transport failure by a later `?`.
-        self.execute_request(request)
-            .map_err(HithinkError::lift_http_status)
+        let response = self
+            .execute_response(request)
+            .map_err(HithinkError::lift_http_status)?;
+        parse_envelope(response)
     }
 
-    fn execute_request<T: DeserializeOwned>(
-        &self,
-        request: &HttpRequest,
-    ) -> Result<Success<T>, HithinkError> {
+    fn execute_response(&self, request: &HttpRequest) -> Result<HttpResponse, HithinkError> {
         ensure_exact_endpoint(request.url())?;
         self.policy.validate_request(request)?;
         self.gate.wait_for_turn()?;
@@ -451,7 +506,7 @@ impl HithinkClient {
             .request_finished()
             .map_err(|error| tracker_error(&error.to_string()))?;
         let response = self.policy.validate_response_for(request, response?)?;
-        parse_envelope(response)
+        Ok(response)
     }
 }
 
@@ -460,13 +515,8 @@ impl HistoricalBars for HithinkClient {
     type Error = HithinkError;
 
     fn historical_bars(&self, request: &BarsRequest) -> Result<DataBatch<Bar>, Self::Error> {
-        if HISTORICAL_BARS_ADMITTED {
-            self.probe_historical_bars(request)
-        } else {
-            Err(HithinkError::Unsupported(
-                "HITHINK historical bars await production admission".into(),
-            ))
-        }
+        self.historical_bars_with_coverage(request)
+            .map(HistoricalBarsOutcome::into_batch)
     }
 }
 
@@ -574,7 +624,7 @@ struct HistoricalData {
     thscode: String,
     interval: String,
     #[serde(default)]
-    adjust: Option<String>,
+    adjust: NativeAdjustment,
     timestamp: i64,
     item: Vec<HistoricalItem>,
 }
@@ -942,7 +992,9 @@ fn normalize_historical(
         }
     }
     let keep = usize::from(request.limit());
-    if rows.len() > keep {
+    let validated_rows = rows.len();
+    let truncated = validated_rows > keep;
+    if truncated {
         rows.drain(..rows.len() - keep);
     }
     let provenance = batch_provenance(
@@ -950,7 +1002,17 @@ fn normalize_historical(
         observed_at,
         batch_id,
     )?;
-    Ok(DataBatch::strict(rows, provenance))
+    if truncated {
+        Ok(DataBatch::best_effort(
+            rows,
+            provenance,
+            vec![format!(
+                "caller limit {keep} retained {keep} of {validated_rows} validated historical rows"
+            )],
+        )?)
+    } else {
+        Ok(DataBatch::strict(rows, provenance))
+    }
 }
 
 fn normalize_valuations(

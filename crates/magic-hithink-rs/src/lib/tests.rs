@@ -21,6 +21,13 @@ impl FixtureTransport {
         }
     }
 
+    fn from_bytes(body: Vec<u8>) -> Self {
+        Self {
+            responses: Arc::new(Mutex::new(VecDeque::from([body]))),
+            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
     pub(crate) fn requested_urls(&self) -> Vec<String> {
         self.requests
             .lock()
@@ -71,6 +78,221 @@ fn historical_request() -> BarsRequest {
     .unwrap()
     .with_range("2026-08-18", "2026-08-19")
     .unwrap()
+}
+
+fn two_day_history() -> serde_json::Value {
+    let first = shanghai_millis(parse_date("2026-08-18").unwrap(), Time::MIDNIGHT).unwrap();
+    let second = shanghai_millis(parse_date("2026-08-19").unwrap(), Time::MIDNIGHT).unwrap();
+    success(
+        "history-limit-control",
+        json!({
+            "thscode": "600519.SH", "interval": "1d", "adjust": "none",
+            "timestamp": second,
+            "item": ([second, first].map(|date_ms| json!({
+                "date_ms": date_ms, "open_price": 10.0, "high_price": 11.0,
+                "low_price": 9.0, "close_price": 10.5,
+                "volume": 1200.0, "turnover": 12000.0
+            })))
+        }),
+    )
+}
+
+#[test]
+fn historical_bars_actual_caller_truncation_is_incomplete() {
+    let client =
+        HithinkClient::with_transport("test_key", FixtureTransport::new(vec![two_day_history()]))
+            .unwrap();
+    let request = BarsRequest::new(
+        instrument(Exchange::Shanghai, "600519"),
+        BarInterval::Day,
+        1,
+    )
+    .unwrap()
+    .with_range("2026-08-18", "2026-08-19")
+    .unwrap();
+    let batch = client.historical_bars(&request).unwrap();
+    assert_eq!(batch.records().len(), 1);
+    assert_eq!(batch.records()[0].bar_start(), "2026-08-19");
+    assert!(!batch.quality().is_complete());
+    assert_eq!(batch.quality().issues().len(), 1);
+}
+
+#[test]
+fn historical_bars_without_local_deletion_keeps_strict_quality_and_order() {
+    for limit in [2, 10] {
+        let client = HithinkClient::with_transport(
+            "test_key",
+            FixtureTransport::new(vec![two_day_history()]),
+        )
+        .unwrap();
+        let request = BarsRequest::new(
+            instrument(Exchange::Shanghai, "600519"),
+            BarInterval::Day,
+            limit,
+        )
+        .unwrap()
+        .with_range("2026-08-18", "2026-08-19")
+        .unwrap();
+        let batch = client.historical_bars(&request).unwrap();
+        assert!(batch.quality().is_complete());
+        assert!(batch.quality().issues().is_empty());
+        assert_eq!(batch.records()[0].bar_start(), "2026-08-18");
+        assert_eq!(batch.records()[1].bar_start(), "2026-08-19");
+    }
+}
+
+#[test]
+fn historical_bars_validates_even_rows_that_limit_would_discard() {
+    for violation in [
+        "price",
+        "duplicate",
+        "range",
+        "timestamp",
+        "identity",
+        "field",
+    ] {
+        let mut body = two_day_history();
+        match violation {
+            "price" => body["data"]["item"][1]["high_price"] = json!(1.0),
+            "duplicate" => {
+                body["data"]["item"][1]["date_ms"] = body["data"]["item"][0]["date_ms"].clone()
+            }
+            "range" => {
+                body["data"]["item"][1]["date_ms"] =
+                    json!(
+                        shanghai_millis(parse_date("2026-08-17").unwrap(), Time::MIDNIGHT).unwrap()
+                    )
+            }
+            "timestamp" => body["data"]["timestamp"] = body["data"]["item"][1]["date_ms"].clone(),
+            "identity" => body["data"]["thscode"] = json!("000001.SZ"),
+            "field" => {
+                body["data"]["item"][1]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("volume");
+            }
+            _ => unreachable!(),
+        }
+        let client =
+            HithinkClient::with_transport("test_key", FixtureTransport::new(vec![body])).unwrap();
+        let request = BarsRequest::new(
+            instrument(Exchange::Shanghai, "600519"),
+            BarInterval::Day,
+            1,
+        )
+        .unwrap()
+        .with_range("2026-08-18", "2026-08-19")
+        .unwrap();
+        assert!(
+            matches!(
+                client.historical_bars(&request),
+                Err(HithinkError::Core(_) | HithinkError::Protocol(_) | HithinkError::Decode(_))
+            ),
+            "{violation}"
+        );
+    }
+}
+
+#[test]
+fn historical_coverage_hashes_actual_body_and_never_certifies_calendar_or_pit() {
+    use sha2::{Digest, Sha256};
+    let body = format!(
+        " \n{}\n ",
+        serde_json::to_string_pretty(&two_day_history()).unwrap()
+    )
+    .into_bytes();
+    let expected_hash = format!("{:x}", Sha256::digest(&body));
+    let compact_hash = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&two_day_history()).unwrap())
+    );
+    assert_ne!(expected_hash, compact_hash);
+    let transport = FixtureTransport::from_bytes(body.clone());
+    let observed = transport.clone();
+    let client = HithinkClient::with_transport("test_key", transport).unwrap();
+    let request = BarsRequest::new(
+        instrument(Exchange::Shanghai, "600519"),
+        BarInterval::Day,
+        1,
+    )
+    .unwrap()
+    .with_range("2026-08-18", "2026-08-19")
+    .unwrap();
+    let result = client.historical_bars_with_coverage(&request).unwrap();
+    assert!(!result.batch().quality().is_complete());
+    let value = serde_json::to_value(&result).unwrap();
+    let coverage = &value["coverage"];
+    assert_eq!(coverage["response_validated"], true);
+    assert_eq!(coverage["validated_source_rows"], 2);
+    assert_eq!(coverage["returned_rows"], 1);
+    assert_eq!(coverage["caller_limit_truncated"], true);
+    for name in [
+        "source_exhaustion",
+        "authority_calendar_coverage",
+        "missing_date_reasons",
+    ] {
+        assert_eq!(coverage[name], "Unknown");
+    }
+    for name in ["source_revision", "historical_publication_time"] {
+        assert_eq!(coverage[name], "NotProvided");
+    }
+    assert_eq!(coverage["pit_guarantee"], false);
+    assert_eq!(coverage["native_response"]["thscode"], "600519.SH");
+    assert_eq!(coverage["native_response"]["interval"], "1d");
+    assert_eq!(
+        coverage["native_response"]["adjust"],
+        json!({"state":"Value", "value":"none"})
+    );
+    assert_eq!(
+        coverage["native_response"]["request_id"],
+        result.batch().provenance().batch_id().unwrap()
+    );
+    for name in ["start", "end", "exchange", "asset_class"] {
+        assert!(coverage["native_response"].get(name).is_none());
+    }
+    assert_eq!(coverage["response_receipt"]["body_sha256"], expected_hash);
+    assert_eq!(coverage["response_receipt"]["body_byte_length"], body.len());
+    assert_eq!(
+        coverage["response_receipt"]["final_url"],
+        observed.requested_urls()[0]
+    );
+    assert_eq!(observed.requested_urls().len(), 1);
+}
+
+#[test]
+fn historical_coverage_preserves_absent_null_native_fields_and_observed_empty_only() {
+    for (adjust, state) in [(None, "Absent"), (Some(json!(null)), "Null")] {
+        let mut data = json!({"thscode":"510300.SH", "interval":"1d", "timestamp":1787068800000_i64, "item":[]});
+        if let Some(adjust) = adjust {
+            data["adjust"] = adjust;
+        }
+        let client = HithinkClient::with_transport(
+            "test_key",
+            FixtureTransport::new(vec![success("empty-observation", data)]),
+        )
+        .unwrap();
+        let request = BarsRequest::new(
+            InstrumentId::new(Exchange::Shanghai, "510300", AssetClass::Fund).unwrap(),
+            BarInterval::Day,
+            1,
+        )
+        .unwrap()
+        .with_range("2026-08-18", "2026-08-19")
+        .unwrap();
+        let result = client.historical_bars_with_coverage(&request).unwrap();
+        assert!(result.batch().records().is_empty());
+        assert!(result.batch().quality().is_complete());
+        let value = serde_json::to_value(result).unwrap();
+        let coverage = &value["coverage"];
+        assert_eq!(coverage["native_response"]["adjust"]["state"], state);
+        assert_eq!(coverage["validated_source_rows"], 0);
+        assert_eq!(coverage["returned_rows"], 0);
+        assert_eq!(coverage["caller_limit_truncated"], false);
+        assert_eq!(coverage["source_exhaustion"], "Unknown");
+        assert_eq!(coverage["authority_calendar_coverage"], "Unknown");
+        assert_eq!(coverage["pit_guarantee"], false);
+        assert!(coverage.get("verified_empty").is_none());
+    }
 }
 
 #[test]
