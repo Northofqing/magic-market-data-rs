@@ -128,3 +128,49 @@ fn native_market_page_preserves_source_identity_time_and_batch_evidence() {
     assert!(form.contains("pageNum=1"));
     assert!(form.contains("seDate=2026-07-24%7E2026-07-24"));
 }
+
+#[test]
+fn caller_limit_cannot_hide_an_unsafe_attachment_in_the_inspected_page() {
+    let transport = FixtureTransport::new(serde_json::json!({
+        "totalAnnouncement": 2,
+        "totalRecordNum": 2,
+        "totalpages": 0,
+        "hasMore": false,
+        "announcements": [
+            {
+                "secCode": "600396",
+                "orgId": "gssh0600396",
+                "announcementId": "valid-first",
+                "announcementTitle": "Valid first announcement",
+                "announcementTime": 1784822400000_i64,
+                "adjunctUrl": "finalpage/2026-07-24/valid-first.PDF",
+                "pageColumn": "SHMB"
+            },
+            {
+                "secCode": "300457",
+                "orgId": "9900023940",
+                "announcementId": "unsafe-after-limit",
+                "announcementTitle": "Invalid attachment after caller limit",
+                "announcementTime": 1784822400000_i64,
+                // Synthetic negative: not an observed upstream malicious row.
+                "adjunctUrl": "https://outside.invalid/report.PDF",
+                "pageColumn": "SZCY"
+            }
+        ]
+    }));
+    let client = CninfoClient::with_transport(CninfoConfig::default(), transport).unwrap();
+
+    // The same row is already rejected when it survives the caller limit.
+    assert!(matches!(
+        client.market_announcements(&request(2)),
+        Err(CninfoError::Schema(message)) if message.contains("adjunctUrl")
+    ));
+    let result = client.market_announcements(&request(1));
+    assert!(
+        matches!(
+            &result,
+            Err(CninfoError::Schema(message)) if message.contains("adjunctUrl")
+        ),
+        "unexpected caller-limited result: {result:?}"
+    );
+}

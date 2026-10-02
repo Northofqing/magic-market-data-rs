@@ -437,6 +437,12 @@ fn validate_market_row(
             "market announcement date {source_date} is outside the requested range"
         )));
     }
+    let adjunct_url = row.adjunct_url.and_then(super::nonblank);
+    if let Some(relative) = &adjunct_url {
+        // Validate every inspected row before the caller limit can hide it.
+        // Keep the raw path for the existing duplicate-conflict comparison.
+        pdf_url(relative.clone())?;
+    }
     Ok(ValidatedAnnouncement {
         announcement_id: required_text(row.announcement_id, "market announcement.announcementId")?,
         security_code,
@@ -453,7 +459,7 @@ fn validate_market_row(
             .map(super::normalize_text)
             .and_then(super::nonblank),
         published_at,
-        adjunct_url: row.adjunct_url.and_then(super::nonblank),
+        adjunct_url,
         page_column,
     })
 }
