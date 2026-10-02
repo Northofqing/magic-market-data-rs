@@ -402,9 +402,9 @@ class HttpTransportCheckerTests(unittest.TestCase):
         }
         resolution_pattern = (
             r"(?:\[dependencies\] dependency loop\.path|workspace member manifest)"
-            r" cannot be resolved:[^\n]*(?:"
+            r" cannot be resolved:[^\n]*['\"](?:"
             + "|".join(re.escape(path) for path in sorted(target_paths))
-            + r")(?:['\"]|$)"
+            + r")['\"]"
         )
         self.assertRegex(
             "\n".join(self.errors()).replace("\\\\", "\\").replace("\\", "/"),
