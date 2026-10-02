@@ -297,6 +297,28 @@ class FixedSampleTests(unittest.TestCase):
             research._verify_index(synthetic)
         self.assertIs(caught.exception.code, EvidenceErrorCode.INDEX_IDENTITY_MISMATCH)
 
+    def test_synthetic_duplicate_style_attributes_are_ambiguous(self) -> None:
+        self.assert_notice_change_rejected(
+            'class="fxleft"', 'class="fxleft" style="display:none" style="display:block"',
+            EvidenceErrorCode.AMBIGUOUS_DOCUMENT,
+        )
+
+    def test_synthetic_body_label_cannot_replace_publication_metadata(self) -> None:
+        saved = self.saved_inputs().notice
+        label = b'<div class="fxleft"><a>2026-09-18</a></div>'
+        self.assertIn(label, saved)
+        synthetic = saved.replace(label, b"").replace(b'<div class="jysggnr">',
+                                                      b'<div class="jysggnr">' + label)
+        with self.assertRaises(EvidenceError) as caught:
+            research._parse_notice(synthetic)
+        self.assertIs(caught.exception.code, EvidenceErrorCode.PUBLICATION_DATE_MISMATCH)
+
+    def test_synthetic_split_conflicting_price_sentence_is_not_ignored(self) -> None:
+        line = "中证500股指期货IC2609合约的交割结算价为7789.72点；"
+        extra = "中证500股指期货IC2609合约的交割结算价<br/>为7789.73点；"
+        self.assert_notice_change_rejected(line, line + "<br/>" + extra,
+                                           EvidenceErrorCode.PRICE_UNIT_MISMATCH)
+
     def test_other_month_is_typed_rejection_not_september_confirmation(self) -> None:
         inputs = SeptemberInputs(b"", b"", b"", month="2026-10")
         with self.assertRaises(EvidenceError) as caught:

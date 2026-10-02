@@ -149,10 +149,14 @@ class _Document(HTMLParser):
         try:
             self.feed(raw.decode("utf-8", errors="strict"))
             self.close()
+        except EvidenceError:
+            raise
         except (UnicodeDecodeError, ValueError) as error:
             raise EvidenceError(EvidenceErrorCode.DECODE_REJECTED, "html") from error
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if len({name for name, _ in attrs}) != len(attrs):
+            raise EvidenceError(EvidenceErrorCode.AMBIGUOUS_DOCUMENT, "duplicate HTML attribute")
         node = _Node(tag, dict(attrs))
         self.stack[-1].children.append(node)
         if tag not in self._VOID:
@@ -205,6 +209,14 @@ def _text(node: _Node) -> str:
 
 def _one(root: _Node, class_name: str) -> _Node:
     found = _nodes(root, class_name)
+    if len(found) != 1:
+        raise EvidenceError(EvidenceErrorCode.AMBIGUOUS_DOCUMENT, class_name)
+    return found[0]
+
+
+def _one_child(root: _Node, class_name: str) -> _Node:
+    found = [child for child in root.children if isinstance(child, _Node)
+             and _visible(child) and class_name in (child.attrs.get("class") or "").split()]
     if len(found) != 1:
         raise EvidenceError(EvidenceErrorCode.AMBIGUOUS_DOCUMENT, class_name)
     return found[0]
@@ -275,15 +287,16 @@ def _parse_headers(raw: bytes, notice_length: int) -> HttpMetadata:
 def _parse_notice(raw: bytes) -> _NoticeFacts:
     root = _Document(raw).root
     article = _one(root, "jysggright")
-    if _text(_one(article, "title_xqy")).strip() != TITLE:
+    if _text(_one_child(article, "title_xqy")).strip() != TITLE:
         raise EvidenceError(EvidenceErrorCode.AMBIGUOUS_DOCUMENT, "title")
-    publication_nodes = _nodes(article, "fxleft")
+    metadata = _one_child(article, "fenxiang")
+    publication_nodes = _nodes(metadata, "fxleft")
     if not publication_nodes:
         raise EvidenceError(EvidenceErrorCode.PUBLICATION_DATE_MISMATCH, "visible detail date")
-    publication_date = _text(_one(article, "fxleft")).strip()
+    publication_date = _text(_one(metadata, "fxleft")).strip()
     if publication_date != SOURCE_DATE:
         raise EvidenceError(EvidenceErrorCode.PUBLICATION_DATE_MISMATCH, "detail date")
-    body = _text(_one(article, "jysggnr"))
+    body = _text(_one_child(article, "jysggnr"))
     lines = [line.strip() for line in body.splitlines() if line.strip()]
     if [line for line in lines if "中金所发" in line] != [ISSUE]:
         raise EvidenceError(EvidenceErrorCode.ISSUE_MISMATCH, "issue number")
@@ -296,12 +309,16 @@ def _parse_notice(raw: bytes) -> _NoticeFacts:
         r"(?:和(?P<option_name>沪深300|上证50|中证1000)股指期权(?P<option>[A-Z]{2}[0-9]+)月份合约)?"
         r"的交割结算价为(?P<price>[0-9]+(?:\.[0-9]+)?)(?P<unit>[^；。]+)[；。]"
     )
+    boilerplate = {ISSUE, "各会员单位：", "特此通知。", "中国金融期货交易所", "2026年9月18日"}
     for line in lines:
-        if "的交割结算价为" not in line:
+        if line in boilerplate or line in delivery_lines:
             continue
         match = pattern.fullmatch(line)
         if match is None:
-            raise EvidenceError(EvidenceErrorCode.PRICE_UNIT_MISMATCH, "pricing sentence")
+            code = (EvidenceErrorCode.PRICE_UNIT_MISMATCH
+                    if "股指期" in line or "交割结算价" in line
+                    else EvidenceErrorCode.AMBIGUOUS_DOCUMENT)
+            raise EvidenceError(code, "unresolved body/pricing fragment")
         contract, price, unit = match.group("contract", "price", "unit")
         if contract not in CONTRACTS or match.group("name") != PRODUCT_NAMES[contract]:
             raise EvidenceError(EvidenceErrorCode.CONTRACT_SET_MISMATCH, "future contract")
