@@ -396,19 +396,27 @@ class HttpTransportCheckerTests(unittest.TestCase):
         self.write_rows()
         # Resolution can reject during dependency discovery or member validation.
         # Exception reprs escape Windows separators; keep category and target bound.
+        fixture_roots = (self.root, self.root.resolve())
         target_paths = {
             str(root / "providers/loop/Cargo.toml").replace("\\", "/")
-            for root in (self.root, self.root.resolve())
+            for root in fixture_roots
         }
+        manifest_paths = {
+            str(root / "crates/application/Cargo.toml").replace("\\", "/")
+            for root in fixture_roots
+        }
+        manifest_pattern = "|".join(re.escape(path) for path in sorted(manifest_paths))
         resolution_pattern = (
-            r"(?:\[dependencies\] dependency loop\.path|workspace member manifest)"
+            r"(?:(?:"
+            + manifest_pattern
+            + r"): \[dependencies\] dependency loop\.path|workspace member manifest)"
             r" cannot be resolved:[^\n]*['\"](?:"
             + "|".join(re.escape(path) for path in sorted(target_paths))
             + r")['\"]"
         )
         self.assertRegex(
             "\n".join(self.errors()).replace("\\\\", "\\").replace("\\", "/"),
-            resolution_pattern,
+            r"(?m)^" + resolution_pattern,
         )
         result = subprocess.run(
             [sys.executable, "-B", str(MODULE_PATH), "--root", str(self.root)],
@@ -422,7 +430,7 @@ class HttpTransportCheckerTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertRegex(
             result.stderr.replace("\\\\", "\\").replace("\\", "/"),
-            r"(?m)^HTTP transport boundary error: [^\n]*" + resolution_pattern,
+            r"(?m)^HTTP transport boundary error: " + resolution_pattern,
         )
 
 
