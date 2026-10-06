@@ -5574,3 +5574,7 @@ fn map_tencent_error(operation: Operation, error: TencentError) -> ServiceError 
 #[cfg(test)]
 #[path = "../tests/internal/grpc_production_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/internal/grpc_handler_behavior_tests.rs"]
+mod handler_behavior_tests;
