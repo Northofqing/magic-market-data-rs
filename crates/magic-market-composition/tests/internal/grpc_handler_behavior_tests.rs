@@ -1415,3 +1415,515 @@ fn unknown_provider_errors_fail_conservatively_with_the_requested_operation() {
         ))
     );
 }
+
+const FINANCIAL_FIXTURE_PROVIDER: &str = "offline-financial-fixture";
+
+#[derive(Debug, Clone, PartialEq)]
+struct FinancialFixtureCall {
+    instruments: Vec<InstrumentId>,
+    kind: StatementKind,
+}
+
+enum FinancialFixtureOutcome {
+    Batch(Box<DataBatch<FinancialStatement>>),
+    HttpStatus(u16),
+    Transport,
+    Decode,
+}
+
+struct FixtureFinancialProvider {
+    outcome: FinancialFixtureOutcome,
+    calls: std::sync::Mutex<Vec<FinancialFixtureCall>>,
+}
+
+impl FinancialStatements for FixtureFinancialProvider {
+    type Error = HithinkError;
+
+    fn financial_statements(
+        &self,
+        instruments: &[InstrumentId],
+        kind: StatementKind,
+    ) -> Result<DataBatch<FinancialStatement>, Self::Error> {
+        self.calls.lock().unwrap().push(FinancialFixtureCall {
+            instruments: instruments.to_vec(),
+            kind,
+        });
+        match &self.outcome {
+            FinancialFixtureOutcome::Batch(batch) => Ok((**batch).clone()),
+            FinancialFixtureOutcome::HttpStatus(status) => Err(HithinkError::HttpStatus(*status)),
+            FinancialFixtureOutcome::Transport => {
+                Err(HithinkError::Transport(offline_transport_error()))
+            }
+            FinancialFixtureOutcome::Decode => {
+                Err(HithinkError::Decode(OFFLINE_FAILURE_DETAIL.into()))
+            }
+        }
+    }
+}
+
+fn financial_fixture_provider(outcome: FinancialFixtureOutcome) -> FixtureFinancialProvider {
+    FixtureFinancialProvider {
+        outcome,
+        calls: std::sync::Mutex::new(Vec::new()),
+    }
+}
+
+fn financial_fixture_instruments() -> Vec<InstrumentId> {
+    use magic_market_core::{AssetClass, Exchange};
+
+    vec![
+        InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity).unwrap(),
+        InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity).unwrap(),
+    ]
+}
+
+fn financial_fixture_batch(kind: StatementKind) -> DataBatch<FinancialStatement> {
+    let records = financial_fixture_instruments()
+        .into_iter()
+        .zip([
+            (
+                "2026-06-30",
+                "H1",
+                "2026-07-31",
+                "2026-07-31T09:00:00+08:00",
+            ),
+            (
+                "2025-12-31",
+                "FY",
+                "2026-04-30",
+                "2026-04-30T09:00:00+08:00",
+            ),
+        ])
+        .map(
+            |(instrument, (report_period, fiscal_period, announced_on, source_at))| {
+                FinancialStatement {
+                    instrument,
+                    kind,
+                    report_period: IsoDate::new(report_period).unwrap(),
+                    fiscal_period: Some(NonEmptyText::new(fiscal_period).unwrap()),
+                    announced_on: Some(IsoDate::new(announced_on).unwrap()),
+                    currency: Some(NonEmptyText::new("CNY").unwrap()),
+                    lines: vec![
+                        FinancialLine {
+                            key: NonEmptyText::new("source_amount").unwrap(),
+                            source_label: NonEmptyText::new("原始金额标签").unwrap(),
+                            value: Some(magic_market_core::FiniteNumber::new(1_200.5).unwrap()),
+                            unit: Some(NonEmptyText::new("source-unit").unwrap()),
+                        },
+                        FinancialLine {
+                            key: NonEmptyText::new("source_missing").unwrap(),
+                            source_label: NonEmptyText::new("原始缺项").unwrap(),
+                            value: None,
+                            unit: None,
+                        },
+                    ],
+                    evidence: SourceEvidence::new(
+                        ProviderId::Tonghuashun,
+                        FIXTURE_OBSERVED_AT,
+                        FINANCIAL_FIXTURE_PROVIDER,
+                    )
+                    .unwrap()
+                    .with_source_at(source_at)
+                    .unwrap(),
+                }
+            },
+        )
+        .collect();
+    DataBatch::strict(
+        records,
+        Provenance::new(FINANCIAL_FIXTURE_PROVIDER, FIXTURE_OBSERVED_AT)
+            .unwrap()
+            .with_source_at("2026-07-31T09:00:00+08:00")
+            .unwrap()
+            .with_batch_id(FINANCIAL_FIXTURE_PROVIDER)
+            .unwrap(),
+    )
+}
+
+fn financial_fixture_command(version: u32, kind: StatementKind) -> QueryCommand {
+    let data = serde_json::to_vec(&serde_json::json!({
+        "instruments": financial_fixture_instruments(),
+        "kind": kind,
+    }))
+    .unwrap();
+    fixture_command(
+        Operation::FinancialStatements,
+        FINANCIAL_FIXTURE_PROVIDER,
+        FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+        version,
+        &data,
+    )
+}
+
+fn assert_financial_fixture_call(provider: &FixtureFinancialProvider, kind: StatementKind) {
+    assert_eq!(
+        provider.calls.lock().unwrap().as_slice(),
+        &[FinancialFixtureCall {
+            instruments: financial_fixture_instruments(),
+            kind,
+        }]
+    );
+}
+
+fn assert_financial_handler_forwarding(version: u32, kind: StatementKind) {
+    let batch = financial_fixture_batch(kind);
+    let provider =
+        financial_fixture_provider(FinancialFixtureOutcome::Batch(Box::new(batch.clone())));
+    let result = execute_financial_statements(
+        financial_fixture_command(version, kind),
+        &provider,
+        FINANCIAL_FIXTURE_PROVIDER,
+        4096,
+    )
+    .unwrap();
+
+    assert_financial_fixture_call(&provider, kind);
+    assert_eq!(result.provider, FINANCIAL_FIXTURE_PROVIDER);
+    assert_eq!(result.batch_id, FINANCIAL_FIXTURE_PROVIDER);
+    assert_eq!(result.observed_at, FIXTURE_OBSERVED_AT);
+    assert_eq!(
+        result.source_at.as_deref(),
+        Some("2026-07-31T09:00:00+08:00")
+    );
+    assert!(result.complete);
+    assert_eq!(result.records.len(), 2);
+    for (payload, statement) in result.records.iter().zip(batch.records()) {
+        assert_eq!(payload.schema(), FINANCIAL_STATEMENTS_RECORD_SCHEMA);
+        assert_eq!(payload.schema_version(), version);
+        let value: serde_json::Value = serde_json::from_slice(payload.data()).unwrap();
+        assert_eq!(
+            value["instrument"],
+            serde_json::to_value(&statement.instrument).unwrap()
+        );
+        assert_eq!(value["kind"], serde_json::to_value(kind).unwrap());
+        assert_eq!(value["report_period"], statement.report_period.as_str());
+        assert_eq!(
+            value["announced_on"],
+            statement.announced_on.as_ref().unwrap().as_str()
+        );
+        assert_eq!(value["currency"], "CNY");
+        assert_eq!(value["lines"][0]["key"], "source_amount");
+        assert_eq!(value["lines"][0]["source_label"], "原始金额标签");
+        assert_eq!(value["lines"][0]["value"], 1_200.5);
+        assert_eq!(value["lines"][0]["unit"], "source-unit");
+        assert_eq!(value["lines"][1]["key"], "source_missing");
+        assert_eq!(value["lines"][1]["source_label"], "原始缺项");
+        assert!(value["lines"][1]["value"].is_null());
+        assert!(value["lines"][1]["unit"].is_null());
+        assert_eq!(
+            value["evidence"],
+            serde_json::to_value(&statement.evidence).unwrap()
+        );
+        if version == 1 {
+            assert!(value.get("fiscal_period").is_none());
+        } else {
+            assert_eq!(
+                value["fiscal_period"],
+                statement.fiscal_period.as_ref().unwrap().as_str()
+            );
+        }
+    }
+}
+
+macro_rules! financial_handler_forwarding_test {
+    ($name:ident, $version:literal, $kind:ident) => {
+        #[test]
+        fn $name() {
+            assert_financial_handler_forwarding($version, StatementKind::$kind);
+        }
+    };
+}
+
+financial_handler_forwarding_test!(
+    financial_v1_forwards_balance_and_omits_fiscal_period,
+    1,
+    Balance
+);
+financial_handler_forwarding_test!(
+    financial_v1_forwards_income_and_omits_fiscal_period,
+    1,
+    Income
+);
+financial_handler_forwarding_test!(
+    financial_v1_forwards_cash_flow_and_omits_fiscal_period,
+    1,
+    CashFlow
+);
+financial_handler_forwarding_test!(
+    financial_v2_forwards_balance_and_preserves_h1_fy,
+    2,
+    Balance
+);
+financial_handler_forwarding_test!(financial_v2_forwards_income_and_preserves_h1_fy, 2, Income);
+financial_handler_forwarding_test!(
+    financial_v2_forwards_cash_flow_and_preserves_h1_fy,
+    2,
+    CashFlow
+);
+
+#[test]
+fn financial_v2_does_not_infer_absent_labels_dates_currency_or_values() {
+    let original = financial_fixture_batch(StatementKind::Income);
+    let records = original
+        .records()
+        .iter()
+        .cloned()
+        .map(|mut statement| {
+            statement.fiscal_period = None;
+            statement.announced_on = None;
+            statement.currency = None;
+            statement.lines[0].value = None;
+            statement
+        })
+        .collect();
+    let provenance = Provenance::new(FINANCIAL_FIXTURE_PROVIDER, FIXTURE_OBSERVED_AT)
+        .unwrap()
+        .with_batch_id(FINANCIAL_FIXTURE_PROVIDER)
+        .unwrap();
+    let provider = financial_fixture_provider(FinancialFixtureOutcome::Batch(Box::new(
+        DataBatch::strict(records, provenance),
+    )));
+    let result = execute_financial_statements(
+        financial_fixture_command(2, StatementKind::Income),
+        &provider,
+        FINANCIAL_FIXTURE_PROVIDER,
+        4096,
+    )
+    .unwrap();
+    assert_financial_fixture_call(&provider, StatementKind::Income);
+    assert!(result.source_at.is_none());
+    assert_eq!(result.records.len(), 2);
+    for (payload, statement) in result.records.iter().zip(original.records()) {
+        let value: serde_json::Value = serde_json::from_slice(payload.data()).unwrap();
+        assert_eq!(value["report_period"], statement.report_period.as_str());
+        assert!(value.get("fiscal_period").unwrap().is_null());
+        assert!(value.get("announced_on").unwrap().is_null());
+        assert!(value.get("currency").unwrap().is_null());
+        assert!(value["lines"][0].get("value").unwrap().is_null());
+        assert_eq!(
+            value["evidence"],
+            serde_json::to_value(&statement.evidence).unwrap()
+        );
+    }
+}
+
+#[test]
+fn financial_invalid_envelopes_and_shapes_never_call_the_provider() {
+    struct InvalidFinancialCase {
+        name: &'static str,
+        schema: &'static str,
+        version: u32,
+        body: &'static [u8],
+        reason_fragment: &'static str,
+    }
+
+    let cases = [
+        InvalidFinancialCase {
+            name: "unsupported version",
+            schema: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+            version: 3,
+            body: br#"{}"#,
+            reason_fragment: "version 1 or 2",
+        },
+        InvalidFinancialCase {
+            name: "wrong v1 schema",
+            schema: "magic.market.wrong.request",
+            version: 1,
+            body: br#"{}"#,
+            reason_fragment: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+        },
+        InvalidFinancialCase {
+            name: "wrong v2 schema",
+            schema: "magic.market.wrong.request",
+            version: 2,
+            body: br#"{}"#,
+            reason_fragment: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+        },
+        InvalidFinancialCase {
+            name: "missing instruments",
+            schema: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+            version: 1,
+            body: br#"{"kind":"Income"}"#,
+            reason_fragment: "missing field `instruments`",
+        },
+        InvalidFinancialCase {
+            name: "missing kind",
+            schema: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+            version: 2,
+            body: br#"{"instruments":[]}"#,
+            reason_fragment: "missing field `kind`",
+        },
+        InvalidFinancialCase {
+            name: "wrong instruments type",
+            schema: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+            version: 1,
+            body: br#"{"instruments":"600519","kind":"Income"}"#,
+            reason_fragment: "invalid type",
+        },
+        InvalidFinancialCase {
+            name: "unknown statement kind",
+            schema: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+            version: 2,
+            body: br#"{"instruments":[],"kind":"Annual"}"#,
+            reason_fragment: "unknown variant",
+        },
+        InvalidFinancialCase {
+            name: "unknown field",
+            schema: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+            version: 2,
+            body: br#"{"instruments":[],"kind":"Income","currency":"CNY"}"#,
+            reason_fragment: "unknown field `currency`",
+        },
+        InvalidFinancialCase {
+            name: "null body",
+            schema: FINANCIAL_STATEMENTS_REQUEST_SCHEMA,
+            version: 1,
+            body: br#"null"#,
+            reason_fragment: "invalid type",
+        },
+    ];
+    for case in cases {
+        let provider = financial_fixture_provider(FinancialFixtureOutcome::Transport);
+        let error = execute_financial_statements(
+            fixture_command(
+                Operation::FinancialStatements,
+                FINANCIAL_FIXTURE_PROVIDER,
+                case.schema,
+                case.version,
+                case.body,
+            ),
+            &provider,
+            FINANCIAL_FIXTURE_PROVIDER,
+            4096,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ServiceError::InvalidRequest(ref reason) if reason.contains(case.reason_fragment)),
+            "{}: {error:?}",
+            case.name
+        );
+        assert!(
+            provider.calls.lock().unwrap().is_empty(),
+            "{} invoked the provider",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn financial_provider_failures_remain_typed_and_cannot_become_empty_results() {
+    struct FinancialFailureCase {
+        name: &'static str,
+        outcome: FinancialFixtureOutcome,
+        kind: ProviderFailureKind,
+        reason: &'static str,
+    }
+
+    let cases = [
+        FinancialFailureCase {
+            name: "authentication",
+            outcome: FinancialFixtureOutcome::HttpStatus(401),
+            kind: ProviderFailureKind::AuthenticationRejected,
+            reason: "http_status=401",
+        },
+        FinancialFailureCase {
+            name: "rate limit",
+            outcome: FinancialFixtureOutcome::HttpStatus(429),
+            kind: ProviderFailureKind::RateLimited,
+            reason: "http_status=429",
+        },
+        FinancialFailureCase {
+            name: "server failure",
+            outcome: FinancialFixtureOutcome::HttpStatus(500),
+            kind: ProviderFailureKind::Unavailable,
+            reason: "http_status=500",
+        },
+        FinancialFailureCase {
+            name: "redacted transport",
+            outcome: FinancialFixtureOutcome::Transport,
+            kind: ProviderFailureKind::Unavailable,
+            reason: "category=transport",
+        },
+        FinancialFailureCase {
+            name: "redacted response",
+            outcome: FinancialFixtureOutcome::Decode,
+            kind: ProviderFailureKind::ResponseInvalid,
+            reason: "category=decode",
+        },
+    ];
+    for case in cases {
+        let provider = financial_fixture_provider(case.outcome);
+        let error = execute_financial_statements(
+            financial_fixture_command(2, StatementKind::Income),
+            &provider,
+            FINANCIAL_FIXTURE_PROVIDER,
+            4096,
+        )
+        .unwrap_err();
+        assert_financial_fixture_call(&provider, StatementKind::Income);
+        assert_eq!(
+            error,
+            ServiceError::ProviderFailure {
+                operation: Operation::FinancialStatements,
+                provider: "HithinkFinance".into(),
+                kind: case.kind,
+                provider_reason: case.reason.into()
+            },
+            "{}",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn financial_second_oversized_record_rejects_the_complete_result() {
+    let original = financial_fixture_batch(StatementKind::Balance);
+    let mut records = original.records().to_vec();
+    records[1].lines[0].source_label =
+        NonEmptyText::new("oversized-offline-label".repeat(128)).unwrap();
+    let limit = 2048;
+    assert!(serde_json::to_vec(&records[0]).unwrap().len() < limit);
+    assert!(serde_json::to_vec(&records[1]).unwrap().len() > limit);
+    let provider = financial_fixture_provider(FinancialFixtureOutcome::Batch(Box::new(
+        DataBatch::strict(records, original.provenance().clone()),
+    )));
+    let error = execute_financial_statements(
+        financial_fixture_command(2, StatementKind::Balance),
+        &provider,
+        FINANCIAL_FIXTURE_PROVIDER,
+        limit,
+    )
+    .unwrap_err();
+    assert_financial_fixture_call(&provider, StatementKind::Balance);
+    assert!(
+        matches!(error, ServiceError::ResourceExhausted(ref reason) if reason.contains("exceeds maximum 2048")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn financial_projection_does_not_upgrade_partial_batch_quality() {
+    let original = financial_fixture_batch(StatementKind::CashFlow);
+    let partial = DataBatch::best_effort(
+        original.records().to_vec(),
+        original.provenance().clone(),
+        vec!["offline page missing".into()],
+    )
+    .unwrap();
+    let provider = financial_fixture_provider(FinancialFixtureOutcome::Batch(Box::new(partial)));
+    let result = execute_financial_statements(
+        financial_fixture_command(2, StatementKind::CashFlow),
+        &provider,
+        FINANCIAL_FIXTURE_PROVIDER,
+        4096,
+    )
+    .unwrap();
+    assert_financial_fixture_call(&provider, StatementKind::CashFlow);
+    assert!(!result.complete);
+    assert_eq!(result.records.len(), original.records().len());
+    assert_eq!(result.observed_at, FIXTURE_OBSERVED_AT);
+    assert_eq!(result.batch_id, FINANCIAL_FIXTURE_PROVIDER);
+}
+
+#[path = "grpc_sec_typed_entry_tests.rs"]
+mod sec_typed_entry_coverage;
