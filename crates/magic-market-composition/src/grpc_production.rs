@@ -1310,6 +1310,34 @@ fn register_extended_handlers(
     Ok(())
 }
 
+fn register_hithink_security_metadata(
+    registry: &mut OperationRegistry,
+    metadata: Arc<HithinkClient>,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    registry.register_handler(
+        admitted(
+            Operation::SecurityMetadata,
+            "HithinkFinance",
+            HITHINK_SECURITY_METADATA_SCOPE,
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, SECURITY_METADATA_REQUEST_SCHEMA)?;
+            let batch = metadata
+                .security_metadata(&request.instruments)
+                .map_err(|error| provider_error(Operation::SecurityMetadata, error))?;
+            provider_query_result(
+                batch,
+                "HithinkFinance",
+                SECURITY_METADATA_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    Ok(())
+}
+
 fn register_hithink(
     registry: &mut OperationRegistry,
     provider_timeout: Duration,
@@ -1506,27 +1534,7 @@ fn register_hithink(
         },
     )?;
 
-    let metadata = client.clone();
-    registry.register_handler(
-        admitted(
-            Operation::SecurityMetadata,
-            "HithinkFinance",
-            HITHINK_SECURITY_METADATA_SCOPE,
-        ),
-        move |command| {
-            let request: InstrumentsRequest =
-                decode_request(&command, SECURITY_METADATA_REQUEST_SCHEMA)?;
-            let batch = metadata
-                .security_metadata(&request.instruments)
-                .map_err(|error| provider_error(Operation::SecurityMetadata, error))?;
-            provider_query_result(
-                batch,
-                "HithinkFinance",
-                SECURITY_METADATA_RECORD_SCHEMA,
-                maximum_payload_bytes,
-            )
-        },
-    )?;
+    register_hithink_security_metadata(registry, client.clone(), maximum_payload_bytes)?;
 
     let auctions = client.clone();
     registry.register_diagnostic_handler(
@@ -5756,7 +5764,12 @@ mod tests {
 
     #[test]
     fn hithink_historical_rejects_version_schema_and_payload_bounds() {
-        for (version, schema) in [(3, HISTORICAL_BARS_REQUEST_SCHEMA), (2, "wrong.schema")] {
+        for (version, schema) in [
+            (3, HISTORICAL_BARS_REQUEST_SCHEMA),
+            (2, "wrong.schema"),
+            (1, "magic.market.ordinary_daily_change_window.request"),
+            (2, "magic.market.ordinary_daily_change_window.request"),
+        ] {
             let (registry, calls, _) = historical_hithink_registry(false, 65_536);
             assert!(matches!(
                 registry.execute(historical_hithink_command(version, schema, 1)),
@@ -7442,6 +7455,99 @@ mod tests {
         assert_eq!(metadata.name(), Some("ABC"));
         assert!(metadata.listed_on().is_none());
         assert!(metadata.price_limit().version().is_none());
+    }
+
+    fn hithink_metadata_registry(row: serde_json::Value) -> OperationRegistry {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "code": 0, "message": "success", "request_id": "native-metadata-fixture",
+            "data": {"timestamp": 1716105600000_i64, "item": [row]}
+        }))
+        .unwrap();
+        let client = HithinkClient::with_transport(
+            "test_key",
+            HistoricalHithinkTransport {
+                body,
+                calls: Arc::new(AtomicUsize::new(0)),
+            },
+        )
+        .unwrap();
+        let mut registry = OperationRegistry::all_unadmitted("offline fixture");
+        register_hithink_security_metadata(&mut registry, Arc::new(client), 4096).unwrap();
+        registry
+    }
+
+    fn hithink_metadata_row() -> serde_json::Value {
+        serde_json::json!({
+            "thscode": "600396.SH", "ticker": "600396", "name": "metadata fixture",
+            "exchange": "SH", "asset_type": "a-share", "currency": "CNY"
+        })
+    }
+
+    #[test]
+    fn hithink_metadata_handler_keeps_v1_projection_for_old_null_and_value_dates() {
+        for dates in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!("2007-03-01")),
+        ] {
+            let mut row = hithink_metadata_row();
+            if let Some(value) = dates {
+                for field in [
+                    "list_date",
+                    "end_date",
+                    "last_trade_date",
+                    "last_delivery_date",
+                ] {
+                    row[field] = value.clone();
+                }
+            }
+            let registry = hithink_metadata_registry(row);
+            let result = registry
+                .execute(command_for(
+                    Operation::SecurityMetadata,
+                    SECURITY_METADATA_REQUEST_SCHEMA,
+                    Some("HithinkFinance"),
+                ))
+                .unwrap();
+            assert!(result.repository_admitted);
+            assert!(result.complete);
+            assert_eq!(result.provider, "HithinkFinance");
+            assert_eq!(result.records.len(), 1);
+            let payload = &result.records[0];
+            assert_eq!(payload.schema(), "magic.market.security_metadata");
+            assert_eq!(payload.schema_version(), 1);
+            let metadata: SecurityMetadata = serde_json::from_slice(payload.data()).unwrap();
+            assert_eq!(metadata.name(), Some("metadata fixture"));
+            assert!(metadata.listed_on().is_none());
+            assert_eq!(metadata.status(), DataStatus::Unavailable);
+            assert_eq!(metadata.source_at(), Some("unix-ms:1716105600000"));
+            assert!(registry.capabilities().iter().all(|capability| {
+                !capability.exact_scope.contains("TEST_CODE_SYNTHETIC")
+                    && !capability
+                        .exact_scope
+                        .contains("ordinary_daily_change_window")
+            }));
+        }
+    }
+
+    #[test]
+    fn hithink_metadata_handler_rejects_bad_native_dates_without_partial_results() {
+        for value in [serde_json::json!("2026-02-29"), serde_json::json!(20260228)] {
+            let mut row = hithink_metadata_row();
+            row["list_date"] = value;
+            let result = hithink_metadata_registry(row).execute(command_for(
+                Operation::SecurityMetadata,
+                SECURITY_METADATA_REQUEST_SCHEMA,
+                Some("HithinkFinance"),
+            ));
+            assert!(matches!(
+                result,
+                Err(ServiceError::ProviderFailure {
+                    kind: ProviderFailureKind::ResponseInvalid,
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]

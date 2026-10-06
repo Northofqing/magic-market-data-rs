@@ -168,11 +168,24 @@ indices or exchange-traded funds. Each identity is queried independently with
 an exact `q=<thscode>`, exchange and leaf asset-type filter. Exactly one matching
 `thscode`, exchange and asset type must return. Name and currency are validated.
 
-Fuyao does not publish board, ST state, listing date or price-limit rules on this
-endpoint. Those fields remain absent and the Core record is explicitly
-`Unavailable`; the batch can still be complete because every requested identity
-was resolved. Live `000300.SH` returns provider-native `ticker=1B0300`; exact
-`thscode` remains the mapped identity and the auxiliary ticker is only validated.
+The [pinned 2026-10-05 official document](https://github.com/HiThink-Tech/Financial-API/blob/3bca7805a4127ece8d81961917e740d2effac6ec/docs/api/meta/tickers-search.md)
+defines nullable `list_date`, `end_date`, `last_trade_date` and
+`last_delivery_date` strings in `yyyy-MM-dd` format. The SDK accepts these known
+fields, preserves omission/null/value in the private DTO and validates every
+returned item's non-null dates before exact-identity filtering. Omission remains
+accepted for backward compatibility, not as a vendor promise. `end_date` is
+contract expiry, not equity delisting; no cross-field ordering is invented.
+
+These private dates are not exported or promoted into the frozen Core projection.
+Board, ST state, `listed_on` and price-limit rules stay absent and the Core record
+is explicitly `Unavailable`; the batch can still be complete because every
+requested identity was resolved. The current code-table loading timestamp does
+not prove historical fact availability or complete listing/action coverage.
+The existing capability scope and admission are unchanged. This documentation
+compatibility repair is covered by offline fixtures, not new live acceptance.
+Live `000300.SH` returns provider-native `ticker=1B0300`; exact `thscode` remains
+the mapped identity and the auxiliary ticker is only validated. See the
+[date compatibility design](../superpowers/specs/2026-10-05-hithink-metadata-date-compatibility-design.md).
 
 ### CurrentAuctionObservations
 

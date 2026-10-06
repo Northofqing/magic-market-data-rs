@@ -1000,10 +1000,16 @@ outside coverage rejects the whole response.
 
 Production `SecurityMetadata` accepts one through 32 unique A-share equities,
 standard exchange indices or exchange-traded funds. Exact `thscode`, exchange,
-asset type, name and currency are validated. The response does not publish
-board, ST state, listing date or price-limit rules, so those fields stay absent
-and each record has `DataStatus::Unavailable` even though the returned batch is
-complete. Standard indices may expose a provider-native ticker such as
+asset type, name and currency are validated. Documented nullable native
+`list_date`, `end_date`, `last_trade_date` and `last_delivery_date` fields are
+accepted and validated as canonical dates before exact-identity filtering;
+omission remains an explicit backward-compatibility policy. They are private
+source fields, not exported Core listing/lifecycle evidence. Contract expiry
+is not equity delisting, and the current code-table loading time is not
+historical fact availability. Board, ST state, Core `listed_on` and price-limit
+rules stay absent, and each record has `DataStatus::Unavailable` even though
+the returned identity batch is complete. Standard indices may expose a
+provider-native ticker such as
 `1B0300`; only exact `thscode` is mapped to the Core identity and the auxiliary
 ticker is validated but not rewritten into the record.
 
