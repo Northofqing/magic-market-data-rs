@@ -315,3 +315,258 @@ fn registered_news_handler_rejects_an_oversized_response_instead_of_partial_succ
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn registered_news_handler_rejects_incomplete_or_missing_batch_evidence() {
+    let original = fixture_news_batch(ProviderId::Cailianpress);
+    let records = original.records().to_vec();
+    let provenance = original.provenance().clone();
+    let cases = [
+        (
+            DataBatch::best_effort(
+                records.clone(),
+                provenance.clone(),
+                vec!["offline fixture page missing".to_owned()],
+            )
+            .unwrap(),
+            "batch_quality_incomplete",
+            "quality",
+        ),
+        (
+            DataBatch::strict(Vec::new(), provenance),
+            "batch_records_empty",
+            "records",
+        ),
+        (
+            DataBatch::strict(
+                records.clone(),
+                Provenance::new("cailianpress", FIXTURE_OBSERVED_AT)
+                    .unwrap()
+                    .with_batch_id(FIXTURE_BATCH_ID)
+                    .unwrap(),
+            ),
+            "batch_evidence_incomplete",
+            "source_at",
+        ),
+        (
+            DataBatch::strict(
+                records.clone(),
+                Provenance::new("cailianpress", FIXTURE_OBSERVED_AT)
+                    .unwrap()
+                    .with_batch_id(FIXTURE_BATCH_ID)
+                    .unwrap()
+                    .with_source_at("not-an-instant")
+                    .unwrap(),
+            ),
+            "batch_source_at_invalid",
+            "source_at",
+        ),
+        (
+            DataBatch::strict(
+                records,
+                Provenance::new("cailianpress", "not-an-instant")
+                    .unwrap()
+                    .with_batch_id(FIXTURE_BATCH_ID)
+                    .unwrap()
+                    .with_source_at(FIXTURE_SOURCE_AT)
+                    .unwrap(),
+            ),
+            "batch_observed_at_invalid",
+            "observed_at",
+        ),
+    ];
+    for (batch, expected_code, expected_field) in cases {
+        let (registry, calls, _) = fixture_news_registry(NewsOutcome::Batch(Box::new(batch)), 4096);
+        assert!(
+            matches!(
+                registry.execute(valid_news_command()),
+                Err(ServiceError::InvalidEvidence { provider, evidence_code, evidence_field, record_index, .. })
+                    if provider == "Cailianpress" && evidence_code == expected_code
+                        && evidence_field == expected_field && record_index.is_none()
+            ),
+            "batch case {expected_code}/{expected_field}"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn registered_news_handler_rejects_inconsistent_record_evidence() {
+    let original = fixture_news_batch(ProviderId::Cailianpress);
+    let cases = [
+        (
+            Some(FIXTURE_SOURCE_AT),
+            FIXTURE_OBSERVED_AT,
+            "other-fixture-batch",
+            FIXTURE_SOURCE_AT,
+            "record_batch_mismatch",
+            "evidence.batch_id",
+        ),
+        (
+            None,
+            FIXTURE_OBSERVED_AT,
+            FIXTURE_BATCH_ID,
+            FIXTURE_SOURCE_AT,
+            "record_evidence_incomplete",
+            "evidence.source_at",
+        ),
+        (
+            Some("not-an-instant"),
+            FIXTURE_OBSERVED_AT,
+            FIXTURE_BATCH_ID,
+            FIXTURE_SOURCE_AT,
+            "record_source_at_invalid",
+            "evidence.source_at",
+        ),
+        (
+            Some(FIXTURE_SOURCE_AT),
+            FIXTURE_OBSERVED_AT,
+            FIXTURE_BATCH_ID,
+            "not-an-instant",
+            "record_published_at_invalid",
+            "published_at",
+        ),
+        (
+            Some(FIXTURE_SOURCE_AT),
+            FIXTURE_OBSERVED_AT,
+            FIXTURE_BATCH_ID,
+            "2026-08-19T16:14:00+08:00",
+            "record_published_at_mismatch",
+            "published_at",
+        ),
+        (
+            Some(FIXTURE_SOURCE_AT),
+            "not-an-instant",
+            FIXTURE_BATCH_ID,
+            FIXTURE_SOURCE_AT,
+            "record_observed_at_invalid",
+            "evidence.observed_at",
+        ),
+        (
+            Some(FIXTURE_SOURCE_AT),
+            "2026-08-19T16:17:00+08:00",
+            FIXTURE_BATCH_ID,
+            FIXTURE_SOURCE_AT,
+            "record_observed_after_batch",
+            "evidence.observed_at",
+        ),
+        (
+            Some(FIXTURE_SOURCE_AT),
+            "2026-08-19T16:14:00+08:00",
+            FIXTURE_BATCH_ID,
+            FIXTURE_SOURCE_AT,
+            "record_source_after_observation",
+            "evidence.source_at",
+        ),
+        (
+            Some("2026-08-19T16:14:00+08:00"),
+            FIXTURE_OBSERVED_AT,
+            FIXTURE_BATCH_ID,
+            "2026-08-19T16:14:00+08:00",
+            "batch_source_at_mismatch",
+            "source_at",
+        ),
+    ];
+    for (source_at, observed_at, batch_id, published_at, expected_code, expected_field) in cases {
+        let mut record = original.records()[0].clone();
+        record.published_at = NonEmptyText::new(published_at).unwrap();
+        record.evidence =
+            SourceEvidence::new(ProviderId::Cailianpress, observed_at, batch_id).unwrap();
+        if let Some(source_at) = source_at {
+            record.evidence = record.evidence.with_source_at(source_at).unwrap();
+        }
+        let batch = DataBatch::strict(vec![record], original.provenance().clone());
+        let (registry, calls, _) = fixture_news_registry(NewsOutcome::Batch(Box::new(batch)), 4096);
+        assert!(
+            matches!(
+                registry.execute(valid_news_command()),
+                Err(ServiceError::InvalidEvidence { provider, evidence_code, evidence_field, record_index, .. })
+                    if provider == "Cailianpress" && evidence_code == expected_code
+                        && evidence_field == expected_field && record_index == Some(0)
+            ),
+            "record case {expected_code}/{expected_field}"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn registered_news_handler_rejects_a_bad_second_record_without_returning_the_first() {
+    let original = fixture_news_batch(ProviderId::Cailianpress);
+    let first = original.records()[0].clone();
+    for (provider, source_at, expected_code, expected_field) in [
+        (
+            ProviderId::Jin10,
+            FIXTURE_SOURCE_AT,
+            "record_provider_mismatch",
+            "evidence.provider",
+        ),
+        (
+            ProviderId::Cailianpress,
+            "2026-08-19T16:15:30+08:00",
+            "record_order_invalid",
+            "records",
+        ),
+    ] {
+        let mut second = first.clone();
+        second.item_id = NonEmptyText::new("fixture-second-record").unwrap();
+        second.published_at = NonEmptyText::new(source_at).unwrap();
+        second.evidence = SourceEvidence::new(provider, FIXTURE_OBSERVED_AT, FIXTURE_BATCH_ID)
+            .unwrap()
+            .with_source_at(source_at)
+            .unwrap();
+        let batch = DataBatch::strict(vec![first.clone(), second], original.provenance().clone());
+        let (registry, calls, _) = fixture_news_registry(NewsOutcome::Batch(Box::new(batch)), 4096);
+        assert!(
+            matches!(
+                registry.execute(valid_news_command()),
+                Err(ServiceError::InvalidEvidence { provider, evidence_code, evidence_field, record_index, .. })
+                    if provider == "Cailianpress" && evidence_code == expected_code
+                        && evidence_field == expected_field && record_index == Some(1)
+            ),
+            "second record case {expected_code}"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn registered_news_handler_accepts_equivalent_instants_without_rewriting_source_evidence() {
+    let original = fixture_news_batch(ProviderId::Cailianpress);
+    let mut record = original.records()[0].clone();
+    record.evidence = SourceEvidence::new(
+        ProviderId::Cailianpress,
+        FIXTURE_OBSERVED_AT,
+        FIXTURE_BATCH_ID,
+    )
+    .unwrap()
+    .with_source_at("2026-08-19T08:15:00Z")
+    .unwrap();
+    let provenance = Provenance::new("cailianpress", FIXTURE_OBSERVED_AT)
+        .unwrap()
+        .with_batch_id(FIXTURE_BATCH_ID)
+        .unwrap()
+        .with_source_at("2026-08-19T08:15:00Z")
+        .unwrap();
+    let batch = DataBatch::strict(vec![record], provenance);
+    let (registry, calls, _) = fixture_news_registry(NewsOutcome::Batch(Box::new(batch)), 4096);
+    let result = registry.execute(valid_news_command()).unwrap();
+    assert_eq!(result.source_at.as_deref(), Some("2026-08-19T08:15:00Z"));
+    let record: serde_json::Value = serde_json::from_slice(result.records[0].data()).unwrap();
+    assert_eq!(record["evidence"]["source_at"], "2026-08-19T08:15:00Z");
+    assert_eq!(record["published_at"], "2026-08-19T16:15:00+08:00");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn provenance_without_a_batch_identity_is_rejected_at_its_public_json_boundary() {
+    let generated = Provenance::new("cailianpress", FIXTURE_OBSERVED_AT).unwrap();
+    assert!(generated.batch_id().is_some());
+    let missing_identity = serde_json::json!({
+        "source": "cailianpress",
+        "source_at": "2026-08-19T16:15:00+08:00",
+        "fetched_at": "2026-08-19T16:16:00+08:00"
+    });
+    let error = serde_json::from_value::<Provenance>(missing_identity).unwrap_err();
+    assert!(error.to_string().contains("missing field `batch_id`"));
+}
