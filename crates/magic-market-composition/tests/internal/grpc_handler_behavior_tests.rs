@@ -570,3 +570,848 @@ fn provenance_without_a_batch_identity_is_rejected_at_its_public_json_boundary()
     let error = serde_json::from_value::<Provenance>(missing_identity).unwrap_err();
     assert!(error.to_string().contains("missing field `batch_id`"));
 }
+
+const OFFLINE_FAILURE_DETAIL: &str = "offline failure fixture";
+
+enum LegacyFailureClass {
+    InvalidRequest,
+    Unsupported,
+    Unavailable,
+    PermissionDenied,
+    ResourceExhausted,
+    FailedPrecondition,
+}
+
+fn assert_legacy_provider_failure<E: Error + 'static>(
+    operation: Operation,
+    error: E,
+    expected_class: LegacyFailureClass,
+) {
+    let source_reason = error.to_string();
+    let expected = match expected_class {
+        LegacyFailureClass::InvalidRequest => {
+            ServiceError::InvalidRequest(OFFLINE_FAILURE_DETAIL.into())
+        }
+        LegacyFailureClass::Unsupported => ServiceError::Unsupported {
+            operation,
+            reason: OFFLINE_FAILURE_DETAIL.into(),
+        },
+        LegacyFailureClass::Unavailable => ServiceError::Unavailable {
+            operation,
+            reason: source_reason,
+        },
+        LegacyFailureClass::PermissionDenied => ServiceError::PermissionDenied(source_reason),
+        LegacyFailureClass::ResourceExhausted => ServiceError::ResourceExhausted(source_reason),
+        LegacyFailureClass::FailedPrecondition => ServiceError::FailedPrecondition(source_reason),
+    };
+    assert_eq!(provider_error(operation, error), expected);
+}
+
+macro_rules! legacy_provider_failure_cases {
+    ($name:ident, $error:ident, $operation:expr, $transport:expr) => {
+        #[test]
+        fn $name() {
+            let operation = $operation;
+            assert_legacy_provider_failure(
+                operation,
+                $error::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::InvalidRequest,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Unsupported(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::Unsupported,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Transport($transport),
+                LegacyFailureClass::Unavailable,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Decode(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::FailedPrecondition,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Protocol(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::FailedPrecondition,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Core(magic_market_core::CoreError::InvalidRequest(
+                    OFFLINE_FAILURE_DETAIL.into(),
+                )),
+                LegacyFailureClass::FailedPrecondition,
+            );
+        }
+    };
+}
+
+fn offline_transport_error() -> magic_market_transport::TransportError {
+    magic_market_transport::TransportError::Network(OFFLINE_FAILURE_DETAIL.into())
+}
+
+legacy_provider_failure_cases!(
+    baidu_failures_keep_service_categories,
+    BaiduError,
+    Operation::GlobalNews,
+    OFFLINE_FAILURE_DETAIL.into()
+);
+legacy_provider_failure_cases!(
+    cfets_failures_keep_service_categories,
+    CfetsError,
+    Operation::ReferenceRates,
+    offline_transport_error()
+);
+legacy_provider_failure_cases!(
+    nbs_failures_keep_service_categories,
+    NbsError,
+    Operation::EconomicSeries,
+    offline_transport_error()
+);
+legacy_provider_failure_cases!(
+    pbc_failures_keep_service_categories,
+    PbcError,
+    Operation::OfficialFxFixings,
+    offline_transport_error()
+);
+legacy_provider_failure_cases!(
+    stcn_failures_keep_service_categories,
+    StcnError,
+    Operation::GlobalNews,
+    offline_transport_error()
+);
+legacy_provider_failure_cases!(
+    thepaper_failures_keep_service_categories,
+    ThePaperError,
+    Operation::GlobalNews,
+    OFFLINE_FAILURE_DETAIL.into()
+);
+legacy_provider_failure_cases!(
+    wallstreetcn_failures_keep_service_categories,
+    WallstreetCnError,
+    Operation::GlobalNews,
+    OFFLINE_FAILURE_DETAIL.into()
+);
+legacy_provider_failure_cases!(
+    xinhua_failures_keep_service_categories,
+    XinhuaError,
+    Operation::GlobalNews,
+    offline_transport_error()
+);
+legacy_provider_failure_cases!(
+    yicai_failures_keep_service_categories,
+    YicaiError,
+    Operation::GlobalNews,
+    offline_transport_error()
+);
+legacy_provider_failure_cases!(
+    fred_failures_keep_service_categories,
+    FredError,
+    Operation::EconomicSeries,
+    offline_transport_error()
+);
+legacy_provider_failure_cases!(
+    sec_failures_keep_service_categories,
+    SecEdgarError,
+    Operation::CompanyFilings,
+    offline_transport_error()
+);
+legacy_provider_failure_cases!(
+    iwencai_failures_keep_service_categories,
+    IwencaiError,
+    Operation::SemanticSearch,
+    OFFLINE_FAILURE_DETAIL.into()
+);
+legacy_provider_failure_cases!(
+    worldbank_failures_keep_service_categories,
+    WorldBankError,
+    Operation::EconomicSeries,
+    offline_transport_error()
+);
+
+// These enums have Schema/Incomplete instead of Protocol; keep their cases explicit.
+macro_rules! paginated_provider_failure_cases {
+    ($name:ident, $error:ident, $operation:expr) => {
+        #[test]
+        fn $name() {
+            let operation = $operation;
+            assert_legacy_provider_failure(
+                operation,
+                $error::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::InvalidRequest,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Unsupported(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::Unsupported,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Authentication(403),
+                LegacyFailureClass::PermissionDenied,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::RateLimited,
+                LegacyFailureClass::ResourceExhausted,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Transport(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::Unavailable,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::HttpStatus(499),
+                LegacyFailureClass::FailedPrecondition,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::HttpStatus(500),
+                LegacyFailureClass::Unavailable,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Decode(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::FailedPrecondition,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Schema(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::FailedPrecondition,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Incomplete(OFFLINE_FAILURE_DETAIL.into()),
+                LegacyFailureClass::FailedPrecondition,
+            );
+            assert_legacy_provider_failure(
+                operation,
+                $error::Core(magic_market_core::CoreError::InvalidRequest(
+                    OFFLINE_FAILURE_DETAIL.into(),
+                )),
+                LegacyFailureClass::FailedPrecondition,
+            );
+        }
+    };
+}
+
+paginated_provider_failure_cases!(
+    cninfo_failures_keep_service_categories,
+    CninfoError,
+    Operation::Announcements
+);
+paginated_provider_failure_cases!(
+    exchange_failures_keep_service_categories,
+    ExchangeError,
+    Operation::MarketAnnouncements
+);
+paginated_provider_failure_cases!(
+    ths_non_consensus_failures_keep_service_categories,
+    ThsError,
+    Operation::Popularity
+);
+
+#[test]
+fn authenticated_providers_keep_their_distinct_authentication_contracts() {
+    assert_legacy_provider_failure(
+        Operation::EconomicSeries,
+        FredError::Authentication(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::PermissionDenied,
+    );
+    assert_legacy_provider_failure(
+        Operation::CompanyFilings,
+        SecEdgarError::Authentication(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::PermissionDenied,
+    );
+    assert_legacy_provider_failure(
+        Operation::SemanticSearch,
+        IwencaiError::Authentication(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::PermissionDenied,
+    );
+    assert_legacy_provider_failure(
+        Operation::EconomicSeries,
+        WorldBankError::Authentication(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unavailable,
+    );
+    assert_legacy_provider_failure(
+        Operation::MarketAnnouncements,
+        ExchangeError::Tls {
+            backend: magic_exchange_rs::TlsBackend::Rustls,
+            message: OFFLINE_FAILURE_DETAIL.into(),
+        },
+        LegacyFailureClass::Unavailable,
+    );
+}
+
+#[test]
+fn eastmoney_and_jin10_error_results_are_not_successful_empty_data() {
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        EastmoneyError::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::InvalidRequest,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        EastmoneyError::Unsupported(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unsupported,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        EastmoneyError::Authentication(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::PermissionDenied,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        EastmoneyError::Transport(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unavailable,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        EastmoneyError::ResponseTooLarge { limit: 17 },
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        EastmoneyError::Decode(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        EastmoneyError::Protocol(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        EastmoneyError::Core(magic_market_core::CoreError::InvalidRequest(
+            OFFLINE_FAILURE_DETAIL.into(),
+        )),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        Jin10Error::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::InvalidRequest,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        Jin10Error::Unsupported(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unsupported,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        Jin10Error::Transport(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unavailable,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        Jin10Error::Decode(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        Jin10Error::Protocol(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        Jin10Error::Core(magic_market_core::CoreError::InvalidRequest(
+            OFFLINE_FAILURE_DETAIL.into(),
+        )),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    for provider in [
+        ProviderId::Eastmoney,
+        ProviderId::Jin10,
+        ProviderId::Tonghuashun,
+    ] {
+        let evidence = SourceEvidence::new(provider, FIXTURE_OBSERVED_AT, FIXTURE_BATCH_ID)
+            .unwrap()
+            .with_source_at(FIXTURE_SOURCE_AT)
+            .unwrap();
+        let provenance = Provenance::new("offline fixture", FIXTURE_OBSERVED_AT)
+            .unwrap()
+            .with_batch_id(FIXTURE_BATCH_ID)
+            .unwrap()
+            .with_source_at(FIXTURE_SOURCE_AT)
+            .unwrap();
+        let empty = magic_market_core::VerifiedEmpty::new(
+            "offline-test",
+            "fixture-only",
+            "fixture empty",
+            evidence,
+            provenance,
+        )
+        .unwrap();
+        match provider {
+            ProviderId::Eastmoney => assert_legacy_provider_failure(
+                Operation::GlobalNews,
+                EastmoneyError::VerifiedEmpty(Box::new(empty)),
+                LegacyFailureClass::FailedPrecondition,
+            ),
+            ProviderId::Jin10 => assert_legacy_provider_failure(
+                Operation::GlobalNews,
+                Jin10Error::VerifiedEmpty(Box::new(empty)),
+                LegacyFailureClass::FailedPrecondition,
+            ),
+            ProviderId::Tonghuashun => assert_legacy_provider_failure(
+                Operation::Popularity,
+                ThsError::VerifiedEmpty(Box::new(empty)),
+                LegacyFailureClass::FailedPrecondition,
+            ),
+            _ => unreachable!(),
+        }
+    }
+    assert_legacy_provider_failure(
+        Operation::Popularity,
+        ThsError::ProbeAdmission(magic_market_core::ProbeAdmissionError::EmptyBatch),
+        LegacyFailureClass::FailedPrecondition,
+    );
+}
+
+#[test]
+fn gov_and_emquant_failures_keep_request_and_response_boundaries() {
+    assert_legacy_provider_failure(
+        Operation::PolicyDocuments,
+        GovError::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::InvalidRequest,
+    );
+    assert_legacy_provider_failure(
+        Operation::PolicyDocuments,
+        GovError::Transport(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unavailable,
+    );
+    assert_legacy_provider_failure(
+        Operation::PolicyDocuments,
+        GovError::Decode(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::PolicyDocuments,
+        GovError::Protocol(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::PolicyDocuments,
+        GovError::Core(magic_market_core::CoreError::InvalidRequest(
+            OFFLINE_FAILURE_DETAIL.into(),
+        )),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::HistoricalBars,
+        EmQuantError::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::InvalidRequest,
+    );
+    assert_legacy_provider_failure(
+        Operation::HistoricalBars,
+        EmQuantError::Unsupported(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unsupported,
+    );
+    assert_legacy_provider_failure(
+        Operation::HistoricalBars,
+        EmQuantError::Bridge(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unavailable,
+    );
+    assert_legacy_provider_failure(
+        Operation::HistoricalBars,
+        EmQuantError::InvalidResponse(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::FailedPrecondition,
+    );
+    assert_legacy_provider_failure(
+        Operation::HistoricalBars,
+        EmQuantError::Core(magic_market_core::CoreError::InvalidRequest(
+            OFFLINE_FAILURE_DETAIL.into(),
+        )),
+        LegacyFailureClass::FailedPrecondition,
+    );
+}
+
+#[test]
+fn sina_failures_preserve_raw_reasons_instead_of_other_provider_prefixes() {
+    let operation = Operation::GlobalIndices;
+    for (error, expected) in [
+        (
+            SinaError::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+            ServiceError::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+        ),
+        (
+            SinaError::Unsupported(OFFLINE_FAILURE_DETAIL.into()),
+            ServiceError::Unsupported {
+                operation,
+                reason: OFFLINE_FAILURE_DETAIL.into(),
+            },
+        ),
+        (
+            SinaError::Transport(OFFLINE_FAILURE_DETAIL.into()),
+            ServiceError::Unavailable {
+                operation,
+                reason: OFFLINE_FAILURE_DETAIL.into(),
+            },
+        ),
+        (
+            SinaError::Decode(OFFLINE_FAILURE_DETAIL.into()),
+            ServiceError::FailedPrecondition(OFFLINE_FAILURE_DETAIL.into()),
+        ),
+        (
+            SinaError::Protocol(OFFLINE_FAILURE_DETAIL.into()),
+            ServiceError::FailedPrecondition(OFFLINE_FAILURE_DETAIL.into()),
+        ),
+        (
+            SinaError::Core(magic_market_core::CoreError::InvalidRequest(
+                OFFLINE_FAILURE_DETAIL.into(),
+            )),
+            ServiceError::FailedPrecondition("invalid request: offline failure fixture".into()),
+        ),
+    ] {
+        assert_eq!(provider_error(operation, error), expected);
+    }
+}
+
+struct StructuredFailureCase<E> {
+    error: E,
+    kind: ProviderFailureKind,
+    reason: &'static str,
+}
+
+fn assert_structured_provider_failures<E: Error + 'static>(
+    operation: Operation,
+    provider: &str,
+    cases: Vec<StructuredFailureCase<E>>,
+) {
+    for case in cases {
+        assert_eq!(
+            provider_error(operation, case.error),
+            ServiceError::ProviderFailure {
+                operation,
+                provider: provider.into(),
+                kind: case.kind,
+                provider_reason: case.reason.into(),
+            }
+        );
+    }
+}
+
+macro_rules! structured_status_cases {
+    ($error:ident) => {
+        vec![
+            StructuredFailureCase {
+                error: $error::HttpStatus(401),
+                kind: ProviderFailureKind::AuthenticationRejected,
+                reason: "http_status=401",
+            },
+            StructuredFailureCase {
+                error: $error::HttpStatus(403),
+                kind: ProviderFailureKind::AuthenticationRejected,
+                reason: "http_status=403",
+            },
+            StructuredFailureCase {
+                error: $error::HttpStatus(429),
+                kind: ProviderFailureKind::RateLimited,
+                reason: "http_status=429",
+            },
+            StructuredFailureCase {
+                error: $error::HttpStatus(499),
+                kind: ProviderFailureKind::QueryRejected,
+                reason: "http_status=499",
+            },
+            StructuredFailureCase {
+                error: $error::HttpStatus(500),
+                kind: ProviderFailureKind::Unavailable,
+                reason: "http_status=500",
+            },
+            StructuredFailureCase {
+                error: $error::HttpStatus(599),
+                kind: ProviderFailureKind::Unavailable,
+                reason: "http_status=599",
+            },
+            StructuredFailureCase {
+                error: $error::HttpStatus(600),
+                kind: ProviderFailureKind::QueryRejected,
+                reason: "http_status=600",
+            },
+        ]
+    };
+}
+
+#[test]
+fn cls_typed_failures_bind_operation_provider_kind_and_source_reason() {
+    assert_structured_provider_failures(
+        Operation::GlobalNews,
+        "Cailianpress",
+        structured_status_cases!(ClsError),
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        ClsError::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::InvalidRequest,
+    );
+    assert_legacy_provider_failure(
+        Operation::GlobalNews,
+        ClsError::Unsupported(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unsupported,
+    );
+    assert_structured_provider_failures(
+        Operation::GlobalNews,
+        "Cailianpress",
+        vec![
+            StructuredFailureCase {
+                error: ClsError::Transport(OFFLINE_FAILURE_DETAIL.into()),
+                kind: ProviderFailureKind::Unavailable,
+                reason: "category=transport",
+            },
+            StructuredFailureCase {
+                error: ClsError::ProviderRejected {
+                    errno: 1001,
+                    message: OFFLINE_FAILURE_DETAIL.into(),
+                },
+                kind: ProviderFailureKind::QueryRejected,
+                reason: "errno=1001 message=offline failure fixture",
+            },
+            StructuredFailureCase {
+                error: ClsError::Decode(OFFLINE_FAILURE_DETAIL.into()),
+                kind: ProviderFailureKind::ResponseInvalid,
+                reason: "category=decode message=offline failure fixture",
+            },
+            StructuredFailureCase {
+                error: ClsError::Protocol(OFFLINE_FAILURE_DETAIL.into()),
+                kind: ProviderFailureKind::ResponseInvalid,
+                reason: "category=protocol message=offline failure fixture",
+            },
+            StructuredFailureCase {
+                error: ClsError::Core(magic_market_core::CoreError::InvalidRequest(
+                    OFFLINE_FAILURE_DETAIL.into(),
+                )),
+                kind: ProviderFailureKind::ResponseInvalid,
+                reason: "category=core message=invalid request: offline failure fixture",
+            },
+        ],
+    );
+}
+
+#[test]
+fn hithink_typed_failures_preserve_codes_and_redact_unstructured_details() {
+    let operation = Operation::FinancialStatements;
+    assert_structured_provider_failures(
+        operation,
+        "HithinkFinance",
+        structured_status_cases!(HithinkError),
+    );
+    assert_legacy_provider_failure(
+        operation,
+        HithinkError::InvalidRequest(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::InvalidRequest,
+    );
+    assert_legacy_provider_failure(
+        operation,
+        HithinkError::Unsupported(OFFLINE_FAILURE_DETAIL.into()),
+        LegacyFailureClass::Unsupported,
+    );
+    assert_structured_provider_failures(
+        operation,
+        "HithinkFinance",
+        vec![
+            StructuredFailureCase {
+                error: HithinkError::Authentication {
+                    code: 2003,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::AuthenticationRejected,
+                reason: "code=2003 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::RateLimited {
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::RateLimited,
+                reason: "code=4001 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Business {
+                    code: 1001,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::QueryRejected,
+                reason: "code=1001 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Business {
+                    code: 1004,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::QueryRejected,
+                reason: "code=1004 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Business {
+                    code: 3001,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::QueryRejected,
+                reason: "code=3001 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Business {
+                    code: 3004,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::QueryRejected,
+                reason: "code=3004 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Business {
+                    code: 3002,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::Unavailable,
+                reason: "code=3002 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Business {
+                    code: 5001,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::Unavailable,
+                reason: "code=5001 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Business {
+                    code: 5003,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::Unavailable,
+                reason: "code=5003 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Business {
+                    code: 9999,
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::ResponseInvalid,
+                reason: "code=9999 request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::NotReady {
+                    request_id: "offline-request".into(),
+                },
+                kind: ProviderFailureKind::Unavailable,
+                reason: "category=not_ready request_id=offline-request",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Transport(offline_transport_error()),
+                kind: ProviderFailureKind::Unavailable,
+                reason: "category=transport",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Decode(OFFLINE_FAILURE_DETAIL.into()),
+                kind: ProviderFailureKind::ResponseInvalid,
+                reason: "category=decode",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Protocol(OFFLINE_FAILURE_DETAIL.into()),
+                kind: ProviderFailureKind::ResponseInvalid,
+                reason: "category=protocol",
+            },
+            StructuredFailureCase {
+                error: HithinkError::Core(magic_market_core::CoreError::InvalidRequest(
+                    OFFLINE_FAILURE_DETAIL.into(),
+                )),
+                kind: ProviderFailureKind::ResponseInvalid,
+                reason: "category=protocol",
+            },
+        ],
+    );
+}
+
+#[test]
+fn consensus_typed_response_failures_keep_safe_field_identity() {
+    struct ConsensusCase {
+        message: &'static str,
+        code: &'static str,
+        field: &'static str,
+    }
+    let cases = [
+        ConsensusCase {
+            message: "instrument identity",
+            code: "consensus_instrument_identity_invalid",
+            field: "consensus.instrument_identity",
+        },
+        ConsensusCase {
+            message: "fiscal year",
+            code: "consensus_fiscal_year_invalid",
+            field: "consensus.estimates.fiscal_year",
+        },
+        ConsensusCase {
+            message: "institution count",
+            code: "consensus_contributor_count_invalid",
+            field: "consensus.estimates.contributor_count",
+        },
+        ConsensusCase {
+            message: "minimum",
+            code: "consensus_minimum_invalid",
+            field: "consensus.estimates.minimum",
+        },
+        ConsensusCase {
+            message: "maximum",
+            code: "consensus_maximum_invalid",
+            field: "consensus.estimates.maximum",
+        },
+        ConsensusCase {
+            message: "mean",
+            code: "consensus_mean_invalid",
+            field: "consensus.estimates.mean",
+        },
+        ConsensusCase {
+            message: "estimate values",
+            code: "consensus_values_missing",
+            field: "consensus.estimates.values",
+        },
+        ConsensusCase {
+            message: "caption",
+            code: "consensus_table_invalid",
+            field: "consensus.estimates.table",
+        },
+        ConsensusCase {
+            message: "unclassified fixture detail",
+            code: "consensus_provider_response_invalid",
+            field: "consensus.provider_response",
+        },
+    ];
+    for case in cases {
+        for error in [
+            ThsError::Schema(case.message.into()),
+            ThsError::Incomplete(case.message.into()),
+            ThsError::Core(magic_market_core::CoreError::InvalidRequest(
+                case.message.into(),
+            )),
+        ] {
+            assert_eq!(
+                provider_error(Operation::Consensus, error),
+                ServiceError::InvalidEvidence {
+                    provider: "Tonghuashun".into(),
+                    evidence_code: case.code.into(),
+                    evidence_field: case.field.into(),
+                    record_index: None,
+                    message: format!(
+                        "Consensus rejected Tonghuashun evidence ({} at {})",
+                        case.code, case.field
+                    ),
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn unknown_provider_errors_fail_conservatively_with_the_requested_operation() {
+    let error = std::io::Error::other(OFFLINE_FAILURE_DETAIL);
+    assert_eq!(
+        provider_error(Operation::GlobalNews, error),
+        ServiceError::FailedPrecondition(format!(
+            "{} provider request failed: {OFFLINE_FAILURE_DETAIL}",
+            Operation::GlobalNews.as_str()
+        ))
+    );
+}
