@@ -1960,3 +1960,6 @@ mod sec_typed_entry_coverage;
 
 #[path = "grpc_upstream_boundary_tests.rs"]
 mod upstream_boundary_coverage;
+
+#[path = "grpc_sina_news_projection_tests.rs"]
+mod sina_news_projection_coverage;
