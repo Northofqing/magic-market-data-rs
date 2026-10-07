@@ -2,6 +2,36 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use super::*;
 
+#[test]
+fn production_registry_rejects_zero_timeout_before_provider_construction() {
+    assert!(matches!(
+        production_operation_registry(Duration::ZERO, 4096),
+        Err(ProductionRegistryError::InvalidLimit(
+            "provider timeout must be positive"
+        ))
+    ));
+}
+
+#[test]
+fn production_registry_rejects_zero_payload_limit_before_provider_construction() {
+    assert!(matches!(
+        production_operation_registry(Duration::from_secs(1), 0),
+        Err(ProductionRegistryError::InvalidLimit(
+            "maximum payload bytes must be positive"
+        ))
+    ));
+}
+
+#[test]
+fn production_registry_validates_timeout_first_when_both_limits_are_zero() {
+    assert!(matches!(
+        production_operation_registry(Duration::ZERO, 0),
+        Err(ProductionRegistryError::InvalidLimit(
+            "provider timeout must be positive"
+        ))
+    ));
+}
+
 const FIXTURE_OBSERVED_AT: &str = "2026-08-19T16:16:00+08:00";
 const FIXTURE_SOURCE_AT: &str = "2026-08-19T16:15:00+08:00";
 const FIXTURE_BATCH_ID: &str = "offline-handler-news-fixture";
