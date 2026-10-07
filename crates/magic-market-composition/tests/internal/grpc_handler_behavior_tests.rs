@@ -1957,3 +1957,6 @@ fn financial_projection_does_not_upgrade_partial_batch_quality() {
 
 #[path = "grpc_sec_typed_entry_tests.rs"]
 mod sec_typed_entry_coverage;
+
+#[path = "grpc_upstream_boundary_tests.rs"]
+mod upstream_boundary_coverage;
