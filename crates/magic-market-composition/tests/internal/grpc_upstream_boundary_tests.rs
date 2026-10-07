@@ -855,3 +855,213 @@ fn registered_tencent_handlers_fail_atomically_when_the_response_payload_ceiling
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
+
+#[test]
+fn registered_tencent_trades_preserve_bounded_rows_sides_and_time_only_evidence() {
+    let body = br#"v_detail_data_sh600396=[0,"0/09:30:01/10.00/0.00/10/10000/B|1/09:30:02/11.00/1.00/20/22000/S"];"#;
+    let (registry, calls) = tencent_registry(body.to_vec(), 65_536);
+    for (limit, source_at) in [(1, "09:30:01"), (2, "09:30:02")] {
+        let request = TradesRequest::new(equity(), limit).unwrap();
+        let result = registry
+            .execute(typed_command(
+                Operation::Trades,
+                TRADES_REQUEST_SCHEMA,
+                &request,
+            ))
+            .unwrap();
+        assert!(result.repository_admitted && result.complete);
+        assert_eq!(result.provider, "Tencent");
+        assert_eq!(result.source_at.as_deref(), Some(source_at));
+        assert_eq!(result.records.len(), usize::from(limit));
+        assert_eq!(result.records[0].schema(), TRADES_RECORD_SCHEMA);
+        let first: magic_market_core::Trade =
+            serde_json::from_slice(result.records[0].data()).unwrap();
+        assert_eq!(first.instrument(), &equity());
+        assert_eq!(first.provider(), ProviderId::Tencent);
+        assert_eq!(first.status(), DataStatus::Available);
+        assert_eq!(first.price().get(), 10.0);
+        assert_eq!(first.quantity().get(), 10.0);
+        assert_eq!(first.side(), magic_market_core::TradeSide::Buy);
+        assert_eq!(first.trade_at(), "09:30:01");
+        assert_eq!(first.source_at(), Some("09:30:01"));
+        assert!(first.trade_count().is_none());
+        if limit == 2 {
+            let second: magic_market_core::Trade =
+                serde_json::from_slice(result.records[1].data()).unwrap();
+            assert_eq!(second.price().get(), 11.0);
+            assert_eq!(second.quantity().get(), 20.0);
+            assert_eq!(second.side(), magic_market_core::TradeSide::Sell);
+            assert_eq!(second.trade_at(), "09:30:02");
+            assert_eq!(second.source_at(), Some("09:30:02"));
+        }
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let (bounded, calls) = tencent_registry(body.to_vec(), 1);
+    let request = TradesRequest::new(equity(), 2).unwrap();
+    let error = bounded
+        .execute(typed_command(
+            Operation::Trades,
+            TRADES_REQUEST_SCHEMA,
+            &request,
+        ))
+        .unwrap_err();
+    assert!(
+        matches!(error, ServiceError::ResourceExhausted(ref reason)
+                    if reason.contains("exceeds maximum 1")),
+        "{error:?}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+fn tencent_snapshot_with_statistics() -> Vec<u8> {
+    br#"v_sh600396="1~Offline~600396~10.00~9.00~9.50~1000~400~600~9.99~10~9.98~20~9.97~30~9.96~40~9.95~50~10.01~11~10.02~21~10.03~31~10.04~41~10.05~51~~20260723094907~1.00~11.11~11.00~9.00~10.00/1000/1000000~1000~100.00~2.50~12.50~~11.00~9.00~1.20~3.50~2.00~0.75~11.00~9.00~1.50~0~10.00~15.00";"#.to_vec()
+}
+
+#[test]
+fn registered_tencent_books_preserve_source_lots_partial_quality_and_payload_ceiling() {
+    let body = tencent_snapshot_with_statistics();
+    let (registry, calls) = tencent_registry(body.clone(), 65_536);
+    let request = serde_json::json!({"instruments": [equity()]});
+    let result = registry
+        .execute(typed_command(
+            Operation::OrderBooks,
+            ORDER_BOOKS_REQUEST_SCHEMA,
+            &request,
+        ))
+        .unwrap();
+    assert!(result.repository_admitted && result.complete);
+    assert_eq!(result.provider, "Tencent");
+    assert_eq!(
+        result.source_at.as_deref(),
+        Some("2026-07-23T09:49:07+08:00")
+    );
+    assert_eq!(result.records.len(), 1);
+    assert_eq!(result.records[0].schema(), ORDER_BOOKS_RECORD_SCHEMA);
+    let book: OrderBook = serde_json::from_slice(result.records[0].data()).unwrap();
+    assert_eq!(book.instrument(), &equity());
+    assert_eq!(book.provider(), ProviderId::Tencent);
+    assert_eq!(book.status(), DataStatus::Available);
+    assert_eq!(book.bids()[0].price().unwrap().get(), 9.99);
+    assert_eq!(book.bids()[0].quantity().unwrap().get(), 10.0);
+    assert_eq!(book.asks()[0].price().unwrap().get(), 10.01);
+    assert_eq!(book.asks()[0].quantity().unwrap().get(), 11.0);
+    assert_eq!(book.total_bid_quantity().unwrap().get(), 150.0);
+    assert_eq!(book.total_ask_quantity().unwrap().get(), 155.0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let partial = String::from_utf8(body.clone())
+        .unwrap()
+        .replacen("10.01~11", "0.00~0", 1);
+    assert!(!partial.as_bytes().eq(body.as_slice()));
+    let (registry, calls) = tencent_registry(partial.into_bytes(), 65_536);
+    let result = registry
+        .execute(typed_command(
+            Operation::OrderBooks,
+            ORDER_BOOKS_REQUEST_SCHEMA,
+            &request,
+        ))
+        .unwrap();
+    assert!(result.repository_admitted && !result.complete);
+    assert_eq!(
+        result.source_at.as_deref(),
+        Some("2026-07-23T09:49:07+08:00")
+    );
+    let book: OrderBook = serde_json::from_slice(result.records[0].data()).unwrap();
+    assert_eq!(book.status(), DataStatus::Unavailable);
+    assert!(book.asks()[0].price().is_none() && book.asks()[0].quantity().is_none());
+    // The contract sums returned levels: 21 + 31 + 41 + 51, not a full book.
+    assert_eq!(book.total_ask_quantity().unwrap().get(), 144.0);
+    assert_eq!(book.total_bid_quantity().unwrap().get(), 150.0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let (bounded, calls) = tencent_registry(body, 1);
+    let error = bounded
+        .execute(typed_command(
+            Operation::OrderBooks,
+            ORDER_BOOKS_REQUEST_SCHEMA,
+            &request,
+        ))
+        .unwrap_err();
+    assert!(
+        matches!(error, ServiceError::ResourceExhausted(ref reason)
+                    if reason.contains("exceeds maximum 1")),
+        "{error:?}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn registered_tencent_statistics_preserve_percent_yuan_optional_metrics_and_payload_ceiling() {
+    let body = tencent_snapshot_with_statistics();
+    let (registry, calls) = tencent_registry(body.clone(), 65_536);
+    let request = serde_json::json!({"instruments": [equity()]});
+    let result = registry
+        .execute(typed_command(
+            Operation::MarketStatistics,
+            MARKET_STATISTICS_REQUEST_SCHEMA,
+            &request,
+        ))
+        .unwrap();
+    assert!(result.repository_admitted && result.complete);
+    assert_eq!(result.provider, "Tencent");
+    assert_eq!(
+        result.source_at.as_deref(),
+        Some("2026-07-23T09:49:07+08:00")
+    );
+    assert_eq!(result.records.len(), 1);
+    assert_eq!(result.records[0].schema(), MARKET_STATISTICS_RECORD_SCHEMA);
+    let record: magic_market_core::MarketStatistics =
+        serde_json::from_slice(result.records[0].data()).unwrap();
+    assert_eq!(record.instrument(), &equity());
+    assert_eq!(record.evidence().provider(), ProviderId::Tencent);
+    assert_eq!(record.turnover_rate().unwrap().get(), 2.5);
+    assert_eq!(
+        record.turnover_rate().unwrap().unit(),
+        magic_market_core::RatioUnit::Percent
+    );
+    assert_eq!(record.trailing_pe().unwrap().get(), 12.5);
+    assert_eq!(record.static_pe().unwrap().get(), 15.0);
+    assert_eq!(record.pb().unwrap().get(), 0.75);
+    // Source capitalizations are CNY 3.5 and 2.0 hundred-million, respectively.
+    assert_eq!(record.total_market_cap().unwrap().get(), 350_000_000.0);
+    assert_eq!(record.floating_market_cap().unwrap().get(), 200_000_000.0);
+    assert_eq!(record.upper_limit().unwrap().get(), 11.0);
+    assert_eq!(record.lower_limit().unwrap().get(), 9.0);
+    assert_eq!(record.volume_ratio().unwrap().get(), 1.5);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let absent = String::from_utf8(body.clone())
+        .unwrap()
+        .replacen("~15.00\";", "~\";", 1);
+    assert_ne!(absent.as_bytes(), body.as_slice());
+    let (registry, calls) = tencent_registry(absent.into_bytes(), 65_536);
+    let result = registry
+        .execute(typed_command(
+            Operation::MarketStatistics,
+            MARKET_STATISTICS_REQUEST_SCHEMA,
+            &request,
+        ))
+        .unwrap();
+    assert!(result.repository_admitted && result.complete);
+    let record: magic_market_core::MarketStatistics =
+        serde_json::from_slice(result.records[0].data()).unwrap();
+    assert!(record.static_pe().is_none());
+    assert_eq!(record.trailing_pe().unwrap().get(), 12.5);
+    assert_eq!(record.total_market_cap().unwrap().get(), 350_000_000.0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let (bounded, calls) = tencent_registry(body, 1);
+    let error = bounded
+        .execute(typed_command(
+            Operation::MarketStatistics,
+            MARKET_STATISTICS_REQUEST_SCHEMA,
+            &request,
+        ))
+        .unwrap_err();
+    assert!(
+        matches!(error, ServiceError::ResourceExhausted(ref reason)
+                    if reason.contains("exceeds maximum 1")),
+        "{error:?}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
