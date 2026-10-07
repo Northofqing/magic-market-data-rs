@@ -1,6 +1,6 @@
 param(
     [string]$Destination = "target/runtime/client-bundle",
-    [string]$BundleVersion = "2026-10-01.1",
+    [string]$BundleVersion = "2026-10-01.3",
     [string]$SourceCommit = "",
     [string]$ServiceVersion = "",
     [string]$ContractSha256 = "",

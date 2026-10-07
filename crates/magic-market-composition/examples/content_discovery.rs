@@ -88,8 +88,14 @@ fn run_disclosures(query: &DisclosureQuery) -> Result<(), Box<dyn Error>> {
 fn show_sources(sources: &[SourceOutcome]) {
     for source in sources {
         match source {
-            SourceOutcome::Inspected { provider, records } => {
-                eprintln!("{provider}: inspected {records} source records");
+            SourceOutcome::Inspected {
+                provider,
+                records,
+                source_complete,
+            } => {
+                eprintln!(
+                    "{provider}: inspected {records} source records; source_complete={source_complete} (bounded window only)"
+                );
             }
             SourceOutcome::Failed { provider, .. } => {
                 eprintln!("{provider}: failed; no result from this source");

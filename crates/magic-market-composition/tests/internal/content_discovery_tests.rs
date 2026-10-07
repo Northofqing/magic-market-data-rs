@@ -4,6 +4,42 @@ use magic_market_service::{Capability, QueryResult};
 use std::collections::BTreeMap;
 
 #[test]
+fn disclosure_discovery_inspects_valid_incomplete_source_prefix() {
+    let original = announcement("关于持股 5% 以上股东减持股份的公告");
+    let mut prefix = result("Cninfo", vec![original.clone()]);
+    prefix.complete = false;
+    let gateway = FixtureGateway {
+        capabilities: vec![capability(Operation::MarketAnnouncements, "Cninfo")],
+        responses: BTreeMap::from([(
+            (Operation::MarketAnnouncements, "Cninfo".into()),
+            Ok(prefix),
+        )]),
+    };
+    let query = DisclosureQuery::market_day(
+        IsoDate::new("2026-09-30").unwrap(),
+        DisclosureKind::ShareholderReduction,
+    )
+    .unwrap();
+
+    let page = discover_disclosures(&gateway, &query).unwrap();
+    assert_eq!(page.status, DiscoveryStatus::AllSourcesInspected);
+    assert_eq!(page.candidates.len(), 1);
+    assert_eq!(page.candidates[0].record, original);
+    assert!(matches!(
+        &page.sources[0],
+        SourceOutcome::Inspected { provider, records: 1, source_complete: false }
+            if provider == "Cninfo"
+    ));
+    assert!(matches!(
+        page.scope,
+        DiscoveryScope::AnnouncementRange {
+            source_limit: 300,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn ownership_candidate_kinds_do_not_claim_execution_or_confuse_actions() {
     for (title, expected) in [
         (
@@ -68,6 +104,195 @@ fn ownership_candidate_kinds_do_not_claim_execution_or_confuse_actions() {
     ] {
         assert_eq!(classify_disclosure(title), expected, "{title}");
     }
+}
+
+#[test]
+fn disclosure_discovery_keeps_mixed_titles_unclassified() {
+    let gateway = FixtureGateway {
+        capabilities: vec![capability(Operation::MarketAnnouncements, "Cninfo")],
+        responses: BTreeMap::from([(
+            (Operation::MarketAnnouncements, "Cninfo".into()),
+            Ok(result(
+                "Cninfo",
+                vec![
+                    announcement("2025年年度报告及员工持股计划的公告"),
+                    announcement("2026年半年度报告及股东减持股份计划的公告"),
+                    announcement("2025年业绩预告及股东减持股份计划的公告"),
+                    announcement("关于回购股份减持及员工持股计划的公告"),
+                    announcement("2026年半年度报告及2025年年度报告的补充公告"),
+                ],
+            )),
+        )]),
+    };
+    for kind in [
+        DisclosureKind::AnnualReport,
+        DisclosureKind::HalfYearReport,
+        DisclosureKind::EarningsForecast,
+        DisclosureKind::RepurchasedShareReduction,
+        DisclosureKind::ShareholderReduction,
+        DisclosureKind::EmployeeOwnership,
+    ] {
+        let query = DisclosureQuery::market_day(IsoDate::new("2026-09-30").unwrap(), kind).unwrap();
+        let page = discover_disclosures(&gateway, &query).unwrap();
+        assert!(
+            page.candidates.is_empty(),
+            "mixed title classified as {kind:?}"
+        );
+        assert!(matches!(
+            page.sources[0],
+            SourceOutcome::Inspected {
+                records: 5,
+                source_complete: true,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn disclosure_discovery_keeps_empty_window_source_quality_explicit() {
+    for source_complete in [false, true] {
+        let mut window = result("Cninfo", vec![]);
+        window.complete = source_complete;
+        let gateway = FixtureGateway {
+            capabilities: vec![capability(Operation::MarketAnnouncements, "Cninfo")],
+            responses: BTreeMap::from([(
+                (Operation::MarketAnnouncements, "Cninfo".into()),
+                Ok(window),
+            )]),
+        };
+        let query = DisclosureQuery::market_day(
+            IsoDate::new("2026-09-30").unwrap(),
+            DisclosureKind::AnnualReport,
+        )
+        .unwrap();
+        let page = discover_disclosures(&gateway, &query).unwrap();
+        assert!(page.candidates.is_empty());
+        assert_eq!(
+            page.sources,
+            vec![SourceOutcome::Inspected {
+                provider: "Cninfo".into(),
+                records: 0,
+                source_complete,
+            }]
+        );
+    }
+}
+
+#[test]
+fn disclosure_discovery_inspects_incomplete_issuer_range() {
+    let original = announcement("2025年半年度报告");
+    let mut prefix = result("Cninfo", vec![original.clone()]);
+    prefix.complete = false;
+    let gateway = FixtureGateway {
+        capabilities: vec![capability(Operation::Announcements, "Cninfo")],
+        responses: BTreeMap::from([((Operation::Announcements, "Cninfo".into()), Ok(prefix))]),
+    };
+    let instrument = InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity).unwrap();
+    let query = DisclosureQuery::instrument_range(
+        instrument.clone(),
+        IsoDate::new("2025-01-01").unwrap(),
+        IsoDate::new("2025-12-31").unwrap(),
+        DisclosureKind::HalfYearReport,
+    )
+    .unwrap();
+    let page = discover_disclosures(&gateway, &query).unwrap();
+    assert_eq!(page.candidates.len(), 1);
+    assert_eq!(page.candidates[0].record, original);
+    assert_eq!(
+        page.scope,
+        DiscoveryScope::InstrumentAnnouncementRange {
+            instrument,
+            start: IsoDate::new("2025-01-01").unwrap(),
+            end: IsoDate::new("2025-12-31").unwrap(),
+            source_limit: 200,
+        }
+    );
+    assert!(matches!(
+        page.sources[0],
+        SourceOutcome::Inspected {
+            records: 1,
+            source_complete: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn disclosure_discovery_rejects_conflicting_unadmitted_and_oversized_prefixes() {
+    let original = announcement("2025年年度报告");
+    let mut unadmitted = result("Cninfo", vec![original.clone()]);
+    unadmitted.repository_admitted = false;
+    let mut oversized = result("Cninfo", vec![original.clone(); 301]);
+    oversized.complete = false;
+    let query = DisclosureQuery::market_day(
+        IsoDate::new("2026-09-30").unwrap(),
+        DisclosureKind::AnnualReport,
+    )
+    .unwrap();
+    for invalid in [result("cninfo", vec![original]), unadmitted, oversized] {
+        let gateway = FixtureGateway {
+            capabilities: vec![capability(Operation::MarketAnnouncements, "Cninfo")],
+            responses: BTreeMap::from([(
+                (Operation::MarketAnnouncements, "Cninfo".into()),
+                Ok(invalid),
+            )]),
+        };
+        assert_eq!(
+            discover_disclosures(&gateway, &query),
+            Err(ServiceError::FailedPrecondition(
+                "announcement result lacks admitted bounded Cninfo identity".into()
+            ))
+        );
+    }
+}
+
+#[test]
+fn disclosure_discovery_rejects_malformed_incomplete_prefix_atomically() {
+    let mut prefix = result(
+        "Cninfo",
+        vec![
+            announcement("2025年年度报告"),
+            record("wrong.schema", 1, json!({"title": "2025年年度报告"})),
+        ],
+    );
+    prefix.complete = false;
+    let gateway = FixtureGateway {
+        capabilities: vec![capability(Operation::MarketAnnouncements, "Cninfo")],
+        responses: BTreeMap::from([(
+            (Operation::MarketAnnouncements, "Cninfo".into()),
+            Ok(prefix),
+        )]),
+    };
+    let query = DisclosureQuery::market_day(
+        IsoDate::new("2026-09-30").unwrap(),
+        DisclosureKind::AnnualReport,
+    )
+    .unwrap();
+    assert_eq!(
+        discover_disclosures(&gateway, &query),
+        Err(ServiceError::FailedPrecondition(
+            "content record schema does not match the admitted contract".into()
+        ))
+    );
+}
+
+#[test]
+fn disclosure_discovery_keeps_typed_acquisition_failure_instead_of_empty_hits() {
+    let expected = ServiceError::FailedPrecondition("native source acquisition failed".into());
+    let gateway = FixtureGateway {
+        capabilities: vec![capability(Operation::MarketAnnouncements, "Cninfo")],
+        responses: BTreeMap::from([(
+            (Operation::MarketAnnouncements, "Cninfo".into()),
+            Err(expected.clone()),
+        )]),
+    };
+    let query = DisclosureQuery::market_day(
+        IsoDate::new("2026-09-30").unwrap(),
+        DisclosureKind::AnnualReport,
+    )
+    .unwrap();
+    assert_eq!(discover_disclosures(&gateway, &query), Err(expected));
 }
 
 #[test]

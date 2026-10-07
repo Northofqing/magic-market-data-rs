@@ -108,6 +108,6 @@ probe records are retained privately beside the build log. The final complete
 probe passed without a service-code change; it took 17.444 seconds.
 
 Machine-readable endpoint results are in
-[the deployment record](2026-10-01-official-publication-service-deployment.json).
+[the deployment record](2026-10-01-official-publication-service-initial-deployment.json).
 Public client-bundle delivery and final documentation checks are recorded below
 when verified.

@@ -140,6 +140,8 @@ pub enum SourceOutcome {
     Inspected {
         provider: String,
         records: usize,
+        /// Source-batch quality, never exhaustive history or market coverage.
+        source_complete: bool,
     },
     Failed {
         provider: String,
@@ -149,6 +151,7 @@ pub enum SourceOutcome {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiscoveryStatus {
+    /// Every attempted source window was inspected; see its source quality flag.
     AllSourcesInspected,
     PartialSourceFailure,
     NoSourceSucceeded,
@@ -287,6 +290,7 @@ pub fn search_recent_news<G: BlockingQueryGateway>(
                         page.sources.push(SourceOutcome::Inspected {
                             provider: provider.to_owned(),
                             records: result.records.len(),
+                            source_complete: result.complete,
                         });
                         page.candidates.append(&mut candidates);
                     }
@@ -375,11 +379,10 @@ pub fn discover_disclosures<G: BlockingQueryGateway>(
     };
     if result.provider != "Cninfo"
         || !result.repository_admitted
-        || !result.complete
         || result.records.len() > inspected_limit as usize
     {
         return Err(ServiceError::FailedPrecondition(
-            "announcement result lacks admitted complete Cninfo identity".into(),
+            "announcement result lacks admitted bounded Cninfo identity".into(),
         ));
     }
     let mut candidates = Vec::new();
@@ -401,6 +404,7 @@ pub fn discover_disclosures<G: BlockingQueryGateway>(
         sources: vec![SourceOutcome::Inspected {
             provider: "Cninfo".into(),
             records: result.records.len(),
+            source_complete: result.complete,
         }],
         candidates,
     })
@@ -414,93 +418,93 @@ fn classify_disclosure(title: &str) -> Option<DisclosureKind> {
         .iter()
         .any(|word| title.contains(word));
     let equity = title.contains("股份") || title.contains("股票") || title.contains("股权");
-    if title.contains("半年度报告") || title.contains("半年报") {
-        return Some(DisclosureKind::HalfYearReport);
-    }
-    if title.contains("年度报告") || title.contains("年报") {
-        return Some(DisclosureKind::AnnualReport);
-    }
-    if title.contains("业绩预告") {
-        return Some(DisclosureKind::EarningsForecast);
-    }
-    if title.contains("回购股份") && title.contains("减持") {
-        Some(DisclosureKind::RepurchasedShareReduction)
-    } else {
-        let mut matches = Vec::new();
-        let mut consider = |condition, kind| {
-            if condition {
-                matches.push(kind);
-            }
-        };
-        consider(
-            title.contains("减持") && shareholder,
-            DisclosureKind::ShareholderReduction,
-        );
-        consider(
-            title.contains("增持") && shareholder && equity,
-            DisclosureKind::ShareholderIncrease,
-        );
-        consider(
-            (title.contains("向特定对象发行") && equity)
-                || title.contains("非公开发行股票")
-                || title.contains("定向增发")
-                || title.contains("增发股票")
-                || (title.contains("配股") && !title.contains("分配股"))
-                || title.contains("发行股份购买资产"),
-            DisclosureKind::EquityIssuance,
-        );
-        consider(
-            (title.contains("控制权变更")
-                || title.contains("实际控制人变更")
-                || title.contains("控股股东变更"))
-                && ![
-                    "未发生变更",
-                    "不发生变更",
-                    "不会发生变更",
-                    "未发生变化",
-                    "不发生变化",
-                    "不会发生变化",
-                    "不涉及",
-                    "未变更",
-                    "不会导致",
-                    "不导致",
-                    "不会引起",
-                    "不引起",
-                ]
-                .iter()
-                .any(|word| title.contains(word)),
-            DisclosureKind::ControlChange,
-        );
-        consider(
-            equity && (title.contains("协议转让") || title.contains("无偿划转")),
-            DisclosureKind::ShareTransfer,
-        );
-        consider(
-            equity && title.contains("质押"),
-            DisclosureKind::SharePledge,
-        );
-        consider(
-            equity && (title.contains("冻结") || title.contains("解冻")),
-            DisclosureKind::ShareFreeze,
-        );
-        consider(
-            (title.contains("回购股份") || title.contains("回购公司股份"))
-                && !title.contains("注销")
-                && !title.contains("减持"),
-            DisclosureKind::ShareRepurchase,
-        );
-        consider(
-            title.contains("股权激励")
-                || title.contains("限制性股票激励")
-                || title.contains("股票期权激励"),
-            DisclosureKind::EquityIncentive,
-        );
-        consider(
-            title.contains("员工持股"),
-            DisclosureKind::EmployeeOwnership,
-        );
-        (matches.len() == 1).then(|| matches[0])
-    }
+    let half_year_report = title.contains("半年度报告") || title.contains("半年报");
+    let non_half_year_title = title.replace("半年度报告", "").replace("半年报", "");
+    let repurchased_share_reduction = title.contains("回购股份") && title.contains("减持");
+    let mut matches = Vec::new();
+    let mut consider = |condition, kind| {
+        if condition {
+            matches.push(kind);
+        }
+    };
+    consider(half_year_report, DisclosureKind::HalfYearReport);
+    consider(
+        non_half_year_title.contains("年度报告") || non_half_year_title.contains("年报"),
+        DisclosureKind::AnnualReport,
+    );
+    consider(title.contains("业绩预告"), DisclosureKind::EarningsForecast);
+    consider(
+        repurchased_share_reduction,
+        DisclosureKind::RepurchasedShareReduction,
+    );
+    consider(
+        title.contains("减持") && shareholder && !repurchased_share_reduction,
+        DisclosureKind::ShareholderReduction,
+    );
+    consider(
+        title.contains("增持") && shareholder && equity,
+        DisclosureKind::ShareholderIncrease,
+    );
+    consider(
+        (title.contains("向特定对象发行") && equity)
+            || title.contains("非公开发行股票")
+            || title.contains("定向增发")
+            || title.contains("增发股票")
+            || (title.contains("配股") && !title.contains("分配股"))
+            || title.contains("发行股份购买资产"),
+        DisclosureKind::EquityIssuance,
+    );
+    consider(
+        (title.contains("控制权变更")
+            || title.contains("实际控制人变更")
+            || title.contains("控股股东变更"))
+            && ![
+                "未发生变更",
+                "不发生变更",
+                "不会发生变更",
+                "未发生变化",
+                "不发生变化",
+                "不会发生变化",
+                "不涉及",
+                "未变更",
+                "不会导致",
+                "不导致",
+                "不会引起",
+                "不引起",
+            ]
+            .iter()
+            .any(|word| title.contains(word)),
+        DisclosureKind::ControlChange,
+    );
+    consider(
+        equity && (title.contains("协议转让") || title.contains("无偿划转")),
+        DisclosureKind::ShareTransfer,
+    );
+    consider(
+        equity && title.contains("质押"),
+        DisclosureKind::SharePledge,
+    );
+    consider(
+        equity && (title.contains("冻结") || title.contains("解冻")),
+        DisclosureKind::ShareFreeze,
+    );
+    consider(
+        (title.contains("回购股份") || title.contains("回购公司股份"))
+            && !title.contains("注销")
+            && !title.contains("减持"),
+        DisclosureKind::ShareRepurchase,
+    );
+    consider(
+        title.contains("股权激励")
+            || title.contains("限制性股票激励")
+            || title.contains("股票期权激励"),
+        DisclosureKind::EquityIncentive,
+    );
+    consider(
+        title.contains("员工持股"),
+        DisclosureKind::EmployeeOwnership,
+    );
+    (matches.len() == 1).then(|| matches[0])
 }
 
 fn parse_record(
@@ -550,5 +554,5 @@ fn command(
 }
 
 #[cfg(test)]
-#[path = "content_discovery/tests.rs"]
+#[path = "../tests/internal/content_discovery_tests.rs"]
 mod tests;

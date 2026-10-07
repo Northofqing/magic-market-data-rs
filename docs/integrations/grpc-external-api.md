@@ -14,8 +14,10 @@
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
 Token 仍属于部署材料而不是稳定公共地址；迁移主机、IP 或证书后必须重新交付连接包。
-2026-10-01 追加的两个官方发布 RPC 已在本工作树与独立 loopback 探针接入；
-此前运行的联调实例不会被代码变更自动升级，应以该实例 GetCapabilities 为准。
+2026-10-01 该工作站联调实例已更新，`OfficialPublications` 与 `OfficialPublication`
+已通过实际 mTLS + Bearer 连接完成八源列表和原文抽检。部署的源码快照为
+`67c832e43f36f188e4d769f409691c0b1d9a2ea2`；GetHealth 返回的程序与协议 SHA-256 已核对。
+其他实例仍应以自身 GetHealth / GetCapabilities 为准。定时采集程序尚未常驻。
 
 ## 2. 合同源文件
 
