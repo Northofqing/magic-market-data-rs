@@ -1,0 +1,13 @@
+# Hash-pinned operational scripts must land on disk byte-for-byte.
+#
+# `keepalive.ps1` refuses to start the runtime unless `start.ps1` hashes to a
+# pinned SHA-256 (`32310769...`, see tools/runtime/runtime-root/README.md). This
+# repository runs with `core.autocrlf=true`, which rewrites LF to CRLF on
+# checkout. That single rewrite changes the bytes, breaks the pin, and leaves the
+# runtime unable to start -- a failure that first appears on a machine that has
+# never run the script, long after the commit that caused it.
+#
+# `text eol=lf` writes these paths as LF on every checkout, so the working copy
+# matches the committed blob exactly. It is preferred over `-text` because git
+# keeps treating the files as text: diffs, blame and merges still work.
+tools/runtime/runtime-root/*.ps1 text eol=lf
