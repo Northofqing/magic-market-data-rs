@@ -14,11 +14,11 @@ if ($ValueName.Trim().Length -eq 0) {
 
 # Required rather than defaulted. Left to itself, windows-autostart.ps1 falls back
 # to `<repo>\target\runtime`, which the isolated qualified build deletes on sight
-# (run_build.py, configs_absent(): "unreviewed Cargo config or existing production
-# runtime"). An autostart entry registered against that path is a logon job that
-# cannot work and disappears with the directory -- exactly the failure this
-# arrangement exists to prevent. Naming the root here makes it a decision instead
-# of an accident.
+# (its orchestrator's `configs_absent()` raises "unreviewed Cargo config or
+# existing production runtime"). An autostart entry registered against that path
+# is a logon job that cannot work and disappears with the directory -- exactly
+# the failure this arrangement exists to prevent. Naming the root here makes it a
+# decision instead of an accident.
 if ([string]::IsNullOrWhiteSpace($RuntimeRoot)) {
     throw "RuntimeRoot must not be empty"
 }

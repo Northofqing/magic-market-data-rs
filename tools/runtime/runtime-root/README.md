@@ -38,10 +38,12 @@ C:\Users\13687\.magic-market-data\runtime\
 ```
 
 It must not be `<repo>\target\runtime`. The isolated qualified build refuses to
-run while that path exists (`run_build.py`, `configs_absent()`:
-`"unreviewed Cargo config or existing production runtime"`), so a production
-runtime kept there is deleted by the next qualified build. That is how these
-scripts were lost once already; see `RECOVERY.md`.
+run while that path exists: its orchestrator's `configs_absent()` raises
+`"unreviewed Cargo config or existing production runtime"` the moment
+`<repo>\target\runtime` appears. That orchestrator belongs to the build tooling
+rather than to this repository, which is precisely why the refusal is recorded
+here -- a production runtime kept at that path is deleted by the next qualified
+build. That is how these scripts were lost once already; see `RECOVERY.md`.
 
 Deploying is a **byte-identical copy**, never a re-typing:
 
