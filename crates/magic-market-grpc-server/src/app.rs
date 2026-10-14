@@ -13,6 +13,7 @@ use tokio::sync::Semaphore;
 use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::{Code, Request, Response, Status};
 
+use crate::events::EventHub;
 use crate::logging::{self, Level};
 use crate::observability::{QueryOutcome, RuntimeObservability};
 
@@ -29,6 +30,7 @@ pub(crate) struct GrpcApplication<G> {
     observability: Arc<RuntimeObservability>,
     unary_concurrency_limit: usize,
     blocking_concurrency_limit: usize,
+    degradation_hub: Option<Arc<EventHub>>,
 }
 
 impl<G> GrpcApplication<G>
@@ -41,6 +43,7 @@ where
         unary_concurrency: usize,
         blocking_concurrency: usize,
         blocking_deadline: Duration,
+        degradation_hub: Option<Arc<EventHub>>,
     ) -> Result<Self, &'static str> {
         if maximum_payload_bytes == 0
             || unary_concurrency == 0
@@ -58,6 +61,7 @@ where
             observability: Arc::new(RuntimeObservability::new()),
             unary_concurrency_limit: unary_concurrency,
             blocking_concurrency_limit: blocking_concurrency,
+            degradation_hub,
         })
     }
 
@@ -92,6 +96,7 @@ where
         let payload = request
             .payload
             .ok_or_else(|| Status::invalid_argument("request payload is required"))?;
+        let request_payload_data = payload.data.clone();
         let payload = CanonicalPayload::new(
             payload.schema,
             payload.schema_version,
@@ -140,6 +145,11 @@ where
             })?
             .map_err(|error| status_from_error(&request_id, operation, error))?;
 
+        if operation == Operation::T0Evidence && !result.complete {
+            self.record_t0_evidence_degradation(&result, &request_payload_data)
+                .await;
+        }
+
         Ok(Response::new(v1::QueryResponse {
             request_id,
             operation: grpc_operation(operation) as i32,
@@ -169,6 +179,83 @@ where
             diagnostic_blocker: result.diagnostic_blocker.unwrap_or_default(),
         }))
     }
+}
+
+impl<G> GrpcApplication<G>
+where
+    G: BlockingQueryGateway,
+{
+    /// BR-050 side channel: a T0Evidence bundle with degraded (but truthful)
+    /// evidence is published successfully with complete=false; the degradation
+    /// itself is logged here and pushed to event subscribers when the hub is
+    /// wired. The v2 response schema and digest stay untouched.
+    async fn record_t0_evidence_degradation(
+        &self,
+        result: &magic_market_service::QueryResult,
+        request_payload_data: &[u8],
+    ) {
+        let instrument = first_t0_instrument(request_payload_data).unwrap_or_default();
+        logging::event(
+            Level::Warn,
+            "grpc_query",
+            "t0_evidence_degraded",
+            format_args!(
+                "batch_id={} instrument={} observed_at={} detail=quote/book evidence degraded; structurally absent fields: security_name, source_at",
+                result.batch_id, instrument, result.observed_at
+            ),
+        );
+        let Some(hub) = &self.degradation_hub else {
+            return;
+        };
+        if instrument.is_empty() {
+            return;
+        }
+        let data = serde_json::to_vec(&serde_json::json!({
+            "operation": "T0Evidence",
+            "batch_id": result.batch_id,
+            "observed_at": result.observed_at,
+            "evidence_path": "tdx_public_range",
+            "structurally_absent_fields": ["security_name", "source_at"],
+            "detail": "bundle published with complete=false; per-field issues recorded in server log",
+        }))
+        .unwrap_or_default();
+        let event = v1::MarketEventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            event_id: format!("t0-degraded-{}", result.batch_id),
+            cursor: Some(v1::EventCursor {
+                generation: "server-internal".to_owned(),
+                sequence: 0,
+            }),
+            event_kind: "t0_evidence_degraded".to_owned(),
+            provider: "LocalAnalysis".to_owned(),
+            instrument,
+            observed_at: result.observed_at.clone(),
+            source_at: String::new(),
+            admission: v1::AdmissionState::Admitted as i32,
+            payload: Some(v1::CanonicalPayload {
+                schema: "tdx.t0_evidence_degradation.v1".to_owned(),
+                schema_version: 1,
+                content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+                data,
+            }),
+        };
+        if let Err(error) = hub.publish_local(event).await {
+            logging::event(
+                Level::Warn,
+                "grpc_query",
+                "t0_evidence_degradation_unpublished",
+                format_args!("detail={error}"),
+            );
+        }
+    }
+}
+
+fn first_t0_instrument(request_payload_data: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(request_payload_data).ok()?;
+    let first = value.get("instruments")?.as_array()?.first()?;
+    let code = first.get("code")?.as_str()?;
+    let exchange = first.get("exchange")?.as_str()?;
+    Some(format!("{code}.{exchange}"))
 }
 
 fn validate_context(context: Option<&v1::RequestContext>) -> Result<&v1::RequestContext, Status> {
@@ -852,6 +939,7 @@ mod tests {
             2,
             2,
             Duration::from_secs(30),
+            None,
         )
         .unwrap();
         let (shutdown, stop) = tokio::sync::oneshot::channel();
@@ -1295,6 +1383,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn degraded_t0_evidence_response_publishes_degradation_event() {
+        let mut registry = OperationRegistry::all_unadmitted("fixture registry");
+        registry
+            .register_handler(
+                Capability {
+                    operation: Operation::T0Evidence,
+                    repository_admitted: true,
+                    runtime_available: true,
+                    provider: "Tdx".to_owned(),
+                    exact_scope: "fixture degraded T0 bundle".to_owned(),
+                    blocker: None,
+                    diagnostic_available: false,
+                },
+                move |_command| {
+                    Ok(QueryResult {
+                        provider: "Tdx".to_owned(),
+                        batch_id: "fixture-t0-batch".to_owned(),
+                        complete: false,
+                        observed_at: "2026-10-14T15:35:00+08:00".to_owned(),
+                        source_at: None,
+                        records: Vec::new(),
+                        repository_admitted: true,
+                        diagnostic_blocker: None,
+                    })
+                },
+            )
+            .unwrap();
+        let hub = EventHub::new(2, 8, 8, 32_768, 4096, 4, Duration::from_millis(40)).unwrap();
+        let application = GrpcApplication::new(
+            Arc::new(registry),
+            2 * 1024 * 1024,
+            2,
+            2,
+            Duration::from_secs(30),
+            Some(Arc::new(hub.clone())),
+        )
+        .unwrap();
+        let body = serde_json::json!({
+            "instruments": [{"exchange": "Shanghai", "code": "600519", "asset_class": "Equity"}],
+            "daily_bar_count": 1,
+            "five_minute_bar_count": 1,
+            "requested_at": "2026-10-14T15:30:00+08:00"
+        });
+        let mut request = request();
+        request.get_mut().payload = Some(v1::CanonicalPayload {
+            schema: "magic.market.t0_evidence.request".to_owned(),
+            schema_version: 2,
+            content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+            data: serde_json::to_vec(&body).unwrap(),
+        });
+        let response = application
+            .query_inner(Operation::T0Evidence, request)
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(!response.complete);
+        assert_eq!(response.batch_id, "fixture-t0-batch");
+        let telemetry = hub.listener_status("t0-degraded-status".to_owned()).await;
+        assert_eq!(telemetry.events_published_total, 1);
+    }
+
+    #[tokio::test]
     async fn unadmitted_rpc_fails_before_io_with_structured_details() {
         let application = GrpcApplication::new(
             Arc::new(OperationRegistry::all_unadmitted("evidence missing")),
@@ -1302,6 +1452,7 @@ mod tests {
             1,
             1,
             Duration::from_secs(1),
+            None,
         )
         .unwrap();
         let status = application.realtime_quotes(request()).await.unwrap_err();
@@ -1377,7 +1528,8 @@ mod tests {
             )
             .unwrap();
         let application =
-            GrpcApplication::new(Arc::new(registry), 1024, 1, 1, Duration::from_secs(1)).unwrap();
+            GrpcApplication::new(Arc::new(registry), 1024, 1, 1, Duration::from_secs(1), None)
+                .unwrap();
         let mut request = request();
         request.get_mut().preferred_provider = "Baidu".to_owned();
         request.get_mut().allow_unadmitted = true;
@@ -1403,6 +1555,7 @@ mod tests {
             1,
             1,
             Duration::from_millis(20),
+            None,
         )
         .unwrap();
 

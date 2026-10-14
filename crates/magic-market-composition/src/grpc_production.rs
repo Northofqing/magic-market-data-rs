@@ -3910,8 +3910,12 @@ fn execute_tdx_t0_evidence_from_source(
     let books = client
         .order_books(request.instruments())
         .map_err(|error| provider_error(Operation::T0Evidence, error))?;
-    require_complete_tdx_batch(Operation::T0Evidence, "quote", &quotes)?;
-    require_complete_tdx_batch(Operation::T0Evidence, "order-book", &books)?;
+    // BR-050: nullable evidence fields stay null and must not be filled with
+    // local time or another family's data. Quote/book batches from the public
+    // TDX path structurally lack security_name/source_at; those issues are
+    // recorded in batch quality and surfaced via complete=false plus the
+    // t0_evidence_degraded side channel instead of failing the bundle.
+    let evidence_complete = quotes.quality().is_complete() && books.quality().is_complete();
     let quote_evidence = tdx_batch_evidence(Operation::T0Evidence, &quotes)?;
     let book_evidence = tdx_batch_evidence(Operation::T0Evidence, &books)?;
     validate_exact_tdx_instruments("quote", request.instruments(), quotes.records(), |record| {
@@ -4008,7 +4012,7 @@ fn execute_tdx_t0_evidence_from_source(
     Ok(QueryResult {
         provider: "Tdx".to_owned(),
         batch_id: format!("tdx:t0-evidence:{aggregate_digest}"),
-        complete: true,
+        complete: evidence_complete,
         observed_at,
         source_at: common_source_at(&all_evidence),
         records: payloads,

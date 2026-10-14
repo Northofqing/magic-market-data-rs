@@ -585,7 +585,9 @@ fn tdx_public_t0_query_preserves_all_four_original_captures_and_requested_instan
 }
 
 #[test]
-fn tdx_public_t0_query_rejects_incomplete_quote_or_book_input() {
+fn tdx_public_t0_query_accepts_degraded_quote_or_book_input_with_complete_false() {
+    // BR-050: nullable evidence fields stay null; degraded quote/book input
+    // must still publish the bundle, flagged incomplete via complete=false.
     for family in ["quote", "order-book"] {
         let mut source = captured_tdx();
         let issue = format!("{family} source window truncated");
@@ -606,12 +608,16 @@ fn tdx_public_t0_query_rejects_incomplete_quote_or_book_input() {
         }
         let registry = tdx_fixture_registry(source, 32_768);
         match registry.execute(t0_command(REQUESTED_AT)) {
-            Err(ServiceError::Unavailable { operation, reason }) => {
-                assert_eq!(operation, Operation::T0Evidence);
-                assert_eq!(reason, format!("TDX {family} input is incomplete: {issue}"));
+            Ok(result) => {
+                assert_eq!(result.provider, "Tdx");
+                assert!(
+                    !result.complete,
+                    "{family} degradation must keep complete=false"
+                );
+                assert_eq!(result.records.len(), 1);
+                assert!(result.diagnostic_blocker.is_none());
             }
-            Err(error) => panic!("incomplete {family} input misclassified: {error}"),
-            Ok(_) => panic!("incomplete {family} input published a successful T0 bundle"),
+            Err(error) => panic!("degraded {family} input rejected: {error}"),
         }
     }
 }

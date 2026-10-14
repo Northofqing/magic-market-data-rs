@@ -26,13 +26,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.provider_timeout,
         config.max_payload_bytes,
     )?);
-    let application = GrpcApplication::new(
-        gateway,
-        config.max_payload_bytes,
-        config.unary_concurrency,
-        config.blocking_concurrency,
-        config.blocking_deadline,
-    )?;
     let event_hub = EventHub::new(
         config.max_subscribers,
         config.subscriber_queue_capacity,
@@ -41,6 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.max_payload_bytes,
         config.agent_command_capacity,
         config.agent_heartbeat_timeout,
+    )?;
+    let application = GrpcApplication::new(
+        gateway,
+        config.max_payload_bytes,
+        config.unary_concurrency,
+        config.blocking_concurrency,
+        config.blocking_deadline,
+        Some(Arc::new(event_hub.clone())),
     )?;
 
     let system = v1::system_service_server::SystemServiceServer::new(application.clone())

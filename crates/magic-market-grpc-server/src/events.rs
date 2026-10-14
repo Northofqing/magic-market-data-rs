@@ -397,6 +397,59 @@ impl EventHub {
         Ok(sequence)
     }
 
+    /// Publish a server-originated event without an agent session.
+    ///
+    /// Used for in-process degradation notices (e.g. T0Evidence degraded
+    /// evidence). Sequence continuity and replay budgeting are shared with
+    /// agent-published events; the agent session/generation checks are
+    /// intentionally skipped because there is no session.
+    pub(crate) async fn publish_local(
+        &self,
+        mut event: v1::MarketEventEnvelope,
+    ) -> Result<u64, Status> {
+        let state = self.inner.lock().await;
+        let sequence = state
+            .latest_sequence
+            .checked_add(1)
+            .ok_or_else(|| Status::resource_exhausted("event sequence exhausted"))?;
+        let cursor = event
+            .cursor
+            .as_mut()
+            .ok_or_else(|| Status::invalid_argument("event cursor is required"))?;
+        cursor.sequence = sequence;
+        drop(state);
+        // Server-originated events are trusted by construction: they skip the
+        // agent-facing provider boundary and admitted-family pairing enforced
+        // by validate_event for TDX agent publishers, but keep the structural
+        // envelope checks and payload validation.
+        validate_local_event(&event, self.maximum_payload_bytes)?;
+        let encoded_len = event.encoded_len();
+        if encoded_len > self.replay_max_bytes {
+            return Err(Status::resource_exhausted(
+                "event exceeds the complete replay byte budget",
+            ));
+        }
+        let mut state = self.inner.lock().await;
+        state.latest_sequence = sequence;
+        state.events_published_total = state.events_published_total.saturating_add(1);
+        state.replay_bytes = state
+            .replay_bytes
+            .checked_add(encoded_len)
+            .ok_or_else(|| Status::resource_exhausted("replay byte accounting overflow"))?;
+        state.replay.push_back(event.clone());
+        while state.replay.len() > self.replay_max_events
+            || state.replay_bytes > self.replay_max_bytes
+        {
+            if let Some(removed) = state.replay.pop_front() {
+                state.replay_bytes = state.replay_bytes.saturating_sub(removed.encoded_len());
+                state.replay_evictions_total = state.replay_evictions_total.saturating_add(1);
+            }
+        }
+        drop(state);
+        let _ = self.live.send(event);
+        Ok(sequence)
+    }
+
     async fn subscribe_from(
         &self,
         after: Option<v1::EventCursor>,
@@ -477,7 +530,7 @@ impl EventHub {
             .collect())
     }
 
-    async fn listener_status(&self, request_id: String) -> v1::ListenerStatusResponse {
+    pub(crate) async fn listener_status(&self, request_id: String) -> v1::ListenerStatusResponse {
         let state = self.inner.lock().await;
         let generation = state.generation.clone().unwrap_or_default();
         let latest = state.generation.as_ref().map(|value| v1::EventCursor {
@@ -570,6 +623,42 @@ fn validate_hello(hello: &v1::AgentHello, maximum_payload_bytes: usize) -> Resul
         .map_err(|_| Status::invalid_argument("agent watchlist maximum is not representable"))?;
     magic_market_grpc_contracts::validate_monitor_watchlist(&hello.watchlist_instruments, maximum)
         .map_err(|error| Status::invalid_argument(error.to_string()))
+}
+
+fn validate_local_event(
+    event: &v1::MarketEventEnvelope,
+    maximum_payload_bytes: usize,
+) -> Result<(), Status> {
+    if event.protocol_version != PROTOCOL_VERSION
+        || event.event_id.trim().is_empty()
+        || event.event_kind.trim().is_empty()
+        || event.instrument.trim().is_empty()
+        || event.observed_at.trim().is_empty()
+    {
+        return Err(Status::invalid_argument(
+            "event identity fields are invalid",
+        ));
+    }
+    let cursor = event
+        .cursor
+        .as_ref()
+        .ok_or_else(|| Status::invalid_argument("event cursor is required"))?;
+    if cursor.generation.trim().is_empty() || cursor.sequence == 0 {
+        return Err(Status::invalid_argument("event cursor is invalid"));
+    }
+    let payload = event
+        .payload
+        .as_ref()
+        .ok_or_else(|| Status::invalid_argument("event payload is required"))?;
+    magic_market_grpc_contracts::validate_payload(payload, maximum_payload_bytes)
+        .map_err(|error| Status::invalid_argument(error.to_string()))?;
+    if !matches!(
+        v1::AdmissionState::try_from(event.admission),
+        Ok(v1::AdmissionState::Admitted) | Ok(v1::AdmissionState::Unadmitted)
+    ) {
+        return Err(Status::invalid_argument("event admission state is invalid"));
+    }
+    Ok(())
 }
 
 fn validate_event(
@@ -1274,6 +1363,49 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn publish_local_assigns_sequence_enforces_provider_boundary_and_replays() {
+        let hub = EventHub::new(2, 8, 8, 32_768, 4096, 4, Duration::from_millis(40)).unwrap();
+        let local_event = |event_id: &str, provider: &str| v1::MarketEventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            event_id: event_id.to_owned(),
+            cursor: Some(v1::EventCursor {
+                generation: "server-internal".to_owned(),
+                sequence: 0,
+            }),
+            event_kind: "t0_evidence_degraded".to_owned(),
+            provider: provider.to_owned(),
+            instrument: "600519.Shanghai".to_owned(),
+            observed_at: "2026-10-14T15:35:00+08:00".to_owned(),
+            source_at: String::new(),
+            admission: v1::AdmissionState::Admitted as i32,
+            payload: Some(v1::CanonicalPayload {
+                schema: "tdx.t0_evidence_degradation.v1".to_owned(),
+                schema_version: 1,
+                content_type: magic_market_grpc_contracts::CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+                data: b"{}".to_vec(),
+            }),
+        };
+        // Server-originated events skip the agent provider boundary: even a
+        // Tdx-labelled degradation notice from the server itself is trusted.
+        let first = hub.publish_local(local_event("e1", "Tdx")).await.unwrap();
+        assert_eq!(first, 1);
+
+        let telemetry = hub.listener_status("status-local".to_owned()).await;
+        assert_eq!(telemetry.events_published_total, 1);
+        assert_eq!(telemetry.replay_event_count, 1);
+
+        // Sequence continues monotonically for a second local event.
+        let second = hub
+            .publish_local(local_event("e2", "LocalAnalysis"))
+            .await
+            .unwrap();
+        assert_eq!(second, 2);
+        let telemetry = hub.listener_status("status-local-2".to_owned()).await;
+        assert_eq!(telemetry.events_published_total, 2);
+        assert_eq!(telemetry.replay_event_count, 2);
     }
 
     #[tokio::test]

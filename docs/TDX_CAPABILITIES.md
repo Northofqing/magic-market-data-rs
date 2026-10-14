@@ -74,6 +74,14 @@ and the batch `source_at` stays null. It is not eligible for a BR-033 strict
 source-time freshness gate; successful TCP reads do not promote it into a
 realtime quote route.
 
+2026-10-14: the generic zero-issue completeness gate no longer rejects
+`T0Evidence` bundles whose only issues are the structurally absent
+`security_name`/`source_at` fields (BR-050: nullable source fields stay null).
+Such bundles publish with `complete=false`, keep the issues in batch quality,
+and are announced on the `SubscribeMarketEvents` side channel as
+`event_kind="t0_evidence_degraded"` plus a structured server log record. The v2
+response schema and digest are unchanged.
+
 For daily `HistoricalBars`, the current China-calendar-day row is a forming bar
 until 15:00 Asia/Shanghai. Before that boundary the adapter removes only that
 single structurally valid newest row and fetches exactly one older row from the
