@@ -1969,3 +1969,6 @@ mod jin10_release_query_coverage;
 
 #[path = "grpc_limit_pool_review_query_tests.rs"]
 mod limit_pool_review_query_coverage;
+
+#[path = "grpc_derived_index_boundary_tests.rs"]
+mod derived_index_boundary_coverage;
