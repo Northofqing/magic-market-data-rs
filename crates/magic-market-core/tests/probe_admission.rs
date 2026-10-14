@@ -1,3 +1,6 @@
+#[path = "internal/probe_time_series_provider_contract.rs"]
+mod time_series_provider_contract;
+
 use magic_market_core::{
     verify_admitted_batch, verify_admitted_time_series_batch, verify_verified_empty, DataBatch,
     EvidenceTimestamp, ProbeAdmissionError, ProbeAdmissionPolicy, ProbeStatus, Provenance,
@@ -827,4 +830,589 @@ fn stale_diagnostics_preserve_nanosecond_precision() {
         error.to_string(),
         "source_at is stale by 5000000001ns; maximum allowed age is 5000000000ns"
     );
+}
+
+#[derive(Clone, Debug)]
+struct NewestFirstRecord {
+    identity: &'static str,
+    normalized_source_at: &'static str,
+    evidence: SourceEvidence,
+}
+
+fn newest_first_fixture() -> DataBatch<NewestFirstRecord> {
+    let observed = "2026-07-23T18:00:05+08:00";
+    let batch_id = "newest-first-source-window";
+    DataBatch::strict(
+        vec![
+            NewestFirstRecord {
+                identity: "latest",
+                normalized_source_at: "2026-07-23T18:00:00+08:00",
+                evidence: evidence(
+                    ProviderId::Tonghuashun,
+                    observed,
+                    "2026-07-23 18:00:00",
+                    batch_id,
+                ),
+            },
+            NewestFirstRecord {
+                identity: "previous",
+                normalized_source_at: "2026-07-23T09:59:59Z",
+                evidence: evidence(
+                    ProviderId::Tonghuashun,
+                    observed,
+                    "2026-07-23 17:59:59",
+                    batch_id,
+                ),
+            },
+        ],
+        provenance(observed, "2026-07-23 18:00:00", batch_id),
+    )
+}
+
+fn verify_newest_first_fixture(
+    batch: &DataBatch<NewestFirstRecord>,
+    policy: &ProbeAdmissionPolicy,
+) -> Result<ProbeStatus, ProbeAdmissionError> {
+    magic_market_core::verify_admitted_newest_first_batch(
+        batch,
+        policy,
+        |record| &record.evidence,
+        |record| record.normalized_source_at,
+        |record| record.identity.to_owned(),
+    )
+}
+
+#[test]
+fn newest_first_admission_preserves_raw_source_and_checks_normalized_instants() {
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Tonghuashun)
+        .with_max_source_age(Duration::from_secs(5))
+        .unwrap();
+    let batch = newest_first_fixture();
+    assert_eq!(
+        verify_newest_first_fixture(&batch, &policy).unwrap(),
+        ProbeStatus::Admitted
+    );
+    assert_eq!(batch.provenance().source_at(), Some("2026-07-23 18:00:00"));
+    assert_eq!(
+        batch.records()[1].evidence.source_at(),
+        Some("2026-07-23 17:59:59")
+    );
+}
+
+#[test]
+fn newest_first_admission_rejects_incoherent_batch_and_record_evidence() {
+    let original = newest_first_fixture();
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Tonghuashun);
+    let observed = original.provenance().fetched_at();
+    let batch_id = original.provenance().batch_id().unwrap();
+    let raw_source = original.provenance().source_at().unwrap();
+    let missing_source = Provenance::new("fixture", observed)
+        .unwrap()
+        .with_batch_id(batch_id)
+        .unwrap();
+    for (candidate, expected) in [
+        (
+            DataBatch::strict(Vec::new(), original.provenance().clone()),
+            ProbeAdmissionError::EmptyBatch,
+        ),
+        (
+            DataBatch::best_effort(
+                original.records().to_vec(),
+                original.provenance().clone(),
+                vec!["source window truncated".into()],
+            )
+            .unwrap(),
+            ProbeAdmissionError::IncompleteQuality {
+                issues: vec!["source window truncated".into()],
+            },
+        ),
+        (
+            DataBatch::strict(original.records().to_vec(), missing_source),
+            ProbeAdmissionError::MissingSourceTime,
+        ),
+    ] {
+        assert_eq!(
+            verify_newest_first_fixture(&candidate, &policy).unwrap_err(),
+            expected
+        );
+    }
+
+    for (replacement, expected) in [
+        (
+            evidence(ProviderId::Jin10, observed, raw_source, batch_id),
+            ProbeAdmissionError::ProviderMismatch {
+                expected: ProviderId::Tonghuashun,
+                actual: ProviderId::Jin10,
+            },
+        ),
+        (
+            evidence(
+                ProviderId::Tonghuashun,
+                "2026-07-23T18:00:06+08:00",
+                raw_source,
+                batch_id,
+            ),
+            ProbeAdmissionError::ObservedAtMismatch {
+                expected: observed.into(),
+                actual: "2026-07-23T18:00:06+08:00".into(),
+            },
+        ),
+        (
+            evidence(ProviderId::Tonghuashun, observed, raw_source, "other-batch"),
+            ProbeAdmissionError::BatchIdMismatch {
+                expected: batch_id.into(),
+                actual: "other-batch".into(),
+            },
+        ),
+        (
+            SourceEvidence::new(ProviderId::Tonghuashun, observed, batch_id).unwrap(),
+            ProbeAdmissionError::MissingSourceTime,
+        ),
+        (
+            evidence(
+                ProviderId::Tonghuashun,
+                observed,
+                "2026-07-23 17:59:59",
+                batch_id,
+            ),
+            ProbeAdmissionError::SourceAtMismatch {
+                expected: Some(raw_source.into()),
+                actual: Some("2026-07-23 17:59:59".into()),
+            },
+        ),
+    ] {
+        let mut records = original.records().to_vec();
+        records[0].evidence = replacement;
+        let candidate = DataBatch::strict(records, original.provenance().clone());
+        assert_eq!(
+            verify_newest_first_fixture(&candidate, &policy).unwrap_err(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn newest_first_admission_requires_descending_instants_and_unique_valid_identities() {
+    let original = newest_first_fixture();
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Tonghuashun);
+    let mut ascending = original.records().to_vec();
+    ascending[1].normalized_source_at = "2026-07-23T18:00:01+08:00";
+    let candidate = DataBatch::strict(ascending, original.provenance().clone());
+    assert_eq!(
+        verify_newest_first_fixture(&candidate, &policy).unwrap_err(),
+        ProbeAdmissionError::NonDescendingSourceTime {
+            previous: "2026-07-23T18:00:00+08:00".into(),
+            actual: "2026-07-23T18:00:01+08:00".into(),
+        }
+    );
+
+    // Different stories may share an instant; the identity, not time, is unique.
+    let mut same_instant = original.records().to_vec();
+    same_instant[1].normalized_source_at = "2026-07-23T10:00:00Z";
+    let candidate = DataBatch::strict(same_instant, original.provenance().clone());
+    assert_eq!(
+        verify_newest_first_fixture(&candidate, &policy).unwrap(),
+        ProbeStatus::Admitted
+    );
+
+    for invalid_identity in ["", "   ", "story\tbroken", "story\u{007f}broken"] {
+        let mut records = original.records().to_vec();
+        records[1].identity = invalid_identity;
+        let candidate = DataBatch::strict(records, original.provenance().clone());
+        assert_eq!(
+            verify_newest_first_fixture(&candidate, &policy).unwrap_err(),
+            ProbeAdmissionError::EmptyIdentity,
+            "invalid business identity admitted: {invalid_identity:?}"
+        );
+    }
+    let mut duplicate = original.records().to_vec();
+    duplicate[1].identity = " latest ";
+    let candidate = DataBatch::strict(duplicate, original.provenance().clone());
+    assert_eq!(
+        verify_newest_first_fixture(&candidate, &policy).unwrap_err(),
+        ProbeAdmissionError::DuplicateIdentity {
+            identity: "latest".into()
+        }
+    );
+}
+
+#[test]
+fn newest_first_admission_enforces_instant_freshness_without_rewriting_source_time() {
+    let original = newest_first_fixture();
+    let policy = ProbeAdmissionPolicy::new(ProviderId::Tonghuashun)
+        .with_max_source_age(Duration::from_secs(5))
+        .unwrap();
+    for invalid in [
+        "2026-07-23",
+        "2026-07-23T18:00:00",
+        "2026-02-30T18:00:00+08:00",
+        "not-a-timestamp",
+    ] {
+        let mut records = original.records().to_vec();
+        records[1].normalized_source_at = invalid;
+        let candidate = DataBatch::strict(records, original.provenance().clone());
+        assert_eq!(
+            verify_newest_first_fixture(&candidate, &policy).unwrap_err(),
+            ProbeAdmissionError::InvalidTimestamp {
+                field: "normalized_source_at",
+                value: invalid.into()
+            }
+        );
+    }
+    let mut future = original.records().to_vec();
+    future[1].normalized_source_at = "2026-07-23T18:00:05.000000001+08:00";
+    let candidate = DataBatch::strict(future, original.provenance().clone());
+    assert_eq!(
+        verify_newest_first_fixture(&candidate, &policy).unwrap_err(),
+        ProbeAdmissionError::FutureSourceTime {
+            source_at: "2026-07-23T18:00:05.000000001+08:00".into(),
+            observed_at: "2026-07-23T18:00:05+08:00".into()
+        }
+    );
+    let later_observation = "2026-07-23T18:00:05.000000001+08:00";
+    let batch_id = original.provenance().batch_id().unwrap();
+    let mut stale = original.records().to_vec();
+    for record in &mut stale {
+        record.evidence = evidence(
+            ProviderId::Tonghuashun,
+            later_observation,
+            record.evidence.source_at().unwrap(),
+            batch_id,
+        );
+    }
+    let candidate = DataBatch::strict(
+        stale,
+        provenance(later_observation, "2026-07-23 18:00:00", batch_id),
+    );
+    assert_eq!(
+        verify_newest_first_fixture(&candidate, &policy).unwrap_err(),
+        ProbeAdmissionError::StaleSourceTime {
+            age_nanos: 5_000_000_001,
+            max_age_nanos: 5_000_000_000
+        }
+    );
+    // Without a freshness bound the same ordered window remains source-proven.
+    assert_eq!(
+        verify_newest_first_fixture(
+            &candidate,
+            &ProbeAdmissionPolicy::new(ProviderId::Tonghuashun)
+        )
+        .unwrap(),
+        ProbeStatus::Admitted
+    );
+    let invalid_observation = DataBatch::strict(
+        original.records().to_vec(),
+        provenance("2026-07-23T18:00:05", "2026-07-23 18:00:00", batch_id),
+    );
+    assert_eq!(
+        verify_newest_first_fixture(&invalid_observation, &policy).unwrap_err(),
+        ProbeAdmissionError::InvalidTimestamp {
+            field: "observed_at",
+            value: "2026-07-23T18:00:05".into()
+        }
+    );
+}
+
+mod fund_flow_time_series_freshness_release {
+    use magic_market_core::{
+        verify_admitted_time_series_batch, AssetClass, DataBatch, Exchange, FlowInterval,
+        FlowScope, FundFlowPoint, InstrumentId, Money, NonEmptyText, ProbeAdmissionError,
+        ProbeAdmissionPolicy, ProbeStatus, Provenance, ProviderId, SourceEvidence,
+    };
+    use std::time::Duration;
+
+    fn fund_flow_window(observed_at: &str, batch_source_at: &str) -> DataBatch<FundFlowPoint> {
+        let records = [
+            ("2026-07-23T10:00:00Z", 1.25),
+            ("2026-07-23T10:01:00Z", -2.5),
+        ]
+        .into_iter()
+        .map(|(source_at, main_net)| FundFlowPoint {
+            scope: FlowScope::Instrument(
+                InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity).unwrap(),
+            ),
+            interval: FlowInterval::Minute1,
+            period_at: NonEmptyText::new(source_at).unwrap(),
+            main_net: Some(Money::new(main_net).unwrap()),
+            main_ratio: None,
+            super_large_net: None,
+            large_net: None,
+            medium_net: None,
+            small_net: None,
+            evidence: SourceEvidence::new(
+                ProviderId::Eastmoney,
+                observed_at,
+                "eastmoney:fund-flow:latest-point-boundary",
+            )
+            .unwrap()
+            .with_source_at(source_at)
+            .unwrap(),
+        })
+        .collect();
+        let provenance = Provenance::new("offline-fund-flow-window", observed_at)
+            .unwrap()
+            .with_source_at(batch_source_at)
+            .unwrap()
+            .with_batch_id("eastmoney:fund-flow:latest-point-boundary")
+            .unwrap();
+        DataBatch::strict(records, provenance)
+    }
+
+    #[test]
+    fn time_series_freshness_uses_the_final_point_and_preserves_exact_batch_source() {
+        let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney)
+            .with_max_source_age(Duration::from_secs(5))
+            .unwrap();
+        let boundary = fund_flow_window("2026-07-23T10:01:05Z", "2026-07-23T10:01:00Z");
+
+        // The first point is 65 seconds old; only the final point bounds freshness.
+        assert_eq!(
+            verify_admitted_time_series_batch(
+                &boundary,
+                &policy,
+                |point| &point.evidence,
+                |point| point.period_at.as_str().to_owned(),
+            ),
+            Ok(ProbeStatus::Admitted)
+        );
+        assert_eq!(boundary.records().len(), 2);
+        assert!(boundary.quality().is_complete());
+        assert!(boundary.quality().issues().is_empty());
+        assert_eq!(
+            boundary.records()[0].period_at.as_str(),
+            "2026-07-23T10:00:00Z"
+        );
+        assert_eq!(
+            boundary.records()[1].period_at.as_str(),
+            "2026-07-23T10:01:00Z"
+        );
+        assert_eq!(boundary.records()[0].main_net.unwrap().get(), 1.25);
+        assert_eq!(boundary.records()[1].main_net.unwrap().get(), -2.5);
+        assert_eq!(
+            boundary.records()[0].evidence.source_at(),
+            Some("2026-07-23T10:00:00Z")
+        );
+        assert_eq!(
+            boundary.records()[1].evidence.source_at(),
+            Some("2026-07-23T10:01:00Z")
+        );
+        assert_eq!(boundary.provenance().source(), "offline-fund-flow-window");
+        assert_eq!(
+            boundary.provenance().source_at(),
+            Some("2026-07-23T10:01:00Z")
+        );
+        assert_eq!(boundary.provenance().fetched_at(), "2026-07-23T10:01:05Z");
+        assert_eq!(
+            boundary.provenance().batch_id(),
+            Some("eastmoney:fund-flow:latest-point-boundary")
+        );
+        for point in boundary.records() {
+            assert_eq!(point.evidence.provider(), ProviderId::Eastmoney);
+            assert_eq!(point.evidence.observed_at(), "2026-07-23T10:01:05Z");
+            assert_eq!(
+                point.evidence.batch_id(),
+                "eastmoney:fund-flow:latest-point-boundary"
+            );
+        }
+
+        // Every record and the batch share the shifted observation; no earlier
+        // provenance/ordering mismatch can explain the exact stale-age error.
+        let stale = fund_flow_window("2026-07-23T10:01:05.000000001Z", "2026-07-23T10:01:00Z");
+        assert_eq!(
+            verify_admitted_time_series_batch(
+                &stale,
+                &policy,
+                |point| &point.evidence,
+                |point| point.period_at.as_str().to_owned(),
+            ),
+            Err(ProbeAdmissionError::StaleSourceTime {
+                age_nanos: 5_000_000_001,
+                max_age_nanos: 5_000_000_000,
+            })
+        );
+
+        // The two strings denote the same instant, but atomic batch evidence
+        // must retain the final record's exact source string.
+        let equivalent_but_mismatched_source =
+            fund_flow_window("2026-07-23T10:01:05Z", "2026-07-23T18:01:00+08:00");
+        assert_eq!(
+            verify_admitted_time_series_batch(
+                &equivalent_but_mismatched_source,
+                &policy,
+                |point| &point.evidence,
+                |point| point.period_at.as_str().to_owned(),
+            ),
+            Err(ProbeAdmissionError::SourceAtMismatch {
+                expected: Some("2026-07-23T18:01:00+08:00".to_owned()),
+                actual: Some("2026-07-23T10:01:00Z".to_owned()),
+            })
+        );
+    }
+}
+
+mod time_series_clock_public_contract {
+    use magic_market_core::{
+        verify_admitted_time_series_batch, AssetClass, DataBatch, Exchange, FlowInterval,
+        FlowScope, FundFlowPoint, InstrumentId, Money, NonEmptyText, ProbeAdmissionError,
+        ProbeAdmissionPolicy, ProbeStatus, Provenance, ProviderId, SourceEvidence,
+    };
+
+    fn window(first_source_at: Option<&str>, observed_at: &str) -> DataBatch<FundFlowPoint> {
+        let instrument =
+            InstrumentId::new(Exchange::Shanghai, "600519", AssetClass::Equity).unwrap();
+        let records = [
+            ("2026-07-23T10:00:00Z", first_source_at, 1.25),
+            ("2026-07-23T10:01:00Z", Some("2026-07-23T10:01:00Z"), -2.5),
+        ]
+        .into_iter()
+        .map(|(period_at, source_at, main_net)| {
+            let evidence = SourceEvidence::new(
+                ProviderId::Eastmoney,
+                observed_at,
+                "offline:fund-flow:clock-pair",
+            )
+            .unwrap();
+            let evidence = match source_at {
+                Some(source_at) => evidence.with_source_at(source_at).unwrap(),
+                None => evidence,
+            };
+            FundFlowPoint {
+                scope: FlowScope::Instrument(instrument.clone()),
+                interval: FlowInterval::Minute1,
+                period_at: NonEmptyText::new(period_at).unwrap(),
+                main_net: Some(Money::new(main_net).unwrap()),
+                main_ratio: None,
+                super_large_net: None,
+                large_net: None,
+                medium_net: None,
+                small_net: None,
+                evidence,
+            }
+        })
+        .collect();
+        let provenance = Provenance::new("offline-fund-flow-window", observed_at)
+            .unwrap()
+            .with_source_at("2026-07-23T10:01:00Z")
+            .unwrap()
+            .with_batch_id("offline:fund-flow:clock-pair")
+            .unwrap();
+        DataBatch::strict(records, provenance)
+    }
+
+    #[test]
+    fn time_series_rejects_missing_malformed_and_future_record_clocks() {
+        let policy = ProbeAdmissionPolicy::new(ProviderId::Eastmoney).require_source_at();
+        let control = window(Some("2026-07-23T10:00:00Z"), "2026-07-23T10:01:00Z");
+        assert_eq!(
+            verify_admitted_time_series_batch(
+                &control,
+                &policy,
+                |point| &point.evidence,
+                |point| point.period_at.as_str().to_owned(),
+            ),
+            Ok(ProbeStatus::Admitted),
+            "the final source instant may equal the observation instant"
+        );
+        assert_eq!(control.records().len(), 2);
+        assert_eq!(control.records()[0].main_net.unwrap().get(), 1.25);
+        assert_eq!(control.records()[1].main_net.unwrap().get(), -2.5);
+        assert_eq!(
+            control.records()[0].evidence.source_at(),
+            Some("2026-07-23T10:00:00Z")
+        );
+
+        let cases = [
+            (
+                "missing source time",
+                None,
+                "2026-07-23T10:01:00Z",
+                ProbeAdmissionError::MissingSourceTime,
+            ),
+            (
+                "malformed source time",
+                Some("not-a-timestamp"),
+                "2026-07-23T10:01:00Z",
+                ProbeAdmissionError::InvalidTimestamp {
+                    field: "source_at",
+                    value: "not-a-timestamp".into(),
+                },
+            ),
+            (
+                "malformed but exactly matching observation times",
+                Some("2026-07-23T10:00:00Z"),
+                "not-a-timestamp",
+                ProbeAdmissionError::InvalidTimestamp {
+                    field: "observed_at",
+                    value: "not-a-timestamp".into(),
+                },
+            ),
+            (
+                "source one nanosecond after observation",
+                Some("2026-07-23T10:01:00.000000001Z"),
+                "2026-07-23T10:01:00Z",
+                ProbeAdmissionError::FutureSourceTime {
+                    source_at: "2026-07-23T10:01:00.000000001Z".into(),
+                    observed_at: "2026-07-23T10:01:00Z".into(),
+                },
+            ),
+        ];
+        for (case, first_source_at, observed_at, expected_error) in cases {
+            let batch = window(first_source_at, observed_at);
+            assert_eq!(batch.records().len(), 2, "{case}");
+            assert!(batch.quality().is_complete(), "{case}");
+            assert!(batch.quality().issues().is_empty(), "{case}");
+            assert_eq!(batch.provenance().fetched_at(), observed_at, "{case}");
+            assert_eq!(
+                batch.provenance().batch_id(),
+                Some("offline:fund-flow:clock-pair"),
+                "{case}"
+            );
+            assert_eq!(
+                batch.provenance().source_at(),
+                Some("2026-07-23T10:01:00Z"),
+                "{case}"
+            );
+            for point in batch.records() {
+                assert_eq!(point.evidence.provider(), ProviderId::Eastmoney, "{case}");
+                assert_eq!(point.evidence.observed_at(), observed_at, "{case}");
+                assert_eq!(
+                    point.evidence.batch_id(),
+                    "offline:fund-flow:clock-pair",
+                    "{case}"
+                );
+            }
+            let before = batch.clone();
+            assert_eq!(
+                verify_admitted_time_series_batch(
+                    &batch,
+                    &policy,
+                    |point| &point.evidence,
+                    |point| point.period_at.as_str().to_owned(),
+                ),
+                Err(expected_error),
+                "{case}: clock rejection must not be a prior provenance mismatch"
+            );
+            assert_eq!(batch, before, "{case}: rejection must preserve the window");
+            assert_eq!(
+                batch.records()[0].evidence.source_at(),
+                first_source_at,
+                "{case}"
+            );
+            assert_eq!(
+                batch.records()[1].evidence.source_at(),
+                Some("2026-07-23T10:01:00Z"),
+                "{case}"
+            );
+            assert_eq!(
+                batch.records()[0].period_at.as_str(),
+                "2026-07-23T10:00:00Z"
+            );
+            assert_eq!(
+                batch.records()[1].period_at.as_str(),
+                "2026-07-23T10:01:00Z"
+            );
+            assert_eq!(batch.records()[0].main_net.unwrap().get(), 1.25);
+            assert_eq!(batch.records()[1].main_net.unwrap().get(), -2.5);
+        }
+    }
 }

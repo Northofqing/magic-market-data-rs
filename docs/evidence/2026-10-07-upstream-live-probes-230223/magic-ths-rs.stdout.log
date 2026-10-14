@@ -1,0 +1,610 @@
+provider=tonghuashun
+capabilities=ThsCapabilities {
+    research: ResearchCapabilities {
+        reports: false,
+        consensus: true,
+        target_price_consensus: false,
+        semantic_search: false,
+        pdf_download: false,
+        document_body: false,
+    },
+    signals: SignalCapabilities {
+        board_memberships: false,
+        strong_stock_reasons: true,
+        dragon_tiger: false,
+        market_rankings: false,
+        popularity: true,
+        concept_hits: false,
+    },
+    limit_pools: LimitPoolCapabilities {
+        upper: true,
+        broken: false,
+        lower: false,
+        previous_upper: false,
+        reasons: true,
+    },
+}
+
+=== consensus ===
+family=consensus status=admitted
+records=1
+provenance=Provenance {
+    source: "tonghuashun",
+    source_at: Some(
+        "2026-10-07",
+    ),
+    fetched_at: "1791385392.503380500",
+    batch_id: Some(
+        "ths:1791385392.503380500:consensus",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=ConsensusSnapshot {
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600519",
+        asset_class: Equity,
+    },
+    name: NonEmptyText(
+        "贵州茅台",
+    ),
+    estimates: [
+        EarningsEstimate {
+            fiscal_year: PositiveU32(
+                2026,
+            ),
+            eps: Some(
+                FiniteNumber(
+                    67.16,
+                ),
+            ),
+            eps_min: Some(
+                FiniteNumber(
+                    64.7,
+                ),
+            ),
+            eps_max: Some(
+                FiniteNumber(
+                    70.97,
+                ),
+            ),
+            contributor_count: Some(
+                PositiveU32(
+                    46,
+                ),
+            ),
+            revenue: None,
+            profit: None,
+        },
+        EarningsEstimate {
+            fiscal_year: PositiveU32(
+                2027,
+            ),
+            eps: Some(
+                FiniteNumber(
+                    71.08,
+                ),
+            ),
+            eps_min: Some(
+                FiniteNumber(
+                    67.23,
+                ),
+            ),
+            eps_max: Some(
+                FiniteNumber(
+                    75.82,
+                ),
+            ),
+            contributor_count: Some(
+                PositiveU32(
+                    45,
+                ),
+            ),
+            revenue: None,
+            profit: None,
+        },
+        EarningsEstimate {
+            fiscal_year: PositiveU32(
+                2028,
+            ),
+            eps: Some(
+                FiniteNumber(
+                    75.18,
+                ),
+            ),
+            eps_min: Some(
+                FiniteNumber(
+                    69.14,
+                ),
+            ),
+            eps_max: Some(
+                FiniteNumber(
+                    83.83,
+                ),
+            ),
+            contributor_count: Some(
+                PositiveU32(
+                    44,
+                ),
+            ),
+            revenue: None,
+            profit: None,
+        },
+    ],
+    contributor_count: None,
+    evidence: SourceEvidence {
+        provider: Tonghuashun,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-07",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1791385392.503380500",
+        ),
+        batch_id: NonEmptyText(
+            "ths:1791385392.503380500:consensus",
+        ),
+    },
+}
+
+=== strong_stock_reasons ===
+family=strong_stock_reasons status=admitted
+records=1
+provenance=Provenance {
+    source: "tonghuashun",
+    source_at: Some(
+        "2026-07-22",
+    ),
+    fetched_at: "1791385393.206452800",
+    batch_id: Some(
+        "ths:1791385393.206452800:strong-stock:2026-07-22",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=StrongStockReason {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000815",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    reason: NonEmptyText(
+        "算力租赁+东数西算+中国诚通旗下",
+    ),
+    subjects: [
+        NonEmptyText(
+            "算力租赁",
+        ),
+        NonEmptyText(
+            "东数西算",
+        ),
+        NonEmptyText(
+            "中国诚通旗下",
+        ),
+    ],
+    limit_state: None,
+    evidence: SourceEvidence {
+        provider: Tonghuashun,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1791385393.206452800",
+        ),
+        batch_id: NonEmptyText(
+            "ths:1791385393.206452800:strong-stock:2026-07-22",
+        ),
+    },
+}
+
+=== upper_limit_pool ===
+family=upper_limit_pool status=admitted
+records=3
+provenance=Provenance {
+    source: "tonghuashun",
+    source_at: Some(
+        "2026-07-22",
+    ),
+    fetched_at: "1791385394.200165000",
+    batch_id: Some(
+        "ths:1791385394.200165000:upper-limit:2026-07-22",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=LimitPoolEntry {
+    kind: Upper,
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "300779",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    price: Price(
+        69.12,
+    ),
+    change: Ratio {
+        value: 20.0,
+        unit: Percent,
+    },
+    volume: None,
+    turnover: None,
+    sealed_amount: Some(
+        Money(
+            18125752.0,
+        ),
+    ),
+    first_seal_at: Some(
+        NonEmptyText(
+            "2026-07-22T10:20:21+08:00",
+        ),
+    ),
+    last_seal_at: None,
+    break_count: Some(
+        8,
+    ),
+    streak: Some(
+        PositiveU32(
+            1,
+        ),
+    ),
+    industry: None,
+    board_name: None,
+    seal_state: Some(
+        NonEmptyText(
+            "换手板",
+        ),
+    ),
+    reseal_count: None,
+    reason: Some(
+        NonEmptyText(
+            "废塑料化学循环+固废处理+稀土永磁",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Tonghuashun,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1791385394.200165000",
+        ),
+        batch_id: NonEmptyText(
+            "ths:1791385394.200165000:upper-limit:2026-07-22",
+        ),
+    },
+}
+record[1]=LimitPoolEntry {
+    kind: Upper,
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002879",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    price: Price(
+        14.92,
+    ),
+    change: Ratio {
+        value: 10.0295,
+        unit: Percent,
+    },
+    volume: None,
+    turnover: None,
+    sealed_amount: Some(
+        Money(
+            4972836.0,
+        ),
+    ),
+    first_seal_at: Some(
+        NonEmptyText(
+            "2026-07-22T09:32:36+08:00",
+        ),
+    ),
+    last_seal_at: None,
+    break_count: Some(
+        4,
+    ),
+    streak: Some(
+        PositiveU32(
+            2,
+        ),
+    ),
+    industry: None,
+    board_name: None,
+    seal_state: Some(
+        NonEmptyText(
+            "换手板",
+        ),
+    ),
+    reseal_count: None,
+    reason: Some(
+        NonEmptyText(
+            "回购+增持+液冷+电缆附件",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Tonghuashun,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1791385394.200165000",
+        ),
+        batch_id: NonEmptyText(
+            "ths:1791385394.200165000:upper-limit:2026-07-22",
+        ),
+    },
+}
+record[2]=LimitPoolEntry {
+    kind: Upper,
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "603725",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    price: Price(
+        13.48,
+    ),
+    change: Ratio {
+        value: 10.0408,
+        unit: Percent,
+    },
+    volume: None,
+    turnover: None,
+    sealed_amount: Some(
+        Money(
+            12778608.6,
+        ),
+    ),
+    first_seal_at: Some(
+        NonEmptyText(
+            "2026-07-22T09:40:29+08:00",
+        ),
+    ),
+    last_seal_at: None,
+    break_count: Some(
+        4,
+    ),
+    streak: Some(
+        PositiveU32(
+            1,
+        ),
+    ),
+    industry: None,
+    board_name: None,
+    seal_state: Some(
+        NonEmptyText(
+            "换手板",
+        ),
+    ),
+    reseal_count: None,
+    reason: Some(
+        NonEmptyText(
+            "机器人+电子皮肤+高分子饰面材料",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Tonghuashun,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1791385394.200165000",
+        ),
+        batch_id: NonEmptyText(
+            "ths:1791385394.200165000:upper-limit:2026-07-22",
+        ),
+    },
+}
+
+=== popularity ===
+family=popularity status=admitted
+records=3
+provenance=Provenance {
+    source: "tonghuashun",
+    source_at: None,
+    fetched_at: "1791385395.354588900",
+    batch_id: Some(
+        "ths:1791385395.354588900:popularity-hour",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=PopularityRank {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002388",
+        asset_class: Equity,
+    },
+    rank: PositiveU32(
+        1,
+    ),
+    price: None,
+    name: Some(
+        NonEmptyText(
+            "新亚制程",
+        ),
+    ),
+    rank_change: Some(
+        FiniteNumber(
+            0.0,
+        ),
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 10.0363,
+            unit: Percent,
+        },
+    ),
+    heat: Some(
+        FiniteNumber(
+            369255.0,
+        ),
+    ),
+    concepts: [
+        NonEmptyText(
+            "比亚迪概念",
+        ),
+        NonEmptyText(
+            "新能源汽车",
+        ),
+    ],
+    tag: Some(
+        NonEmptyText(
+            "首板涨停",
+        ),
+    ),
+    quote_evidence: None,
+    evidence: SourceEvidence {
+        provider: Tonghuashun,
+        source_at: None,
+        observed_at: NonEmptyText(
+            "1791385395.354588900",
+        ),
+        batch_id: NonEmptyText(
+            "ths:1791385395.354588900:popularity-hour",
+        ),
+    },
+}
+record[1]=PopularityRank {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002487",
+        asset_class: Equity,
+    },
+    rank: PositiveU32(
+        2,
+    ),
+    price: None,
+    name: Some(
+        NonEmptyText(
+            "大金重工",
+        ),
+    ),
+    rank_change: Some(
+        FiniteNumber(
+            0.0,
+        ),
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 7.8267,
+            unit: Percent,
+        },
+    ),
+    heat: Some(
+        FiniteNumber(
+            222654.0,
+        ),
+    ),
+    concepts: [
+        NonEmptyText(
+            "海工装备",
+        ),
+        NonEmptyText(
+            "风电",
+        ),
+    ],
+    tag: Some(
+        NonEmptyText(
+            "持续上榜",
+        ),
+    ),
+    quote_evidence: None,
+    evidence: SourceEvidence {
+        provider: Tonghuashun,
+        source_at: None,
+        observed_at: NonEmptyText(
+            "1791385395.354588900",
+        ),
+        batch_id: NonEmptyText(
+            "ths:1791385395.354588900:popularity-hour",
+        ),
+    },
+}
+record[2]=PopularityRank {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000678",
+        asset_class: Equity,
+    },
+    rank: PositiveU32(
+        3,
+    ),
+    price: None,
+    name: Some(
+        NonEmptyText(
+            "襄阳轴承",
+        ),
+    ),
+    rank_change: Some(
+        FiniteNumber(
+            0.0,
+        ),
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 9.9829,
+            unit: Percent,
+        },
+    ),
+    heat: Some(
+        FiniteNumber(
+            204269.0,
+        ),
+    ),
+    concepts: [
+        NonEmptyText(
+            "减速器",
+        ),
+        NonEmptyText(
+            "农机",
+        ),
+    ],
+    tag: Some(
+        NonEmptyText(
+            "持续上榜",
+        ),
+    ),
+    quote_evidence: None,
+    evidence: SourceEvidence {
+        provider: Tonghuashun,
+        source_at: None,
+        observed_at: NonEmptyText(
+            "1791385395.354588900",
+        ),
+        batch_id: NonEmptyText(
+            "ths:1791385395.354588900:popularity-hour",
+        ),
+    },
+}
+live_probe_status=admitted

@@ -601,3 +601,36 @@ pub fn fetch_context_bars_for_adjust_with_tier<F: Fn(&[u8]) -> Result<Vec<u8>>>(
 #[cfg(test)]
 #[path = "../../tests/internal/net_utils.rs"]
 mod tests;
+
+#[cfg(feature = "test-support")]
+impl RateLimiter {
+    pub(super) fn wait_isolated_quote(
+        &self,
+        permit: &crate::net::isolation::QueryPermit,
+    ) -> Result<()> {
+        permit.remaining()?;
+        if !self.enabled.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let reserved = {
+            let mut inner = crate::net::isolation::lock_until(&self.inner, permit.deadline)?;
+            permit.remaining()?;
+            let now = Instant::now();
+            let reserved = inner
+                .last_request
+                .and_then(|last| last.checked_add(inner.min_interval))
+                .filter(|scheduled| *scheduled > now)
+                .unwrap_or(now);
+            inner.last_request = Some(reserved);
+            reserved
+        };
+        loop {
+            let remaining = permit.remaining()?;
+            let wait = reserved.saturating_duration_since(Instant::now());
+            if wait.is_zero() {
+                return Ok(());
+            }
+            std::thread::sleep(wait.min(remaining).min(Duration::from_millis(1)));
+        }
+    }
+}

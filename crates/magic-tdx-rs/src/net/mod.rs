@@ -4,6 +4,7 @@ pub mod connection;
 pub mod direct_client;
 pub mod f10_client;
 pub mod finance_client;
+mod isolation;
 pub mod packet;
 pub mod pool;
 pub mod smart_client;

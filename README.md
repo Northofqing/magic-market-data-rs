@@ -352,12 +352,47 @@ bash tools/compliance/check.sh
 bash tools/docs/check_links.sh
 ```
 
-完整发布门：
+完整发布门（POSIX）：
 
 ```bash
 bash tools/release/preflight.sh
 bash tools/release/package.sh
 ```
+
+Windows 使用现有 Rust/MSVC 工具链和 PowerShell 7.3+，生成 Windows `.exe`；
+无需 Bash 或 WSL。原生预检必须提供当前候选的真实覆盖率报告，整体 80%、关键路径
+95% 的门槛不变：
+
+```powershell
+pwsh -NoProfile -NonInteractive -File tools/release/preflight.ps1 -CoverageJson C:\path\to\coverage.json
+# 全部门禁通过并提交当前候选后，再打包；脚本拒绝脏工作树和已有输出目录。
+pwsh -NoProfile -NonInteractive -File tools/release/package.ps1
+```
+
+原生预检保存各命令的原始输出、退出码和回执；隔离构建目录在失败后保留。POSIX
+脚本仍用于对应平台，其 Bash 语法检查不由 Windows 原生预检冒充执行。
+
+## 线上能力探测
+
+`tools/probes/local_bridge_capability_probe.py` 只读探测 ExternalV1 / LocalBridgeV1
+线上能力：不写入、不改服务端状态、不重启任何服务。每个 op 使用独立临时目录，
+支持 `--repeat` 复跑、`--json` 留证、`--selftest` 自检：
+
+```bash
+# Windows 自带 curl 无 HTTP/2 时，回退到 vendored python-h2（PYTHONPATH 指向 pylibs）
+python tools/probes/local_bridge_capability_probe.py   --addr https://10.211.55.3:50051   --token-file <runtime>/client-bundle/bearer-token.txt   --tls-ca <runtime>/tls/ca.pem --tls-cert <runtime>/tls/tdx-agent.pem   --tls-key <runtime>/tls/tdx-agent-key.pem   --table target/bridge-probe/upstream_table.json --max-time 30   --json target/bridge-probe/probe.json
+```
+
+探测表逐 op 给出 schema 名、schema 版本与 params JSON；服务端按合同报错驱动收敛
+参数（缺字段、provider 路由、业务时间门等）。2026-10-14 对正式部署实测 18 op：
+16 OK，其余为环境前置（TDX 本地终端未运行）或业务时间门（Top-N 15:35 收盘门），
+均 fail-closed，非服务端缺陷。
+
+服务端构建身份以 `GetHealth.build_identity` 四字段自报
+（service_version / source_revision / contract_sha256 / binary_sha256）。
+对端客户端钉死身份时，以发布交换文件（client-bundle 目录的
+REQUEST/RESPONSE 文档对）确认当前部署身份；任何重建 + 部署都必须先把新四字段
+交付对端冻结后再上线，避免"钉死—重建—再失效"。
 
 ## 进一步文档
 

@@ -1,0 +1,1 @@
+Error: Decode("unknown field `list_date`, expected one of `thscode`, `ticker`, `name`, `exchange`, `asset_type`, `currency` at line 1 column 250")

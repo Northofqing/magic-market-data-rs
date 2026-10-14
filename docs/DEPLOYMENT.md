@@ -69,6 +69,21 @@ git commit
 bash tools/release/package.sh
 ```
 
+以上为 POSIX 入口。Windows 使用现有 Rust/MSVC 和 PowerShell 7.3+，不依赖 Bash：
+
+```powershell
+cargo fetch --locked
+pwsh -NoProfile -NonInteractive -File tools/release/preflight.ps1 -CoverageJson C:\path\to\coverage.json
+git commit
+pwsh -NoProfile -NonInteractive -File tools/release/package.ps1
+```
+
+`-CoverageJson`（也可通过 `MAGIC_COVERAGE_JSON` 提供）必须指向当前候选的真实完整
+覆盖率报告；原生发布门不提供跳过覆盖率选项。整体 80%、关键路径 95% 与正覆盖
+要求保持不变。原生预检在 `target/preflight/run.*` 保存各检查的原始 stdout/stderr、
+原生退出码、输入摘要和回执，隔离构建及失败证据不自动删除。Windows 只执行原生
+PowerShell 语法与对应回归测试；保留的 POSIX 脚本仍由 POSIX 环境验证。
+
 预检先打印当前工具链版本，再在每次新建的隔离 target 目录中，以离线模式运行格式、
 全目标编译、全部测试、严格 Clippy、rustdoc、doctest、文档链接、合规和 diff
 空白检查，避免旧元数据污染门禁。脚本不安装或切换工具链。打包脚本随后用锁文件
@@ -154,8 +169,8 @@ target/dist/GIT_SHA/
 revision 作为 `MAGIC_MARKET_SOURCE_REVISION` 编入服务；上线探针必须确认
 `GetHealth.build_identity.source_revision` 与 `RELEASE_REVISION` 相同，并校验协议 descriptor
 与当前进程二进制的 SHA-256 都为完整摘要。POSIX 发布
-脚本需要 Bash 与常用 Unix 工具；Windows 原生制品应在 Git Bash 或 Windows CI
-中生成。WSL 只能生成 Linux 制品，不能冒充 Windows 原生构建。
+脚本需要 Bash 与常用 Unix 工具；Windows 原生制品使用 `tools/release/package.ps1`
+和 Windows MSVC 工具链生成。WSL 的 Linux 制品不能冒充 Windows 原生构建。
 打包脚本根据 Rust host triple 决定是否构建本地 TDX pair；现有对 `bin/` 的递归哈希
 自动覆盖这两个文件。二进制进入包不改变 admission registry 或编译期常量。
 

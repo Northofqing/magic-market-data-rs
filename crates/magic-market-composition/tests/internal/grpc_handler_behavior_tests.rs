@@ -1963,3 +1963,9 @@ mod upstream_boundary_coverage;
 
 #[path = "grpc_sina_news_projection_tests.rs"]
 mod sina_news_projection_coverage;
+
+#[path = "grpc_jin10_release_query_tests.rs"]
+mod jin10_release_query_coverage;
+
+#[path = "grpc_limit_pool_review_query_tests.rs"]
+mod limit_pool_review_query_coverage;

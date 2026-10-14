@@ -1,0 +1,16 @@
+{
+  "request_id": "offline-current-auction-public-v9",
+  "operation": "CurrentAuctionObservations",
+  "preferred_provider": "HithinkFinance",
+  "allow_unadmitted": false,
+  "schema": "magic.market.current_auction_observations.request",
+  "schema_version": 1,
+  "maximum_payload_bytes": 16384,
+  "payload": {
+    "instruments": [
+      {"exchange": "Shanghai", "code": "600396", "asset_class": "Equity"},
+      {"exchange": "Shenzhen", "code": "000001", "asset_class": "Equity"}
+    ],
+    "stage": "live"
+  }
+}

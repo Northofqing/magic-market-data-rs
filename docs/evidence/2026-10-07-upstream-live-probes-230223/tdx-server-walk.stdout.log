@@ -1,0 +1,94 @@
+code=600519 market=1 category=9 count=5 start=0 fq=0
+PRIMARY/国泰君安8 117.34.114.14:7709 body_len=2 declared_count=0 head=[00 00] -> OK n=0 first= last=
+PRIMARY/国泰君安9 117.34.114.15:7709 body_len=2 declared_count=0 head=[00 00] -> OK n=0 first= last=
+PRIMARY/国泰君安10 117.34.114.16:7709 body_len=2 declared_count=0 head=[00 00] -> OK n=0 first= last=
+PRIMARY/国泰君安11 117.34.114.17:7709 body_len=2 declared_count=0 head=[00 00] -> OK n=0 first= last=
+PRIMARY/国泰君安12 117.34.114.18:7709 body_len=2 declared_count=0 head=[00 00] -> OK n=0 first= last=
+PRIMARY/国泰君安13 117.34.114.20:7709 body_len=2 declared_count=0 head=[00 00] -> OK n=0 first= last=
+PRIMARY/国泰君安14 117.34.114.27:7709 body_len=2 declared_count=0 head=[00 00] -> OK n=0 first= last=
+KNOWN/杭州联通J2 60.12.136.250:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/华林5 218.106.92.182:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/杭州电信J3 218.75.126.9:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/华林7 220.178.55.71:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/杭州电信J2 115.238.56.198:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/上海电信Z1 180.153.18.170:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/杭州电信J1 60.191.117.167:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/杭州电信J4 115.238.90.165:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/华林6 218.106.92.183:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/华林8 220.178.55.86:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/安信15 59.36.5.11:7709 body_len=2 declared_count=800 head=[20 03] -> ERR [E2103] response length mismatch: security bar row 0 is truncated
+KNOWN/国泰君安7 117.34.114.13:7709 body_len=2 declared_count=0 head=[00 00] -> OK n=0 first= last=
+KNOWN/长城国瑞电信1 218.85.139.19:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/长城国瑞电信2 218.85.139.20:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/长城国瑞网通 58.23.131.163:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/上海电信主站Z2 180.153.18.171:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/北京联通主站Z1 202.108.253.130:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/北京联通主站Z2 202.108.253.131:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/杭州联通主站J1 124.160.88.183:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/杭州华数主站J1 218.108.98.244:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/杭州华数主站J2 218.108.47.69:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/义乌移动主站J1 223.94.89.115:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/青岛联通主站W1 218.57.11.101:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/青岛电信主站W1 58.58.33.123:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/深圳电信主站Z1 14.17.75.71:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/云行情上海电信Z1 114.80.63.12:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/云行情上海电信Z2 114.80.63.35:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/上海电信主站Z3 180.153.39.51:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/招商证券深圳行情 119.147.212.81:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华泰证券(南京电信) 221.231.141.60:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华泰证券(上海电信) 101.227.73.20:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华泰证券(上海电信二) 101.227.77.254:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华泰证券(深圳电信) 14.215.128.18:7709 connect_error=Server disconnected
+KNOWN/华泰证券(武汉电信) 59.173.18.140:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华泰证券(天津联通) 60.28.23.80:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华泰证券(沈阳联通) 218.60.29.136:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华泰证券(南京联通) 122.192.35.44:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信1 112.95.140.74:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信2 112.95.140.92:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信3 112.95.140.93:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信4 114.80.149.19:7709 connect_error=Server disconnected
+KNOWN/安信5 114.80.149.21:7709 connect_error=Server disconnected
+KNOWN/安信6 114.80.149.22:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信7 114.80.149.91:7709 connect_error=Server disconnected
+KNOWN/安信8 114.80.149.92:7709 connect_error=Server disconnected
+KNOWN/安信9 121.14.104.60:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信10 121.14.104.66:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信11 123.126.133.13:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信12 123.126.133.14:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信13 123.126.133.21:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/安信14 211.139.150.61:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发2 123.138.29.107:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发3 123.138.29.108:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发4 124.232.142.29:7709 connect_error=Server disconnected
+KNOWN/广发5 183.57.72.11:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发6 183.57.72.12:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发7 183.57.72.13:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发8 183.57.72.15:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发9 183.57.72.21:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发10 183.57.72.22:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发11 183.57.72.23:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/广发12 183.57.72.24:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国泰君安1 113.105.92.100:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国泰君安2 113.105.92.101:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国泰君安3 113.105.92.102:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国泰君安4 113.105.92.103:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国泰君安5 113.105.92.104:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国泰君安6 113.105.92.99:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国泰君安15 117.34.114.30:7709 connect_error=Server disconnected
+KNOWN/国泰君安16 117.34.114.31:7709 connect_error=Server disconnected
+KNOWN/国信2 183.60.224.11:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国信3 58.210.106.91:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/国信4 58.63.254.216:7709 connect_error=Server disconnected
+KNOWN/国信5 58.63.254.219:7709 connect_error=Server disconnected
+KNOWN/国信6 58.63.254.247:7709 connect_error=Server disconnected
+KNOWN/海通6 222.161.249.156:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/海通7 42.123.69.62:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华林1 120.55.172.97:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华林2 139.217.20.27:7709 connect_error=Connection error: recv failed: 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。 (os error 10060)
+KNOWN/华林3 202.100.166.21:7709 connect_error=Server disconnected
+
+=== summary ===
+walked                = 87
+reachable+parsed_ok   = 8
+reachable+decode_err  = 11
+unreachable           = 68

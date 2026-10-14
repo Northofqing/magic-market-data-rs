@@ -1,0 +1,12 @@
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(1) } } Some(2976250.2) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(2) } } Some(2995572.97) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(3) } } Some(3047952.16) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(4) } } Some(3011941.98) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(5) } } Some(3018506.73) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(6) } } Some(3050161.54) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(7) } } Some(3033060.78) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(8) } } Some(3050461.27) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(9) } } Some(3094798.24) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(10) } } Some(3097092.01) 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(11) } } None 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z
+M2 EconomicPeriod { value: Monthly { year: PositiveU32(2024), month: PositiveU32(12) } } None 亿元人民币 batch=pbc-money-supply:2024:2026-10-07T15:03:57.0613031Z

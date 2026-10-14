@@ -1,0 +1,3 @@
+worldbank_record code=NY.GDP.MKTP.CD period=2024 value=Some(29298013000000.0) unit=current US$ source_at=Some("2026-07-13")
+worldbank_probe_records=1 admission_scope=source:2/country:USA/NY.GDP.MKTP.CD/2024
+live_probe_status=passed

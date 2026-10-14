@@ -1,0 +1,7 @@
+historical records=4 source_at=Some("unix-ms:1787241600000") complete=true
+historical asset=index records=4 source_at=Some("unix-ms:1787241600000") complete=true
+historical asset=etf records=4 source_at=Some("unix-ms:1787241600000") complete=true
+financial kind=Income records=20 source_at=Some("unix-ms:1786723200000") complete=true
+financial kind=Balance records=20 source_at=Some("unix-ms:1786723200000") complete=true
+financial kind=CashFlow records=20 source_at=Some("unix-ms:1786723200000") complete=true
+corporate_actions records=3 source_at=None complete=true

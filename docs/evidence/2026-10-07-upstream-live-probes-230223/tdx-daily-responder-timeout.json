@@ -1,0 +1,19 @@
+{
+  "id": "tdx-daily-19-server-timeout",
+  "package": "magic-tdx-rs",
+  "example": "e2103_server_walk",
+  "args": [
+    "600519",
+    "4",
+    "5",
+    "1",
+    "117.34.114.14,117.34.114.15,117.34.114.16,117.34.114.17,117.34.114.18,117.34.114.20,117.34.114.27,60.12.136.250,218.106.92.182,218.75.126.9,220.178.55.71,115.238.56.198,180.153.18.170,60.191.117.167,115.238.90.165,218.106.92.183,220.178.55.86,59.36.5.11,117.34.114.13"
+  ],
+  "status": "timeout",
+  "exit_code": null,
+  "timeout_seconds": 150,
+  "error": "subprocess.TimeoutExpired observed in exec session 80673; the process was terminated by subprocess.run",
+  "reported_at_utc": "2026-10-07T15:21:03.387859+00:00",
+  "output_retained": false,
+  "limitation": "The timeout exception was preserved in the tool output, but this preparatory helper did not persist partial process output. No upstream response is inferred from this attempt."
+}

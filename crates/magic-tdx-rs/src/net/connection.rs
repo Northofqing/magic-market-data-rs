@@ -3,12 +3,24 @@ use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::time::Duration;
 
 use crate::error::{Result, TdxError};
+#[cfg(feature = "test-support")]
+use crate::net::isolation::{Attempt, IsolationScope, QueryPermit};
+#[cfg(feature = "test-support")]
+use std::sync::Arc;
+#[cfg(feature = "test-support")]
+use std::time::Instant;
 
 trait ConnectionStream: Read + Write + Send {
     fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
     fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
     fn shutdown(&self, how: Shutdown) -> std::io::Result<()>;
     fn peer_addr(&self) -> std::io::Result<SocketAddr>;
+    #[cfg(feature = "test-support")]
+    fn authorize_query(&mut self, _permit: &QueryPermit) -> Result<()> {
+        Err(TdxError::Unsupported(
+            "unscoped stream cannot authorize isolated query".into(),
+        ))
+    }
 }
 
 impl ConnectionStream for TcpStream {
@@ -101,6 +113,125 @@ impl TcpConnection {
 
     pub fn is_open(&self) -> bool {
         self.stream.peer_addr().is_ok()
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl TcpConnection {
+    pub(super) fn connect_isolated(
+        endpoint: std::net::SocketAddrV4,
+        attempt: &Attempt,
+    ) -> Result<Self> {
+        let timeout = attempt.remaining()?;
+        let scope = Arc::clone(&attempt.scope);
+        let (ticket, epoch) = attempt.io_key();
+        Self::connect_with(
+            &endpoint.ip().to_string(),
+            endpoint.port(),
+            timeout.as_secs_f64(),
+            |address, _| {
+                if address != SocketAddr::V4(endpoint) {
+                    return Err(std::io::Error::other("isolated address mismatch"));
+                }
+                let stream = Arc::new(TcpStream::connect_timeout(
+                    &address,
+                    attempt
+                        .remaining()
+                        .map_err(|error| std::io::Error::other(error.to_string()))?,
+                )?);
+                // One OS socket for I/O and cancellation. Duplicating a newly
+                // connected Windows socket can produce an unconnected control handle.
+                attempt
+                    .register(Arc::clone(&stream))
+                    .map_err(|error| std::io::Error::other(error.to_string()))?;
+                Ok(Box::new(ScopedStream {
+                    stream,
+                    scope,
+                    ticket,
+                    epoch,
+                    deadline: attempt.deadline,
+                    query: None,
+                }) as Box<dyn ConnectionStream>)
+            },
+        )
+    }
+}
+
+#[cfg(feature = "test-support")]
+struct ScopedStream {
+    stream: Arc<TcpStream>,
+    scope: Arc<IsolationScope>,
+    ticket: u64,
+    epoch: u64,
+    deadline: Instant,
+    query: Option<u64>,
+}
+
+#[cfg(feature = "test-support")]
+impl Read for ScopedStream {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        loop {
+            // Shared-socket shutdown does not replace cancellation checks.
+            // Keep the original operation deadline across every bounded read.
+            let remaining =
+                self.scope
+                    .io_remaining(self.ticket, self.epoch, self.deadline, self.query)?;
+            self.stream
+                .set_read_timeout(Some(remaining.min(Duration::from_millis(50))))?;
+            match (&*self.stream).read(buffer) {
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                    ) => {}
+                result => return result,
+            }
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl Write for ScopedStream {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        let timeout =
+            self.scope
+                .io_remaining(self.ticket, self.epoch, self.deadline, self.query)?;
+        self.stream.set_write_timeout(Some(timeout))?;
+        (&*self.stream).write(buffer)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.scope
+            .io_remaining(self.ticket, self.epoch, self.deadline, self.query)?;
+        (&*self.stream).flush()
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl ConnectionStream for ScopedStream {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        self.stream.set_read_timeout(timeout)
+    }
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        self.stream.set_write_timeout(timeout)
+    }
+    fn shutdown(&self, how: Shutdown) -> std::io::Result<()> {
+        self.stream.shutdown(how)
+    }
+    fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+        self.stream.peer_addr()
+    }
+    fn authorize_query(&mut self, permit: &QueryPermit) -> Result<()> {
+        let query = permit.authorize(&self.scope, self.ticket, self.epoch)?;
+        self.deadline = permit.deadline;
+        self.query = Some(query);
+        Ok(())
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl TcpConnection {
+    pub(super) fn authorize_isolated_query(&mut self, permit: &QueryPermit) -> Result<()> {
+        self.stream.authorize_query(permit)
     }
 }
 

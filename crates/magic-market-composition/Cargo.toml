@@ -48,3 +48,6 @@ time = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+magic-tdx-rs = { path = "../magic-tdx-rs", version = "=0.2.0", features = ["test-support"] }

@@ -11,7 +11,7 @@
 | SZSE | `RealtimeQuotes`、`OrderBooks` | `000858`：Quote + 完整五档 | 数量按源端“手”保留；不推断集合竞价 |
 | SZSE | `DragonTigerData` | `000603 / 2026-07-23`：2 条榜单；首条完整买五卖五 | 完整拉取列表分页，详情按完整席位组返回 |
 | HKEX | `NorthboundDailyStatistics` | `2026-07-22` 沪股通/深股通各 1 条及各自 Top10 | quota 的 `999,999,999` 哨兵保留为 `Unavailable`，不猜测余额 |
-| CFFEX | 生产 `FuturesDeliveryCalendar`；诊断 `probe_futures_delivery_calendar` | 生产范围是版本化、内置的 2026 IF/IH/IC/IM 月度交割表，运行时零网络；明文通知诊断仍可显式运行 | 生产只接受 2026，最后交易日=交割日，方式=`Cash`；其他年份在 I/O 前 `Unsupported`，明文 HTTP 结果永不提升生产表 |
+| CFFEX | 生产 `FuturesDeliveryCalendar`；诊断 `probe_futures_delivery_calendar` | 生产范围是版本化、内置的 2026 IF/IH/IC/IM 条件性计划交割表，运行时零网络；明文通知诊断仍可显式运行 | 生产只接受 2026，计划最后交易日=计划交割日，方式=`Cash`；不是已交割事实，后续交易所调整可改变日期；其他年份在 I/O 前 `Unsupported`，明文 HTTP 结果永不提升生产表 |
 
 ## 端点和请求边界
 
@@ -50,10 +50,10 @@ HKEX DailyStat 映射两个北向通道的 CNY 成交额、成交笔数、ETF �
 证券代码补足六位，超过 JavaScript 精确整数范围的计数、负金额、日期/通道错配、
 非 JavaScript MIME 或不完整 Top10 都会失败。
 
-CFFEX 正式 Provider 使用仓库内版本 `cffex-equity-index-delivery-2026-v1`，运行时不
+CFFEX 正式 Provider 使用仓库内版本 `cffex-equity-index-planned-delivery-2026-v2`，运行时不
 访问通知站点，也不根据“第三个周五”或本地交易日历计算日期。每个月精确返回 IF、IH、
 IC、IM 四个合约，`last_trading_date` 与 `delivery_date` 均取下表固定日期，交割方式为
-`Cash`：
+`Cash`。这些是规则与已公布假期推导的条件性计划，不证明实际交割已经发生：
 
 | 月份 | 日期 | 月份 | 日期 | 月份 | 日期 |
 | --- | --- | --- | --- | --- | --- |
@@ -63,9 +63,18 @@ IC、IM 四个合约，`last_trading_date` 与 `delivery_date` 均取下表固�
 | 04 | 2026-04-17 | 08 | 2026-08-21 | 12 | 2026-12-18 |
 
 批次身份绑定固定表版本与月份；本地 Asia/Shanghai 当前时间只写入
-`observed_at`，批次和记录均不伪造 `source_at`。`notice_url` 是官方 HTTPS 目录的
-规范引用，不表示本次响应发生了网络抓取。2025、2027 及后续年份都必须先新增经审核
-的版本化表和测试，不能在运行时自动外推。
+`observed_at`，批次和记录均不伪造 `source_at`。Provider 内部类型的 `notice_url`
+承载产品规则 URL，不是逐月公告；对外 gRPC v2 明确投影为 `rule_url`，同时给出
+`holiday_calendar_url`、`schedule_status="Planned"` 和
+`date_basis="CffexRuleAndPublishedHolidays"`，不输出 `notice_url`。详见
+[`grpc-futures-delivery-v2.md`](grpc-futures-delivery-v2.md)。2025、2027 及后续年份都必须
+先新增经审核的版本化表和测试，不能在运行时自动外推。异常停市或后续交易所决定可
+改变计划日期；当前版本没有自动覆盖路径，必须保留新证据、审核新版本、测试并发布。
+
+以下 2026-08-18 内容保留为历史审核记录，不代表当前逐月确认或重新联网验收。
+后续 [2026-09-27 来源审核](research/cffex-futures-delivery-2026.md) 将产品规则与
+国务院假期通知作为计划依据，并明确该次审核未独立取得中金所休市通知正文；不得将
+下述历史表述或计划日期升级为已确认交割事实。
 
 2026-08-18 的官方事实审核使用 CFFEX 的
 [IF](https://www.cffex.com.cn/hs300/)、

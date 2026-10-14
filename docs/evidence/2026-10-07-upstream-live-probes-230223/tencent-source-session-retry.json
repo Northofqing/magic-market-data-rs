@@ -1,0 +1,24 @@
+{
+  "id": "tencent-source-session-retry",
+  "package": "magic-tencent-rs",
+  "example": "live_probe",
+  "status": "completed",
+  "exit_code": 0,
+  "started_at_utc": "2026-10-07T15:03:47.514315+00:00",
+  "finished_at_utc": "2026-10-07T15:03:49.905914+00:00",
+  "elapsed_seconds": 2.392,
+  "binary_sha256": "00ebd9d7fe236abbe2e57b30baed9fef14966c7e44d7c45b0569511a27d2b0d4",
+  "environment_overrides": {
+    "MAGIC_TENCENT_HISTORY_DATE": "2026-09-30"
+  },
+  "date_basis": {
+    "source_log": "docs/evidence/2026-10-07-upstream-live-probes-230223/magic-tencent-rs.stdout.log",
+    "field": "market_stat code=600396 source_at; date used only as requested history date"
+  },
+  "stdout_log": "docs/evidence/2026-10-07-upstream-live-probes-230223/tencent-source-session-retry.stdout.log",
+  "stderr_log": "docs/evidence/2026-10-07-upstream-live-probes-230223/tencent-source-session-retry.stderr.log",
+  "stdout_sha256": "86b82ee6364fd49bea40306d2a964adbaf152cb387665835533403e3b3f5bc18",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error_tail": "",
+  "initial_failure_preserved": true
+}

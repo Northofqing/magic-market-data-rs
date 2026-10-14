@@ -1,0 +1,63 @@
+{
+  "provider": "HithinkFinance",
+  "batch_id": "offline-current-auction-source-v9",
+  "complete": true,
+  "observed_at": "unix-ms:1787386686058",
+  "source_at": null,
+  "repository_admitted": true,
+  "diagnostic_blocker": null,
+  "record_schema": "magic.market.current_auction_observation",
+  "record_schema_version": 1,
+  "records": [
+    {
+      "instrument": {"exchange": "Shanghai", "code": "600396", "asset_class": "Equity"},
+      "name": "离线样本一",
+      "requested_stage": "live",
+      "auction_phase": "matching",
+      "data_status": "live",
+      "auction_price": 10.25,
+      "pre_close_price": 10.0,
+      "auction_pct": {"value": 2.5, "unit": "Percent"},
+      "auction_volume_shares": 1250.0,
+      "auction_amount": 12812.5,
+      "auction_unmatched": 25.0,
+      "auction_turnover_pct": {"value": 0.012, "unit": "Percent"},
+      "auction_volume_ratio": {"value": 1.25, "unit": "Decimal"},
+      "auction_yesterday_ratio_pct": {"value": 101.0, "unit": "Percent"},
+      "float_market_cap": 1000000.0,
+      "last_price": 10.25,
+      "open_price": 10.25,
+      "evidence": {
+        "provider": "Tonghuashun",
+        "source_at": null,
+        "observed_at": "unix-ms:1787386686058",
+        "batch_id": "offline-current-auction-source-v9"
+      }
+    },
+    {
+      "instrument": {"exchange": "Shenzhen", "code": "000001", "asset_class": "Equity"},
+      "name": "离线样本二",
+      "requested_stage": "live",
+      "auction_phase": "matching",
+      "data_status": "live",
+      "auction_price": null,
+      "pre_close_price": 12.2,
+      "auction_pct": {"value": 0.0, "unit": "Percent"},
+      "auction_volume_shares": 0.0,
+      "auction_amount": 0.0,
+      "auction_unmatched": -321.0,
+      "auction_turnover_pct": {"value": 0.0, "unit": "Percent"},
+      "auction_volume_ratio": null,
+      "auction_yesterday_ratio_pct": null,
+      "float_market_cap": null,
+      "last_price": null,
+      "open_price": null,
+      "evidence": {
+        "provider": "Tonghuashun",
+        "source_at": null,
+        "observed_at": "unix-ms:1787386686058",
+        "batch_id": "offline-current-auction-source-v9"
+      }
+    }
+  ]
+}

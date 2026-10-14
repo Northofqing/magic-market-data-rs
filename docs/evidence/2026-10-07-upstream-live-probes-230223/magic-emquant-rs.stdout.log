@@ -1,0 +1,7 @@
+provider=eastmoney-emquant bridge=C:\DevelopFile\magic-market-data-rs\target/emquant\emquant-snapshot.exe capabilities=Capabilities { quotes: true, bars: true, minute: true, trades: false, fundamentals: false, corporate_actions: false, blocks: false, money_flow: true, order_book: true, auction: false, security_metadata: false }
+quotes=error error=EMQuant bridge failed: EMQuant login failed with code 10001004 (EQERR_ACCESS_EXPIRE: the account's EMQuant API entitlement has expired)
+order_books=error error=EMQuant bridge failed: EMQuant login failed with code 10001004 (EQERR_ACCESS_EXPIRE: the account's EMQuant API entitlement has expired)
+money_flows=error error=EMQuant bridge failed: EMQuant login failed with code 10001004 (EQERR_ACCESS_EXPIRE: the account's EMQuant API entitlement has expired)
+auctions unsupported_or_error=unsupported EMQuant capability: opening-auction matched and unmatched fields are not verified in EMQuant
+daily_bars=error error=EMQuant bridge failed: EMQuant login failed with code 10001004 (EQERR_ACCESS_EXPIRE: the account's EMQuant API entitlement has expired)
+minute5_bars=error error=EMQuant bridge failed: EMQuant login failed with code 10001004 (EQERR_ACCESS_EXPIRE: the account's EMQuant API entitlement has expired)

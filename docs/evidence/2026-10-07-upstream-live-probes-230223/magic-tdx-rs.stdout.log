@@ -1,0 +1,106 @@
+connected=true
+connected_server=Some(("117.34.114.14", 7709))
+quotes=1 first_price=12.39
+beijing_market_candidate=0 count=1 records=[(1, "600839", 0.0, 0, "")]
+beijing_market_candidate=1 count=1 records=[(1, "600839", 0.0, 0, "")]
+beijing_market_candidate=2 count=1 records=[(2, "920118", 20.5, 14997951, "14:59:52")]
+beijing_quotes=1 provenance=Provenance { source: "tdx-smart", source_at: None, fetched_at: "1791385360", batch_id: Some("tdx-smart:1791385360:quote") } quality=QualityReport { complete: false, issues: ["920118: one or more normalized quote fields unavailable", "920118: security name unavailable from the TDX quote packet", "920118: TDX quote source timestamp format is unverified"] }
+beijing_quote code=920118 price=20.5 status=Unavailable source_at=None observed_at=1791385360 provider=Tdx batch_id=tdx-smart:1791385360:quote
+bars=5 first_datetime=2026-09-23
+beijing_bars=5 first_datetime=2026-09-23
+normalized_shanghai_daily provider=Tdx source=tdx-smart source_at=Some("2026-09-30") fetched_at=1791385360 batch_id=tdx-smart:1791385360:2 code=600396 interval=Day start=2026-09-30 end=2026-09-30 open=12.47 high=12.59 low=12.32 close=12.39 volume_lots=433901 amount_yuan=Some(539697408.0) adjustment=Unadjusted record_source_at=Some("2026-09-30") record_batch_id=tdx-smart:1791385360:2
+normalized_shenzhen_daily provider=Tdx source=tdx-smart source_at=Some("2026-09-30") fetched_at=1791385360 batch_id=tdx-smart:1791385360:3 code=000001 interval=Day start=2026-09-30 end=2026-09-30 open=11.36 high=11.65 low=11.33 close=11.57 volume_lots=1045357.44 amount_yuan=Some(1205814912.0) adjustment=Unadjusted record_source_at=Some("2026-09-30") record_batch_id=tdx-smart:1791385360:3
+normalized_beijing_daily provider=Tdx source=tdx-smart source_at=Some("2026-09-30") fetched_at=1791385360 batch_id=tdx-smart:1791385360:4 code=920118 interval=Day start=2026-09-30 end=2026-09-30 open=20.37 high=20.75 low=20.15 close=20.5 volume_lots=3512.77 amount_yuan=Some(7207763.5) adjustment=Unadjusted record_source_at=Some("2026-09-30") record_batch_id=tdx-smart:1791385360:4
+normalized_shanghai_five_minute provider=Tdx source=tdx-smart source_at=Some("2026-09-30 15:00") fetched_at=1791385360 batch_id=tdx-smart:1791385360:5 code=600396 interval=Minute5 start=2026-09-30 15:00:00 end=2026-09-30 15:00:00 open=12.39 high=12.39 low=12.38 close=12.39 volume_lots=14434 amount_yuan=Some(17879684.0) adjustment=Unadjusted record_source_at=Some("2026-09-30 15:00") record_batch_id=tdx-smart:1791385360:5
+full_probe_server=Some(("117.34.114.14", 7709))
+stock_kline category=0 count=1
+stock_kline category=1 count=1
+stock_kline category=2 count=1
+stock_kline category=3 count=1
+stock_kline category=4 count=1
+stock_kline category=5 count=1
+stock_kline category=6 count=1
+stock_kline category=7 count=1
+stock_kline category=8 count=0
+stock_kline category=9 count=0
+stock_kline category=10 count=1
+stock_kline category=11 count=1
+index_kline count=6 first_datetime=2026-09-22 server=国泰君安8(117.34.114.14:7709)
+security_count_sh=27357
+security_list_sh=1000 first_code=999999
+security_count_bj=386
+security_metadata=3 provenance=Provenance { source: "tdx", source_at: None, fetched_at: "1791385365", batch_id: Some("tdx:1791385365:security-metadata") } quality=QualityReport { complete: false, issues: ["600396: board is derived from exchange/code because the TDX list packet has no board field", "600396: source-backed price-limit rule and version unavailable", "600396: source timestamp unavailable", "000001: board is derived from exchange/code because the TDX list packet has no board field", "000001: source-backed price-limit rule and version unavailable", "000001: source timestamp unavailable", "600519: board is derived from exchange/code because the TDX list packet has no board field", "600519: source-backed price-limit rule and version unavailable", "600519: source timestamp unavailable"] }
+security code=600396 exchange=Shanghai name=Some("华电辽能") board=Some(Main) is_st=Some(false) listed_on=Some("2001-03-28") price_limit_percent=None price_limit_version=None status=Unavailable source_at=None observed_at=1791385365 provider=Tdx batch_id=tdx:1791385365:security-metadata
+security code=000001 exchange=Shenzhen name=Some("平安银行") board=Some(Main) is_st=Some(false) listed_on=Some("1991-04-03") price_limit_percent=None price_limit_version=None status=Unavailable source_at=None observed_at=1791385365 provider=Tdx batch_id=tdx:1791385365:security-metadata
+security code=600519 exchange=Shanghai name=Some("贵州茅台") board=Some(Main) is_st=Some(false) listed_on=Some("2001-08-27") price_limit_percent=None price_limit_version=None status=Unavailable source_at=None observed_at=1791385365 provider=Tdx batch_id=tdx:1791385365:security-metadata
+corporate_actions=2 provenance=Provenance { source: "tdx", source_at: None, fetched_at: "1791385365", batch_id: Some("tdx:1791385365:corporate-actions:Shanghai:600519:Equity:2024-01-01:2024-12-31") } quality=QualityReport { complete: true, issues: [] }
+corporate_action code=600519 effective_on=2024-06-19 category=Distribution status=Implemented terms=Distribution { cash_per_share: Some(FiniteNumber(30.8760009765625)), bonus_per_share: Some(FiniteNumber(0.0)), rights_per_share: Some(FiniteNumber(0.0)), rights_price: None } source_at=None observed_at=1791385365 provider=Tdx batch_id=tdx:1791385365:corporate-actions:Shanghai:600519:Equity:2024-01-01:2024-12-31
+corporate_action code=600519 effective_on=2024-12-20 category=Distribution status=Implemented terms=Distribution { cash_per_share: Some(FiniteNumber(23.882000732421876)), bonus_per_share: Some(FiniteNumber(0.0)), rights_per_share: Some(FiniteNumber(0.0)), rights_price: None } source_at=None observed_at=1791385365 provider=Tdx batch_id=tdx:1791385365:corporate-actions:Shanghai:600519:Equity:2024-01-01:2024-12-31
+corporate_actions_verified_empty=true code=600519 start=1900-01-01 end=1900-12-31 batch_id=tdx:1791385365:corporate-actions:Shanghai:600519:Equity:1900-01-01:1900-12-31
+beijing_security_metadata=expected_unsupported reason=TDX market=2 serves Beijing quotes, bars, minute data, trades and order books, but live-verified servers close the security-list request required for Beijing security metadata
+order_books=2 provenance=Provenance { source: "tdx-smart", source_at: None, fetched_at: "1791385365", batch_id: Some("tdx-smart:1791385365:order-book") } quality=QualityReport { complete: false, issues: ["600396: TDX order-book source timestamp format is unverified", "920118: TDX order-book source timestamp format is unverified"] }
+order_book code=600396 status=Unavailable total_bid=Some(9328.0) total_ask=Some(7851.0) source_at=None observed_at=1791385365 provider=Tdx batch_id=tdx-smart:1791385365:order-book
+order_book_level=1 bid_price=Some(12.38) bid_quantity=Some(3652.0) ask_price=Some(12.39) ask_quantity=Some(2228.0)
+order_book_level=2 bid_price=Some(12.370000000000001) bid_quantity=Some(1749.0) ask_price=Some(12.4) ask_quantity=Some(2694.0)
+order_book_level=3 bid_price=Some(12.36) bid_quantity=Some(1051.0) ask_price=Some(12.41) ask_quantity=Some(1503.0)
+order_book_level=4 bid_price=Some(12.35) bid_quantity=Some(2488.0) ask_price=Some(12.42) ask_quantity=Some(1040.0)
+order_book_level=5 bid_price=Some(12.34) bid_quantity=Some(388.0) ask_price=Some(12.43) ask_quantity=Some(386.0)
+order_book code=920118 status=Unavailable total_bid=Some(127.0) total_ask=Some(90.0) source_at=None observed_at=1791385365 provider=Tdx batch_id=tdx-smart:1791385365:order-book
+order_book_level=1 bid_price=Some(20.5) bid_quantity=Some(58.0) ask_price=Some(20.54) ask_quantity=Some(20.0)
+order_book_level=2 bid_price=Some(20.45) bid_quantity=Some(28.0) ask_price=Some(20.55) ask_quantity=Some(10.0)
+order_book_level=3 bid_price=Some(20.37) bid_quantity=Some(1.0) ask_price=Some(20.580000000000002) ask_quantity=Some(30.0)
+order_book_level=4 bid_price=Some(20.36) bid_quantity=Some(5.0) ask_price=Some(20.6) ask_quantity=Some(20.0)
+order_book_level=5 bid_price=Some(20.3) bid_quantity=Some(35.0) ask_price=Some(20.61) ask_quantity=Some(10.0)
+minute_data_current=0 current_status=diagnostic_unadmitted_after_close minute_data_latest_session=240 latest_session_date=20260930 server=国泰君安8(117.34.114.14:7709)
+minute_history date=20260930 count=240
+beijing_minute_data_current=0 current_status=diagnostic_unadmitted_after_close beijing_minute_data_latest_session=240 latest_session_date=20260930 server=国泰君安8(117.34.114.14:7709)
+beijing_normalized_minute_status=expected_unavailable_after_close expected_error=Invalid data: TDX normalized current minute data is unavailable outside an active A-share weekday session
+transactions=20 
+transactions_status=diagnostic_unadmitted_after_close count=20
+transactions_history date=20260721 count=20
+normalized_trades_current_status=expected_unavailable_after_close expected_error=Invalid data: TDX normalized current trades is unavailable outside an active A-share weekday session
+beijing_normalized_trades_current_status=expected_unavailable_after_close expected_error=Invalid data: TDX normalized current trades is unavailable outside an active A-share weekday session
+normalized_trades_history=20 provenance=Provenance { source: "tdx-history", source_at: Some("2026-07-21 15:29"), fetched_at: "1791385367", batch_id: Some("tdx-history:1791385367:trades") } quality=QualityReport { complete: false, issues: ["600396 15:24: unknown TDX trade side 5", "600396 15:24: unknown TDX trade side 5", "600396 15:25: unknown TDX trade side 5", "600396 15:25: unknown TDX trade side 5", "600396 15:25: unknown TDX trade side 5", "600396 15:25: unknown TDX trade side 5", "600396 15:26: unknown TDX trade side 5", "600396 15:27: unknown TDX trade side 5", "600396 15:27: unknown TDX trade side 5", "600396 15:28: unknown TDX trade side 5", "600396 15:28: unknown TDX trade side 5", "600396 15:28: unknown TDX trade side 5", "600396 15:28: unknown TDX trade side 5", "600396 15:29: unknown TDX trade side 5", "600396 15:29: unknown TDX trade side 5", "600396 15:29: unknown TDX trade side 5", "600396 15:29: unknown TDX trade side 5", "600396 15:29: unknown TDX trade side 5", "600396 15:29: unknown TDX trade side 5", "600396 15:29: unknown TDX trade side 5"] }
+trade history time=2026-07-21 15:24 price=13.56 quantity=1 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:24") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:24 price=13.56 quantity=11 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:24") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:25 price=13.56 quantity=25 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:25") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:25 price=13.56 quantity=2 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:25") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:25 price=13.56 quantity=2 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:25") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:25 price=13.56 quantity=4 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:25") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:26 price=13.56 quantity=25 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:26") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:27 price=13.56 quantity=3 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:27") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:27 price=13.56 quantity=5 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:27") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:28 price=13.56 quantity=372 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:28") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:28 price=13.56 quantity=2 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:28") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:28 price=13.56 quantity=1 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:28") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:28 price=13.56 quantity=21 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:28") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:29 price=13.56 quantity=24 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:29") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:29 price=13.56 quantity=248 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:29") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:29 price=13.56 quantity=20 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:29") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:29 price=13.56 quantity=72 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:29") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:29 price=13.56 quantity=35 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:29") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:29 price=13.56 quantity=2 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:29") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade history time=2026-07-21 15:29 price=13.56 quantity=17 count=None side=Unknown(5) status=Unavailable source_at=Some("2026-07-21 15:29") observed_at=1791385367 provider=Tdx batch_id=tdx-history:1791385367:trades
+trade_pagination_current_status=expected_unavailable_after_close expected_error=Invalid data: TDX normalized current trades is unavailable outside an active A-share weekday session
+trade_pagination_history requested=2001 received=2001 crossed_page=true first_time=2026-07-21 13:27 last_time=2026-07-21 13:27 quality_complete=false
+finance_info=ok
+xdxr=30 
+fund_quotes_via_smart=1 
+blocks_industry=19845
+blocks_concept=41312
+concept_hits=7 batch_id=Some("tdx-concept-hits:v1|block_gn.dat=3237633063633061663462653065633862663934626435626433363961366264") quality_complete=true
+concept_hit code=600396 concept=临界发电 version=Some(NonEmptyText("source_file=block_gn.dat;sha256=3237633063633061663462653065633862663934626435626433363961366264")) provider=Tdx batch_id=tdx-concept-hits:v1|block_gn.dat=3237633063633061663462653065633862663934626435626433363961366264
+concept_hit code=600396 concept=光伏 version=Some(NonEmptyText("source_file=block_gn.dat;sha256=3237633063633061663462653065633862663934626435626433363961366264")) provider=Tdx batch_id=tdx-concept-hits:v1|block_gn.dat=3237633063633061663462653065633862663934626435626433363961366264
+concept_hit code=600396 concept=氢能源 version=Some(NonEmptyText("source_file=block_gn.dat;sha256=3237633063633061663462653065633862663934626435626433363961366264")) provider=Tdx batch_id=tdx-concept-hits:v1|block_gn.dat=3237633063633061663462653065633862663934626435626433363961366264
+concept_hit code=600396 concept=碳中和 version=Some(NonEmptyText("source_file=block_gn.dat;sha256=3237633063633061663462653065633862663934626435626433363961366264")) provider=Tdx batch_id=tdx-concept-hits:v1|block_gn.dat=3237633063633061663462653065633862663934626435626433363961366264
+concept_hit code=600396 concept=绿色电力 version=Some(NonEmptyText("source_file=block_gn.dat;sha256=3237633063633061663462653065633862663934626435626433363961366264")) provider=Tdx batch_id=tdx-concept-hits:v1|block_gn.dat=3237633063633061663462653065633862663934626435626433363961366264
+concept_hit code=600396 concept=风电 version=Some(NonEmptyText("source_file=block_gn.dat;sha256=3237633063633061663462653065633862663934626435626433363961366264")) provider=Tdx batch_id=tdx-concept-hits:v1|block_gn.dat=3237633063633061663462653065633862663934626435626433363961366264
+concept_hit code=000001 concept=跨境支付 version=Some(NonEmptyText("source_file=block_gn.dat;sha256=3237633063633061663462653065633862663934626435626433363961366264")) provider=Tdx batch_id=tdx-concept-hits:v1|block_gn.dat=3237633063633061663462653065633862663934626435626433363961366264
+blocks_index=11557
+fund_quotes=1 
+fund_bars=5 
+fund_xdxr=15 
+f10_categories=1 
+financial_files=0
+latest_financial_records=error error=no financial file met the minimum diagnostic size
+finance_indicators=error error=gpcw20260331.zip missing from the provider manifest

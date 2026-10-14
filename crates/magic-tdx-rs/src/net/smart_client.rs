@@ -32,12 +32,15 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::error::Result;
+#[cfg(feature = "test-support")]
+use crate::error::TdxError;
 use crate::error_codes::ErrorCode;
 use crate::net::client::TdxHqClient;
+use crate::net::isolation::IsolationScope;
 use crate::net::utils;
 use crate::protocol::constants::*;
 use crate::protocol::types::*;
@@ -75,6 +78,14 @@ struct ServerStats {
     avg_latency: u32,
 }
 
+#[cfg(feature = "test-support")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum CacheMode {
+    #[default]
+    Disk,
+    Memory,
+}
+
 /// 服务器缓存文件结构
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ServerCache {
@@ -82,6 +93,9 @@ struct ServerCache {
     last_success: Option<ServerCacheEntry>,
     blacklist: Vec<BlacklistEntry>,
     server_stats: HashMap<String, ServerStats>,
+    #[cfg(feature = "test-support")]
+    #[serde(skip)]
+    mode: CacheMode,
 }
 
 impl ServerCache {
@@ -91,7 +105,16 @@ impl ServerCache {
             last_success: None,
             blacklist: Vec::new(),
             server_stats: HashMap::new(),
+            #[cfg(feature = "test-support")]
+            mode: CacheMode::Disk,
         }
+    }
+
+    #[cfg(feature = "test-support")]
+    fn new_memory() -> Self {
+        let mut cache = Self::new();
+        cache.mode = CacheMode::Memory;
+        cache
     }
 
     /// 获取缓存文件路径
@@ -122,6 +145,10 @@ impl ServerCache {
     /// 保存缓存
     #[cfg(not(test))]
     fn save(&self) {
+        #[cfg(feature = "test-support")]
+        if self.mode == CacheMode::Memory {
+            return;
+        }
         let path = Self::cache_path();
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
@@ -239,6 +266,7 @@ pub struct TdxSmartClient {
     health_checked: AtomicBool,
     /// 重试次数上限
     max_retry: usize,
+    isolation: Option<Arc<IsolationScope>>,
 }
 
 impl TdxSmartClient {
@@ -250,6 +278,92 @@ impl TdxSmartClient {
             current_server: Mutex::new(None),
             health_checked: AtomicBool::new(false),
             max_retry: 3,
+            isolation: None,
+        }
+    }
+
+    /// Construct idle isolated test support; only Smart handshake is implemented.
+    #[cfg(feature = "test-support")]
+    pub fn with_loopback_endpoints(endpoints: &[std::net::SocketAddrV4]) -> Result<Self> {
+        let scope = IsolationScope::new(endpoints)?;
+        Ok(Self {
+            inner: TdxHqClient::new_with_isolation(Some(Arc::clone(&scope))),
+            cache: Mutex::new(ServerCache::new_memory()),
+            current_server: Mutex::new(None),
+            health_checked: AtomicBool::new(false),
+            max_retry: 3,
+            isolation: Some(scope),
+        })
+    }
+
+    /// Irreversibly close this isolated handshake scope, with a total five-second deadline.
+    #[cfg(feature = "test-support")]
+    pub fn close_loopback_checked(&self) -> Result<()> {
+        let scope = self.isolation.as_ref().ok_or_else(|| {
+            TdxError::Unsupported("checked loopback close requires an isolated client".into())
+        })?;
+        let deadline = crate::net::isolation::close_deadline()?;
+        let _owner = match scope.begin_close(deadline) {
+            Ok(Some(owner)) => owner,
+            Ok(None) => return Ok(()),
+            Err(error) => {
+                scope.record_failure(error.to_string());
+                return Err(error);
+            }
+        };
+        let result = (|| {
+            // Try checked shutdown even on a failed prior attempt. No OS calls
+            // occur while lifecycle/pool/metadata locks are held.
+            let shutdown_error = scope.shutdown_registered(deadline).err();
+            scope.wait_pending(deadline)?;
+            let connection = {
+                let mut lifecycle = scope.close_guard(deadline)?;
+                self.inner.isolated_no_worker(deadline)?;
+                let pool_handle = self.inner.isolated_pool_handle(scope, deadline)?;
+                let pool = Arc::clone(&pool_handle);
+                let mut slot = pool.isolated_slot(scope, deadline)?;
+                let mut last = self.inner.isolated_server_guard(deadline)?;
+                let mut current =
+                    crate::net::isolation::lock_until(&self.current_server, deadline)?;
+                let cache = crate::net::isolation::lock_until(&self.cache, deadline)?;
+                if cache.mode != CacheMode::Memory || self.health_checked.load(Ordering::SeqCst) {
+                    return Err(TdxError::Connection(
+                        "isolated Smart close metadata invalid".into(),
+                    ));
+                }
+                let has_connection = slot.has_connection();
+                if has_connection {
+                    lifecycle.track_pool_drain();
+                }
+                let connection = slot.take_one();
+                *last = None;
+                *current = None;
+                self.inner
+                    .isolated_connected_flag()
+                    .store(false, Ordering::SeqCst);
+                connection
+            };
+            let had_connection = connection.is_some();
+            drop(connection);
+            if had_connection {
+                scope.finish_drain(deadline)?;
+            }
+            self.inner.check_isolated_idle(scope, deadline)?;
+            if let Some(error) = shutdown_error {
+                return Err(error);
+            }
+            scope.finish_close(deadline)
+        })();
+        if let Err(error) = &result {
+            scope.record_failure(error.to_string());
+        }
+        result
+    }
+
+    fn reject_isolated_runtime(&self) -> Result<()> {
+        match &self.isolation {
+            Some(scope) => Err(scope.runtime_error()),
+            None => Ok(()),
         }
     }
 
@@ -258,6 +372,11 @@ impl TdxSmartClient {
     /// 仅验证 TCP + 握手，不做 K 线健康检查。
     /// 优先使用缓存的成功服务器。
     pub fn connect_to_any(&self, timeout: Option<f64>) -> Result<bool> {
+        #[cfg(feature = "test-support")]
+        if let Some(scope) = &self.isolation {
+            return self.connect_isolated_handshake(scope, timeout);
+        }
+        self.reject_isolated_runtime()?;
         let cached_server = sync::lock(&self.cache, "smart client cache")?
             .last_success
             .clone();
@@ -327,11 +446,109 @@ impl TdxSmartClient {
         Err(ErrorCode::CONNECTION_FAILED.err("all servers unreachable"))
     }
 
+    #[cfg(feature = "test-support")]
+    fn connect_isolated_handshake(
+        &self,
+        scope: &Arc<IsolationScope>,
+        timeout: Option<f64>,
+    ) -> Result<bool> {
+        let mut attempt = scope.begin_attempt(timeout)?;
+        let endpoints = attempt.endpoints().to_vec();
+        let mut last_error = None;
+        for endpoint in endpoints {
+            let mut tcp =
+                match crate::net::connection::TcpConnection::connect_isolated(endpoint, &attempt) {
+                    Ok(tcp) => tcp,
+                    Err(error) => {
+                        if let Err(cleanup) = attempt.reset_stream() {
+                            scope.record_failure(cleanup.to_string());
+                            return Err(TdxError::Connection(format!(
+                                "{error}; isolated cleanup: {cleanup}"
+                            )));
+                        }
+                        last_error = Some(error);
+                        continue;
+                    }
+                };
+            if let Err(error) = utils::perform_handshake(&mut tcp) {
+                drop(tcp);
+                if let Err(cleanup) = attempt.reset_stream() {
+                    scope.record_failure(cleanup.to_string());
+                    return Err(TdxError::Connection(format!(
+                        "{error}; isolated cleanup: {cleanup}"
+                    )));
+                }
+                last_error = Some(error);
+                continue;
+            }
+            let hq_server = (endpoint.ip().to_string(), endpoint.port());
+            let pool_server = hq_server.clone();
+            let smart_server = (
+                hq_server.0.clone(),
+                endpoint.port(),
+                "isolated loopback".to_owned(),
+            );
+            let mut tcp = Some(tcp);
+            let publication = (|| {
+                // All fallible locks/checks/allocation precede joint field moves.
+                let mut lifecycle = attempt.publish_guard()?;
+                self.inner.isolated_no_worker(attempt.deadline)?;
+                let pool_handle = self.inner.isolated_pool_handle(scope, attempt.deadline)?;
+                let pool = Arc::clone(&pool_handle);
+                let mut slot = pool.isolated_slot(scope, attempt.deadline)?;
+                slot.prepare_publish()?;
+                let mut last = self.inner.isolated_server_guard(attempt.deadline)?;
+                let mut current =
+                    crate::net::isolation::lock_until(&self.current_server, attempt.deadline)?;
+                let cache = crate::net::isolation::lock_until(&self.cache, attempt.deadline)?;
+                if cache.mode != CacheMode::Memory
+                    || current.is_some()
+                    || last.is_some()
+                    || self.inner.isolated_connected_flag().load(Ordering::SeqCst)
+                    || self.health_checked.load(Ordering::SeqCst)
+                {
+                    return Err(TdxError::Connection(
+                        "isolated publication metadata invalid".into(),
+                    ));
+                }
+                scope.validate_commit(attempt.deadline)?;
+                let connection = tcp
+                    .take()
+                    .ok_or_else(|| TdxError::Connection("isolated staged stream lost".into()))?;
+                slot.install(connection, pool_server);
+                *last = Some(hq_server);
+                *current = Some(smart_server);
+                self.inner
+                    .isolated_connected_flag()
+                    .store(true, Ordering::SeqCst);
+                lifecycle.commit();
+                Ok(())
+            })();
+            if let Err(error) = publication {
+                drop(tcp);
+                if let Err(cleanup) = attempt.reset_stream() {
+                    scope.record_failure(cleanup.to_string());
+                    return Err(TdxError::Connection(format!(
+                        "{error}; isolated cleanup: {cleanup}"
+                    )));
+                }
+                return Err(error);
+            }
+            attempt.released_after_commit();
+            return Ok(true);
+        }
+        Err(last_error.unwrap_or(TdxError::Disconnected))
+    }
+
     /// 惰性健康检查
     ///
     /// 在首次 K 线请求返回空时调用。
     /// 如果健康检查失败，断开连接并尝试下一个服务器。
     fn lazy_health_check(&self) -> bool {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: no isolated health request or cache mutation.
+            return false;
+        }
         if self.health_checked.load(Ordering::SeqCst) {
             return true;
         }
@@ -398,6 +615,7 @@ impl TdxSmartClient {
 
     /// 尝试切换到下一个服务器
     fn try_next_server(&self) -> Result<bool> {
+        self.reject_isolated_runtime()?;
         let current = sync::lock(&self.current_server, "smart current server")?.clone();
 
         // 遍历 PRIMARY_SERVERS，跳过当前和黑名单
@@ -440,6 +658,7 @@ impl TdxSmartClient {
         count: u16,
         fq: u8,
     ) -> Result<Vec<SecurityBar>> {
+        self.reject_isolated_runtime()?;
         let mut last_err = None;
 
         for attempt in 0..self.max_retry {
@@ -503,6 +722,12 @@ impl TdxSmartClient {
 
     /// 获取实时行情 (带自动重试)
     pub fn get_security_quotes(&self, all_stock: &[(u8, &str)]) -> Result<Vec<SecurityQuote>> {
+        #[cfg(feature = "test-support")]
+        if self.isolation.is_some() {
+            // Quote-only: no health check, legacy retry, discovery or cache mutation.
+            return self.inner.get_security_quotes(all_stock);
+        }
+        self.reject_isolated_runtime()?;
         let mut last_err = None;
 
         for attempt in 0..self.max_retry {
@@ -575,6 +800,10 @@ impl TdxSmartClient {
 
     /// 清除缓存
     pub fn clear_cache(&self) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: retain Memory; never reset isolation or touch disk.
+            return;
+        }
         let mut cache = sync::lock_recover(&self.cache, "smart client cache");
         *cache = ServerCache::new();
         cache.save();
@@ -585,6 +814,10 @@ impl TdxSmartClient {
     ///
     /// 类似 mootdx 的 bestip 功能。
     pub fn probe_and_cache(&self, timeout_secs: f64) -> Vec<(String, u16, String, u32)> {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: fail-closed, NOT normal empty source data/admission.
+            return Vec::new();
+        }
         let mut results = Vec::new();
 
         for &(name, ip, port) in PRIMARY_SERVERS {

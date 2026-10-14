@@ -362,3 +362,188 @@ fn sec_typed_entry_keeps_partial_quality_explicit() {
     assert_eq!(result.batch_id, BATCH_ID);
     assert_eq!(result.records.len(), original.records().len());
 }
+#[test]
+fn registered_sec_second_company_identity_mismatch_does_not_publish_prior_filings() {
+    use std::sync::{Arc, Mutex};
+
+    use magic_market_service::OperationRegistry;
+    use magic_market_transport::{
+        HttpMethod, HttpRequest, HttpResponse, HttpTransport, TransportError,
+    };
+    use magic_sec_rs::SecEdgarClient;
+    use time::format_description::well_known::Rfc3339;
+    use time::OffsetDateTime;
+
+    use super::super::register_sec_client;
+
+    struct CompanySubmissionsFixture {
+        requests: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl HttpTransport for CompanySubmissionsFixture {
+        fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, TransportError> {
+            let urls = [
+                "https://data.sec.gov/submissions/CIK0000320193.json",
+                "https://data.sec.gov/submissions/CIK0000789019.json",
+            ];
+            let headers = [
+                ("User-Agent", "FixtureApp/1 fixture@example.invalid"),
+                ("Accept", "application/json"),
+                ("Accept-Encoding", "identity"),
+            ];
+            if request.method() != HttpMethod::Get
+                || !urls.contains(&request.url())
+                || !request.body().is_empty()
+                || request.headers().len() != headers.len()
+                || headers.iter().any(|(name, value)| {
+                    !request.headers().iter().any(|(actual_name, actual_value)| {
+                        actual_name.as_str() == *name && actual_value.as_str() == *value
+                    })
+                })
+            {
+                return Err(TransportError::InvalidRequest(
+                    "SEC public fixture rejected an unexpected external request".into(),
+                ));
+            }
+            self.requests.lock().unwrap().push(request.url().to_owned());
+            // The second endpoint deliberately returns another company's real-shaped
+            // source bytes. Only external HTTP is substituted; SDK parsing stays real.
+            Ok(HttpResponse::new(
+                200,
+                request.url(),
+                Some("application/json".into()),
+                include_bytes!("../../../magic-sec-rs/tests/fixtures/submissions.json").to_vec(),
+            ))
+        }
+    }
+
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let client = SecEdgarClient::with_transport(
+        "FixtureApp/1 fixture@example.invalid",
+        Arc::new(CompanySubmissionsFixture {
+            requests: requests.clone(),
+        }),
+    )
+    .unwrap();
+    let mut registry = OperationRegistry::all_unadmitted("SEC public fixture setup");
+    register_sec_client(&mut registry, client, 4096).unwrap();
+
+    let valid_request = QueryCommand::new(
+        "sec-public-first-valid-control",
+        Operation::CompanyFilings,
+        Some("SecEdgar".into()),
+        CanonicalPayload::new(
+            "magic.market.company_filings.request",
+            1,
+            br#"{"companies":[{"cik":"320193","ticker":"AAPL"}],"forms":[],"start":"2025-01-01","end":"2025-12-31","max_records":10}"#.to_vec(),
+            4096,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let before = OffsetDateTime::now_utc();
+    let positive = registry.execute(valid_request).unwrap();
+    let after = OffsetDateTime::now_utc();
+    let observed = OffsetDateTime::parse(&positive.observed_at, &Rfc3339).unwrap();
+    assert!(before <= observed && observed <= after);
+    assert_eq!(positive.provider, "SecEdgar");
+    assert!(positive.repository_admitted);
+    assert_eq!(positive.diagnostic_blocker, None);
+    assert!(positive.complete);
+    assert_eq!(positive.records.len(), 2);
+    assert_eq!(positive.source_at.as_deref(), Some("2025-05-01T18:26:29Z"));
+    assert_eq!(
+        positive.batch_id,
+        format!("sec-edgar:{}", positive.observed_at)
+    );
+    assert_ne!(positive.batch_id, "sec-public-first-valid-control");
+    assert_eq!(
+        requests.lock().unwrap().as_slice(),
+        &["https://data.sec.gov/submissions/CIK0000320193.json"]
+    );
+    requests.lock().unwrap().clear();
+
+    // All source facts are independent literals. Only the generated observation
+    // and atomic batch identifier use the already-checked public batch values.
+    let expected = [
+        json!({
+            "company": {"cik": "0000320193", "ticker": "AAPL"},
+            "company_name": "Apple Inc.",
+            "form": "10-Q",
+            "filing_date": "2025-05-02",
+            "report_period": "2025-03-29",
+            "accession": "0000320193-25-000079",
+            "primary_document": "aapl-20250329.htm",
+            "filing_index_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/0000320193-25-000079-index.html",
+            "primary_document_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250329.htm",
+            "accepted_at": "2025-05-01T18:26:29Z",
+            "evidence": {
+                "provider": "SecEdgar",
+                "source_at": "2025-05-01T18:26:29Z",
+                "observed_at": positive.observed_at.as_str(),
+                "batch_id": positive.batch_id.as_str()
+            }
+        }),
+        json!({
+            "company": {"cik": "0000320193", "ticker": "AAPL"},
+            "company_name": "Apple Inc.",
+            "form": "8-K",
+            "filing_date": "2025-04-04",
+            "report_period": null,
+            "accession": "0000320193-25-000057",
+            "primary_document": "aapl-20250404.htm",
+            "filing_index_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000057/0000320193-25-000057-index.html",
+            "primary_document_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000057/aapl-20250404.htm",
+            "accepted_at": "2025-04-04T16:31:42Z",
+            "evidence": {
+                "provider": "SecEdgar",
+                "source_at": "2025-04-04T16:31:42Z",
+                "observed_at": positive.observed_at.as_str(),
+                "batch_id": positive.batch_id.as_str()
+            }
+        }),
+    ];
+    for (payload, expected_record) in positive.records.iter().zip(expected) {
+        assert_eq!(payload.schema(), "magic.market.company_filing");
+        assert_eq!(payload.schema_version(), 1);
+        assert_eq!(
+            serde_json::from_slice::<Value>(payload.data()).unwrap(),
+            expected_record
+        );
+        let typed: CompanyFiling = serde_json::from_slice(payload.data()).unwrap();
+        assert_eq!(typed.evidence().provider(), ProviderId::SecEdgar);
+        assert_eq!(
+            typed.evidence().observed_at(),
+            positive.observed_at.as_str()
+        );
+        assert_eq!(typed.evidence().batch_id(), positive.batch_id.as_str());
+    }
+
+    let later_identity_request = QueryCommand::new(
+        "sec-public-later-identity-rejection",
+        Operation::CompanyFilings,
+        Some("SecEdgar".into()),
+        CanonicalPayload::new(
+            "magic.market.company_filings.request",
+            1,
+            br#"{"companies":[{"cik":"320193","ticker":"AAPL"},{"cik":"789019","ticker":"MSFT"}],"forms":[],"start":"2025-01-01","end":"2025-12-31","max_records":10}"#.to_vec(),
+            4096,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let error = registry.execute(later_identity_request).unwrap_err();
+    assert_eq!(
+        requests.lock().unwrap().as_slice(),
+        &[
+            "https://data.sec.gov/submissions/CIK0000320193.json",
+            "https://data.sec.gov/submissions/CIK0000789019.json",
+        ]
+    );
+    assert_eq!(
+        error,
+        ServiceError::FailedPrecondition(
+            "SEC submissions protocol failed: response CIK does not match the requested normalized CIK".into()
+        )
+    );
+}

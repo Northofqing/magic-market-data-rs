@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use crate::error::{Result, TdxError};
 use crate::error_codes::ErrorCode;
 use crate::net::connection::TcpConnection;
+use crate::net::isolation::IsolationScope;
 use crate::net::packet::{ResponseHeader, RSP_HEADER_LEN};
 use crate::net::pool::{ConnectionPool, PoolConfig, PoolStats};
 use crate::net::utils::{self, RateLimiter};
@@ -85,13 +86,25 @@ where
     Ok((tcp_ms, handshake_ms, api_ms))
 }
 
+struct HeartbeatWorker {
+    stop: Arc<AtomicBool>,
+    handle: std::thread::JoinHandle<()>,
+}
+
+impl HeartbeatWorker {
+    fn stop(self) {
+        self.stop.store(true, Ordering::SeqCst);
+        self.handle.thread().unpark();
+        let _ = self.handle.join();
+    }
+}
+
 /// TDX 行情客户端
 pub struct TdxHqClient {
     pool: Mutex<Arc<ConnectionPool>>,
     connected: Arc<AtomicBool>,
     auto_retry: AtomicBool,
-    heartbeat_stop: Mutex<Option<Arc<AtomicBool>>>,
-    heartbeat_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
+    heartbeat: Mutex<Option<HeartbeatWorker>>,
     last_server: Arc<Mutex<Option<(String, u16)>>>,
     count_cache: Mutex<HashMap<u8, CacheEntry<u16>>>,
     list_cache: Mutex<HashMap<u8, CacheEntry<Vec<SecurityInfo>>>>,
@@ -109,6 +122,7 @@ pub struct TdxHqClient {
     rate_limiter_minute: RateLimiter,
     /// 复权上下文数据量档位 (默认 Mid ≈ 20 年), 以 u8 存储
     fq_context_tier: AtomicU8,
+    isolation: Option<Arc<IsolationScope>>,
 }
 
 impl Default for TdxHqClient {
@@ -119,6 +133,10 @@ impl Default for TdxHqClient {
 
 impl TdxHqClient {
     pub fn new() -> Self {
+        Self::new_with_isolation(None)
+    }
+
+    pub(super) fn new_with_isolation(isolation: Option<Arc<IsolationScope>>) -> Self {
         // 设置握手回调，让连接池自动为新连接执行握手
         let config = PoolConfig {
             handshake_fn: Some(Box::new(|conn: &mut TcpConnection| -> Result<()> {
@@ -126,13 +144,22 @@ impl TdxHqClient {
             })),
             ..PoolConfig::default()
         };
-        let default_server = (PRIMARY_SERVERS[0].1.to_string(), PRIMARY_SERVERS[0].2);
+        let default_server = match &isolation {
+            Some(scope) => {
+                let endpoint = scope.first_endpoint();
+                (endpoint.ip().to_string(), endpoint.port())
+            }
+            None => (PRIMARY_SERVERS[0].1.to_string(), PRIMARY_SERVERS[0].2),
+        };
         Self {
-            pool: Mutex::new(Arc::new(ConnectionPool::new_single(default_server, config))),
+            pool: Mutex::new(Arc::new(ConnectionPool::new_single_with_isolation(
+                default_server,
+                config,
+                isolation.clone(),
+            ))),
             connected: Arc::new(AtomicBool::new(false)),
             auto_retry: AtomicBool::new(true),
-            heartbeat_stop: Mutex::new(None),
-            heartbeat_handle: Mutex::new(None),
+            heartbeat: Mutex::new(None),
             last_server: Arc::new(Mutex::new(None)),
             count_cache: Mutex::new(HashMap::new()),
             list_cache: Mutex::new(HashMap::new()),
@@ -144,7 +171,77 @@ impl TdxHqClient {
             rate_limiter_daily: RateLimiter::new(67), // 日K 15 req/s
             rate_limiter_minute: RateLimiter::new(100), // 分时 10 req/s (不允许解禁)
             fq_context_tier: AtomicU8::new(utils::FqContextTier::default() as u8),
+            isolation,
         }
+    }
+
+    fn reject_isolated_runtime(&self) -> Result<()> {
+        match &self.isolation {
+            Some(scope) => Err(scope.runtime_error()),
+            None => Ok(()),
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn check_isolated_idle(
+        &self,
+        scope: &Arc<IsolationScope>,
+        deadline: Instant,
+    ) -> Result<()> {
+        if !self
+            .isolation
+            .as_ref()
+            .is_some_and(|own| Arc::ptr_eq(own, scope))
+            || self.connected.load(Ordering::SeqCst)
+            || crate::net::isolation::lock_until(&self.heartbeat, deadline)?.is_some()
+            || crate::net::isolation::lock_until(&self.last_server, deadline)?.is_some()
+        {
+            return Err(TdxError::Connection(
+                "isolated Hq idle-close invariant failed".into(),
+            ));
+        }
+        crate::net::isolation::lock_until(&self.pool, deadline)?
+            .check_isolated_idle(scope, deadline)
+    }
+
+    // New private staged-handshake accessors; public Hq connect remains refused.
+    #[cfg(feature = "test-support")]
+    pub(super) fn isolated_pool_handle(
+        &self,
+        scope: &Arc<IsolationScope>,
+        deadline: Instant,
+    ) -> Result<std::sync::MutexGuard<'_, Arc<ConnectionPool>>> {
+        if !self
+            .isolation
+            .as_ref()
+            .is_some_and(|own| Arc::ptr_eq(own, scope))
+        {
+            return Err(TdxError::Connection("isolated Hq scope mismatch".into()));
+        }
+        crate::net::isolation::lock_until(&self.pool, deadline)
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn isolated_server_guard(
+        &self,
+        deadline: Instant,
+    ) -> Result<std::sync::MutexGuard<'_, Option<(String, u16)>>> {
+        crate::net::isolation::lock_until(&self.last_server, deadline)
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn isolated_no_worker(&self, deadline: Instant) -> Result<()> {
+        if crate::net::isolation::lock_until(&self.heartbeat, deadline)?.is_some() {
+            return Err(TdxError::Connection(
+                "isolated heartbeat worker present".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn isolated_connected_flag(&self) -> &AtomicBool {
+        &self.connected
     }
 
     /// 检查代码是否为板块代码 (88xxxx)，如果是则返回错误
@@ -160,6 +257,7 @@ impl TdxHqClient {
 
     /// 连接到 TDX 服务器
     pub fn connect(&self, ip: &str, port: u16, timeout: Option<f64>) -> Result<bool> {
+        self.reject_isolated_runtime()?;
         self.connect_internal(ip, port, timeout, true)
     }
 
@@ -173,6 +271,7 @@ impl TdxHqClient {
     /// - 优先尝试上次成功连接的服务器，避免每次都从头遍历
     /// - 已连接时直接返回，不重复连接
     pub fn connect_to_any(&self, timeout: Option<f64>) -> Result<bool> {
+        self.reject_isolated_runtime()?;
         // 0) 已连接时直接返回
         if self.connected.load(Ordering::SeqCst) {
             return Ok(true);
@@ -180,10 +279,12 @@ impl TdxHqClient {
 
         // 0.5) 优先尝试上次成功的服务器
         {
-            let last = sync::lock(&self.last_server, "last server")?;
-            if let Some((ref ip, port)) = *last {
-                if !self.is_server_blocked(ip, port) {
-                    if let Ok(true) = self.connect_internal(ip, port, timeout, false) {
+            // connect_internal updates last_server after the handshake. Snapshot
+            // it before I/O so that update cannot re-enter the same state lock.
+            let last = sync::lock(&self.last_server, "last server")?.clone();
+            if let Some((ip, port)) = last {
+                if !self.is_server_blocked(&ip, port) {
+                    if let Ok(true) = self.connect_internal(&ip, port, timeout, false) {
                         return Ok(true);
                     }
                 }
@@ -239,6 +340,10 @@ impl TdxHqClient {
 
     /// 设置自定义优先服务器列表 (替换默认 PRIMARY_SERVERS)
     pub fn set_servers(&self, servers: &[(&str, &str, u16)]) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: immutable isolated scope cannot be reconfigured.
+            return;
+        }
         let mut list = sync::lock_recover(&self.server_list, "server list");
         list.clear();
         for &(name, ip, port) in servers {
@@ -248,6 +353,10 @@ impl TdxHqClient {
 
     /// 在优先列表头部添加一台服务器
     pub fn add_server(&self, name: &str, ip: &str, port: u16) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: immutable isolated scope cannot be reconfigured.
+            return;
+        }
         let mut list = sync::lock_recover(&self.server_list, "server list");
         list.insert(0, (name.to_string(), ip.to_string(), port));
     }
@@ -256,6 +365,10 @@ impl TdxHqClient {
     ///
     /// `sorted`: 由 probe_servers() 返回的排序结果, 取前N台
     pub fn reorder_servers(&self, sorted: &[(&str, &str, u16)]) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: immutable isolated scope cannot be reconfigured.
+            return;
+        }
         let mut list = sync::lock_recover(&self.server_list, "server list");
         list.clear();
         for &(name, ip, port) in sorted {
@@ -280,6 +393,10 @@ impl TdxHqClient {
     /// client.connect_to_any(None)?;  // 自动跳过黑名单服务器
     /// ```
     pub fn block_server(&self, ip: &str, port: u16) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: no mutation of isolated runtime configuration.
+            return;
+        }
         let mut blocked = sync::lock_recover(&self.blocked_servers, "blocked servers");
         if !blocked.iter().any(|(i, p)| i == ip && *p == port) {
             blocked.push((ip.to_string(), port));
@@ -289,6 +406,10 @@ impl TdxHqClient {
 
     /// 从黑名单移除服务器
     pub fn unblock_server(&self, ip: &str, port: u16) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: no mutation of isolated runtime configuration.
+            return;
+        }
         let mut blocked = sync::lock_recover(&self.blocked_servers, "blocked servers");
         blocked.retain(|(i, p)| i != ip || *p != port);
         logi!("hq", "server {}:{} removed from blacklist", ip, port);
@@ -306,6 +427,10 @@ impl TdxHqClient {
 
     /// 清空黑名单
     pub fn clear_blocked_servers(&self) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: no reset or reopening of isolated runtime.
+            return;
+        }
         sync::lock_recover(&self.blocked_servers, "blocked servers").clear();
         logi!("hq", "server blacklist cleared");
     }
@@ -324,6 +449,10 @@ impl TdxHqClient {
         &self,
         timeout_secs: f64,
     ) -> Vec<(&'static str, &'static str, u16, f64, f64, f64)> {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: no probe I/O; empty is NOT source data/admission.
+            return Vec::new();
+        }
         let mut results = Vec::new();
 
         for &(name, ip, port) in ALL_KNOWN_SERVERS {
@@ -346,6 +475,7 @@ impl TdxHqClient {
         timeout: Option<f64>,
         start_heartbeat: bool,
     ) -> Result<bool> {
+        self.reject_isolated_runtime()?;
         let timeout_secs = match timeout {
             Some(value) => value,
             None => *sync::lock(&self.connect_timeout, "connect timeout")?,
@@ -379,6 +509,10 @@ impl TdxHqClient {
 
     /// 断开连接
     pub fn disconnect(&self) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: use checked loopback close; no legacy cleanup/reset.
+            return;
+        }
         self.stop_heartbeat();
         sync::lock_recover(&self.pool, "connection pool handle").close_all();
         self.connected.store(false, Ordering::SeqCst);
@@ -392,16 +526,28 @@ impl TdxHqClient {
 
     /// 设置是否自动重试
     pub fn set_auto_retry(&self, enabled: bool) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: cannot enable an isolated retry path.
+            return;
+        }
         self.auto_retry.store(enabled, Ordering::SeqCst);
     }
 
     /// 设置缓存 TTL (秒)
     pub fn set_cache_ttl(&self, ttl_secs: u64) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: isolated runtime configuration stays immutable.
+            return;
+        }
         *sync::lock_recover(&self.cache_ttl, "cache TTL") = Duration::from_secs(ttl_secs);
     }
 
     /// 设置连接超时 (秒)
     pub fn set_connect_timeout(&self, timeout: f64) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: isolated runtime configuration stays immutable.
+            return;
+        }
         *sync::lock_recover(&self.connect_timeout, "connect timeout") = timeout;
     }
 
@@ -414,6 +560,10 @@ impl TdxHqClient {
     ///
     /// 默认 50 req/s。
     pub fn set_rate_limit(&self, rps: u32) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: isolated runtime configuration stays immutable.
+            return;
+        }
         self.rate_limiter.set_rps(rps);
     }
 
@@ -421,6 +571,10 @@ impl TdxHqClient {
     ///
     /// 默认 15 req/s。影响: get_security_bars / get_index_bars (category >= 4)
     pub fn set_rate_limit_daily(&self, rps: u32) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: isolated runtime configuration stays immutable.
+            return;
+        }
         self.rate_limiter_daily.set_rps(rps);
     }
 
@@ -434,7 +588,16 @@ impl TdxHqClient {
     // ================================================================
 
     fn start_heartbeat(&self) {
-        self.stop_heartbeat();
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: no isolated worker may be spawned.
+            return;
+        }
+        // Keep the stop signal and join handle paired throughout replacement.
+        // Concurrent connects must not stop one worker and join another.
+        let mut heartbeat = sync::lock_recover(&self.heartbeat, "heartbeat lifecycle");
+        if let Some(previous) = heartbeat.take() {
+            previous.stop();
+        }
         let stop = Arc::new(AtomicBool::new(false));
         let pool = Arc::clone(&sync::lock_recover(&self.pool, "connection pool handle"));
         let connected = Arc::clone(&self.connected);
@@ -445,7 +608,18 @@ impl TdxHqClient {
 
         let handle = std::thread::spawn(move || {
             while !stop_clone.load(Ordering::Relaxed) {
-                std::thread::sleep(interval);
+                // Stop wakes this wait immediately. Spurious wakeups must not
+                // advance the existing heartbeat cadence.
+                let next_tick = Instant::now() + interval;
+                while !stop_clone.load(Ordering::Acquire) {
+                    let Some(remaining) = next_tick.checked_duration_since(Instant::now()) else {
+                        break;
+                    };
+                    if remaining.is_zero() {
+                        break;
+                    }
+                    std::thread::park_timeout(remaining);
+                }
                 if stop_clone.load(Ordering::Relaxed) {
                     break;
                 }
@@ -528,17 +702,13 @@ impl TdxHqClient {
             }
         });
 
-        *sync::lock_recover(&self.heartbeat_stop, "heartbeat stop") = Some(stop);
-        *sync::lock_recover(&self.heartbeat_handle, "heartbeat handle") = Some(handle);
+        *heartbeat = Some(HeartbeatWorker { stop, handle });
         self.connected.store(true, Ordering::SeqCst);
     }
 
     fn stop_heartbeat(&self) {
-        if let Some(stop) = sync::lock_recover(&self.heartbeat_stop, "heartbeat stop").take() {
-            stop.store(true, Ordering::SeqCst);
-        }
-        if let Some(h) = sync::lock_recover(&self.heartbeat_handle, "heartbeat handle").take() {
-            let _ = h.join();
+        if let Some(worker) = sync::lock_recover(&self.heartbeat, "heartbeat lifecycle").take() {
+            worker.stop();
         }
     }
 
@@ -553,6 +723,7 @@ impl TdxHqClient {
 
     /// 发送请求并接收响应 (指定限流器)
     fn send_and_recv_limited(&self, packet: &[u8], limiter: &RateLimiter) -> Result<Vec<u8>> {
+        self.reject_isolated_runtime()?;
         if !self.connected.load(Ordering::SeqCst) && !self.auto_retry.load(Ordering::SeqCst) {
             return Err(ErrorCode::DISCONNECTED.err("client is not connected"));
         }
@@ -603,6 +774,7 @@ impl TdxHqClient {
 
     /// 从连接池借出连接并执行请求
     fn try_send_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        self.reject_isolated_runtime()?;
         let server = sync::lock(&self.last_server, "last server")?
             .clone()
             .unwrap_or_else(|| (PRIMARY_SERVERS[0].1.to_string(), PRIMARY_SERVERS[0].2));
@@ -678,6 +850,7 @@ impl TdxHqClient {
     /// # }
     /// ```
     pub fn send_raw_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        self.reject_isolated_runtime()?;
         self.send_and_recv(packet)
     }
 
@@ -704,6 +877,7 @@ impl TdxHqClient {
         count: u16,
         fq: u8,
     ) -> Result<Vec<SecurityBar>> {
+        self.reject_isolated_runtime()?;
         self.check_not_block_code(code)?;
 
         // 日K线空响应自动重试 (仅对日K及以上周期，分钟线不重试)
@@ -830,6 +1004,10 @@ impl TdxHqClient {
     /// 遍历自定义、PRIMARY 和 ALL_KNOWN 候选，跳过当前服务器、同一请求已失败的
     /// 服务器和黑名单，连接到第一台可用的。
     fn reconnect_to_another_server(&self, failed_servers: &[(String, u16)]) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: no candidate selection or reconnect.
+            return;
+        }
         let current = sync::lock_recover(&self.last_server, "last server").clone();
 
         for (ip, port) in self.reconnect_candidates() {
@@ -865,6 +1043,10 @@ impl TdxHqClient {
     }
 
     fn reconnect_candidates(&self) -> Vec<(String, u16)> {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: never expose legacy discovery as isolated candidates.
+            return Vec::new();
+        }
         let mut candidates = Vec::new();
         let mut push_unique = |ip: &str, port: u16| {
             let candidate = (ip.to_owned(), port);
@@ -900,6 +1082,10 @@ impl TdxHqClient {
         bars: &[SecurityBar],
         xdxr: &[XdXrInfo],
     ) -> Vec<SecurityBar> {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: public Result query refuses before this helper.
+            return Vec::new();
+        }
         utils::fetch_context_bars_for_adjust_with_tier(
             |pkt| self.send_and_recv(pkt),
             category,
@@ -918,6 +1104,10 @@ impl TdxHqClient {
     /// - `Mid`: 约 20 年 (4800 根, 默认)
     /// - `High`: 约 30 年 (7200 根)
     pub fn set_fq_context_tier(&self, tier: utils::FqContextTier) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: isolated runtime configuration stays immutable.
+            return;
+        }
         let val: u8 = match tier {
             utils::FqContextTier::Low => 0,
             utils::FqContextTier::Mid => 1,
@@ -951,6 +1141,7 @@ impl TdxHqClient {
         bars: &[SecurityBar],
         xdxr: &[XdXrInfo],
     ) -> Result<Vec<SecurityBar>> {
+        self.reject_isolated_runtime()?;
         if bars.is_empty() || xdxr.is_empty() {
             return Ok(Vec::new());
         }
@@ -1031,6 +1222,7 @@ impl TdxHqClient {
         count: u16,
         fq: u8,
     ) -> Result<Vec<SecurityBar>> {
+        self.reject_isolated_runtime()?;
         let mut all_bars = Vec::new();
         let mut offset = 0u32;
         let mut remaining = count;
@@ -1068,6 +1260,7 @@ impl TdxHqClient {
         count: u16,
         fq: u8,
     ) -> Result<Vec<IndexBar>> {
+        self.reject_isolated_runtime()?;
         self.check_not_block_code(code)?;
         let _ = fq; // 指数不复权，强制 fq=0 发送
 
@@ -1131,6 +1324,7 @@ impl TdxHqClient {
         count: u16,
         fq: u8,
     ) -> Result<Vec<IndexBar>> {
+        self.reject_isolated_runtime()?;
         let mut all_bars = Vec::new();
         let mut offset = 0u32;
         let mut remaining = count;
@@ -1160,6 +1354,11 @@ impl TdxHqClient {
     /// 单次查询上限 60 只 (TDX 服务端硬限制)，超出自动截断并打印警告。
     /// 如需查询更多，请自行分组调用后合并结果。
     pub fn get_security_quotes(&self, all_stock: &[(u8, &str)]) -> Result<Vec<SecurityQuote>> {
+        #[cfg(feature = "test-support")]
+        if let Some(scope) = &self.isolation {
+            return self.get_security_quotes_isolated(scope, all_stock);
+        }
+        self.reject_isolated_runtime()?;
         // 服务端上限截断
         let all_stock = if all_stock.len() > MAX_QUOTES_COUNT {
             logw!(
@@ -1199,6 +1398,7 @@ impl TdxHqClient {
 
     /// 获取证券列表 (带缓存)
     pub fn get_security_list(&self, market: u8, start: u16) -> Result<Vec<SecurityInfo>> {
+        self.reject_isolated_runtime()?;
         if start == 0 {
             let cache = sync::lock(&self.list_cache, "security list cache")?;
             if let Some(entry) = cache.get(&market) {
@@ -1243,6 +1443,7 @@ impl TdxHqClient {
 
     /// 获取证券数量 (带缓存)
     pub fn get_security_count(&self, market: u8) -> Result<u16> {
+        self.reject_isolated_runtime()?;
         let cache = sync::lock(&self.count_cache, "security count cache")?;
         if let Some(entry) = cache.get(&market) {
             if Instant::now() < entry.expires_at {
@@ -1278,6 +1479,7 @@ impl TdxHqClient {
     /// 内部委托给历史分时 API (传入今日日期)，避免实时分时 API (0x051d)
     /// 的价格编码异常（基金类价格 1000x 偏高）。
     pub fn get_minute_time_data(&self, market: u8, code: &str) -> Result<Vec<MinuteTimePrice>> {
+        self.reject_isolated_runtime()?;
         let today = utils::today_yyyymmdd();
         self.get_history_minute_time_data(market, code, today)
     }
@@ -1289,6 +1491,7 @@ impl TdxHqClient {
         code: &str,
         date: u32,
     ) -> Result<Vec<MinuteTimePrice>> {
+        self.reject_isolated_runtime()?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(23);
         packet.extend_from_slice(&[
@@ -1310,6 +1513,7 @@ impl TdxHqClient {
         start: u16,
         count: u16,
     ) -> Result<Vec<TickData>> {
+        self.reject_isolated_runtime()?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(24);
         packet.extend_from_slice(&[
@@ -1334,6 +1538,7 @@ impl TdxHqClient {
         count: u16,
         date: u32,
     ) -> Result<Vec<TickData>> {
+        self.reject_isolated_runtime()?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(28);
         packet.extend_from_slice(&[
@@ -1352,6 +1557,7 @@ impl TdxHqClient {
 
     /// 获取财务信息
     pub fn get_finance_info(&self, market: u8, code: &str) -> Result<FinanceInfo> {
+        self.reject_isolated_runtime()?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(21);
         packet.extend_from_slice(&[
@@ -1366,6 +1572,7 @@ impl TdxHqClient {
 
     /// 获取除权除息
     pub fn get_xdxr_info(&self, market: u8, code: &str) -> Result<Vec<XdXrInfo>> {
+        self.reject_isolated_runtime()?;
         let code_buf = utils::code_bytes(code);
         let mut packet = Vec::with_capacity(21);
         packet.extend_from_slice(&[
@@ -1380,6 +1587,7 @@ impl TdxHqClient {
 
     /// 获取板块元数据
     pub fn get_block_info_meta(&self, block_file: &str) -> Result<BlockInfoMeta> {
+        self.reject_isolated_runtime()?;
         let mut name_buf = [0u8; 40];
         let bytes = block_file.as_bytes();
         let len = bytes.len().min(40);
@@ -1397,6 +1605,7 @@ impl TdxHqClient {
 
     /// 获取板块数据
     pub fn get_block_info(&self, block_file: &str, start: u32, size: u32) -> Result<Vec<u8>> {
+        self.reject_isolated_runtime()?;
         let mut name_buf = [0u8; 100];
         let bytes = block_file.as_bytes();
         let len = bytes.len().min(100);
@@ -1419,6 +1628,7 @@ impl TdxHqClient {
         &self,
         block_file: &str,
     ) -> Result<Vec<crate::reader::block::BlockRecord>> {
+        self.reject_isolated_runtime()?;
         let meta = self.get_block_info_meta(block_file)?;
         let chunk_size: u32 = 0x7530;
         let mut all_data = Vec::new();
@@ -1432,6 +1642,115 @@ impl TdxHqClient {
         }
 
         crate::reader::block::parse_block(&all_data)
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl TdxHqClient {
+    // Verbatim production quote encoder copy; the legacy body is unchanged.
+    fn security_quotes_packet(all_stock: &[(u8, &str)]) -> Vec<u8> {
+        let stock_len = all_stock.len() as u16;
+        let pkgdatalen = (stock_len as u32) * 7 + 12;
+
+        let mut packet = Vec::with_capacity(26 + stock_len as usize * 7);
+        packet.extend_from_slice(&0x010Cu16.to_le_bytes());
+        packet.extend_from_slice(&0x02006320u32.to_le_bytes());
+        packet.extend_from_slice(&(pkgdatalen as u16).to_le_bytes());
+        packet.extend_from_slice(&(pkgdatalen as u16).to_le_bytes());
+        packet.extend_from_slice(&CMD_SECURITY_QUOTES.to_le_bytes());
+        packet.extend_from_slice(&0u32.to_le_bytes());
+        packet.extend_from_slice(&0u16.to_le_bytes());
+        packet.extend_from_slice(&stock_len.to_le_bytes());
+        for &(market, code) in all_stock {
+            packet.push(market);
+            packet.extend_from_slice(&utils::code_bytes(code));
+        }
+
+        packet
+    }
+
+    // Exact production framing/decompression body; no retry or pool ownership here.
+    fn exchange_packet(conn: &mut TcpConnection, packet: &[u8]) -> Result<Vec<u8>> {
+        // Send
+        conn.send(packet)?;
+
+        // Read response header
+        let head_buf = conn.recv(RSP_HEADER_LEN)?;
+        let header = ResponseHeader::parse(&head_buf)?;
+
+        // Read body
+        let zip_size = header.zip_size as usize;
+        let mut body_buf = Vec::with_capacity(zip_size);
+        while body_buf.len() < zip_size {
+            let remaining = zip_size - body_buf.len();
+            let chunk = conn.recv(remaining)?;
+            body_buf.extend_from_slice(&chunk);
+        }
+
+        if body_buf.is_empty() {
+            return Err(ErrorCode::DISCONNECTED.err("empty response body"));
+        }
+
+        // Decompress if needed
+        if header.zip_size != header.unzip_size {
+            utils::decompress_zlib_exact(&body_buf, header.unzip_size)
+        } else {
+            Ok(body_buf)
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl TdxHqClient {
+    fn get_security_quotes_isolated(
+        &self,
+        scope: &Arc<IsolationScope>,
+        all_stock: &[(u8, &str)],
+    ) -> Result<Vec<SecurityQuote>> {
+        let permit = scope.begin_query()?;
+        // Public Core/adapter normally enforces this; the retained Hq alias also
+        // cannot silently truncate or submit an empty isolated request.
+        if !(1..=MAX_QUOTES_COUNT).contains(&all_stock.len()) {
+            return Err(TdxError::InvalidData(
+                "isolated quote request must contain 1..=60 instruments".into(),
+            ));
+        }
+        for &(_, code) in all_stock {
+            self.check_not_block_code(code)?;
+        }
+        self.rate_limiter.wait_isolated_quote(&permit)?;
+        self.isolated_no_worker(permit.deadline)?;
+        let packet = Self::security_quotes_packet(all_stock);
+        let pool = {
+            let handle = self.isolated_pool_handle(scope, permit.deadline)?;
+            Arc::clone(&handle)
+        };
+        let mut lease = pool.borrow_isolated_quote(permit)?;
+        let result: Result<Vec<SecurityQuote>> = (|| {
+            let body = Self::exchange_packet(lease.conn()?, &packet)?;
+            lease.remaining()?;
+            let quotes = parse_security_quotes(&body)?;
+            lease.remaining()?;
+            Ok(quotes)
+        })();
+        let settled = lease.finish(result.is_ok());
+        match (result, settled) {
+            (Ok(quotes), Ok(true)) => Ok(quotes),
+            (Ok(_), Ok(false)) => {
+                self.connected.store(false, Ordering::SeqCst);
+                Err(TdxError::Disconnected)
+            }
+            (Err(error), Ok(_)) => {
+                self.connected.store(false, Ordering::SeqCst);
+                Err(error)
+            }
+            (result, Err(cleanup)) => {
+                self.connected.store(false, Ordering::SeqCst);
+                Err(TdxError::Connection(format!(
+                    "isolated quote: {result:?}; cleanup: {cleanup}"
+                )))
+            }
+        }
     }
 }
 
@@ -1661,6 +1980,201 @@ mod tests {
         assert_eq!(stats.idle, 0);
         assert_eq!(stats.active, 0);
         assert_eq!(stats.total, 0);
+    }
+
+    #[test]
+    fn shared_client_connect_bursts_can_reconnect_and_disconnect() {
+        const CALLERS: usize = 8;
+        const ROUNDS: usize = 3;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            for _ in 0..ROUNDS {
+                let replies = Arc::new(Barrier::new(CALLERS));
+                let mut handlers = Vec::new();
+                for _ in 0..CALLERS {
+                    let (mut stream, _) =
+                        accept_before(&listener, Instant::now() + Duration::from_secs(3))
+                            .expect("every shared-client caller must connect");
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    stream
+                        .set_write_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let replies = Arc::clone(&replies);
+                    handlers.push(std::thread::spawn(move || {
+                        for (index, command) in
+                            [SETUP_CMD1, SETUP_CMD2, SETUP_CMD3].into_iter().enumerate()
+                        {
+                            let mut request = vec![0; command.len()];
+                            stream.read_exact(&mut request).unwrap();
+                            assert_eq!(request, command);
+                            if index == 2 {
+                                replies.wait();
+                            }
+                            write_test_response(&mut stream);
+                        }
+                    }));
+                }
+                for handler in handlers {
+                    handler.join().unwrap();
+                }
+            }
+        });
+        let client = Arc::new(TdxHqClient::new());
+        for _ in 0..ROUNDS {
+            let start = Arc::new(Barrier::new(CALLERS + 1));
+            let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+            let mut workers = Vec::new();
+            for _ in 0..CALLERS {
+                let client = Arc::clone(&client);
+                let start = Arc::clone(&start);
+                let finished_tx = finished_tx.clone();
+                workers.push(std::thread::spawn(move || {
+                    start.wait();
+                    let _ =
+                        finished_tx.send(client.connect("127.0.0.1", address.port(), Some(1.0)));
+                }));
+            }
+            drop(finished_tx);
+            start.wait();
+            for _ in 0..CALLERS {
+                assert!(finished_rx
+                    .recv_timeout(Duration::from_secs(3))
+                    .expect("shared reconnect burst did not release its callers")
+                    .unwrap());
+            }
+            for worker in workers {
+                worker.join().unwrap();
+            }
+            assert!(client.is_connected());
+        }
+        server.join().unwrap();
+        let (stopped_tx, stopped_rx) = std::sync::mpsc::channel();
+        let stopping = Arc::clone(&client);
+        let worker = std::thread::spawn(move || {
+            stopping.disconnect();
+            let _ = stopped_tx.send(());
+        });
+        stopped_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("shared client could not stop its heartbeat");
+        worker.join().unwrap();
+        assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn reconnect_returns_without_waiting_for_the_previous_heartbeat_tick() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let (handshake_tx, handshake_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut stream, _) =
+                    accept_before(&listener, Instant::now() + Duration::from_secs(3))
+                        .expect("configured server must be attempted");
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                for command in [SETUP_CMD1, SETUP_CMD2, SETUP_CMD3] {
+                    let mut request = vec![0; command.len()];
+                    stream.read_exact(&mut request).unwrap();
+                    assert_eq!(request, command);
+                    write_test_response(&mut stream);
+                }
+                handshake_tx.send(()).unwrap();
+            }
+        });
+        let client = Arc::new(TdxHqClient::new());
+        assert!(client
+            .connect("127.0.0.1", address.port(), Some(1.0))
+            .unwrap());
+        handshake_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let reconnecting = Arc::clone(&client);
+        let worker = std::thread::spawn(move || {
+            let _ = finished_tx.send(reconnecting.connect("127.0.0.1", address.port(), Some(1.0)));
+        });
+        handshake_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("reconnect must finish all handshake replies");
+        server.join().unwrap();
+        assert!(finished_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("successful reconnect waited for the previous heartbeat tick")
+            .unwrap());
+        worker.join().unwrap();
+        client.disconnect();
+        assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn cached_server_reconnect_returns_after_a_successful_handshake() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let (handshake_tx, handshake_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut stream, _) =
+                    accept_before(&listener, Instant::now() + Duration::from_secs(3))
+                        .expect("configured server must be attempted");
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                for command in [SETUP_CMD1, SETUP_CMD2, SETUP_CMD3] {
+                    let mut request = vec![0; command.len()];
+                    stream.read_exact(&mut request).unwrap();
+                    assert_eq!(request, command);
+                    write_test_response(&mut stream);
+                }
+                handshake_tx.send(()).unwrap();
+            }
+        });
+
+        let client = Arc::new(TdxHqClient::new());
+        client.set_servers(&[("loopback", "127.0.0.1", address.port())]);
+        assert!(client.connect_to_any(Some(1.0)).unwrap());
+        handshake_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("initial connection must finish its handshake");
+        client.disconnect();
+        assert!(!client.is_connected());
+        // Both connections use connect_to_any, which does not start a heartbeat.
+        // The public connect/disconnect sequence creates the cached state, so a
+        // post-handshake stall is not caused by fixture-only state injection.
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let reconnecting = Arc::clone(&client);
+        let worker = std::thread::spawn(move || {
+            let _ = finished_tx.send(reconnecting.connect_to_any(Some(1.0)));
+        });
+        handshake_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("all three cached-server handshake replies must complete");
+        server.join().unwrap();
+        assert!(finished_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("cached reconnect held its state lock after the handshake")
+            .unwrap());
+        worker.join().unwrap();
+        assert!(client.is_connected());
+        assert_eq!(
+            client.connected_server(),
+            Some((address.ip().to_string(), address.port()))
+        );
+        client.disconnect();
     }
 
     #[test]

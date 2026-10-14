@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::error::Result;
 use crate::loge;
 use crate::net::connection::TcpConnection;
+use crate::net::isolation::IsolationScope;
 use crate::protocol::constants::{CONNECT_TIMEOUT, DEFAULT_POOL_SIZE};
 
 /// Setup callback executed after a new connection is established.
@@ -49,6 +50,7 @@ impl Default for PoolConfig {
 pub struct ConnectionPool {
     inner: Mutex<PoolInner>,
     config: PoolConfig,
+    isolation: Option<Arc<IsolationScope>>,
 }
 
 struct PoolInner {
@@ -61,6 +63,14 @@ struct PoolInner {
 impl ConnectionPool {
     /// 创建连接池 (单服务器)
     pub fn new_single(_server: (String, u16), config: PoolConfig) -> Self {
+        Self::new_single_with_isolation(_server, config, None)
+    }
+
+    pub(super) fn new_single_with_isolation(
+        _server: (String, u16),
+        config: PoolConfig,
+        isolation: Option<Arc<IsolationScope>>,
+    ) -> Self {
         Self {
             inner: Mutex::new(PoolInner {
                 idle: VecDeque::new(),
@@ -69,11 +79,48 @@ impl ConnectionPool {
                 generation: Arc::new(()),
             }),
             config,
+            isolation,
         }
+    }
+
+    fn reject_isolated_runtime(&self) -> Result<()> {
+        match &self.isolation {
+            Some(scope) => Err(scope.runtime_error()),
+            None => Ok(()),
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn check_isolated_idle(
+        &self,
+        scope: &Arc<IsolationScope>,
+        deadline: std::time::Instant,
+    ) -> Result<()> {
+        let inner = crate::net::isolation::lock_until(&self.inner, deadline)?;
+        if !self
+            .isolation
+            .as_ref()
+            .is_some_and(|own| Arc::ptr_eq(own, scope))
+            || !inner.idle.is_empty()
+            || inner.active != 0
+            || inner.total != 0
+        {
+            return Err(crate::TdxError::Connection(
+                "isolated pool idle-close invariant failed".into(),
+            ));
+        }
+        Ok(())
     }
 
     /// 将一个已握手的连接放入池中
     pub fn push(&self, conn: TcpConnection, server: (String, u16)) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED: refuse adoption; shut down and release the socket.
+            let mut conn = conn;
+            conn.close();
+            drop(conn);
+            return;
+        }
         let mut inner = crate::sync::lock_recover(&self.inner, "connection pool");
         inner.total += 1;
         let generation = Arc::clone(&inner.generation);
@@ -90,6 +137,7 @@ impl ConnectionPool {
     /// 如果未达上限，创建新连接；
     /// 如果已满，返回错误。
     pub fn borrow(&self, server: &(String, u16)) -> Result<PooledConnGuard<'_>> {
+        self.reject_isolated_runtime()?;
         let mut inner = crate::sync::lock(&self.inner, "connection pool")?;
 
         // 尝试从空闲队列获取
@@ -159,6 +207,7 @@ impl ConnectionPool {
 
     /// 尝试借出连接 (非阻塞)
     pub fn try_borrow(&self, server: &(String, u16)) -> Result<Option<PooledConnGuard<'_>>> {
+        self.reject_isolated_runtime()?;
         let mut inner = crate::sync::lock(&self.inner, "connection pool")?;
 
         if let Some(conn) = inner.idle.pop_front() {
@@ -280,6 +329,10 @@ impl ConnectionPool {
 
     /// 关闭所有连接
     pub fn close_all(&self) {
+        if self.isolation.is_some() {
+            // NOT IMPLEMENTED for connected isolation: idle state is checked separately.
+            return;
+        }
         let mut inner = crate::sync::lock_recover(&self.inner, "connection pool");
         inner.generation = Arc::new(());
         while let Some(mut conn) = inner.idle.pop_front() {
@@ -338,6 +391,236 @@ impl<'a> Drop for PooledConnGuard<'a> {
     fn drop(&mut self) {
         if let Some(conn) = self.conn.take() {
             self.pool.return_connection(conn);
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+pub(super) struct IsolatedSlot<'a> {
+    inner: std::sync::MutexGuard<'a, PoolInner>,
+}
+
+#[cfg(feature = "test-support")]
+impl ConnectionPool {
+    pub(super) fn isolated_slot(
+        &self,
+        scope: &Arc<IsolationScope>,
+        deadline: std::time::Instant,
+    ) -> Result<IsolatedSlot<'_>> {
+        if !self
+            .isolation
+            .as_ref()
+            .is_some_and(|own| Arc::ptr_eq(own, scope))
+        {
+            return Err(crate::TdxError::Connection(
+                "isolated pool scope mismatch".into(),
+            ));
+        }
+        let inner = crate::net::isolation::lock_until(&self.inner, deadline)?;
+        if inner.active != 0 || inner.total != inner.idle.len() || inner.total > 1 {
+            return Err(crate::TdxError::Connection(
+                "isolated pool accounting invalid".into(),
+            ));
+        }
+        Ok(IsolatedSlot { inner })
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl IsolatedSlot<'_> {
+    pub(super) fn prepare_publish(&mut self) -> Result<()> {
+        if self.inner.total != 0 || !self.inner.idle.is_empty() {
+            return Err(crate::TdxError::Connection(
+                "isolated pool already connected".into(),
+            ));
+        }
+        self.inner.idle.try_reserve(1).map_err(|error| {
+            crate::TdxError::Connection(format!("isolated pool reserve failed: {error}"))
+        })?;
+        Ok(())
+    }
+    pub(super) fn install(&mut self, conn: TcpConnection, server: (String, u16)) {
+        let generation = Arc::clone(&self.inner.generation);
+        self.inner.idle.push_back(PooledConnection {
+            conn,
+            server,
+            generation,
+        });
+        self.inner.total = 1;
+    }
+    pub(super) fn has_connection(&self) -> bool {
+        !self.inner.idle.is_empty()
+    }
+    pub(super) fn take_one(&mut self) -> Option<TcpConnection> {
+        let result = self.inner.idle.pop_front().map(|pooled| pooled.conn);
+        self.inner.total = 0;
+        result
+    }
+}
+
+#[cfg(feature = "test-support")]
+pub(super) struct IsolatedQueryLease<'a> {
+    pool: &'a ConnectionPool,
+    permit: crate::net::isolation::QueryPermit,
+    conn: Option<PooledConnection>,
+    settled: bool,
+}
+
+#[cfg(feature = "test-support")]
+impl ConnectionPool {
+    pub(super) fn borrow_isolated_quote(
+        &self,
+        permit: crate::net::isolation::QueryPermit,
+    ) -> Result<IsolatedQueryLease<'_>> {
+        permit.remaining()?;
+        if !self
+            .isolation
+            .as_ref()
+            .is_some_and(|scope| Arc::ptr_eq(scope, &permit.scope))
+        {
+            return Err(crate::TdxError::Connection(
+                "isolated quote pool scope mismatch".into(),
+            ));
+        }
+        let mut inner = crate::net::isolation::lock_until(&self.inner, permit.deadline)?;
+        if inner.active != 0
+            || inner.total != 1
+            || inner.idle.len() != 1
+            || !inner.idle.front().is_some_and(|pooled| {
+                permit.allows_server(&pooled.server)
+                    && Arc::ptr_eq(&pooled.generation, &inner.generation)
+            })
+        {
+            return Err(crate::TdxError::Connection(
+                "isolated quote pool has no exact committed connection".into(),
+            ));
+        }
+        let conn = inner
+            .idle
+            .pop_front()
+            .ok_or_else(|| crate::TdxError::Connection("isolated quote stream lost".into()))?;
+        inner.active = 1;
+        drop(inner);
+        // Lease exists before any fallible stream reauthorization.
+        let mut lease = IsolatedQueryLease {
+            pool: self,
+            permit,
+            conn: Some(conn),
+            settled: false,
+        };
+        lease
+            .conn
+            .as_mut()
+            .ok_or_else(|| crate::TdxError::Connection("isolated quote lease missing".into()))?
+            .conn
+            .authorize_isolated_query(&lease.permit)?;
+        Ok(lease)
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl IsolatedQueryLease<'_> {
+    pub(super) fn conn(&mut self) -> Result<&mut TcpConnection> {
+        self.conn
+            .as_mut()
+            .map(|pooled| &mut pooled.conn)
+            .ok_or_else(|| crate::TdxError::Connection("isolated quote lease settled".into()))
+    }
+
+    pub(super) fn remaining(&self) -> Result<std::time::Duration> {
+        self.permit.remaining()
+    }
+
+    pub(super) fn finish(&mut self, allow_reuse: bool) -> Result<bool> {
+        if self.settled {
+            return Err(crate::TdxError::Connection(
+                "isolated quote lease already settled".into(),
+            ));
+        }
+        self.settled = true;
+        let result = self.settle(allow_reuse);
+        if let Err(error) = &result {
+            self.permit.scope.record_failure(error.to_string());
+            // The registered clone retains the single checked-shutdown duty;
+            // dropping this handle must not shutdown the same socket twice.
+            drop(self.conn.take());
+        }
+        result
+    }
+
+    fn settle(&mut self, allow_reuse: bool) -> Result<bool> {
+        // Lifecycle -> pool, matching checked close; neither lock spans OS I/O.
+        let mut lifecycle = self.permit.settlement()?;
+        let mut inner =
+            crate::net::isolation::lock_cleanup_until(&self.pool.inner, self.permit.deadline)?;
+        if inner.active != 1
+            || inner.total != 1
+            || !inner.idle.is_empty()
+            || !self.conn.as_ref().is_some_and(|pooled| {
+                Arc::ptr_eq(&pooled.generation, &inner.generation)
+                    && self.permit.allows_server(&pooled.server)
+            })
+        {
+            return Err(crate::TdxError::Connection(
+                "isolated quote return accounting invalid".into(),
+            ));
+        }
+        // Pool-lock waiting must not preserve an earlier admission snapshot.
+        // Lifecycle identity is still guarded; recheck stop/deadline without relocking it.
+        let reusable = allow_reuse
+            && lifecycle.reusable
+            && self
+                .permit
+                .scope
+                .validate_commit(self.permit.deadline)
+                .is_ok();
+        let pooled = self.conn.take().ok_or_else(|| {
+            crate::TdxError::Connection("isolated quote return stream lost".into())
+        })?;
+        let shutdown = lifecycle.complete(reusable);
+        inner.active = 0;
+        let discard = if reusable {
+            // The single-slot capacity was reserved during handshake publication.
+            inner.idle.push_back(pooled);
+            None
+        } else {
+            inner.total = 0;
+            Some(pooled)
+        };
+        drop(inner);
+        drop(lifecycle);
+        self.permit.released();
+        let mut errors = Vec::new();
+        // Both handles refer to ONE socket. Only the transferred registered
+        // clone (here or in close) performs checked shutdown; release this one.
+        drop(discard);
+        let had_shutdown = shutdown.is_some();
+        if let Some(shutdown) = shutdown {
+            if let Err(error) = shutdown.shutdown(std::net::Shutdown::Both) {
+                // A close owner must see failure before the drain becomes zero.
+                self.permit.scope.record_failure(error.to_string());
+                errors.push(error.to_string());
+            }
+            drop(shutdown);
+        }
+        if had_shutdown {
+            if let Err(error) = self.permit.scope.finish_query_drain(self.permit.deadline) {
+                errors.push(error.to_string());
+            }
+        }
+        if !errors.is_empty() {
+            return Err(crate::TdxError::Connection(errors.join("; ")));
+        }
+        Ok(reusable)
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl Drop for IsolatedQueryLease<'_> {
+    fn drop(&mut self) {
+        if !self.settled {
+            // Unwind/error paths never return a possibly partial quote stream.
+            let _ = self.finish(false);
         }
     }
 }

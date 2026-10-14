@@ -1,0 +1,47 @@
+{
+  "code": 0,
+  "message": "success",
+  "request_id": "offline-current-auction-source-v9",
+  "data": {
+    "timestamp": 1787386686058,
+    "auction_phase": "matching",
+    "data_status": "live",
+    "total": 2,
+    "item": [
+      {
+        "thscode": "600396.SH",
+        "ticker": "600396",
+        "name": "离线样本一",
+        "auction_price": 10.25,
+        "pre_close_price": 10.0,
+        "auction_pct": 2.5,
+        "auction_volume": 12.5,
+        "auction_amount": 12812.5,
+        "auction_unmatched": 25.0,
+        "auction_turnover_pct": 0.012,
+        "auction_volume_ratio": 1.25,
+        "auction_yesterday_ratio_pct": 101.0,
+        "float_market_cap": 1000000.0,
+        "last_price": 10.25,
+        "open_price": 10.25
+      },
+      {
+        "thscode": "000001.SZ",
+        "ticker": "000001",
+        "name": "离线样本二",
+        "auction_price": 0.0,
+        "pre_close_price": 12.2,
+        "auction_pct": 0.0,
+        "auction_volume": 0.0,
+        "auction_amount": 0.0,
+        "auction_unmatched": -321.0,
+        "auction_turnover_pct": 0.0,
+        "auction_volume_ratio": null,
+        "auction_yesterday_ratio_pct": null,
+        "float_market_cap": null,
+        "last_price": 0.0,
+        "open_price": 0.0
+      }
+    ]
+  }
+}

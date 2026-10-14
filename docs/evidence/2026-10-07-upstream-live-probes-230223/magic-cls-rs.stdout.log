@@ -1,0 +1,5 @@
+provider=cls-v1 capabilities=ContentCapabilities { instrument_news: false, global_news: true, announcements: false, market_announcements: false, investor_questions: false }
+source=cls-v1 source_at=Some("1791385233") fetched_at=1791385373.151419100 batch_id=Some("cls:1791385373.151419100:telegraph") complete=true records=1
+item_id=2498783 title="财联社10月7日电，美国9月纽约联储1年通胀预期报3.9%，预期3.64%，前值3.58%。" summary=Some("财联社10月7日电，美国9月纽约联储1年通胀预期报3.9%，预期3.64%，前值3.58%。") content=Some("财联社10月7日电，美国9月纽约联储1年通胀预期报3.9%，预期3.64%，前值3.58%。") publisher=财联社 canonical_url=https://api3.cls.cn/share/article/2498783?os=web&sv=7.7.5&app= published_at=2026-10-07T23:00:33+08:00 instruments=[] topics=["期货市场情报", "环球市场情报"] language=zh-CN evidence_provider=Cailianpress evidence_source_at=Some("1791385233") evidence_observed_at=1791385373.151419100 evidence_batch_id=cls:1791385373.151419100:telegraph
+admitted=true
+live_probe_status=admitted

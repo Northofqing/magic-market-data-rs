@@ -60,16 +60,7 @@ fn historical_hithink_registry(
     )
     .unwrap();
     let mut registry = OperationRegistry::all_unadmitted("fixture operation is unavailable");
-    registry
-        .register_handler(
-            admitted(
-                Operation::HistoricalBars,
-                "HithinkFinance",
-                HITHINK_HISTORICAL_BARS_SCOPE,
-            ),
-            move |command| execute_hithink_historical_bars(command, &client, maximum_payload_bytes),
-        )
-        .unwrap();
+    register_hithink_client(&mut registry, Arc::new(client), maximum_payload_bytes).unwrap();
     (registry, calls, body)
 }
 
@@ -1526,6 +1517,147 @@ fn hithink_quote_projection_marks_missing_record_source_time() {
     assert_eq!(record["status"], "Unavailable");
     assert!(record["source_at"].is_null());
     assert_eq!(record["observed_at"], observed_at);
+}
+
+#[test]
+fn registered_hithink_quote_keeps_batch_timestamp_out_of_records() {
+    // Preserve the existing provider unit-test's quote-timestamp sample values.
+    // Synthetic offline source shape, not live provider admission evidence.
+    let body = br#"{
+        "code": 0,
+        "message": "success",
+        "request_id": "quote-timestamp",
+        "data": {
+            "timestamp": 1789450351000,
+            "total": 1,
+            "item": [{
+                "thscode": "600396.SH",
+                "ticker": "600396",
+                "last_price": 13.64,
+                "price_change": 0.24,
+                "price_change_ratio_pct": 1.79,
+                "open_price": 13.45,
+                "high_price": 13.75,
+                "low_price": 13.40,
+                "prev_price": 13.40,
+                "volume": 123400.0,
+                "turnover": 1680000.0
+            }]
+        }
+    }"#;
+    // Reuse the existing external HTTP fixture unchanged. Its name describes
+    // its first use; it is only an in-memory HttpTransport response adapter.
+    let client = HithinkClient::with_transport(
+        "test_key",
+        HistoricalHithinkTransport {
+            body: body.to_vec(),
+            calls: Arc::new(AtomicUsize::new(0)),
+        },
+    )
+    .unwrap();
+    let mut registry = OperationRegistry::all_unadmitted("offline HTTP transport fixture only");
+    register_hithink_client(&mut registry, Arc::new(client), 4096).unwrap();
+    let command = QueryCommand::new(
+        "offline-hithink-quote-source-evidence",
+        Operation::RealtimeQuotes,
+        Some("HithinkFinance".into()),
+        CanonicalPayload::new(
+            "magic.market.realtime_quotes.request",
+            1,
+            serde_json::to_vec(&serde_json::json!({
+                "instruments": [{
+                    "exchange": "Shanghai",
+                    "code": "600396",
+                    "asset_class": "Equity"
+                }]
+            }))
+            .unwrap(),
+            4096,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let result = registry.execute(command).unwrap();
+    let after = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let observed =
+        magic_market_core::EvidenceTimestamp::parse_instant(&result.observed_at).unwrap();
+    let lower = magic_market_core::EvidenceTimestamp::parse_instant(&format!(
+        "{}.{:09}",
+        before.as_secs(),
+        before.subsec_nanos()
+    ))
+    .unwrap();
+    let upper = magic_market_core::EvidenceTimestamp::parse_instant(&format!(
+        "{}.{:09}",
+        after.as_secs(),
+        after.subsec_nanos()
+    ))
+    .unwrap();
+    assert!(lower <= observed && observed <= upper);
+
+    assert!(result.repository_admitted);
+    assert!(result.complete);
+    assert_eq!(result.provider, "HithinkFinance");
+    assert_eq!(result.diagnostic_blocker, None);
+    assert_eq!(result.batch_id, "quote-timestamp");
+    assert_eq!(result.source_at.as_deref(), Some("unix-ms:1789450351000"));
+    assert_eq!(result.records.len(), 1);
+    let payload = &result.records[0];
+    assert_eq!(payload.schema(), "magic.market.quote");
+    assert_eq!(payload.schema_version(), 1);
+    let wire: serde_json::Value = serde_json::from_slice(payload.data()).unwrap();
+    // Independent literals: no expected price, volume, ratio, identity or time
+    // is recomputed from parser output. Only bounded observation is dynamic.
+    assert_eq!(
+        wire,
+        serde_json::json!({
+            "instrument": {
+                "exchange": "Shanghai",
+                "code": "600396",
+                "asset_class": "Equity"
+            },
+            "name": null,
+            "price": 13.64,
+            "previous_close": 13.40,
+            "open": 13.45,
+            "high": 13.75,
+            "low": 13.40,
+            "change_percent": {"value": 1.79, "unit": "Percent"},
+            "volume": 1234.0,
+            "amount": 1680000.0,
+            "status": "Unavailable",
+            "source_at": null,
+            "observed_at": result.observed_at.as_str(),
+            "provider": "Tonghuashun",
+            "batch_id": "quote-timestamp"
+        })
+    );
+    let quote: Quote = serde_json::from_slice(payload.data()).unwrap();
+    assert_eq!(
+        quote.instrument(),
+        &InstrumentId::new(
+            magic_market_core::Exchange::Shanghai,
+            "600396",
+            magic_market_core::AssetClass::Equity,
+        )
+        .unwrap()
+    );
+    assert_eq!(quote.name(), None);
+    assert_eq!(quote.price().get(), 13.64);
+    assert_eq!(quote.volume().get(), 1234.0);
+    assert_eq!(quote.amount().unwrap().get(), 1680000.0);
+    assert_eq!(quote.status(), DataStatus::Unavailable);
+    assert_eq!(quote.source_at(), None);
+    assert_eq!(quote.provider(), ProviderId::Tonghuashun);
+    assert_eq!(quote.batch_id(), "quote-timestamp");
+    assert_eq!(quote.batch_id(), result.batch_id);
+    assert_eq!(quote.observed_at(), result.observed_at);
 }
 
 #[test]

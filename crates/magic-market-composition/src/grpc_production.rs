@@ -1102,6 +1102,142 @@ fn register_exact_blockers(registry: &mut OperationRegistry) -> Result<(), Servi
     Ok(())
 }
 
+fn register_eastmoney_mx_client(
+    registry: &mut OperationRegistry,
+    mx: &EastmoneyMxClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    let flow_series = mx.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::FundFlowSeries,
+            "EastmoneyMiaoxiang",
+            "one Shanghai/Shenzhen equity; bounded daily main/super-large/large/medium/small net flow in CNY",
+            "natural-language result cardinality and serial live stability remain repository-unadmitted",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                FUND_FLOW_SERIES_REQUEST_SCHEMA,
+                FUND_FLOW_SERIES_RECORD_SCHEMA,
+                "EastmoneyMiaoxiang",
+                maximum_payload_bytes,
+                |request: &FundFlowRequest| flow_series.diagnose_daily_fund_flow(request),
+            )
+        },
+    )?;
+
+    let money_flows = mx.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::MoneyFlows,
+            "EastmoneyMiaoxiang",
+            "one Shanghai/Shenzhen equity; latest bounded daily main/super-large/large/medium/small net flow in CNY",
+            "source methodology and serial live stability remain repository-unadmitted",
+        ),
+        move |command| execute_mx_money_flow(&money_flows, command, maximum_payload_bytes),
+    )?;
+
+    let auctions = mx.clone();
+    registry.register_diagnostic_handler(
+        blocked(
+            Operation::Auctions,
+            "EastmoneyMiaoxiang",
+            "one equity and exact source date; one-response opening-auction matched volume in shares and amount in CNY; Level-2 fields remain null",
+            MIAOXIANG_AUCTION_BLOCKER,
+        ),
+        move |command| {
+            let request: AuctionDiagnosticRequest =
+                decode_request(&command, AUCTIONS_REQUEST_SCHEMA)?;
+            let batch = auctions
+                .diagnose_opening_auction(&request.instrument, &request.trading_date)
+                .map_err(|error| map_eastmoney_error(Operation::Auctions, &error))?;
+            provider_query_result(
+                batch,
+                "EastmoneyMiaoxiang",
+                AUCTIONS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    let breadth = mx.clone();
+    registry.register_handler(
+        admitted(
+            Operation::MarketBreadth,
+            "EastmoneyMiaoxiang",
+            "exact source date; one-response all-A listed/valid/up/down/flat/limit-up/limit-down counts with proved coverage",
+        ),
+        move |command| {
+            let request: MarketBreadthDiagnosticRequest =
+                decode_request(&command, MARKET_BREADTH_REQUEST_SCHEMA)?;
+            let batch = breadth
+                .diagnose_market_breadth(&request.source_date)
+                .map_err(|error| map_eastmoney_error(Operation::MarketBreadth, &error))?;
+            provider_query_result(
+                batch,
+                "EastmoneyMiaoxiang",
+                MARKET_BREADTH_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn register_sina_option_client(
+    registry: &mut OperationRegistry,
+    options: SinaClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ServiceError> {
+    registry.register_handler(
+        admitted(
+            Operation::OptionData,
+            "Sina",
+            "verified option contract discovery, quotes or Greeks",
+        ),
+        move |command| {
+            let request: OptionDataRequest = decode_request(&command, OPTION_DATA_REQUEST_SCHEMA)?;
+            match request {
+                OptionDataRequest::Contracts { underlying, expiry } => {
+                    let batch = options
+                        .option_contracts(&underlying, expiry.as_ref())
+                        .map_err(|error| provider_error(Operation::OptionData, error))?;
+                    provider_query_result(
+                        batch,
+                        "Sina",
+                        OPTION_CONTRACT_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+                OptionDataRequest::Quotes { contracts } => {
+                    let batch = options
+                        .option_quotes(&contracts)
+                        .map_err(|error| provider_error(Operation::OptionData, error))?;
+                    provider_query_result(
+                        batch,
+                        "Sina",
+                        OPTION_QUOTE_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+                OptionDataRequest::Greeks { contracts } => {
+                    let batch = options
+                        .option_greeks(&contracts)
+                        .map_err(|error| provider_error(Operation::OptionData, error))?;
+                    provider_query_result(
+                        batch,
+                        "Sina",
+                        OPTION_GREEKS_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+            }
+        },
+    )?;
+    Ok(())
+}
+
 fn register_extended_handlers(
     registry: &mut OperationRegistry,
     provider_timeout: Duration,
@@ -1134,81 +1270,7 @@ fn register_extended_handlers(
         None
     };
     if let Some(mx) = mx.as_ref() {
-        let flow_series = mx.clone();
-        registry.register_diagnostic_handler(
-            blocked(
-                Operation::FundFlowSeries,
-                "EastmoneyMiaoxiang",
-                "one Shanghai/Shenzhen equity; bounded daily main/super-large/large/medium/small net flow in CNY",
-                "natural-language result cardinality and serial live stability remain repository-unadmitted",
-            ),
-            move |command| {
-                execute_typed(
-                    command,
-                    FUND_FLOW_SERIES_REQUEST_SCHEMA,
-                    FUND_FLOW_SERIES_RECORD_SCHEMA,
-                    "EastmoneyMiaoxiang",
-                    maximum_payload_bytes,
-                    |request: &FundFlowRequest| flow_series.diagnose_daily_fund_flow(request),
-                )
-            },
-        )?;
-
-        let money_flows = mx.clone();
-        registry.register_diagnostic_handler(
-            blocked(
-                Operation::MoneyFlows,
-                "EastmoneyMiaoxiang",
-                "one Shanghai/Shenzhen equity; latest bounded daily main/super-large/large/medium/small net flow in CNY",
-                "source methodology and serial live stability remain repository-unadmitted",
-            ),
-            move |command| execute_mx_money_flow(&money_flows, command, maximum_payload_bytes),
-        )?;
-
-        let auctions = mx.clone();
-        registry.register_diagnostic_handler(
-            blocked(
-                Operation::Auctions,
-                "EastmoneyMiaoxiang",
-                "one equity and exact source date; one-response opening-auction matched volume in shares and amount in CNY; Level-2 fields remain null",
-                MIAOXIANG_AUCTION_BLOCKER,
-            ),
-            move |command| {
-                let request: AuctionDiagnosticRequest =
-                    decode_request(&command, AUCTIONS_REQUEST_SCHEMA)?;
-                let batch = auctions
-                    .diagnose_opening_auction(&request.instrument, &request.trading_date)
-                    .map_err(|error| map_eastmoney_error(Operation::Auctions, &error))?;
-                provider_query_result(
-                    batch,
-                    "EastmoneyMiaoxiang",
-                    AUCTIONS_RECORD_SCHEMA,
-                    maximum_payload_bytes,
-                )
-            },
-        )?;
-
-        let breadth = mx.clone();
-        registry.register_handler(
-            admitted(
-                Operation::MarketBreadth,
-                "EastmoneyMiaoxiang",
-                "exact source date; one-response all-A listed/valid/up/down/flat/limit-up/limit-down counts with proved coverage",
-            ),
-            move |command| {
-                let request: MarketBreadthDiagnosticRequest =
-                    decode_request(&command, MARKET_BREADTH_REQUEST_SCHEMA)?;
-                let batch = breadth
-                    .diagnose_market_breadth(&request.source_date)
-                    .map_err(|error| map_eastmoney_error(Operation::MarketBreadth, &error))?;
-                provider_query_result(
-                    batch,
-                    "EastmoneyMiaoxiang",
-                    MARKET_BREADTH_RECORD_SCHEMA,
-                    maximum_payload_bytes,
-                )
-            },
-        )?;
+        register_eastmoney_mx_client(registry, mx, maximum_payload_bytes)?;
     } else {
         for capability in [
             blocked(
@@ -1262,26 +1324,7 @@ fn register_extended_handlers(
         },
     )?;
 
-    registry.register_handler(
-        admitted(
-            Operation::MarketRankings,
-            "Eastmoney",
-            "one bounded A-share source ranking response with exact identity, rank, value, unit, source time and reported universe size",
-        ),
-        move |command| {
-            let request: MarketRankingsRequest =
-                decode_request(&command, MARKET_RANKINGS_REQUEST_SCHEMA)?;
-            let batch = eastmoney
-                .bounded_market_rankings_snapshot(&request.kind, request.limit)
-                .map_err(|error| map_eastmoney_error(Operation::MarketRankings, &error))?;
-            provider_query_result(
-                batch,
-                "Eastmoney",
-                MARKET_RANKINGS_RECORD_SCHEMA,
-                maximum_payload_bytes,
-            )
-        },
-    )?;
+    register_eastmoney_market_rankings_client(registry, eastmoney, maximum_payload_bytes)?;
 
     let cffex = CffexClient::new()?;
     registry.register_handler(
@@ -1307,6 +1350,34 @@ fn register_extended_handlers(
     )?;
     register_emquant(registry, provider_timeout, maximum_payload_bytes)?;
     register_hithink(registry, provider_timeout, maximum_payload_bytes)?;
+    Ok(())
+}
+
+fn register_eastmoney_market_rankings_client(
+    registry: &mut OperationRegistry,
+    eastmoney: EastmoneyClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    registry.register_handler(
+        admitted(
+            Operation::MarketRankings,
+            "Eastmoney",
+            "one bounded A-share source ranking response with exact identity, rank, value, unit, source time and reported universe size",
+        ),
+        move |command| {
+            let request: MarketRankingsRequest =
+                decode_request(&command, MARKET_RANKINGS_REQUEST_SCHEMA)?;
+            let batch = eastmoney
+                .bounded_market_rankings_snapshot(&request.kind, request.limit)
+                .map_err(|error| map_eastmoney_error(Operation::MarketRankings, &error))?;
+            provider_query_result(
+                batch,
+                "Eastmoney",
+                MARKET_RANKINGS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
     Ok(())
 }
 
@@ -1422,6 +1493,14 @@ fn register_hithink(
         }
     };
 
+    register_hithink_client(registry, client, maximum_payload_bytes)
+}
+
+fn register_hithink_client(
+    registry: &mut OperationRegistry,
+    client: Arc<HithinkClient>,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     let bars = client.clone();
     registry.register_handler(
         admitted(
@@ -1649,7 +1728,14 @@ fn register_emquant(
             return Ok(());
         }
     };
+    register_emquant_client(registry, client, maximum_payload_bytes)
+}
 
+fn register_emquant_client(
+    registry: &mut OperationRegistry,
+    client: Arc<EmQuantClient>,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     let quotes = client.clone();
     registry.register_diagnostic_handler(
         blocked(
@@ -1920,12 +2006,11 @@ fn money_flow_query_result(
     })
 }
 
-fn register_additional_providers(
+fn register_baidu_technical_bars_client(
     registry: &mut OperationRegistry,
-    provider_timeout: Duration,
+    baidu: BaiduClient,
     maximum_payload_bytes: usize,
 ) -> Result<(), ProductionRegistryError> {
-    let baidu = BaiduClient::with_timeout(provider_timeout)?;
     registry.register_handler(
         admitted(
             Operation::TechnicalBars,
@@ -1943,6 +2028,16 @@ fn register_additional_providers(
             )
         },
     )?;
+    Ok(())
+}
+
+fn register_additional_providers(
+    registry: &mut OperationRegistry,
+    provider_timeout: Duration,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    let baidu = BaiduClient::with_timeout(provider_timeout)?;
+    register_baidu_technical_bars_client(registry, baidu, maximum_payload_bytes)?;
 
     let jin10 = Jin10Client::with_timeout(provider_timeout)?;
     let calendar = jin10.clone();
@@ -2026,6 +2121,30 @@ fn register_additional_providers(
     )?;
 
     let hkex = HkexClient::new()?;
+    register_hkex_northbound_client(registry, hkex, maximum_payload_bytes)?;
+    register_exchange_parity(registry, provider_timeout, maximum_payload_bytes)?;
+
+    let ths = ThsClient::new()?;
+    let consensus = ths.clone();
+    register_ths_consensus_client(registry, consensus, maximum_payload_bytes)?;
+    let strong = ths.clone();
+    register_ths_strong_reasons_client(registry, strong, maximum_payload_bytes)?;
+    let limit_pools = ths.clone();
+    register_ths_limit_pools_client(registry, limit_pools, maximum_payload_bytes)?;
+    register_ths_popularity_client(registry, ths, maximum_payload_bytes)?;
+
+    let options = SinaClient::with_timeout(provider_timeout)?;
+    register_sina_option_client(registry, options, maximum_payload_bytes)?;
+    register_tdx_public(registry, provider_timeout, maximum_payload_bytes)?;
+    register_iwencai(registry, maximum_payload_bytes)?;
+    Ok(())
+}
+
+fn register_hkex_northbound_client(
+    registry: &mut OperationRegistry,
+    hkex: HkexClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     registry.register_handler(
         admitted(
             Operation::NorthboundDaily,
@@ -2043,10 +2162,39 @@ fn register_additional_providers(
             )
         },
     )?;
-    register_exchange_parity(registry, provider_timeout, maximum_payload_bytes)?;
+    Ok(())
+}
 
-    let ths = ThsClient::new()?;
-    let consensus = ths.clone();
+fn register_ths_limit_pools_client(
+    registry: &mut OperationRegistry,
+    limit_pools: ThsClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    registry.register_handler(
+        admitted(
+            Operation::LimitPools,
+            "Tonghuashun",
+            "upper-limit pool only for an exact trading date",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                LIMIT_POOLS_REQUEST_SCHEMA,
+                LIMIT_POOLS_RECORD_SCHEMA,
+                "Tonghuashun",
+                maximum_payload_bytes,
+                |request: &LimitPoolRequest| limit_pools.limit_pool(request),
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn register_ths_consensus_client(
+    registry: &mut OperationRegistry,
+    consensus: ThsClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     registry.register_handler(
         admitted(
             Operation::Consensus,
@@ -2066,7 +2214,14 @@ fn register_additional_providers(
             )
         },
     )?;
-    let strong = ths.clone();
+    Ok(())
+}
+
+fn register_ths_strong_reasons_client(
+    registry: &mut OperationRegistry,
+    strong: ThsClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     registry.register_handler(
         admitted(
             Operation::StrongStockReasons,
@@ -2084,24 +2239,14 @@ fn register_additional_providers(
             )
         },
     )?;
-    let limit_pools = ths.clone();
-    registry.register_handler(
-        admitted(
-            Operation::LimitPools,
-            "Tonghuashun",
-            "upper-limit pool only for an exact trading date",
-        ),
-        move |command| {
-            execute_typed(
-                command,
-                LIMIT_POOLS_REQUEST_SCHEMA,
-                LIMIT_POOLS_RECORD_SCHEMA,
-                "Tonghuashun",
-                maximum_payload_bytes,
-                |request: &LimitPoolRequest| limit_pools.limit_pool(request),
-            )
-        },
-    )?;
+    Ok(())
+}
+
+fn register_ths_popularity_client(
+    registry: &mut OperationRegistry,
+    ths: ThsClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     registry.register_handler(
         admitted(
             Operation::Popularity,
@@ -2121,55 +2266,170 @@ fn register_additional_providers(
             )
         },
     )?;
+    Ok(())
+}
 
-    let options = SinaClient::with_timeout(provider_timeout)?;
+fn register_sse_announcements_client(
+    registry: &mut OperationRegistry,
+    sse_announcements: SseClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     registry.register_handler(
         admitted(
-            Operation::OptionData,
-            "Sina",
-            "verified option contract discovery, quotes or Greeks",
+            Operation::Announcements,
+            "Sse",
+            "official SSE instrument announcements for an explicit bounded date range",
         ),
         move |command| {
-            let request: OptionDataRequest = decode_request(&command, OPTION_DATA_REQUEST_SCHEMA)?;
+            execute_typed(
+                command,
+                ANNOUNCEMENTS_REQUEST_SCHEMA,
+                ANNOUNCEMENTS_RECORD_SCHEMA,
+                "Sse",
+                maximum_payload_bytes,
+                |request: &InstrumentDateRangeRequest| sse_announcements.announcements(request),
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn register_szse_dragon_tiger_client(
+    registry: &mut OperationRegistry,
+    szse: SzseClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ServiceError> {
+    registry.register_handler(
+        admitted(
+            Operation::DragonTiger,
+            "Szse",
+            "official SZSE dragon-tiger entries or seats for an explicit request",
+        ),
+        move |command| {
+            let request: DragonTigerRequest =
+                decode_request(&command, DRAGON_TIGER_REQUEST_SCHEMA)?;
             match request {
-                OptionDataRequest::Contracts { underlying, expiry } => {
-                    let batch = options
-                        .option_contracts(&underlying, expiry.as_ref())
-                        .map_err(|error| provider_error(Operation::OptionData, error))?;
+                DragonTigerRequest::Entries(request) => {
+                    let batch = szse
+                        .dragon_tiger_entries(&request)
+                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
                     provider_query_result(
                         batch,
-                        "Sina",
-                        OPTION_CONTRACT_RECORD_SCHEMA,
+                        "Szse",
+                        DRAGON_TIGER_ENTRY_RECORD_SCHEMA,
                         maximum_payload_bytes,
                     )
                 }
-                OptionDataRequest::Quotes { contracts } => {
-                    let batch = options
-                        .option_quotes(&contracts)
-                        .map_err(|error| provider_error(Operation::OptionData, error))?;
+                DragonTigerRequest::Seats(request) => {
+                    let batch = szse
+                        .dragon_tiger_seats(&request)
+                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
                     provider_query_result(
                         batch,
-                        "Sina",
-                        OPTION_QUOTE_RECORD_SCHEMA,
-                        maximum_payload_bytes,
-                    )
-                }
-                OptionDataRequest::Greeks { contracts } => {
-                    let batch = options
-                        .option_greeks(&contracts)
-                        .map_err(|error| provider_error(Operation::OptionData, error))?;
-                    provider_query_result(
-                        batch,
-                        "Sina",
-                        OPTION_GREEKS_RECORD_SCHEMA,
+                        "Szse",
+                        DRAGON_TIGER_SEAT_RECORD_SCHEMA,
                         maximum_payload_bytes,
                     )
                 }
             }
         },
     )?;
-    register_tdx_public(registry, provider_timeout, maximum_payload_bytes)?;
-    register_iwencai(registry, maximum_payload_bytes)?;
+    Ok(())
+}
+
+fn register_szse_order_books_client(
+    registry: &mut OperationRegistry,
+    books: SzseClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    registry.register_handler(
+        admitted(
+            Operation::OrderBooks,
+            "Szse",
+            "official SZSE five-level books for explicitly requested Shenzhen instruments",
+        ),
+        move |command| {
+            let request: InstrumentsRequest = decode_request(&command, ORDER_BOOKS_REQUEST_SCHEMA)?;
+            let batch = books
+                .order_books(&request.instruments)
+                .map_err(|error| provider_error(Operation::OrderBooks, error))?;
+            provider_query_result(
+                batch,
+                "Szse",
+                ORDER_BOOKS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+
+    Ok(())
+}
+
+fn register_szse_announcements_client(
+    registry: &mut OperationRegistry,
+    szse_announcements: SzseClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    registry.register_handler(
+        admitted(
+            Operation::Announcements,
+            "Szse",
+            "official SZSE instrument announcements for an explicit bounded date range",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                ANNOUNCEMENTS_REQUEST_SCHEMA,
+                ANNOUNCEMENTS_RECORD_SCHEMA,
+                "Szse",
+                maximum_payload_bytes,
+                |request: &InstrumentDateRangeRequest| szse_announcements.announcements(request),
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn register_sse_dragon_tiger_client(
+    registry: &mut OperationRegistry,
+    sse: SseClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    registry.register_handler(
+        admitted(
+            Operation::DragonTiger,
+            "Sse",
+            "official SSE dragon-tiger entries or seats for an explicit request",
+        ),
+        move |command| {
+            let request: DragonTigerRequest =
+                decode_request(&command, DRAGON_TIGER_REQUEST_SCHEMA)?;
+            match request {
+                DragonTigerRequest::Entries(request) => {
+                    let batch = sse
+                        .dragon_tiger_entries(&request)
+                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
+                    provider_query_result(
+                        batch,
+                        "Sse",
+                        DRAGON_TIGER_ENTRY_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+                DragonTigerRequest::Seats(request) => {
+                    let batch = sse
+                        .dragon_tiger_seats(&request)
+                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
+                    provider_query_result(
+                        batch,
+                        "Sse",
+                        DRAGON_TIGER_SEAT_RECORD_SCHEMA,
+                        maximum_payload_bytes,
+                    )
+                }
+            }
+        },
+    )?;
     Ok(())
 }
 
@@ -2210,133 +2470,15 @@ fn register_exchange_parity(
     )?;
 
     let books = szse.clone();
-    registry.register_handler(
-        admitted(
-            Operation::OrderBooks,
-            "Szse",
-            "official SZSE five-level books for explicitly requested Shenzhen instruments",
-        ),
-        move |command| {
-            let request: InstrumentsRequest = decode_request(&command, ORDER_BOOKS_REQUEST_SCHEMA)?;
-            let batch = books
-                .order_books(&request.instruments)
-                .map_err(|error| provider_error(Operation::OrderBooks, error))?;
-            provider_query_result(
-                batch,
-                "Szse",
-                ORDER_BOOKS_RECORD_SCHEMA,
-                maximum_payload_bytes,
-            )
-        },
-    )?;
+    register_szse_order_books_client(registry, books, maximum_payload_bytes)?;
 
     let sse_announcements = sse.clone();
-    registry.register_handler(
-        admitted(
-            Operation::Announcements,
-            "Sse",
-            "official SSE instrument announcements for an explicit bounded date range",
-        ),
-        move |command| {
-            execute_typed(
-                command,
-                ANNOUNCEMENTS_REQUEST_SCHEMA,
-                ANNOUNCEMENTS_RECORD_SCHEMA,
-                "Sse",
-                maximum_payload_bytes,
-                |request: &InstrumentDateRangeRequest| sse_announcements.announcements(request),
-            )
-        },
-    )?;
+    register_sse_announcements_client(registry, sse_announcements, maximum_payload_bytes)?;
     let szse_announcements = szse.clone();
-    registry.register_handler(
-        admitted(
-            Operation::Announcements,
-            "Szse",
-            "official SZSE instrument announcements for an explicit bounded date range",
-        ),
-        move |command| {
-            execute_typed(
-                command,
-                ANNOUNCEMENTS_REQUEST_SCHEMA,
-                ANNOUNCEMENTS_RECORD_SCHEMA,
-                "Szse",
-                maximum_payload_bytes,
-                |request: &InstrumentDateRangeRequest| szse_announcements.announcements(request),
-            )
-        },
-    )?;
+    register_szse_announcements_client(registry, szse_announcements, maximum_payload_bytes)?;
 
-    registry.register_handler(
-        admitted(
-            Operation::DragonTiger,
-            "Sse",
-            "official SSE dragon-tiger entries or seats for an explicit request",
-        ),
-        move |command| {
-            let request: DragonTigerRequest =
-                decode_request(&command, DRAGON_TIGER_REQUEST_SCHEMA)?;
-            match request {
-                DragonTigerRequest::Entries(request) => {
-                    let batch = sse
-                        .dragon_tiger_entries(&request)
-                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
-                    provider_query_result(
-                        batch,
-                        "Sse",
-                        DRAGON_TIGER_ENTRY_RECORD_SCHEMA,
-                        maximum_payload_bytes,
-                    )
-                }
-                DragonTigerRequest::Seats(request) => {
-                    let batch = sse
-                        .dragon_tiger_seats(&request)
-                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
-                    provider_query_result(
-                        batch,
-                        "Sse",
-                        DRAGON_TIGER_SEAT_RECORD_SCHEMA,
-                        maximum_payload_bytes,
-                    )
-                }
-            }
-        },
-    )?;
-    registry.register_handler(
-        admitted(
-            Operation::DragonTiger,
-            "Szse",
-            "official SZSE dragon-tiger entries or seats for an explicit request",
-        ),
-        move |command| {
-            let request: DragonTigerRequest =
-                decode_request(&command, DRAGON_TIGER_REQUEST_SCHEMA)?;
-            match request {
-                DragonTigerRequest::Entries(request) => {
-                    let batch = szse
-                        .dragon_tiger_entries(&request)
-                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
-                    provider_query_result(
-                        batch,
-                        "Szse",
-                        DRAGON_TIGER_ENTRY_RECORD_SCHEMA,
-                        maximum_payload_bytes,
-                    )
-                }
-                DragonTigerRequest::Seats(request) => {
-                    let batch = szse
-                        .dragon_tiger_seats(&request)
-                        .map_err(|error| provider_error(Operation::DragonTiger, error))?;
-                    provider_query_result(
-                        batch,
-                        "Szse",
-                        DRAGON_TIGER_SEAT_RECORD_SCHEMA,
-                        maximum_payload_bytes,
-                    )
-                }
-            }
-        },
-    )?;
+    register_sse_dragon_tiger_client(registry, sse, maximum_payload_bytes)?;
+    register_szse_dragon_tiger_client(registry, szse, maximum_payload_bytes)?;
     Ok(())
 }
 
@@ -2386,62 +2528,7 @@ fn register_tdx_public(
         },
     )?;
     let boards = TdxBoardProvider::new("180.153.18.170", 7709, timeout_seconds);
-    let directory = boards.clone();
-    registry.register_handler(
-        admitted(
-            Operation::BoardDirectory,
-            "Tdx",
-            "TDX public protocol concept or industry board directory",
-        ),
-        move |command| {
-            execute_typed(
-                command,
-                BOARD_DIRECTORY_REQUEST_SCHEMA,
-                BOARD_DIRECTORY_RECORD_SCHEMA,
-                "Tdx",
-                maximum_payload_bytes,
-                |request: &BoardDirectoryRequest| directory.boards(request),
-            )
-        },
-    )?;
-    let constituents = boards.clone();
-    registry.register_handler(
-        admitted(
-            Operation::BoardConstituents,
-            "Tdx",
-            "TDX public protocol exact board constituents",
-        ),
-        move |command| {
-            execute_typed(
-                command,
-                BOARD_CONSTITUENTS_REQUEST_SCHEMA,
-                BOARD_MEMBERSHIP_RECORD_SCHEMA,
-                "Tdx",
-                maximum_payload_bytes,
-                |request: &BoardConstituentRequest| constituents.board_constituents(request),
-            )
-        },
-    )?;
-    registry.register_handler(
-        admitted(
-            Operation::BoardMemberships,
-            "Tdx",
-            "TDX public protocol reverse board memberships for bounded equities",
-        ),
-        move |command| {
-            let request: InstrumentsRequest =
-                decode_request(&command, BOARD_MEMBERSHIPS_REQUEST_SCHEMA)?;
-            let batch = boards
-                .board_memberships(&request.instruments)
-                .map_err(|error| provider_error(Operation::BoardMemberships, error))?;
-            provider_query_result(
-                batch,
-                "Tdx",
-                BOARD_MEMBERSHIP_RECORD_SCHEMA,
-                maximum_payload_bytes,
-            )
-        },
-    )?;
+    register_tdx_boards_client(registry, boards, maximum_payload_bytes)?;
 
     let block_service = Arc::new(BlockService::new("180.153.18.170", 7709, timeout_seconds));
     registry.register_handler(
@@ -2510,6 +2597,70 @@ fn register_tdx_public(
                 response.into_batch(),
                 "Tdx",
                 CORPORATE_ACTIONS_RECORD_SCHEMA,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn register_tdx_boards_client(
+    registry: &mut OperationRegistry,
+    boards: TdxBoardProvider,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    let directory = boards.clone();
+    registry.register_handler(
+        admitted(
+            Operation::BoardDirectory,
+            "Tdx",
+            "TDX public protocol concept or industry board directory",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                BOARD_DIRECTORY_REQUEST_SCHEMA,
+                BOARD_DIRECTORY_RECORD_SCHEMA,
+                "Tdx",
+                maximum_payload_bytes,
+                |request: &BoardDirectoryRequest| directory.boards(request),
+            )
+        },
+    )?;
+    let constituents = boards.clone();
+    registry.register_handler(
+        admitted(
+            Operation::BoardConstituents,
+            "Tdx",
+            "TDX public protocol exact board constituents",
+        ),
+        move |command| {
+            execute_typed(
+                command,
+                BOARD_CONSTITUENTS_REQUEST_SCHEMA,
+                BOARD_MEMBERSHIP_RECORD_SCHEMA,
+                "Tdx",
+                maximum_payload_bytes,
+                |request: &BoardConstituentRequest| constituents.board_constituents(request),
+            )
+        },
+    )?;
+    registry.register_handler(
+        admitted(
+            Operation::BoardMemberships,
+            "Tdx",
+            "TDX public protocol reverse board memberships for bounded equities",
+        ),
+        move |command| {
+            let request: InstrumentsRequest =
+                decode_request(&command, BOARD_MEMBERSHIPS_REQUEST_SCHEMA)?;
+            let batch = boards
+                .board_memberships(&request.instruments)
+                .map_err(|error| provider_error(Operation::BoardMemberships, error))?;
+            provider_query_result(
+                batch,
+                "Tdx",
+                BOARD_MEMBERSHIP_RECORD_SCHEMA,
                 maximum_payload_bytes,
             )
         },
@@ -2714,6 +2865,35 @@ fn register_eastmoney(
     maximum_payload_bytes: usize,
 ) -> Result<(), ProductionRegistryError> {
     let client = EastmoneyClient::with_timeout(provider_timeout)?;
+    register_eastmoney_client(registry, client, maximum_payload_bytes)?;
+
+    // The same provider exposes admitted global-news metadata as an explicitly
+    // selectable alternative to the default WallstreetCN registration.
+    let news = EastmoneyClient::with_timeout(provider_timeout)?;
+    registry.register_handler(
+        admitted(
+            Operation::GlobalNews,
+            "Eastmoney",
+            "bounded latest Eastmoney finance-news metadata",
+        ),
+        move |command| {
+            execute_global_news(
+                command,
+                &news,
+                "Eastmoney",
+                ProviderId::Eastmoney,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn register_eastmoney_client(
+    registry: &mut OperationRegistry,
+    client: EastmoneyClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     register_eastmoney_typed(
         registry,
         &client,
@@ -2941,25 +3121,6 @@ fn register_eastmoney(
         },
     )?;
 
-    // The same provider exposes admitted global-news metadata as an explicitly
-    // selectable alternative to the default WallstreetCN registration.
-    let news = EastmoneyClient::with_timeout(provider_timeout)?;
-    registry.register_handler(
-        admitted(
-            Operation::GlobalNews,
-            "Eastmoney",
-            "bounded latest Eastmoney finance-news metadata",
-        ),
-        move |command| {
-            execute_global_news(
-                command,
-                &news,
-                "Eastmoney",
-                ProviderId::Eastmoney,
-                maximum_payload_bytes,
-            )
-        },
-    )?;
     Ok(())
 }
 
@@ -3074,6 +3235,14 @@ fn register_sec(
         return Ok(());
     };
     let sec = SecEdgarClient::new(user_agent)?;
+    register_sec_client(registry, sec, maximum_payload_bytes)
+}
+
+fn register_sec_client(
+    registry: &mut OperationRegistry,
+    sec: SecEdgarClient,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
     registry.register_handler(
         admitted(
             Operation::CompanyFilings,
@@ -3694,8 +3863,35 @@ fn common_source_at(input_evidence: &[SourceEvidence]) -> Option<String> {
         .then(|| source_at.to_owned())
 }
 
+// Private external-source seam. Production registrations remain concrete TDX
+// clients; downstream callers cannot supply an alternative admitted source.
+trait TdxDerivedDataSource:
+    HistoricalBars<Bar = Bar, Error = TdxError>
+    + RealtimeQuotes<Quote = Quote, Error = TdxError>
+    + OrderBooks<Error = TdxError>
+    + Send
+    + Sync
+{
+    fn connect_to_any(&self, timeout: Option<f64>) -> Result<bool, TdxError>;
+}
+
+impl TdxDerivedDataSource for TdxSmartClient {
+    fn connect_to_any(&self, timeout: Option<f64>) -> Result<bool, TdxError> {
+        TdxSmartClient::connect_to_any(self, timeout)
+    }
+}
+
 fn execute_tdx_t0_evidence(
     client: &TdxSmartClient,
+    timeout_seconds: f64,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    execute_tdx_t0_evidence_from_source(client, timeout_seconds, command, maximum_payload_bytes)
+}
+
+fn execute_tdx_t0_evidence_from_source(
+    client: &dyn TdxDerivedDataSource,
     timeout_seconds: f64,
     command: QueryCommand,
     maximum_payload_bytes: usize,
@@ -3714,6 +3910,8 @@ fn execute_tdx_t0_evidence(
     let books = client
         .order_books(request.instruments())
         .map_err(|error| provider_error(Operation::T0Evidence, error))?;
+    require_complete_tdx_batch(Operation::T0Evidence, "quote", &quotes)?;
+    require_complete_tdx_batch(Operation::T0Evidence, "order-book", &books)?;
     let quote_evidence = tdx_batch_evidence(Operation::T0Evidence, &quotes)?;
     let book_evidence = tdx_batch_evidence(Operation::T0Evidence, &books)?;
     validate_exact_tdx_instruments("quote", request.instruments(), quotes.records(), |record| {
@@ -3821,6 +4019,20 @@ fn execute_tdx_t0_evidence(
 
 fn execute_tdx_outcome_daily_bars(
     client: &TdxSmartClient,
+    timeout_seconds: f64,
+    command: QueryCommand,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    execute_tdx_outcome_daily_bars_from_source(
+        client,
+        timeout_seconds,
+        command,
+        maximum_payload_bytes,
+    )
+}
+
+fn execute_tdx_outcome_daily_bars_from_source(
+    client: &dyn TdxDerivedDataSource,
     timeout_seconds: f64,
     command: QueryCommand,
     maximum_payload_bytes: usize,
@@ -4303,8 +4515,8 @@ fn economic_release_observations_query_result(
                         u32::try_from(index).ok(),
                     )
                 })?;
-                let raw_instant =
-                    EvidenceTimestamp::parse_instant(raw_source_at).map_err(|_| {
+                let raw_instant = parse_news_source_instant(ProviderId::Jin10, raw_source_at)
+                    .map_err(|_| {
                         invalid_economic_release_evidence(
                             "record_source_at_invalid",
                             "source_at",
@@ -5578,3 +5790,11 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/internal/grpc_handler_behavior_tests.rs"]
 mod handler_behavior_tests;
+
+#[cfg(test)]
+#[path = "../tests/internal/grpc_production_coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
+#[path = "../tests/internal/tdx_query_release_tests.rs"]
+mod tdx_query_release_tests;

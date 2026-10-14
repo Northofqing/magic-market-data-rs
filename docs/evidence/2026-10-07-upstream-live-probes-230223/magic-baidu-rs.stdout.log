@@ -1,0 +1,2 @@
+provider=baidu-pae capabilities=Capabilities { quotes: false, bars: false, minute: false, trades: false, fundamentals: false, corporate_actions: false, blocks: false, money_flow: false, order_book: false, auction: false, security_metadata: false }
+live_probe_status=failed

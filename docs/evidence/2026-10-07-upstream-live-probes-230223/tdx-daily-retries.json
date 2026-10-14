@@ -1,0 +1,62 @@
+[
+  {
+    "id": "tdx-daily-5-rows",
+    "package": "magic-tdx-rs",
+    "example": "e2103_server_walk",
+    "args": [
+      "600519",
+      "4",
+      "5",
+      "1",
+      "117.34.114.14"
+    ],
+    "started_at_utc": "2026-10-07T15:21:03.393103+00:00",
+    "finished_at_utc": "2026-10-07T15:21:13.595348+00:00",
+    "elapsed_seconds": 10.203,
+    "exit_code": 0,
+    "status": "completed",
+    "binary_sha256": "d584693976b31e05d81d643598e214f21a2e97e5a544ee5ccd4933071b6d1d23",
+    "timeout_seconds": 45,
+    "sample_basis": "One current PRIMARY server, 117.34.114.14; reduced sample after the 19-node daily walk exceeded its 150-second deadline. This does not establish whole-pool daily coverage.",
+    "stdout_log": "docs/evidence/2026-10-07-upstream-live-probes-230223/tdx-daily-5-rows.stdout.log",
+    "stderr_log": "docs/evidence/2026-10-07-upstream-live-probes-230223/tdx-daily-5-rows.stderr.log",
+    "stdout_sha256": "9c40660c8711a744c1839a96eedfcb62841cc704a925f34840fb60edb33aa1f0",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "servers_returning_exact_requested_rows": [
+      "PRIMARY/国泰君安8 117.34.114.14:7709"
+    ],
+    "exact_row_count_servers": 1,
+    "decode_error_servers": 0,
+    "error_tail": ""
+  },
+  {
+    "id": "tdx-daily-800-rows",
+    "package": "magic-tdx-rs",
+    "example": "e2103_server_walk",
+    "args": [
+      "600519",
+      "4",
+      "800",
+      "1",
+      "117.34.114.14"
+    ],
+    "started_at_utc": "2026-10-07T15:21:13.597418+00:00",
+    "finished_at_utc": "2026-10-07T15:21:23.837101+00:00",
+    "elapsed_seconds": 10.24,
+    "exit_code": 0,
+    "status": "completed",
+    "binary_sha256": "d584693976b31e05d81d643598e214f21a2e97e5a544ee5ccd4933071b6d1d23",
+    "timeout_seconds": 45,
+    "sample_basis": "One current PRIMARY server, 117.34.114.14; reduced sample after the 19-node daily walk exceeded its 150-second deadline. This does not establish whole-pool daily coverage.",
+    "stdout_log": "docs/evidence/2026-10-07-upstream-live-probes-230223/tdx-daily-800-rows.stdout.log",
+    "stderr_log": "docs/evidence/2026-10-07-upstream-live-probes-230223/tdx-daily-800-rows.stderr.log",
+    "stdout_sha256": "da075be5b67e2c35982471b3e1a348a7abc92feecfb442ffef75e97b2bbb3195",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "servers_returning_exact_requested_rows": [
+      "PRIMARY/国泰君安8 117.34.114.14:7709"
+    ],
+    "exact_row_count_servers": 1,
+    "decode_error_servers": 0,
+    "error_tail": ""
+  }
+]

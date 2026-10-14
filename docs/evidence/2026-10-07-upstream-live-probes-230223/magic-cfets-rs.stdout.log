@@ -1,0 +1,14 @@
+family=Shibor rate=Shibor(Overnight) date=2026-09-21 value=1.364 unit=Percent observed=2026-10-07T15:04:09.4539968Z batch=cfets-shibor:2026-10-07T15:04:09.4539968Z
+family=Shibor rate=Shibor(Overnight) date=2026-09-22 value=1.364 unit=Percent observed=2026-10-07T15:04:09.4539968Z batch=cfets-shibor:2026-10-07T15:04:09.4539968Z
+family=Shibor rate=Shibor(Overnight) date=2026-09-23 value=1.3613 unit=Percent observed=2026-10-07T15:04:09.4539968Z batch=cfets-shibor:2026-10-07T15:04:09.4539968Z
+family=Shibor rate=Shibor(OneWeek) date=2026-09-21 value=1.4063 unit=Percent observed=2026-10-07T15:04:09.4539968Z batch=cfets-shibor:2026-10-07T15:04:09.4539968Z
+family=Shibor rate=Shibor(OneWeek) date=2026-09-22 value=1.3893 unit=Percent observed=2026-10-07T15:04:09.4539968Z batch=cfets-shibor:2026-10-07T15:04:09.4539968Z
+family=Shibor rate=Shibor(OneWeek) date=2026-09-23 value=1.384 unit=Percent observed=2026-10-07T15:04:09.4539968Z batch=cfets-shibor:2026-10-07T15:04:09.4539968Z
+family=LPR rate=LoanPrimeRate(OneYear) date=2026-09-20 value=3 unit=Percent observed=2026-10-07T15:04:09.5466861Z batch=cfets-lpr:2026-10-07T15:04:09.5466861Z
+family=LPR rate=LoanPrimeRate(OverFiveYears) date=2026-09-20 value=3.5 unit=Percent observed=2026-10-07T15:04:09.5466861Z batch=cfets-lpr:2026-10-07T15:04:09.5466861Z
+pair=USD/CNY date=2026-09-21 value=6.7487 base=1 observed=2026-10-07T15:04:10.7030055Z batch=cfets-ccpr:2026-10-07T15:04:10.7030055Z
+pair=USD/CNY date=2026-09-22 value=6.7459 base=1 observed=2026-10-07T15:04:10.7030055Z batch=cfets-ccpr:2026-10-07T15:04:10.7030055Z
+pair=USD/CNY date=2026-09-23 value=6.7468 base=1 observed=2026-10-07T15:04:10.7030055Z batch=cfets-ccpr:2026-10-07T15:04:10.7030055Z
+pair=JPY/CNY date=2026-09-21 value=4.2898 base=100 observed=2026-10-07T15:04:10.7030055Z batch=cfets-ccpr:2026-10-07T15:04:10.7030055Z
+pair=JPY/CNY date=2026-09-22 value=4.2794 base=100 observed=2026-10-07T15:04:10.7030055Z batch=cfets-ccpr:2026-10-07T15:04:10.7030055Z
+pair=JPY/CNY date=2026-09-23 value=4.2754 base=100 observed=2026-10-07T15:04:10.7030055Z batch=cfets-ccpr:2026-10-07T15:04:10.7030055Z

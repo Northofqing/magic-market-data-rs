@@ -1317,3 +1317,7 @@ fn invalid(message: impl Into<String>) -> DerivedProductContractError {
 #[cfg(test)]
 #[path = "../tests/internal/derived_products_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/internal/derived_products_coverage_tests.rs"]
+mod coverage_tests;
