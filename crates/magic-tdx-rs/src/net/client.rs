@@ -26,6 +26,11 @@ const EMPTY_RETRY_ATTEMPTS: usize = 3;
 /// 因此这个上限只影响一轮的收敛速度, 不会让调用方一直等下去。
 const SERVER_FAULT_ATTEMPTS: usize = 8;
 
+/// Blacklist TTL: an E2103-class fault rotates a server out, but the entry
+/// must expire so a recovered server re-enters rotation (an untimed
+/// blacklist had no path back during the 2026-10-14/15 outage window).
+const SERVER_BLOCK_TTL: Duration = Duration::from_secs(30 * 60);
+
 /// 缓存条目
 struct CacheEntry<T> {
     data: T,
@@ -113,7 +118,7 @@ pub struct TdxHqClient {
     /// 用户自定义优先服务器列表 (为空时使用 PRIMARY_SERVERS)
     server_list: Mutex<Vec<(String, String, u16)>>,
     /// 黑名单服务器列表 (IP, 端口)
-    blocked_servers: Mutex<Vec<(String, u16)>>,
+    blocked_servers: Mutex<Vec<(String, u16, Instant)>>,
     /// 速率限制器: 默认 (50 req/s)
     rate_limiter: RateLimiter,
     /// 速率限制器: 日K 级别 (15 req/s)
@@ -277,15 +282,29 @@ impl TdxHqClient {
             return Ok(true);
         }
 
+        // The per-candidate failures used to be discarded entirely, which is
+        // why the 2026-10-14/15 outage could only be diagnosed with hand-rolled
+        // probes; keep a compact summary of what happened last.
+        let mut attempted = 0_usize;
+        let mut blocked_skips = 0_usize;
+        let mut last_error: Option<String> = None;
+
         // 0.5) 优先尝试上次成功的服务器
         {
             // connect_internal updates last_server after the handshake. Snapshot
             // it before I/O so that update cannot re-enter the same state lock.
             let last = sync::lock(&self.last_server, "last server")?.clone();
             if let Some((ip, port)) = last {
-                if !self.is_server_blocked(&ip, port) {
-                    if let Ok(true) = self.connect_internal(&ip, port, timeout, false) {
-                        return Ok(true);
+                if self.is_server_blocked(&ip, port) {
+                    blocked_skips += 1;
+                } else {
+                    attempted += 1;
+                    match self.connect_internal(&ip, port, timeout, false) {
+                        Ok(true) => return Ok(true),
+                        Ok(false) => {
+                            last_error = Some(format!("{ip}:{port}: connection did not complete"))
+                        }
+                        Err(error) => last_error = Some(format!("{ip}:{port}: {error}")),
                     }
                 }
             }
@@ -296,40 +315,52 @@ impl TdxHqClient {
             let list = sync::lock(&self.server_list, "server list")?;
             for (_, ip, port) in list.iter() {
                 if self.is_server_blocked(ip, *port) {
+                    blocked_skips += 1;
                     continue;
                 }
+                attempted += 1;
                 match self.connect_internal(ip, *port, timeout, false) {
                     Ok(true) => return Ok(true),
-                    _ => continue,
+                    Ok(false) => {
+                        last_error = Some(format!("{ip}:{port}: connection did not complete"))
+                    }
+                    Err(error) => last_error = Some(format!("{ip}:{port}: {error}")),
                 }
             }
         }
 
-        // 2) PRIMARY_SERVERS (10台)
+        // 2) PRIMARY_SERVERS (优先组)
         for &(_, ip, port) in PRIMARY_SERVERS {
             if self.is_server_blocked(ip, port) {
+                blocked_skips += 1;
                 continue;
             }
+            attempted += 1;
             match self.connect_internal(ip, port, timeout, false) {
                 Ok(true) => return Ok(true),
-                _ => continue,
+                Ok(false) => last_error = Some(format!("{ip}:{port}: connection did not complete")),
+                Err(error) => last_error = Some(format!("{ip}:{port}: {error}")),
             }
         }
 
-        // 3) ALL_KNOWN_SERVERS (101台, 兜底)
+        // 3) ALL_KNOWN_SERVERS (兜底)
         for &(_, ip, port) in ALL_KNOWN_SERVERS {
             if self.is_server_blocked(ip, port) {
+                blocked_skips += 1;
                 continue;
             }
+            attempted += 1;
             match self.connect_internal(ip, port, timeout, false) {
                 Ok(true) => return Ok(true),
-                _ => continue,
+                Ok(false) => last_error = Some(format!("{ip}:{port}: connection did not complete")),
+                Err(error) => last_error = Some(format!("{ip}:{port}: {error}")),
             }
         }
 
         loge!(
             "hq",
-            "all servers unreachable (tried user/primary/all_known lists)"
+            "all servers unreachable (tried user/primary/all_known lists; attempted={attempted}, blocked_skipped={blocked_skips}, last_error={})",
+            last_error.as_deref().unwrap_or("none")
         );
         Err(crate::error_codes::ErrorCode::CONNECTION_FAILED.err("all servers unreachable"))
     }
@@ -393,14 +424,27 @@ impl TdxHqClient {
     /// client.connect_to_any(None)?;  // 自动跳过黑名单服务器
     /// ```
     pub fn block_server(&self, ip: &str, port: u16) {
+        self.block_server_for(ip, port, SERVER_BLOCK_TTL);
+    }
+
+    /// Blacklist a server for an explicit duration (tests use short TTLs).
+    fn block_server_for(&self, ip: &str, port: u16, ttl: Duration) {
         if self.isolation.is_some() {
             // NOT IMPLEMENTED: no mutation of isolated runtime configuration.
             return;
         }
+        let now = Instant::now();
         let mut blocked = sync::lock_recover(&self.blocked_servers, "blocked servers");
-        if !blocked.iter().any(|(i, p)| i == ip && *p == port) {
-            blocked.push((ip.to_string(), port));
-            logi!("hq", "server {}:{} added to blacklist", ip, port);
+        blocked.retain(|(_, _, until)| *until > now);
+        if !blocked.iter().any(|(i, p, _)| i == ip && *p == port) {
+            blocked.push((ip.to_string(), port, now + ttl));
+            logi!(
+                "hq",
+                "server {}:{} added to blacklist (ttl {}s)",
+                ip,
+                port,
+                ttl.as_secs()
+            );
         }
     }
 
@@ -411,13 +455,18 @@ impl TdxHqClient {
             return;
         }
         let mut blocked = sync::lock_recover(&self.blocked_servers, "blocked servers");
-        blocked.retain(|(i, p)| i != ip || *p != port);
+        blocked.retain(|(i, p, _)| i != ip || *p != port);
         logi!("hq", "server {}:{} removed from blacklist", ip, port);
     }
 
     /// 获取黑名单列表
     pub fn blocked_servers(&self) -> Vec<(String, u16)> {
-        sync::lock_recover(&self.blocked_servers, "blocked servers").clone()
+        let now = Instant::now();
+        sync::lock_recover(&self.blocked_servers, "blocked servers")
+            .iter()
+            .filter(|(_, _, until)| *until > now)
+            .map(|(ip, port, _)| (ip.clone(), *port))
+            .collect()
     }
 
     /// Returns the server backing the current connection, when known.
@@ -437,8 +486,11 @@ impl TdxHqClient {
 
     /// 检查服务器是否在黑名单中
     fn is_server_blocked(&self, ip: &str, port: u16) -> bool {
+        let now = Instant::now();
         let blocked = sync::lock_recover(&self.blocked_servers, "blocked servers");
-        blocked.iter().any(|(i, p)| i == ip && *p == port)
+        blocked
+            .iter()
+            .any(|(i, p, until)| i == ip && *p == port && *until > now)
     }
 
     /// 探测所有已知服务器, 返回按 API 响应时间升序排列的结果
@@ -671,13 +723,16 @@ impl TdxHqClient {
 
                         // 尝试重连到替代服务器 (跳过当前失败的服务器)
                         let mut reconnected = false;
+                        let mut attempted = 0_usize;
+                        let mut last_error: Option<String> = None;
                         for &(name, ip, port) in PRIMARY_SERVERS {
                             if ip == current_server.0 && port == current_server.1 {
                                 continue; // 跳过当前失败的服务器
                             }
+                            attempted += 1;
                             match TcpConnection::connect(ip, port, connect_timeout) {
-                                Ok(mut tcp) => {
-                                    if utils::perform_handshake(&mut tcp).is_ok() {
+                                Ok(mut tcp) => match utils::perform_handshake(&mut tcp) {
+                                    Ok(()) => {
                                         let new_server = (ip.to_string(), port);
                                         pool.push(tcp, new_server.clone());
                                         *sync::lock_recover(&last_server, "last server") =
@@ -687,14 +742,21 @@ impl TdxHqClient {
                                         reconnected = true;
                                         break;
                                     }
+                                    Err(error) => {
+                                        last_error =
+                                            Some(format!("{ip}:{port} handshake: {error}"));
+                                    }
+                                },
+                                Err(error) => {
+                                    last_error = Some(format!("{ip}:{port} tcp: {error}"));
                                 }
-                                Err(_) => continue,
                             }
                         }
                         if !reconnected {
                             loge!(
                                 "hq",
-                                "heartbeat reconnect failed, all PRIMARY servers unreachable"
+                                "heartbeat reconnect failed, all PRIMARY servers unreachable (attempted={attempted}, last_error={})",
+                                last_error.as_deref().unwrap_or("none")
                             );
                         }
                     }
@@ -1009,6 +1071,8 @@ impl TdxHqClient {
             return;
         }
         let current = sync::lock_recover(&self.last_server, "last server").clone();
+        let mut attempted = 0_usize;
+        let mut last_error: Option<String> = None;
 
         for (ip, port) in self.reconnect_candidates() {
             // 跳过当前服务器
@@ -1030,16 +1094,21 @@ impl TdxHqClient {
                 continue;
             }
 
-            if self
-                .connect_internal(&ip, port, Some(CONNECT_TIMEOUT), false)
-                .is_ok()
-            {
-                logi!("hq", "switched to server {}:{}", ip, port);
-                return;
+            attempted += 1;
+            match self.connect_internal(&ip, port, Some(CONNECT_TIMEOUT), false) {
+                Ok(_) => {
+                    logi!("hq", "switched to server {}:{}", ip, port);
+                    return;
+                }
+                Err(error) => last_error = Some(format!("{ip}:{port}: {error}")),
             }
         }
 
-        logw!("hq", "no alternative server available");
+        logw!(
+            "hq",
+            "no alternative server available (attempted={attempted}, last_error={})",
+            last_error.as_deref().unwrap_or("none")
+        );
     }
 
     fn reconnect_candidates(&self) -> Vec<(String, u16)> {
@@ -2281,6 +2350,13 @@ mod tests {
         client.clear_blocked_servers();
         assert!(client.blocked_servers().is_empty());
 
+        client.block_server_for("127.0.0.3", 3, Duration::from_millis(500));
+        assert_eq!(client.blocked_servers().len(), 1);
+        assert!(client.is_server_blocked("127.0.0.3", 3));
+        std::thread::sleep(Duration::from_millis(700));
+        assert!(client.blocked_servers().is_empty());
+        assert!(!client.is_server_blocked("127.0.0.3", 3));
+
         client.set_cache_ttl(1);
         client.set_connect_timeout(0.01);
         client.set_rate_limit(25);
@@ -2293,19 +2369,20 @@ mod tests {
         assert!(client.connect_to_any(Some(0.01)).unwrap());
         client.connected.store(false, Ordering::SeqCst);
 
+        let blocked_until = Instant::now() + Duration::from_secs(60);
         let mut blocked = Vec::new();
         blocked.extend(
             PRIMARY_SERVERS
                 .iter()
-                .map(|(_, ip, port)| ((*ip).to_owned(), *port)),
+                .map(|(_, ip, port)| ((*ip).to_owned(), *port, blocked_until)),
         );
         blocked.extend(
             ALL_KNOWN_SERVERS
                 .iter()
-                .map(|(_, ip, port)| ((*ip).to_owned(), *port)),
+                .map(|(_, ip, port)| ((*ip).to_owned(), *port, blocked_until)),
         );
-        blocked.push(("127.0.0.1".into(), 1));
-        blocked.push(("127.0.0.2".into(), 2));
+        blocked.push(("127.0.0.1".into(), 1, blocked_until));
+        blocked.push(("127.0.0.2".into(), 2, blocked_until));
         *sync::lock(&client.blocked_servers, "test blocked servers").unwrap() = blocked;
         assert!(client.connect_to_any(Some(0.01)).is_err());
         client.disconnect();

@@ -187,3 +187,17 @@ is excluded. Until exact response
 schema, compatibility and bounded live evidence pass, every LocalTerminal
 input and LocalAnalysis anomaly capability remains false and no optional
 listener may start. The source must not send any account/trading method.
+
+## 服务器健康巡检（手动，按需）
+
+2026-10-14/15 hq 握手故障期间，逐台原因只能靠现造探针才看得到；这三个既有
+入口用于事后/例行巡检（均不写状态、不自动重试）：
+
+- PRIMARY 组逐台三段时延：`cargo run -p magic-tdx-rs --example live_probe`
+- 全量候选表遍历（含返回形状分类，识别 E2103 类）：`cargo run -p magic-tdx-rs --example e2103_server_walk`
+- 库内置：`TdxHqClient::probe_servers()` 返回按 API 响应时间升序的候选，
+  供 `reorder_servers()` 手工重排；适配器不会自动改写优先表。
+
+事故判别口径（2026-10-15 实测）：TCP 可达 + 握手被拒 = 服务器侧/链路侧限流或
+盘外拒连（客户端会在下次请求时自愈）；TCP 不可达 = 网络层问题。运行时日志
+（含 `attempted/blocked_skipped/last_error` 摘要）应作为第一判据。
