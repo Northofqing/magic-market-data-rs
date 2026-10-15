@@ -1,5 +1,5 @@
-use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use magic_market_grpc_contracts::v1;
 use magic_market_grpc_contracts::{CANONICAL_JSON_CONTENT_TYPE, PROTOCOL_VERSION};
@@ -20,6 +20,27 @@ use crate::observability::{QueryOutcome, RuntimeObservability};
 const ERROR_DETAIL_METADATA_KEY: &str = "magic-error-detail-bin";
 const MAX_PROVIDER_ATTEMPTS: usize = 16;
 
+/// Consecutive connect-class TDX hq failures that flip the channel degraded
+/// (Gate A 2026-10-15, tdx-hq-degraded D2).
+const HQ_DEGRADED_FAILURE_THRESHOLD: u32 = 3;
+/// Flap suppression: a re-degradation inside this window after a degraded
+/// broadcast is logged but not re-broadcast (D2).
+const HQ_DEGRADED_EMIT_COOLDOWN: Duration = Duration::from_secs(5 * 60);
+
+/// TDX hq (quote-channel) health, driven ONLY by real request outcomes — no
+/// probing traffic is added (the 2026-10-14/15 outage was rate-limit-class;
+/// extra load makes it worse). Tracks consecutive connect-class failures and
+/// the degraded/recovered transitions broadcast on the server-internal lane.
+#[derive(Default)]
+struct HqHealth {
+    consecutive_failures: u32,
+    first_failure_at: Option<Instant>,
+    degraded: bool,
+    degraded_since: Option<Instant>,
+    last_error: String,
+    last_degraded_emit: Option<Instant>,
+}
+
 #[derive(Clone)]
 pub(crate) struct GrpcApplication<G> {
     gateway: Arc<G>,
@@ -31,6 +52,7 @@ pub(crate) struct GrpcApplication<G> {
     unary_concurrency_limit: usize,
     blocking_concurrency_limit: usize,
     degradation_hub: Option<Arc<EventHub>>,
+    hq_health: Arc<Mutex<HqHealth>>,
 }
 
 impl<G> GrpcApplication<G>
@@ -62,6 +84,7 @@ where
             unary_concurrency_limit: unary_concurrency,
             blocking_concurrency_limit: blocking_concurrency,
             degradation_hub,
+            hq_health: Arc::new(Mutex::new(HqHealth::default())),
         })
     }
 
@@ -142,8 +165,21 @@ where
                 // record to be diagnosable at all.
                 log_service_failure(&request_id, operation, "blocking_worker");
                 Status::internal("blocking provider worker failed")
-            })?
-            .map_err(|error| status_from_error(&request_id, operation, error))?;
+            })?;
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                // Gate A 2026-10-15 (tdx-hq-degraded D1a): connect-class TDX
+                // failures feed the hq health state machine; every other
+                // error keeps the existing mapping untouched.
+                self.note_hq_connect_failure(&error).await;
+                return Err(status_from_error(&request_id, operation, error));
+            }
+        };
+
+        // A TDX-served success is the only recovery signal: successes from
+        // other providers say nothing about hq reachability (D3a).
+        self.note_hq_served(&result.provider).await;
 
         if operation == Operation::T0Evidence && !result.complete {
             self.record_t0_evidence_degradation(&result, &request_payload_data)
@@ -244,6 +280,184 @@ where
                 Level::Warn,
                 "grpc_query",
                 "t0_evidence_degradation_unpublished",
+                format_args!("detail={error}"),
+            );
+        }
+    }
+
+    fn lock_hq_health(&self) -> std::sync::MutexGuard<'_, HqHealth> {
+        self.hq_health
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Record one connect-class TDX hq failure (D1a/D2). Only these count:
+    /// unavailable errors from other providers say nothing about hq and do
+    /// not reset the streak either. Reaching the threshold flips the state
+    /// to degraded and broadcasts once; a re-degradation inside the cooldown
+    /// is logged but not re-broadcast (flap suppression).
+    async fn note_hq_connect_failure(&self, error: &ServiceError) {
+        let Some(reason) = tdx_hq_connect_reason(error) else {
+            return;
+        };
+        let now = Instant::now();
+        let (entered, emit, consecutive, window_ms, last_error) = {
+            let mut health = self.lock_hq_health();
+            health.consecutive_failures = health.consecutive_failures.saturating_add(1);
+            let first = *health.first_failure_at.get_or_insert(now);
+            health.last_error = reason.to_owned();
+            let entered =
+                !health.degraded && health.consecutive_failures >= HQ_DEGRADED_FAILURE_THRESHOLD;
+            let mut emit = false;
+            if entered {
+                health.degraded = true;
+                health.degraded_since = Some(now);
+                emit = health
+                    .last_degraded_emit
+                    .map(|at| now.duration_since(at) >= HQ_DEGRADED_EMIT_COOLDOWN)
+                    .unwrap_or(true);
+                if emit {
+                    health.last_degraded_emit = Some(now);
+                }
+            }
+            (
+                entered,
+                emit,
+                health.consecutive_failures,
+                now.duration_since(first).as_millis() as u64,
+                health.last_error.clone(),
+            )
+        };
+        if !entered {
+            return;
+        }
+        if !emit {
+            logging::event(
+                Level::Info,
+                "grpc_query",
+                "tdx_hq_degraded_suppressed",
+                format_args!(
+                    "detail=re-degraded within cooldown of {}s",
+                    HQ_DEGRADED_EMIT_COOLDOWN.as_secs()
+                ),
+            );
+            return;
+        }
+        logging::event(
+            Level::Warn,
+            "grpc_query",
+            "tdx_hq_degraded",
+            format_args!(
+                "consecutive_failures={consecutive} window_ms={window_ms} last_error={last_error}"
+            ),
+        );
+        let Some(hub) = &self.degradation_hub else {
+            return;
+        };
+        let millis = unix_ms_now();
+        let data = serde_json::to_vec(&serde_json::json!({
+            "schema": "tdx.hq_degradation.v1",
+            "consecutive_failures": consecutive,
+            "window_ms": window_ms,
+            "last_error": last_error,
+            "affected_hint": "tdx-only operations (hq quotes, bars, T0 evidence)",
+        }))
+        .unwrap_or_default();
+        let event = v1::MarketEventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            event_id: format!("tdx-hq-degraded-{millis}"),
+            cursor: Some(v1::EventCursor {
+                generation: "server-internal".to_owned(),
+                sequence: 0,
+            }),
+            event_kind: "tdx_hq_degraded".to_owned(),
+            provider: "LocalAnalysis".to_owned(),
+            instrument: "MARKET".to_owned(),
+            observed_at: format!("unix-ms:{millis}"),
+            source_at: String::new(),
+            admission: v1::AdmissionState::Admitted as i32,
+            payload: Some(v1::CanonicalPayload {
+                schema: "tdx.hq_degradation.v1".to_owned(),
+                schema_version: 1,
+                content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+                data,
+            }),
+        };
+        if let Err(error) = hub.publish_local(event).await {
+            logging::event(
+                Level::Warn,
+                "grpc_query",
+                "tdx_hq_degradation_unpublished",
+                format_args!("detail={error}"),
+            );
+        }
+    }
+
+    /// A TDX-served success is the recovery signal (D3a): emit once when the
+    /// state was degraded and reset the streak; successes served by any other
+    /// provider are ignored.
+    async fn note_hq_served(&self, provider: &str) {
+        if provider != "Tdx" {
+            return;
+        }
+        let now = Instant::now();
+        let (outage_ms, last_error) = {
+            let mut health = self.lock_hq_health();
+            health.consecutive_failures = 0;
+            health.first_failure_at = None;
+            if !health.degraded {
+                return;
+            }
+            health.degraded = false;
+            let outage_ms = health
+                .degraded_since
+                .take()
+                .map(|at| now.duration_since(at).as_millis() as u64)
+                .unwrap_or(0);
+            let last_error = std::mem::take(&mut health.last_error);
+            (outage_ms, last_error)
+        };
+        logging::event(
+            Level::Info,
+            "grpc_query",
+            "tdx_hq_recovered",
+            format_args!("outage_ms={outage_ms} last_error={last_error}"),
+        );
+        let Some(hub) = &self.degradation_hub else {
+            return;
+        };
+        let millis = unix_ms_now();
+        let data = serde_json::to_vec(&serde_json::json!({
+            "schema": "tdx.hq_recovered.v1",
+            "outage_ms": outage_ms,
+            "last_error": last_error,
+        }))
+        .unwrap_or_default();
+        let event = v1::MarketEventEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            event_id: format!("tdx-hq-recovered-{millis}"),
+            cursor: Some(v1::EventCursor {
+                generation: "server-internal".to_owned(),
+                sequence: 0,
+            }),
+            event_kind: "tdx_hq_recovered".to_owned(),
+            provider: "LocalAnalysis".to_owned(),
+            instrument: "MARKET".to_owned(),
+            observed_at: format!("unix-ms:{millis}"),
+            source_at: String::new(),
+            admission: v1::AdmissionState::Admitted as i32,
+            payload: Some(v1::CanonicalPayload {
+                schema: "tdx.hq_recovered.v1".to_owned(),
+                schema_version: 1,
+                content_type: CANONICAL_JSON_CONTENT_TYPE.to_owned(),
+                data,
+            }),
+        };
+        if let Err(error) = hub.publish_local(event).await {
+            logging::event(
+                Level::Warn,
+                "grpc_query",
+                "tdx_hq_recovery_unpublished",
                 format_args!("detail={error}"),
             );
         }
@@ -569,6 +783,39 @@ fn service_failure_record(request_id: &str, operation: Operation, reason_code: &
         safe_log_value(request_id, 128),
         operation.as_str(),
     )
+}
+
+/// Connect-class TDX hq failure signatures as they surface at the service
+/// boundary. `map_tdx_error` routes Io/Connection/ConnectionTimeout/
+/// SetupFailed/Disconnected/RetryExhausted into `ServiceError::Unavailable`
+/// with the TdxError display text, so these prefixes are stable. Deliberately
+/// narrow: a transport word inside another provider reason does not count.
+fn tdx_hq_connect_reason(error: &ServiceError) -> Option<&str> {
+    let ServiceError::Unavailable { reason, .. } = error else {
+        return None;
+    };
+    const SIGNATURES: [&str; 5] = [
+        "Connection error:",
+        "Connection timeout",
+        "Setup handshake failed:",
+        "Server disconnected",
+        "Retry exhausted after",
+    ];
+    if SIGNATURES
+        .iter()
+        .any(|signature| reason.contains(signature))
+    {
+        Some(reason.as_str())
+    } else {
+        None
+    }
+}
+
+fn unix_ms_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or_default()
 }
 
 fn status_from_error(request_id: &str, operation: Operation, error: ServiceError) -> Status {
@@ -1172,6 +1419,102 @@ mod tests {
             }),
             allow_unadmitted: false,
         })
+    }
+
+    #[test]
+    fn tdx_hq_connect_signature_detection_is_narrow() {
+        fn unavailable(reason: &str) -> ServiceError {
+            ServiceError::Unavailable {
+                operation: Operation::RealtimeQuotes,
+                reason: reason.to_owned(),
+            }
+        }
+        for signature in [
+            "Connection error: all servers unreachable",
+            "Connection timeout",
+            "Setup handshake failed: login rejected",
+            "Server disconnected",
+            "Retry exhausted after 3 attempts",
+        ] {
+            assert!(
+                tdx_hq_connect_reason(&unavailable(signature)).is_some(),
+                "signature must match: {signature}"
+            );
+        }
+        assert!(tdx_hq_connect_reason(&unavailable("slow test provider")).is_none());
+        assert!(tdx_hq_connect_reason(&ServiceError::FailedPrecondition(
+            "Connection error: not a transport failure".to_owned()
+        ))
+        .is_none());
+    }
+
+    fn hq_test_app() -> GrpcApplication<OperationRegistry> {
+        GrpcApplication::new(
+            Arc::new(OperationRegistry::all_unadmitted("hq test")),
+            1024,
+            1,
+            1,
+            Duration::from_secs(1),
+            None,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn hq_health_degrades_at_threshold_and_recovers_on_tdx_success() {
+        let application = hq_test_app();
+        let failure = ServiceError::Unavailable {
+            operation: Operation::RealtimeQuotes,
+            reason: "Connection error: all servers unreachable".to_owned(),
+        };
+        application.note_hq_connect_failure(&failure).await;
+        application.note_hq_connect_failure(&failure).await;
+        assert!(!application.lock_hq_health().degraded);
+        application.note_hq_connect_failure(&failure).await;
+        {
+            let health = application.lock_hq_health();
+            assert!(health.degraded);
+            assert_eq!(health.consecutive_failures, 3);
+            assert!(health.last_degraded_emit.is_some());
+        }
+        // Non-TDX failures neither count nor reset the streak.
+        application
+            .note_hq_connect_failure(&ServiceError::Unavailable {
+                operation: Operation::RealtimeQuotes,
+                reason: "slow test provider".to_owned(),
+            })
+            .await;
+        assert_eq!(application.lock_hq_health().consecutive_failures, 3);
+        // A success from a non-TDX provider is not a recovery signal.
+        application.note_hq_served("Eastmoney").await;
+        assert!(application.lock_hq_health().degraded);
+        // The first TDX-served success recovers and resets the streak.
+        application.note_hq_served("Tdx").await;
+        let health = application.lock_hq_health();
+        assert!(!health.degraded);
+        assert_eq!(health.consecutive_failures, 0);
+        assert!(health.degraded_since.is_none());
+    }
+
+    #[tokio::test]
+    async fn hq_health_re_degradation_inside_cooldown_is_suppressed() {
+        let application = hq_test_app();
+        let failure = ServiceError::Unavailable {
+            operation: Operation::RealtimeQuotes,
+            reason: "Connection timeout".to_owned(),
+        };
+        for _ in 0..3 {
+            application.note_hq_connect_failure(&failure).await;
+        }
+        let first_emit = application.lock_hq_health().last_degraded_emit;
+        assert!(first_emit.is_some());
+        application.note_hq_served("Tdx").await;
+        for _ in 0..3 {
+            application.note_hq_connect_failure(&failure).await;
+        }
+        let health = application.lock_hq_health();
+        assert!(health.degraded);
+        assert_eq!(health.last_degraded_emit, first_emit);
     }
 
     #[test]

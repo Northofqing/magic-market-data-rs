@@ -56,6 +56,8 @@ TDX hq 握手层故障（2026-10-14 13:59 → 2026-10-15 开盘，见当日故�
 
 ## 6. 待批准人拍板（按编号回答）
 
+拍板结果（2026-10-15）：D1a / D2（N=3，冷却 5 分钟）/ D3a / D4（独立提交，随批部署）。以下原文保留。
+
 - **D1 触发语义**：(a) 请求失败驱动（荐：真实流量、零额外探测、天然限流）；
   或 (b) 周期健康探测（独立于请求，但引入后台流量——与事故性质相悖）。
 - **D2 阈值与冷却**：N=3 次连续失败进 degraded、冷却 5 分钟（荐）；或指定数值。
@@ -69,3 +71,22 @@ TDX hq 握手层故障（2026-10-14 13:59 → 2026-10-15 开盘，见当日故�
 - grpc-server 内 connect-class 失败的准确判定位置（provider_error 映射能否区分
   connect-class 与数据类错误）——Gate B 实施前逐行确认。
 - Mac 侧对新增 event_kind 的消费意愿（订阅方自行过滤；发不发是服务端的事）。
+
+## 8. 实施记录（2026-10-15，已实现）
+
+- 判定点：`query_inner` 单一执行漏斗——失败经 `tdx_hq_connect_reason` 过滤
+  （`ServiceError::Unavailable` 且 reason 含五个 TdxError 连接类签名：
+  "Connection error:" / "Connection timeout" / "Setup handshake failed:" /
+  "Server disconnected" / "Retry exhausted after"——即 `map_tdx_error` 路由到
+  `unavailable()` 的稳定形态）；成功则以 `selected_provider == "Tdx"` 为恢复信号。
+- 状态机：`HqHealth`（consecutive_failures / first_failure_at / degraded /
+  degraded_since / last_error / last_degraded_emit）；N=3 进 degraded；冷却期内
+  再降级只记日志（`tdx_hq_degraded_suppressed`）不重播；非 TDX 失败既不计入也
+  不打断连败计数。
+- 事件：`tdx_hq_degraded` / `tdx_hq_recovered` 走 `publish_local`
+  （generation=server-internal、仅直播）；instrument="MARKET"；payload
+  `tdx.hq_degradation.v1`（consecutive_failures / window_ms / last_error /
+  affected_hint）与 `tdx.hq_recovered.v1`（outage_ms / last_error）。
+- 测试：签名判定窄集、阈值/恢复/重置、冷却抑制（3 项，全绿）。
+- 未做（记录）：端到端故障注入（写实 TDX 全断需 mock 网关或真实故障）；部署后
+  以真实请求路径验证事件投递。
