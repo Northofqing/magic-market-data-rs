@@ -31,9 +31,14 @@ pub(crate) struct EventHub {
     agent_heartbeat_timeout: Duration,
 }
 
+/// Fixed cursor generation for server-originated (`publish_local`) events.
+/// The local lane is sequence-independent from every agent generation.
+const LOCAL_EVENT_GENERATION: &str = "server-internal";
+
 struct HubState {
     generation: Option<String>,
     latest_sequence: u64,
+    local_sequence: u64,
     replay_bytes: usize,
     replay: VecDeque<v1::MarketEventEnvelope>,
     agent_session: Option<u64>,
@@ -156,6 +161,7 @@ impl EventHub {
             inner: Arc::new(Mutex::new(HubState {
                 generation: None,
                 latest_sequence: 0,
+                local_sequence: 0,
                 replay_bytes: 0,
                 replay: VecDeque::new(),
                 agent_session: None,
@@ -400,24 +406,34 @@ impl EventHub {
     /// Publish a server-originated event without an agent session.
     ///
     /// Used for in-process degradation notices (e.g. T0Evidence degraded
-    /// evidence). Sequence continuity and replay budgeting are shared with
-    /// agent-published events; the agent session/generation checks are
-    /// intentionally skipped because there is no session.
+    /// evidence). Local events live in their own sequence lane under the fixed
+    /// `server-internal` generation and never touch the agent-owned
+    /// `latest_sequence` domain: sharing that lane consumed sequence numbers
+    /// the agent could not know about, so the agent's next publish failed the
+    /// exact-continuity check and the server stopped the agent (production
+    /// incident 2026-10-14, "event sequence must be exactly 293"). Local
+    /// events are broadcast live but are NOT replayable: the replay buffer
+    /// stays a pure agent-generation lane, so `replay_after` keeps meaning
+    /// "after agent sequence N". Subscribers must track cursors per
+    /// cursor.generation label.
     pub(crate) async fn publish_local(
         &self,
         mut event: v1::MarketEventEnvelope,
     ) -> Result<u64, Status> {
-        let state = self.inner.lock().await;
+        let mut state = self.inner.lock().await;
+        // Assign, validate and record the bump in the SAME locked section: no
+        // peer can observe a reused or unrecorded local sequence.
         let sequence = state
-            .latest_sequence
+            .local_sequence
             .checked_add(1)
-            .ok_or_else(|| Status::resource_exhausted("event sequence exhausted"))?;
+            .ok_or_else(|| Status::resource_exhausted("local event sequence exhausted"))?;
+        state.local_sequence = sequence;
         let cursor = event
             .cursor
             .as_mut()
             .ok_or_else(|| Status::invalid_argument("event cursor is required"))?;
         cursor.sequence = sequence;
-        drop(state);
+        cursor.generation = LOCAL_EVENT_GENERATION.to_owned();
         // Server-originated events are trusted by construction: they skip the
         // agent-facing provider boundary and admitted-family pairing enforced
         // by validate_event for TDX agent publishers, but keep the structural
@@ -429,22 +445,7 @@ impl EventHub {
                 "event exceeds the complete replay byte budget",
             ));
         }
-        let mut state = self.inner.lock().await;
-        state.latest_sequence = sequence;
         state.events_published_total = state.events_published_total.saturating_add(1);
-        state.replay_bytes = state
-            .replay_bytes
-            .checked_add(encoded_len)
-            .ok_or_else(|| Status::resource_exhausted("replay byte accounting overflow"))?;
-        state.replay.push_back(event.clone());
-        while state.replay.len() > self.replay_max_events
-            || state.replay_bytes > self.replay_max_bytes
-        {
-            if let Some(removed) = state.replay.pop_front() {
-                state.replay_bytes = state.replay_bytes.saturating_sub(removed.encoded_len());
-                state.replay_evictions_total = state.replay_evictions_total.saturating_add(1);
-            }
-        }
         drop(state);
         let _ = self.live.send(event);
         Ok(sequence)
@@ -1365,10 +1366,8 @@ mod tests {
             .unwrap();
     }
 
-    #[tokio::test]
-    async fn publish_local_assigns_sequence_enforces_provider_boundary_and_replays() {
-        let hub = EventHub::new(2, 8, 8, 32_768, 4096, 4, Duration::from_millis(40)).unwrap();
-        let local_event = |event_id: &str, provider: &str| v1::MarketEventEnvelope {
+    fn local_event(event_id: &str, provider: &str) -> v1::MarketEventEnvelope {
+        v1::MarketEventEnvelope {
             protocol_version: PROTOCOL_VERSION,
             event_id: event_id.to_owned(),
             cursor: Some(v1::EventCursor {
@@ -1387,7 +1386,12 @@ mod tests {
                 content_type: magic_market_grpc_contracts::CANONICAL_JSON_CONTENT_TYPE.to_owned(),
                 data: b"{}".to_vec(),
             }),
-        };
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_local_uses_independent_lane_and_skips_agent_boundary() {
+        let hub = EventHub::new(2, 8, 8, 32_768, 4096, 4, Duration::from_millis(40)).unwrap();
         // Server-originated events skip the agent provider boundary: even a
         // Tdx-labelled degradation notice from the server itself is trusted.
         let first = hub.publish_local(local_event("e1", "Tdx")).await.unwrap();
@@ -1395,9 +1399,10 @@ mod tests {
 
         let telemetry = hub.listener_status("status-local".to_owned()).await;
         assert_eq!(telemetry.events_published_total, 1);
-        assert_eq!(telemetry.replay_event_count, 1);
+        // Local events are live-only: the replay lane stays agent-pure.
+        assert_eq!(telemetry.replay_event_count, 0);
 
-        // Sequence continues monotonically for a second local event.
+        // Sequence continues monotonically in the independent local lane.
         let second = hub
             .publish_local(local_event("e2", "LocalAnalysis"))
             .await
@@ -1405,7 +1410,68 @@ mod tests {
         assert_eq!(second, 2);
         let telemetry = hub.listener_status("status-local-2".to_owned()).await;
         assert_eq!(telemetry.events_published_total, 2);
-        assert_eq!(telemetry.replay_event_count, 2);
+        assert_eq!(telemetry.replay_event_count, 0);
+    }
+
+    #[tokio::test]
+    async fn publish_local_does_not_disturb_the_agent_sequence_lane() {
+        // Production regression 2026-10-14: a server-originated degraded event
+        // consumed a sequence from the agent lane, so the agent's next publish
+        // failed the continuity check ("event sequence must be exactly 293")
+        // and the server stopped the agent.
+        let hub = hub(2, 8);
+        let session = connect(&hub, "generation-a").await;
+        assert_eq!(
+            hub.publish(session, event("generation-a", 1))
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            hub.publish(session, event("generation-a", 2))
+                .await
+                .unwrap(),
+            2
+        );
+
+        let mut stream = hub
+            .subscribe_from(None, EventFilter::from_wire(None).unwrap())
+            .await
+            .unwrap();
+        let local_sequence = hub
+            .publish_local(local_event("degraded-1", "LocalAnalysis"))
+            .await
+            .unwrap();
+        assert_eq!(local_sequence, 1);
+
+        // The agent lane is untouched: the next agent publish and heartbeat
+        // continue exactly where the agent left off.
+        assert_eq!(
+            hub.publish(session, event("generation-a", 3))
+                .await
+                .unwrap(),
+            3
+        );
+        assert_eq!(hub.heartbeat(session, "generation-a", 3).await.unwrap(), 3);
+
+        // Replay stays a pure agent lane: the local notice never replays.
+        let telemetry = hub.listener_status("status-local-lane".to_owned()).await;
+        assert_eq!(telemetry.replay_event_count, 3);
+        assert_eq!(telemetry.events_published_total, 4);
+
+        // ...but live subscribers do receive it, under its own generation.
+        let mut saw_local = false;
+        while let Some(item) = stream.next().await {
+            let envelope = item.unwrap();
+            if envelope.event_kind == "t0_evidence_degraded" {
+                let cursor = envelope.cursor.as_ref().unwrap();
+                assert_eq!(cursor.generation, "server-internal");
+                assert_eq!(cursor.sequence, 1);
+                saw_local = true;
+                break;
+            }
+        }
+        assert!(saw_local);
     }
 
     #[tokio::test]

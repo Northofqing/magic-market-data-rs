@@ -117,3 +117,17 @@ BR-050 对 T0Evidence 的规定更严格——对本产品而言是过度门控�
    死，缺什么如实记录；明确告知走旁路（见 §4 增补）。
 2. ~~issue 是否暴露在 v2 响应里？~~ **已拍板：不暴露**（2026-10-14）——v2 schema
    与 digest 冻结，一个字节不动。
+
+## 8. 修订记录（2026-10-15）：publish_local 序列域隔离
+
+本设计落地时的 `publish_local` 与 agent 共享 `latest_sequence` 序列域（"混合流保持单调"）。
+该机制在生产必然撞车：agent 用客户端计数器编号，服务端注入消耗共享序号后，agent 下一帧
+即触发 exact-continuity 校验失败，server 停掉 agent（2026-10-14 17:05 生产事故，
+"event sequence must be exactly 293"；注入源正是本次部署后的 op 58 降级实测）。
+
+2026-10-15 修复（`crates/magic-market-grpc-server/src/events.rs`）：本地事件改用独立
+`local_sequence` 通道，`cursor.generation` 固定 `server-internal`，只直播不进 replay
+（replay 保持纯 agent 域），订阅方按 `cursor.generation` 分通道跟踪游标；分配+校验+落账
+在同一把锁内完成。回归测试 `publish_local_does_not_disturb_the_agent_sequence_lane`
+固化事故场景。对订阅方的行为变化：降级事件不再可回放，只在直播流可见（本就同时落
+结构化日志，无回放契约）。
