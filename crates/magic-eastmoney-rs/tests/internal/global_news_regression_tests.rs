@@ -166,13 +166,13 @@ fn global_news_rejects_duplicate_id_url_and_noncanonical_urls() {
     let duplicate = global_fixture().replacen("202607253821081234", "202607253821086055", 1);
     assert!(parse_global_news(duplicate.as_bytes(), 2).is_err());
     for invalid in [
-        "https://news.eastmoney.com/a/202607253821086055.html",
+        "https://eastmoney.com/a/202607253821086055.html",
+        "https://evil-eastmoney.com/a/202607253821086055.html",
         "https://finance.eastmoney.com/b/202607253821086055.html",
         "https://finance.eastmoney.com/a/not-digits.html",
         "https://finance.eastmoney.com/a/202607253821086055.html?x=1",
         "https://finance.eastmoney.com.example/a/202607253821086055.html",
         "https://forex.eastmoney.com.example/a/202607253821086055.html",
-        "https://evil.forex.eastmoney.com/a/202607253821086055.html",
         "https://forex.eastmoney.com/b/202607253821086055.html",
     ] {
         assert!(normalize_global_article_url(invalid).is_err(), "{invalid}");
@@ -180,7 +180,11 @@ fn global_news_rejects_duplicate_id_url_and_noncanonical_urls() {
 }
 
 #[test]
-fn global_news_accepts_exact_official_hosts_and_preserves_them_in_canonical_url() {
+fn global_news_accepts_eastmoney_channel_hosts_and_rejects_ugc() {
+    // Structural admission (2026-10-15): any eastmoney.com subdomain serving
+    // the CMS /a/<digits>.html namespace, minus UGC hosts. Channel hosts
+    // merge onto finance.eastmoney.com with the same article id; guba's /a/
+    // URLs 404 and caifuhao's redirect to its 404 channel page.
     for host in [
         "finance.eastmoney.com",
         "global.eastmoney.com",
@@ -189,6 +193,12 @@ fn global_news_accepts_exact_official_hosts_and_preserves_them_in_canonical_url(
         "fund.eastmoney.com",
         "money.eastmoney.com",
         "insurance.eastmoney.com",
+        "gold.eastmoney.com",
+        "futures.eastmoney.com",
+        "bond.eastmoney.com",
+        "bank.eastmoney.com",
+        "forex.eastmoney.com",
+        "hk.eastmoney.com",
     ] {
         let input = format!("http://{host}/a/202607253821086055.html");
         let (item_id, canonical_url) = normalize_global_article_url(&input).unwrap();
@@ -202,12 +212,17 @@ fn global_news_accepts_exact_official_hosts_and_preserves_them_in_canonical_url(
         ))
         .is_err());
     }
-    // Other eastmoney subdomains, including community/UGC hosts, stay
-    // unadmitted until they carry the same first-party redirect evidence.
-    assert!(
-        normalize_global_article_url("https://guba.eastmoney.com/a/202607253821086055.html")
-            .is_err()
-    );
+    for rejected in [
+        "https://guba.eastmoney.com/a/202607253821086055.html",
+        "https://caifuhao.eastmoney.com/a/202607253821086055.html",
+        "https://eastmoney.com/a/202607253821086055.html",
+        "https://evil-eastmoney.com/a/202607253821086055.html",
+    ] {
+        assert!(
+            normalize_global_article_url(rejected).is_err(),
+            "{rejected} must stay unadmitted"
+        );
+    }
 }
 
 #[test]
@@ -275,7 +290,7 @@ fn global_news_row_and_attribute_parser_reject_every_ambiguous_shape() {
         "https://finance.eastmoney.com",
         "https://finance.eastmoney.com/a/123.html#fragment",
         "https://bank.eastmoney.com.evil.example/a/123.html",
-        "https://evil.bank.eastmoney.com/a/123.html",
+        "https://evil.bank.eastmoney.com.example/a/123.html",
         "https://finance.eastmoney.com/a/.html",
     ] {
         assert!(normalize_global_article_url(invalid).is_err(), "{invalid}");

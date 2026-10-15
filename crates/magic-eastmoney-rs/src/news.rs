@@ -288,25 +288,16 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
     let (host, path) = remainder
         .split_once('/')
         .ok_or_else(|| EastmoneyError::Protocol("Eastmoney news article URL has no path".into()))?;
-    // `money.` and `insurance.` admitted 2026-10-15: their article URLs
-    // 302-merge onto finance.eastmoney.com with the same /a/<id> through
-    // Eastmoney's own redirect chain; evidence recorded in
+    // Admission is structural (revised 2026-10-15 after channel-host drift
+    // outran the named list: money. -> insurance. -> gold. within one day):
+    // an eastmoney.com subdomain serving the CMS article namespace
+    // /a/<digits>.html (validated below; only first-party channel hosts
+    // serve it) is admitted, minus the known UGC hosts whose /a/ URLs do
+    // not resolve (guba -> 404; caifuhao -> 302 /404_channel.html).
+    // Receipts and evidence:
     // docs/integrations/2026-10-15-eastmoney-news-hosts-gate-a-design.md.
-    if !matches!(
-        host,
-        "finance.eastmoney.com"
-            | "global.eastmoney.com"
-            | "biz.eastmoney.com"
-            | "stock.eastmoney.com"
-            | "fund.eastmoney.com"
-            | "futures.eastmoney.com"
-            | "bond.eastmoney.com"
-            | "bank.eastmoney.com"
-            | "forex.eastmoney.com"
-            | "hk.eastmoney.com"
-            | "money.eastmoney.com"
-            | "insurance.eastmoney.com"
-    ) {
+    const UGC_HOSTS: &[&str] = &["guba.eastmoney.com", "caifuhao.eastmoney.com"];
+    if !host.ends_with(".eastmoney.com") || UGC_HOSTS.contains(&host) {
         return Err(EastmoneyError::Protocol(format!(
             "Eastmoney news article host {host:?} is not an admitted global-news host"
         )));

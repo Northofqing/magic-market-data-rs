@@ -44,20 +44,18 @@ fund.eastmoney.com
 futures.eastmoney.com
 bond.eastmoney.com
 hk.eastmoney.com
-money.eastmoney.com
-insurance.eastmoney.com
+# 其余 *.eastmoney.com 一方频道宿主（如 money./insurance./gold.）按下方结构制规则准入
 ```
 
-`finance.eastmoney.com`、`global.eastmoney.com`、`biz.eastmoney.com`、`stock.eastmoney.com`、
-`fund.eastmoney.com`、`futures.eastmoney.com`、`bond.eastmoney.com`、`bank.eastmoney.com`、
-`forex.eastmoney.com`、`hk.eastmoney.com`、`money.eastmoney.com` 与
-`insurance.eastmoney.com` 仅允许作为
+`*.eastmoney.com` 一方频道宿主（finance/global/biz/stock/fund/futures/bond/bank/
+forex/hk/money/insurance/gold 等，随频道漂移）仅允许作为
 滚动页返回记录的精确 canonical URL 元数据；适配器
 不会向这些主机发起第二次请求，也没有新增 Provider-local HTTP/TLS 依赖。
-`money.` 与 `insurance.` 于 2026-10-15 准入：其文章 URL 经东财自家 302 链归并到
-`finance.eastmoney.com`（同一 `/a/<id>` 身份），证据见
-`docs/integrations/2026-10-15-eastmoney-news-hosts-gate-a-design.md`。其它东财子域
-（含社区/UGC 宿主）未列入即整批拒绝，漂移需按该设计文档的台账复核节奏处理。
+2026-10-15 准入规则（结构制，取代逐名名单）：宿主须以 `.eastmoney.com` 结尾且不属于
+UGC 集（`guba.eastmoney.com`、`caifuhao.eastmoney.com`——其实测 `/a/` 形态分别为
+404 与 404 跳转），文章路径严格 `/a/<纯数字>.html`；一方频道宿主的 `/a/<id>` 经
+东财自家 302 链归并到 `finance.eastmoney.com` 同一文章 ID。证据与回执见
+`docs/integrations/2026-10-15-eastmoney-news-hosts-gate-a-design.md` §2/§10。
 
 研报正文只从记录绑定的精确 `pdf.dfcfw.com` HTTPS URL 下载；必须返回
 `application/pdf`、以 `%PDF-` 开头并且不超过 32 MiB。禁止跳转、HTML、身份错配
