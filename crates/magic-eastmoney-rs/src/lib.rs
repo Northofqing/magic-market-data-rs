@@ -51,6 +51,11 @@ use transport::{
     HttpsTransport, DEFAULT_MAX_RESPONSE_BYTES, MAX_HTML_RESPONSE_BYTES, MAX_PDF_RESPONSE_BYTES,
 };
 
+/// The eastmoney 财经滚动页 global-news family is production-admitted.
+/// 2026-10-15 alias-host admission and host-list provenance:
+/// docs/integrations/2026-10-15-eastmoney-news-hosts-gate-a-design.md
+pub const GLOBAL_NEWS_ADMITTED: bool = true;
+
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(12);
 const SOURCE_NAME: &str = "eastmoney-web";
 
@@ -168,7 +173,7 @@ impl EastmoneyClient {
     pub const fn content_capabilities() -> ContentCapabilities {
         ContentCapabilities {
             instrument_news: false,
-            global_news: true,
+            global_news: GLOBAL_NEWS_ADMITTED,
             announcements: false,
             market_announcements: false,
             investor_questions: false,

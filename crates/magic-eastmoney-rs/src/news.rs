@@ -288,6 +288,10 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
     let (host, path) = remainder
         .split_once('/')
         .ok_or_else(|| EastmoneyError::Protocol("Eastmoney news article URL has no path".into()))?;
+    // `money.` and `insurance.` admitted 2026-10-15: their article URLs
+    // 302-merge onto finance.eastmoney.com with the same /a/<id> through
+    // Eastmoney's own redirect chain; evidence recorded in
+    // docs/integrations/2026-10-15-eastmoney-news-hosts-gate-a-design.md.
     if !matches!(
         host,
         "finance.eastmoney.com"
@@ -300,6 +304,8 @@ fn normalize_global_article_url(url: &str) -> Result<(String, String), Eastmoney
             | "bank.eastmoney.com"
             | "forex.eastmoney.com"
             | "hk.eastmoney.com"
+            | "money.eastmoney.com"
+            | "insurance.eastmoney.com"
     ) {
         return Err(EastmoneyError::Protocol(format!(
             "Eastmoney news article host {host:?} is not an admitted global-news host"

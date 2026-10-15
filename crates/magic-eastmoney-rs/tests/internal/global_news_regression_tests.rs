@@ -187,6 +187,8 @@ fn global_news_accepts_exact_official_hosts_and_preserves_them_in_canonical_url(
         "biz.eastmoney.com",
         "stock.eastmoney.com",
         "fund.eastmoney.com",
+        "money.eastmoney.com",
+        "insurance.eastmoney.com",
     ] {
         let input = format!("http://{host}/a/202607253821086055.html");
         let (item_id, canonical_url) = normalize_global_article_url(&input).unwrap();
@@ -200,6 +202,12 @@ fn global_news_accepts_exact_official_hosts_and_preserves_them_in_canonical_url(
         ))
         .is_err());
     }
+    // Other eastmoney subdomains, including community/UGC hosts, stay
+    // unadmitted until they carry the same first-party redirect evidence.
+    assert!(
+        normalize_global_article_url("https://guba.eastmoney.com/a/202607253821086055.html")
+            .is_err()
+    );
 }
 
 #[test]
