@@ -63,6 +63,10 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 `ADMITTED`、`complete=true` 和空 records，保留真实 `batch_id`/`observed_at`，且不伪造
 批次 `source_at`。无法证明的空批次和错误 evidence 仍然 fail-closed。
 
+`GlobalNews` schema v3 在 v2 之上接受可选的 `captured_through`（v2 请求原样继续受理）：
+present 时同样先校验完整批次、再过滤晚于截止时刻的记录；cutoff-empty 返回 `complete=true`、
+空 records、保留真实 `batch_id`/`observed_at`；记录与证据 schema 不变。
+
 Rust 组合层提供有界[资讯候选检索](crates/magic-market-composition/src/content_discovery.rs)：
 可在已准入的最新新闻窗口中用实体别名组筛选科技报道，或在巨潮公告的单日/单证券日期
 窗口中筛选 14 类公告候选，包括年报、半年报、业绩预告、增减持、回购股份减持、

@@ -200,6 +200,8 @@ BR-012 `:409-420`：Jin10 限未锁定的公共 type-0/type-2；ThePaper 限财�
 
 ## 7. 待批准人拍板（按编号回答）
 
+拍板结果（2026-10-15）：D1**b**（改口径：字段差异写入 scope 串，避免动冻结 proto；原荐 (a) 需加 proto 字段）/ D2a / D3c（并入本批）/ D4a / D5b；D6 待业务答案。以下原文保留。
+
 **D1 — `ContentCapabilities` 是否扩到字段级并上 wire？**
 - (a) 扩：加 `summary` / `body` / `instrument_linkage` 三个布尔，并纳入 `GetCapabilities` 响应
 - (b) 不扩结构，只在每个源的能力 `scope` 串里写清字段差异
@@ -302,3 +304,37 @@ BR-012 `:409-420`：Jin10 限未锁定的公共 type-0/type-2；ThePaper 限财�
 - **D1 与第十份之外的协议工作无耦合**：`ContentCapabilities` 是 provider 侧类型，不进 proto 记录。
 - **`search_recent_news`（§2.2）是本仓唯一现成的新闻消费者，也是 D1 的第一个受益者**：它现在没法知道该不该把 `content` 计入匹配文本（§4.1）。若 D1 落地，它可以按源能力决定匹配字段，而不是对 8 个源一律拼 `title + summary + content`。
 - 本设计与 `security-master-fields`、`trading-calendar`、`overseas-market-data` 均无耦合。
+
+## 12. 拍板与实施记录（2026-10-15）
+
+已实施：
+
+1. **D1b**：10 个 `GlobalNews` 注册的 `exact_scope` 串全部附加字段图（`fields=...`；
+   窄源显式标注 `summary/content/instruments absent`；Cls/Cailianpress 标注
+   `instruments(source stock_list)` 与 brief 回显可能性）。零合同变化——scope 本就在
+   wire 上。
+2. **D2a**：新增 BR-069（财联社源侧结构化字段合同：只读公开发文端点、标的仅来自
+   源侧 `stock_list`、DR 号段 typed 拒绝、无存储/缓存/索引、`instrument_news` 保持
+   Unsupported）；`magic-cls-rs` 增加 `GLOBAL_NEWS_ADMITTED`；台账行 provider=`Cailianpress`。
+3. **D4a**：7 个新 `_ADMITTED` 常量 + 7 个台账行（cninfo×3、gov、sina、thepaper、cls），
+   全部由 2026-10-15 当场执行的实网探针背书：cls `live_probe`×2 + `load_probe`×3；
+   cninfo `live_probe`×2 + `load_probe`×3；gov `live_probe`×3；thepaper `live_probe`×2 +
+   `load_probe`×3；sina `instrument_news_probe`×2（仅新闻族——同日 `live_probe` 的期权族
+   仍受上游 `null` 月数据影响，与新闻族无关）。五份集成文档已附准入记录。常量均为
+   **声明**（无门、零运行时变化；第三份设计的 D2c 门延后条件不变）。
+4. **D5b**：`docs/data-sources-inventory.md` 顶部系统归属声明（描述的是下游应用，不是
+   本仓地图）；integrations README 增加新闻边界条目与五 crate 登记说明；
+   `provider-coverage-index.md` 同步更新。
+5. **D3c**（并入批次，独立提交）：`GlobalNews` 请求 schema 接受 v3（可选
+   `captured_through`；v2 请求原样继续受理）；composition 侧先校验完整上游批次、再
+   过滤晚于截止时刻的记录；cutoff-empty 为已验证空响应（`complete=true`、空 records、
+   `source_at` 空、保留真实 `batch_id`/`observed_at`）；非法 cutoff 在 Provider 调用前
+   拒绝。**与 §7 预估的偏差（显式记录）**：未做 `NewsProvider` trait 签名变更（过滤在
+   composition 侧、与 InstrumentNews v2 同构，trait 无需改）；未做记录 schema v2→v3
+   （记录与证据形态未变，仅请求侧扩展；共享 `NEWS_SCHEMA_VERSION` 继续管记录与
+   InstrumentNews 请求）。BR-054 已追加该扩展条款；根 README 同步。
+
+未实施：
+
+- **D6**（下游要新闻做什么）：等业务答案。若答「隔夜/盘后可查」，
+  `search_recent_news` 上 wire + BR-031/BR-066 修订属规则级立项，不在本批。

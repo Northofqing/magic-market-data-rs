@@ -139,6 +139,16 @@ fn fixture_command(
     .unwrap()
 }
 
+fn v3_news_command(captured_through: &str) -> QueryCommand {
+    fixture_command(
+        Operation::GlobalNews,
+        "Cailianpress",
+        GLOBAL_NEWS_REQUEST_SCHEMA,
+        3,
+        format!(r#"{{"limit":2,"captured_through":"{captured_through}"}}"#).as_bytes(),
+    )
+}
+
 fn valid_news_command() -> QueryCommand {
     fixture_command(
         Operation::GlobalNews,
@@ -215,12 +225,17 @@ fn registered_news_handler_rejects_bad_envelopes_before_provider_call() {
         NewsOutcome::Batch(Box::new(fixture_news_batch(ProviderId::Cailianpress))),
         4096,
     );
-    let cases: [(&str, u32, &[u8]); 5] = [
+    let cases: [(&str, u32, &[u8]); 6] = [
         ("magic.market.invalid_schema.request", 2, br#"{"limit":2}"#),
         (GLOBAL_NEWS_REQUEST_SCHEMA, 1, br#"{"limit":2}"#),
         (GLOBAL_NEWS_REQUEST_SCHEMA, 2, br#"{"limit":0}"#),
         (GLOBAL_NEWS_REQUEST_SCHEMA, 2, br#"{}"#),
         (GLOBAL_NEWS_REQUEST_SCHEMA, 2, b"[]"),
+        (
+            GLOBAL_NEWS_REQUEST_SCHEMA,
+            3,
+            br#"{"limit":2,"captured_through":123}"#,
+        ),
     ];
     for (schema, version, bytes) in cases {
         let command = fixture_command(
@@ -272,6 +287,73 @@ fn registered_news_handler_preserves_v2_evidence_and_the_requested_limit() {
     assert_eq!(record["evidence"]["provider"], "Cailianpress");
     assert_eq!(record["evidence"]["source_at"], "2026-08-19T16:15:00+08:00");
     assert!(record["summary"].is_null() && record["content"].is_null());
+}
+
+#[test]
+fn registered_news_handler_v3_cutoff_filters_newer_records_and_keeps_evidence() {
+    let (registry, calls, limit) = fixture_news_registry(
+        NewsOutcome::Batch(Box::new(fixture_news_batch(ProviderId::Cailianpress))),
+        4096,
+    );
+    let result = registry
+        .execute(v3_news_command("2026-08-19T16:16:00+08:00"))
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(limit.load(Ordering::SeqCst), 2);
+    assert_eq!(result.records.len(), 1);
+    assert_eq!(
+        result.source_at.as_deref(),
+        Some("2026-08-19T16:15:00+08:00")
+    );
+    assert!(result.complete && result.repository_admitted);
+}
+
+#[test]
+fn registered_news_handler_v3_cutoff_before_all_records_is_verified_empty() {
+    let (registry, calls, _) = fixture_news_registry(
+        NewsOutcome::Batch(Box::new(fixture_news_batch(ProviderId::Cailianpress))),
+        4096,
+    );
+    let result = registry
+        .execute(v3_news_command("2026-08-19T16:14:00+08:00"))
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(result.records.is_empty());
+    assert!(result.source_at.is_none());
+    assert!(result.complete && result.repository_admitted);
+    assert_eq!(result.batch_id, FIXTURE_BATCH_ID);
+    assert_eq!(result.observed_at, FIXTURE_OBSERVED_AT);
+}
+
+#[test]
+fn registered_news_handler_v3_rejects_a_bad_cutoff_before_the_provider_call() {
+    let (registry, calls, _) = fixture_news_registry(
+        NewsOutcome::Batch(Box::new(fixture_news_batch(ProviderId::Cailianpress))),
+        4096,
+    );
+    assert!(matches!(
+        registry.execute(v3_news_command("not-a-time")),
+        Err(ServiceError::InvalidRequest(_))
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn registered_news_handler_v3_without_a_cutoff_matches_v2_behaviour() {
+    let (registry, _, _) = fixture_news_registry(
+        NewsOutcome::Batch(Box::new(fixture_news_batch(ProviderId::Cailianpress))),
+        4096,
+    );
+    let command = fixture_command(
+        Operation::GlobalNews,
+        "Cailianpress",
+        GLOBAL_NEWS_REQUEST_SCHEMA,
+        3,
+        br#"{"limit":2}"#,
+    );
+    let result = registry.execute(command).unwrap();
+    assert_eq!(result.records.len(), 1);
+    assert!(result.complete && result.repository_admitted);
 }
 
 #[test]

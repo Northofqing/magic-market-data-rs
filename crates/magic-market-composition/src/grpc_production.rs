@@ -364,6 +364,14 @@ struct InstrumentNewsRequestV2 {
     captured_through: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GlobalNewsRequestV3 {
+    limit: PositiveU32,
+    #[serde(default)]
+    captured_through: Option<String>,
+}
+
 #[derive(Serialize)]
 struct NewsRecordPayloadV2<'a> {
     item_id: &'a str,
@@ -4626,6 +4634,30 @@ fn invalid_economic_release_evidence(
     }
 }
 
+/// `GlobalNews` request dispatch: schema version 2 keeps the historical
+/// `{limit}` envelope; version 3 adds the optional caller `captured_through`
+/// cutoff without breaking version-2 callers (BR-054 extension). Any other
+/// version is rejected before the provider is called.
+fn decode_global_news_request(
+    command: &QueryCommand,
+) -> Result<(PositiveU32, Option<String>), ServiceError> {
+    match command.payload().schema_version() {
+        2 => {
+            let request: LimitRequest =
+                decode_request_version(command, GLOBAL_NEWS_REQUEST_SCHEMA, 2)?;
+            Ok((request.limit, None))
+        }
+        3 => {
+            let request: GlobalNewsRequestV3 =
+                decode_request_version(command, GLOBAL_NEWS_REQUEST_SCHEMA, 3)?;
+            Ok((request.limit, request.captured_through))
+        }
+        version => Err(ServiceError::InvalidRequest(format!(
+            "GlobalNews requires request schema version 2 or 3, got {version}"
+        ))),
+    }
+}
+
 fn execute_global_news<P>(
     command: QueryCommand,
     client: &P,
@@ -4637,12 +4669,28 @@ where
     P: NewsProvider,
     P::Error: Error + 'static,
 {
-    let request: LimitRequest =
-        decode_request_version(&command, GLOBAL_NEWS_REQUEST_SCHEMA, NEWS_SCHEMA_VERSION)?;
+    let (limit, captured_through) = decode_global_news_request(&command)?;
+    if let Some(cutoff) = &captured_through {
+        EvidenceTimestamp::parse_instant(cutoff).map_err(|_| {
+            ServiceError::InvalidRequest("captured_through must be an RFC3339 instant".into())
+        })?;
+    }
     let batch = client
-        .global_news(request.limit)
+        .global_news(limit)
         .map_err(|error| provider_error(Operation::GlobalNews, error))?;
-    global_news_query_result(&batch, provider, expected_provider, maximum_payload_bytes)
+    match captured_through {
+        Some(cutoff) => global_news_with_cutoff(
+            batch,
+            provider,
+            expected_provider,
+            &cutoff,
+            limit,
+            maximum_payload_bytes,
+        ),
+        None => {
+            global_news_query_result(&batch, provider, expected_provider, maximum_payload_bytes)
+        }
+    }
 }
 
 fn execute_stcn_global_news(
@@ -4650,17 +4698,31 @@ fn execute_stcn_global_news(
     client: &StcnClient,
     maximum_payload_bytes: usize,
 ) -> Result<QueryResult, ServiceError> {
-    let request: LimitRequest =
-        decode_request_version(&command, GLOBAL_NEWS_REQUEST_SCHEMA, NEWS_SCHEMA_VERSION)?;
+    let (limit, captured_through) = decode_global_news_request(&command)?;
+    if let Some(cutoff) = &captured_through {
+        EvidenceTimestamp::parse_instant(cutoff).map_err(|_| {
+            ServiceError::InvalidRequest("captured_through must be an RFC3339 instant".into())
+        })?;
+    }
     let batch = client
-        .probe_global_news(request.limit)
+        .probe_global_news(limit)
         .map_err(|error| provider_error(Operation::GlobalNews, error))?;
-    global_news_query_result(
-        &batch,
-        "SecuritiesTimes",
-        ProviderId::SecuritiesTimes,
-        maximum_payload_bytes,
-    )
+    match captured_through {
+        Some(cutoff) => global_news_with_cutoff(
+            batch,
+            "SecuritiesTimes",
+            ProviderId::SecuritiesTimes,
+            &cutoff,
+            limit,
+            maximum_payload_bytes,
+        ),
+        None => global_news_query_result(
+            &batch,
+            "SecuritiesTimes",
+            ProviderId::SecuritiesTimes,
+            maximum_payload_bytes,
+        ),
+    }
 }
 
 fn execute_instrument_news(
@@ -4735,7 +4797,7 @@ fn instrument_news_query_result(
     // so malformed evidence cannot be hidden by filtering.
     let mut validated =
         global_news_query_result(&batch, "Sina", ProviderId::Sina, maximum_payload_bytes)?;
-    let filtered = filter_instrument_news_batch(batch, captured_through, limit)?;
+    let filtered = filter_news_batch_by_cutoff(batch, "Sina", captured_through, limit)?;
     if filtered.records().is_empty() {
         validated.source_at = None;
         validated.records.clear();
@@ -4808,8 +4870,9 @@ fn source_proven_empty_instrument_news_result(
     })
 }
 
-fn filter_instrument_news_batch(
+fn filter_news_batch_by_cutoff(
     batch: DataBatch<NewsItem>,
+    provider: &str,
     captured_through: &str,
     limit: PositiveU32,
 ) -> Result<DataBatch<NewsItem>, ServiceError> {
@@ -4818,7 +4881,7 @@ fn filter_instrument_news_batch(
     })?;
     if !batch.quality().is_complete() {
         return Err(invalid_news_evidence(
-            "Sina",
+            provider,
             "batch_quality_incomplete",
             "quality",
             None,
@@ -4828,14 +4891,14 @@ fn filter_instrument_news_batch(
     let source = provenance.source().to_owned();
     let observed_at = provenance.fetched_at().to_owned();
     let batch_id = provenance.batch_id().map(str::to_owned).ok_or_else(|| {
-        invalid_news_evidence("Sina", "batch_evidence_incomplete", "batch_id", None)
+        invalid_news_evidence(provider, "batch_evidence_incomplete", "batch_id", None)
     })?;
     let mut retained = Vec::new();
     for (index, record) in batch.into_records().into_iter().enumerate() {
         let published =
             EvidenceTimestamp::parse_instant(record.published_at.as_str()).map_err(|_| {
                 invalid_news_evidence(
-                    "Sina",
+                    provider,
                     "record_published_at_invalid",
                     "published_at",
                     u32::try_from(index).ok(),
@@ -5163,6 +5226,34 @@ fn global_news_query_result(
         repository_admitted: true,
         diagnostic_blocker: None,
     })
+}
+
+/// Apply the caller cutoff to a validated `GlobalNews` batch (BR-054
+/// `GlobalNews` v3): records published after the exact instant are excluded;
+/// a complete batch that retains nothing is an admitted verified-empty
+/// response with the upstream batch ID and observation time intact.
+fn global_news_with_cutoff(
+    batch: DataBatch<NewsItem>,
+    provider: &str,
+    expected_provider: ProviderId,
+    captured_through: &str,
+    limit: PositiveU32,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let mut validated =
+        global_news_query_result(&batch, provider, expected_provider, maximum_payload_bytes)?;
+    let filtered = filter_news_batch_by_cutoff(batch, provider, captured_through, limit)?;
+    if filtered.records().is_empty() {
+        validated.source_at = None;
+        validated.records.clear();
+        return Ok(validated);
+    }
+    global_news_query_result(
+        &filtered,
+        provider,
+        expected_provider,
+        maximum_payload_bytes,
+    )
 }
 
 fn parse_news_source_instant(

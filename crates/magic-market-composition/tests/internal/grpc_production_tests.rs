@@ -659,8 +659,9 @@ fn instrument_news_v2_filters_at_the_callers_exact_cutoff() {
         batch_id,
     );
 
-    let filtered = filter_instrument_news_batch(
+    let filtered = filter_news_batch_by_cutoff(
         batch,
+        "Sina",
         "2026-08-19T16:15:37+08:00",
         PositiveU32::new(2).unwrap(),
     )

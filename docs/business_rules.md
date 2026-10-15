@@ -918,6 +918,15 @@ auction/breadth responses and fixed CFFEX schedule: local time is observation
 evidence only. It does not promote complete multi-page rankings, complete
 Level-2 auctions, CFETS DR007 or IMF data.
 
+`GlobalNews` accepts the same caller cutoff as a request-level extension in
+schema version 3: when `captured_through` is present the response excludes every
+record published later than the exact instant after validating the complete
+Provider pages, a complete fully evidenced batch that retains no record at or
+before the cutoff is the same admitted verified-empty response (records empty,
+response `source_at` absent, upstream batch ID and observation time intact), and
+version 2 requests continue to be accepted unchanged. Record and evidence
+schemas remain version 2: the extension changes neither.
+
 ## BR-055 EMQuant completed daily-bar admission
 
 The production EMQuant `HistoricalBars` scope is limited to Shanghai and
