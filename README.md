@@ -122,6 +122,16 @@ v1。来源名称区分大小写，未指定时默认 `Nbs`；列表 `limit` 为
 [gRPC 外部对接文档](docs/integrations/grpc-external-api.md)为准。
 `FinancialStatements` 支持 v2 的 Provider 原始 `fiscal_period`，同时保留 v1 投影；
 [期货交割 v2](docs/integrations/grpc-futures-delivery-v2.md)需要显式指定 2026 年及 1–12 月。
+### 2026-10-15 部署记录与客户端
+
+2026-10-15 晚完成批次部署：`ce7cb59`（AI 数据层 8 个提交：TDX 层修复与降级广播、准入台账、
+新闻五源、主数据、交易日历）。服务已切换并验证：GetHealth 四字段为 0.2.0 /
+`ce7cb590584c14fe90b87427704d337ac7eb2c69` / `dba66a27…`（proto 新增第 66 个 RPC，
+contract_sha256 变更）/ `19ccc893…`；TradingCalendar 实测 242 条、RealtimeQuotes 正常。
+同批交付新 client bundle `2026-10-15.1`（66 RPC；含 `TradingCalendar` 合同文档与
+`provider-coverage-index.md`）至 Mac 侧 client-bundle，对端需替换 `external_v1_current`
+并按新四字段重新钉定后才恢复准入。
+
 bundle 由 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，
 默认版本为 `2026-10-01.3`，使用 LF 格式的 `manifest.sha256` 校验公开合同文件。
 精确来源提交以 `bundle-metadata.json` 的 `source_commit` 为准；包含部署身份时，还需与

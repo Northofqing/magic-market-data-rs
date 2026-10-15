@@ -2,7 +2,7 @@
 
 This is an opt-in canonical JSON version, not a new protobuf method, Provider
 admission, source calendar or point-in-time guarantee. It follows the
-[scoped Gate A design](../superpowers/specs/2026-10-02-hithink-historical-coverage-design.md).
+scoped Gate A design (`docs/superpowers/specs/2026-10-02-hithink-historical-coverage-design.md`, repository-local).
 
 ## Request and compatibility
 

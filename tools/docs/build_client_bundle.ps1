@@ -60,12 +60,15 @@ $publicFiles = @(
     @("market.proto", "crates/magic-market-grpc-contracts/proto/magic/market/v1/market.proto"),
     @("grpc-external-api.md", "docs/integrations/grpc-external-api.md"),
     @("grpc-futures-delivery-v2.md", "docs/integrations/grpc-futures-delivery-v2.md"),
+    @("grpc-trading-calendar.md", "docs/integrations/grpc-trading-calendar.md"),
     @("futures-delivery-2026-09.fixture.json", "docs/integrations/futures-delivery-2026-09.fixture.json"),
     @("grpc-derived-products.md", "docs/integrations/grpc-derived-products.md"),
     @("grpc-market-announcements-coverage-v2.md", "docs/integrations/grpc-market-announcements-coverage-v2.md"),
     @("grpc-historical-bars-records.md", "docs/integrations/grpc-historical-bars-records.md"),
+    @("grpc-historical-bars-coverage-v2.md", "docs/integrations/grpc-historical-bars-coverage-v2.md"),
     @("tdx-public-security-profile.md", "docs/integrations/tdx-public-security-profile.md"),
-    @("unadmitted-provider-routes.md", "docs/integrations/unadmitted-provider-routes.md")
+    @("unadmitted-provider-routes.md", "docs/integrations/unadmitted-provider-routes.md"),
+    @("provider-coverage-index.md", "docs/integrations/provider-coverage-index.md")
 )
 
 $null = [System.IO.Directory]::CreateDirectory($destinationPath)
@@ -119,8 +122,8 @@ if (-not $serviceMatch.Success) {
     throw "market.proto has no MarketDataService block"
 }
 $rpcCount = [regex]::Matches($serviceMatch.Groups['body'].Value, '\brpc\s+').Count
-if ($rpcCount -ne 65) {
-    throw "client bundle must contain exactly 65 MarketDataService RPCs, got $rpcCount"
+if ($rpcCount -ne 66) {
+    throw "client bundle must contain exactly 66 MarketDataService RPCs, got $rpcCount"
 }
 
 $generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
@@ -154,6 +157,9 @@ $metadata = @"
   "futures_delivery_schema_version": 2,
   "official_publications_schema_version": 1,
   "official_publication_schema_version": 1,
+  "security_profiles_schema_version": 2,
+  "limit_pools_schema_version": 2,
+  "trading_calendar_schema_version": 1,
   "deployment_build_identity": $deploymentIdentity,
   "generated_at_utc": "$generatedAt"
 }
@@ -183,6 +189,9 @@ FuturesDelivery schema version 2 and a full 2026-09 wire fixture are documented
 in grpc-futures-delivery-v2.md and futures-delivery-2026-09.fixture.json.
 OfficialPublications and OfficialPublication expose native evidence envelopes in version 1;
 publication date labels never supply QueryResponse.source_at.
+TradingCalendar returns the checked-in SSE 2026 trading-day revision (schema version 1,
+242 days, source_at = notice publication date); SecurityProfiles and LimitPools records
+are schema version 2 (unverified source share counts; source-provided is_st).
 GetHealth and GetListenerStatus expose append-only aggregate runtime observability fields.
 When deployment_build_identity is non-null, compare every field with GetHealth.build_identity
 before admitting the endpoint; the documented hash scopes are exact and case-sensitive.
@@ -211,8 +220,11 @@ $manifestFiles = @(
     "grpc-derived-products.md",
     "grpc-market-announcements-coverage-v2.md",
     "grpc-historical-bars-records.md",
+    "grpc-historical-bars-coverage-v2.md",
     "tdx-public-security-profile.md",
     "unadmitted-provider-routes.md",
+    "provider-coverage-index.md",
+    "grpc-trading-calendar.md",
     "bundle-metadata.json",
     "README.md"
 )

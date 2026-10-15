@@ -71,8 +71,8 @@
 - 不含盘中临时休市/延迟开闭市；此类调整出现时必须新增修订；
 - 不含港股通/北交所差异日；
 - 2025 及后续年份未准入；运行时永不按日历公式外推（BR-051 先例的禁令适用于本族）；
-- 构造、复核与准入证据见
-  [`2026-10-15-sse-trading-calendar-revision.md`](../evidence/2026-10-15-sse-trading-calendar-revision.md)；
+- 构造、复核与准入证据见仓库内
+  `docs/evidence/2026-10-15-sse-trading-calendar-revision.md`；
   复核工具 `tools/probes/trading-calendar-crosscheck.py`。
 
 ## 6. 兼容性
