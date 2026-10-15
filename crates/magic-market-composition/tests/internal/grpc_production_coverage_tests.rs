@@ -1754,6 +1754,11 @@ mod registered_option_request_regressions {
                 2,
             ),
             (
+                Operation::TradingCalendar,
+                "magic.market.trading_calendar.request",
+                1,
+            ),
+            (
                 Operation::IndexQuotes,
                 "magic.market.index_quotes.request",
                 1,
@@ -2715,3 +2720,102 @@ mod eastmoney_market_dragon_tiger_public_contract;
 
 #[path = "grpc_sse_dragon_tiger_query_tests.rs"]
 mod sse_dragon_tiger_public_contract;
+
+mod sse_trading_calendar_public_contract {
+    use super::production_operation_registry;
+    use magic_market_core::{HttpsUrl, IsoDate, ProviderId, SourceEvidence, TradingVenue};
+    use magic_market_service::{CanonicalPayload, Operation, QueryCommand};
+    use std::time::Duration;
+
+    // A caller-side model of the documented public v1 record. It does not use
+    // the private projection function or read the provider's sealed table.
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PublicTradingDayRecordV1 {
+        date: IsoDate,
+        venue: TradingVenue,
+        calendar_revision: String,
+        announcement_url: HttpsUrl,
+        holiday_calendar_url: HttpsUrl,
+        date_basis: String,
+        evidence: SourceEvidence,
+    }
+
+    fn command(year: u32, venue: &str) -> QueryCommand {
+        QueryCommand::new(
+            "offline-sse-trading-calendar-v1",
+            Operation::TradingCalendar,
+            Some("Sse".into()),
+            CanonicalPayload::new(
+                "magic.market.trading_calendar.request",
+                1,
+                serde_json::json!({"year": year, "venue": venue})
+                    .to_string()
+                    .into_bytes(),
+                4096,
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn public_2026_query_returns_the_reviewed_vector_with_notice_evidence() {
+        // Use the public production factory and its original registered SSE
+        // handler. The formal trait reads the checked-in revision; it never
+        // touches a network transport and never derives dates at runtime.
+        let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
+        let result = registry.execute(command(2026, "Sse")).unwrap();
+        assert_eq!(result.provider, "Sse");
+        assert!(result.complete);
+        assert!(result.repository_admitted);
+        assert_eq!(result.diagnostic_blocker, None);
+        assert_eq!(result.source_at.as_deref(), Some("2025-12-22"));
+        assert_eq!(result.batch_id, "sse-trading-days-2026-v1");
+        assert_eq!(result.records.len(), 242);
+        let first =
+            serde_json::from_slice::<PublicTradingDayRecordV1>(result.records[0].data()).unwrap();
+        assert_eq!(first.date.as_str(), "2026-01-05");
+        assert_eq!(first.venue, TradingVenue::Sse);
+        assert_eq!(first.calendar_revision, "sse-trading-days-2026-v1");
+        assert_eq!(
+            first.announcement_url.as_str(),
+            "https://www.sse.com.cn/disclosure/announcement/general/c/c_20251222_10802507.shtml"
+        );
+        assert_eq!(
+            first.holiday_calendar_url.as_str(),
+            "https://www.gov.cn/gongbao/2025/issue_12406/material/gwygb202532.pdf"
+        );
+        assert_eq!(first.date_basis, "SseAnnouncedClosuresAndWeekdays");
+        assert_eq!(first.evidence.provider(), ProviderId::Sse);
+        assert_eq!(first.evidence.source_at(), Some("2025-12-22"));
+        assert_eq!(first.evidence.batch_id(), "sse-trading-days-2026-v1");
+        assert_eq!(first.evidence.observed_at(), result.observed_at);
+        // Every record parses under the strict caller-side model; the last
+        // date is the year's final trading day.
+        let mut last = None;
+        for payload in &result.records {
+            assert_eq!(payload.schema(), "magic.market.trading_day");
+            assert_eq!(payload.schema_version(), 1);
+            let row: PublicTradingDayRecordV1 = serde_json::from_slice(payload.data()).unwrap();
+            assert_eq!(row.evidence.observed_at(), result.observed_at);
+            last = Some(row.date.as_str().to_owned());
+        }
+        assert_eq!(last.as_deref(), Some("2026-12-31"));
+    }
+
+    #[test]
+    fn other_years_and_venues_fail_closed_at_the_provider_boundary() {
+        let registry = production_operation_registry(Duration::from_secs(1), 4096).unwrap();
+        let year = registry.execute(command(2025, "Sse")).unwrap_err();
+        assert!(
+            matches!(&year, magic_market_service::ServiceError::Unsupported { reason, .. } if reason.contains("2026")),
+            "{year:?}"
+        );
+        let venue = registry.execute(command(2026, "Szse")).unwrap_err();
+        assert!(
+            matches!(&venue, magic_market_service::ServiceError::Unsupported { reason, .. } if reason.contains("Sse")),
+            "{venue:?}"
+        );
+    }
+}

@@ -313,6 +313,7 @@ impl CffexClient {
         CalendarCapabilities {
             economic_releases: false,
             futures_delivery: CFFEX_2026_FUTURES_DELIVERY_ADMITTED,
+            trading_calendar: false,
         }
     }
 

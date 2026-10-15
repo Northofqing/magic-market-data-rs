@@ -100,6 +100,7 @@ define_operations! {
     EconomicReleaseSchedule => "economic_release_schedule",
     OfficialPublications => "official_publications",
     OfficialPublication => "official_publication",
+    TradingCalendar => "trading_calendar",
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

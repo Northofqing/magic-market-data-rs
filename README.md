@@ -154,6 +154,11 @@ LPR 和官方汇率能力不受 DR007 授权缺口影响。窄版 `Auctions` 只
 方向化未匹配队列，仍保持 repository-unadmitted，只能显式 `allow_unadmitted=true` 调用。
 同花顺交易日历和竞价短线基准虽然包含日期，但日期不与该快照记录绑定，不能跨响应补证据。
 
+A 股交易日历现由 `TradingCalendar` op 提供：SSE 2026 年 242 个交易日，口径为上交所
+年度休市公告（上证公告〔2025〕45号）与国务院节假日安排的签入修订，逐段与公告核对并经
+本地终端逐位交叉验证；它只能判定“该日交易所是否开市”，不含个股停牌，非 2026 年份与
+SZSE 场所在 I/O 前 typed 拒绝。
+
 `EconomicReleaseObservations` 只返回 Jin10 当前滚动公开窗口中真实存在的 type-1
 结构化发布记录，并保留计划时间、发布观测时间、实际/预期/前值和逐条证据。普通新闻
 `published_at` 不会被解析或复制成事件时间。完整 `EconomicCalendar` 因无法证明日期范围

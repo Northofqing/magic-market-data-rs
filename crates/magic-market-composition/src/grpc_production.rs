@@ -15,7 +15,9 @@ use magic_emquant_rs::{
     EmQuantClient, EmQuantError, EMQUANT_DAILY_BARS_ADMITTED, MAX_EMQUANT_DAILY_BARS,
 };
 use magic_exchange_rs::{
-    CffexClient, ExchangeError, HkexClient, SseClient, SseConfig, SzseClient, SzseConfig,
+    CffexClient, ExchangeError, HkexClient, SseClient, SseConfig, SseTradingCalendar, SzseClient,
+    SzseConfig, FIXED_TRADING_CALENDAR_REVISION, SSE_TRADING_CALENDAR_2026_NOTICE_URL,
+    TRADING_CALENDAR_2026_HOLIDAY_NOTICE_URL,
 };
 use magic_fred_rs::{FredClient, FredError, ECONOMIC_RELEASE_SCHEDULE_ADMITTED};
 use magic_gov_rs::{GovClient, GovError};
@@ -62,7 +64,7 @@ use magic_market_core::{
     ResearchDocuments, ResearchReports, ResearchRequest, SecurityMetadataProvider,
     SecurityProfiles, SemanticSearch, SemanticSearchRequest, SourceEvidence, StatementKind,
     StrongStockReasons, TargetPriceData, TargetPriceRequest, TechnicalBarsProvider, Trades,
-    TradesRequest,
+    TradesRequest, TradingCalendar, TradingDayRequest,
 };
 use magic_market_router::{
     quote_source, AcceptancePolicy, AttemptStatus, FailureKind, QuoteRouter, RouterError,
@@ -230,6 +232,9 @@ pub const FUTURES_DELIVERY_RECORD_SCHEMA: &str = "magic.market.futures_delivery_
 const FUTURES_DELIVERY_SCHEMA_VERSION: u32 = 2;
 const FUTURES_DELIVERY_HOLIDAY_CALENDAR_URL: &str =
     "https://www.gov.cn/gongbao/2025/issue_12406/material/gwygb202532.pdf";
+pub const TRADING_CALENDAR_REQUEST_SCHEMA: &str = "magic.market.trading_calendar.request";
+pub const TRADING_CALENDAR_RECORD_SCHEMA: &str = "magic.market.trading_day";
+const TRADING_CALENDAR_SCHEMA_VERSION: u32 = 1;
 pub const INDEX_QUOTES_REQUEST_SCHEMA: &str = "magic.market.index_quotes.request";
 pub const INDEX_QUOTES_RECORD_SCHEMA: &str = REALTIME_QUOTES_RECORD_SCHEMA;
 pub const INTRADAY_SHAPE_REQUEST_SCHEMA: &str = "magic.market.intraday_shape.request";
@@ -1358,6 +1363,26 @@ fn register_extended_handlers(
             )
         },
     )?;
+    let sse_calendar = SseTradingCalendar::new();
+    registry.register_handler(
+        admitted(
+            Operation::TradingCalendar,
+            "Sse",
+            "checked-in revisioned 2026 Shanghai trading-day vector derived from the SSE 2025-12-22 annual closure notice (上证公告〔2025〕45号); a reviewed derived revision, not an exchange-published day list; Sse venue only; no runtime network transport; future dates conditional on no later exchange adjustment",
+        ),
+        move |command| {
+            let request: TradingDayRequest = decode_request_version(
+                &command,
+                TRADING_CALENDAR_REQUEST_SCHEMA,
+                TRADING_CALENDAR_SCHEMA_VERSION,
+            )?;
+            let batch = sse_calendar
+                .trading_calendar(&request)
+                .map_err(|error| provider_error(Operation::TradingCalendar, error))?;
+            trading_calendar_query_result(batch, maximum_payload_bytes)
+        },
+    )?;
+
     register_emquant(registry, provider_timeout, maximum_payload_bytes)?;
     register_hithink(registry, provider_timeout, maximum_payload_bytes)?;
     Ok(())
@@ -5417,6 +5442,50 @@ fn futures_delivery_query_result(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(QueryResult {
         provider: "Cffex".to_owned(),
+        batch_id: batch_id.to_owned(),
+        complete: batch.quality().is_complete(),
+        observed_at: provenance.fetched_at().to_owned(),
+        source_at: provenance.source_at().map(str::to_owned),
+        records,
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
+fn trading_calendar_query_result(
+    batch: DataBatch<magic_market_core::TradingDayEntry>,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let provenance = batch.provenance();
+    let batch_id = provenance.batch_id().ok_or_else(|| {
+        ServiceError::FailedPrecondition("Sse calendar batch has no batch_id".into())
+    })?;
+    let records = batch
+        .records()
+        .iter()
+        .map(|record| {
+            let value = serde_json::json!({
+                "date": record.date,
+                "venue": record.venue,
+                "calendar_revision": FIXED_TRADING_CALENDAR_REVISION,
+                "announcement_url": SSE_TRADING_CALENDAR_2026_NOTICE_URL,
+                "holiday_calendar_url": TRADING_CALENDAR_2026_HOLIDAY_NOTICE_URL,
+                "date_basis": "SseAnnouncedClosuresAndWeekdays",
+                "evidence": record.evidence,
+            });
+            let data = serde_json::to_vec(&value).map_err(|error| {
+                ServiceError::Internal(format!("trading calendar serialization failed: {error}"))
+            })?;
+            CanonicalPayload::new(
+                TRADING_CALENDAR_RECORD_SCHEMA,
+                TRADING_CALENDAR_SCHEMA_VERSION,
+                data,
+                maximum_payload_bytes,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(QueryResult {
+        provider: "Sse".to_owned(),
         batch_id: batch_id.to_owned(),
         complete: batch.quality().is_complete(),
         observed_at: provenance.fetched_at().to_owned(),

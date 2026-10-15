@@ -1,11 +1,12 @@
 use magic_exchange_rs::{
-    CffexAccessMode, CffexClient, CffexConfig, HkexClient, SseClient, SzseClient,
+    CffexAccessMode, CffexClient, CffexConfig, HkexClient, SseClient, SseTradingCalendar,
+    SzseClient, FIXED_TRADING_CALENDAR_REVISION,
 };
 use magic_market_core::{
     Announcements, AssetClass, DataBatch, DragonTigerData, Exchange, FuturesDeliveryCalendar,
     FuturesDeliveryRequest, InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest,
     IsoDate, NorthboundChannel, NorthboundDailyRequest, NorthboundDailyStatistics, OrderBooks,
-    PositiveU32, RealtimeQuotes,
+    PositiveU32, RealtimeQuotes, TradingCalendar, TradingDayRequest, TradingVenue,
 };
 use std::error::Error;
 use std::fmt::Debug;
@@ -17,6 +18,49 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let delivery_year = env_u32("MAGIC_CFFEX_DELIVERY_YEAR", 2026)?;
     let delivery_month = env_u32("MAGIC_CFFEX_DELIVERY_MONTH", 2)?;
+    if std::env::var("MAGIC_EXCHANGE_LIVE_OPERATION").as_deref() == Ok("sse-trading-calendar") {
+        let year = env_u32("MAGIC_SSE_CALENDAR_YEAR", 2026)?;
+        let venue = match std::env::var("MAGIC_SSE_CALENDAR_VENUE")
+            .unwrap_or_else(|_| "Sse".into())
+            .as_str()
+        {
+            "Sse" => TradingVenue::Sse,
+            "Szse" => TradingVenue::Szse,
+            other => {
+                return Err(
+                    format!("MAGIC_SSE_CALENDAR_VENUE must be Sse or Szse, got {other}").into(),
+                )
+            }
+        };
+        let calendar = SseTradingCalendar::new();
+        let request = TradingDayRequest::new(PositiveU32::new(year)?, venue)?;
+        println!("provider=sse-official");
+        println!(
+            "calendar_capabilities={:#?}",
+            SseTradingCalendar::calendar_capabilities()
+        );
+        println!("calendar_revision={FIXED_TRADING_CALENDAR_REVISION}");
+        let batch = calendar.trading_calendar(&request)?;
+        let dates = batch
+            .records()
+            .iter()
+            .map(|record| record.date.as_str())
+            .collect::<Vec<_>>();
+        println!("records={}", dates.len());
+        println!(
+            "first_date={} last_date={}",
+            dates[0],
+            dates[dates.len() - 1]
+        );
+        println!("dates={}", dates.join(","));
+        println!("provenance={:#?}", batch.provenance());
+        println!("quality={:#?}", batch.quality());
+        if !batch.quality().is_complete() {
+            return Err("sse_trading_days returned incomplete quality".into());
+        }
+        println!("\nlive_probe_status=admitted");
+        return Ok(());
+    }
     if std::env::var("MAGIC_EXCHANGE_LIVE_OPERATION").as_deref() == Ok("cffex-delivery") {
         let access_mode =
             std::env::var("MAGIC_CFFEX_ACCESS_MODE").unwrap_or_else(|_| "https".into());

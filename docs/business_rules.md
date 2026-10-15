@@ -1364,3 +1364,22 @@ selectors carry `ProviderId::Cailianpress` evidence and share the crate's serial
 request gate (one-second minimum spacing, concurrency one, at most 50 records
 per request). Admission evidence: two bounded live probes plus a serial load
 probe; the public-web endpoint grants no SLA or redistribution license.
+
+## BR-070 SSE trading calendar checked-in revision boundary
+
+The `TradingCalendar` operation is a versioned checked-in 2026 Shanghai
+trading-day vector (242 dates) derived from the SSE annual closure notice
+(上证公告〔2025〕45号, published 2025-12-22) and the State Council holiday
+arrangement. It performs no runtime network I/O, rejects every other year and
+venue before any work, and the runtime never extends dates by a calendar
+formula; a new year requires a new reviewed revision and tests. Because the
+exchanges publish closure arrangements rather than a machine-readable
+trading-day list, the vector is a derived, reviewed revision: the operation
+description, the contract document and the admission registry all state this
+boundary. The family's `evidence.source_at` is the notice's own publication
+moment (forward-looking semantics: every future date holds at publication
+time) and must not be consumed as a per-record observation time, nor joined to
+other families to fabricate source times. The calendar answers only "is the
+exchange open on this date": it carries no per-security suspension state, no
+intraday unscheduled-closure adjustments, and no cross-venue differences;
+SSE venue only, Shenzhen applicability is not established.

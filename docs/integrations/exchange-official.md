@@ -12,6 +12,7 @@
 | SZSE | `DragonTigerData` | `000603 / 2026-07-23`：2 条榜单；首条完整买五卖五 | 完整拉取列表分页，详情按完整席位组返回 |
 | HKEX | `NorthboundDailyStatistics` | `2026-07-22` 沪股通/深股通各 1 条及各自 Top10 | quota 的 `999,999,999` 哨兵保留为 `Unavailable`，不猜测余额 |
 | CFFEX | 生产 `FuturesDeliveryCalendar`；诊断 `probe_futures_delivery_calendar` | 生产范围是版本化、内置的 2026 IF/IH/IC/IM 条件性计划交割表，运行时零网络；明文通知诊断仍可显式运行 | 生产只接受 2026，计划最后交易日=计划交割日，方式=`Cash`；不是已交割事实，后续交易所调整可改变日期；其他年份在 I/O 前 `Unsupported`，明文 HTTP 结果永不提升生产表 |
+| SSE | 生产 `SseTradingCalendar`（`TradingCalendar` op） | 签入修订 `sse-trading-days-2026-v1`：2026 年 **242 个交易日**（2026-01-05 → 2026-12-31），口径 = 上交所年度休市公告（上证公告〔2025〕45号，2025-12-22）+ 节假日安排，逐段与公告核对并经本地终端逐位交叉验证 | **派生修订**而非源端发布的日期清单；SSE 场所 only；仅 2026；运行时零网络、零公式外推；不含个股停牌与临时休市；2025/2027+ 与 Szse 在 I/O 前 typed `Unsupported` |
 
 ## 端点和请求边界
 
@@ -94,6 +95,39 @@ IC、IM 四个合约，`last_trading_date` 与 `delivery_date` 均取下表固�
 `NotProvided`。明文诊断响应中的实际 fetch 模式写入 provenance 和 batch ID；事件的
 `notice_url` 只保存同 host/path 的 canonical HTTPS 引用，不能反向解释为 HTTPS 抓取
 证据，也不能改写正式固定表。
+
+### SSE 交易日历（`TradingCalendar`）
+
+SSE 的正式交易日历是仓库内签入的版本化修订 `sse-trading-days-2026-v1`：2026 年共
+242 个交易日，2026-01-05 为首日、2026-12-31 为末日。它是**派生值**——交易所发布的
+是年度休市安排公告（上证公告〔2025〕45号，发布于 2025-12-22），交易日 = 工作日 −
+已公告休市段（含元旦 01-01..04、春节 02-14..23、清明 04-04..06、劳动 05-01..05、
+端午 06-19..21、中秋 09-25..27、国庆 10-01..07）；调休上班的周六不构成交易日。
+
+正式 trait `TradingCalendar` 不调用任何 transport，只读取审阅后的表；请求仅接受
+2026 年与 `Sse` 场所，其余组合在 I/O 前返回 typed `Unsupported`，运行时永不按公式
+扩展任何年份。记录携带 `announcement_url`（上交所公告）、`holiday_calendar_url`
+（国务院公报）、`calendar_revision` 与 `date_basis=SseAnnouncedClosuresAndWeekdays`；
+本族 `evidence.source_at` 是公告自身的发布时刻（2025-12-22，前瞻性语义），不是逐条
+观测时刻。合同细节见
+[`grpc-trading-calendar.md`](grpc-trading-calendar.md)。
+
+复核与准入证据（2026-10-15）：
+
+```text
+tools/probes/trading-calendar-crosscheck.py            # 本地终端逐位交叉验证
+OK: terminal list is an exact prefix of the sealed 2026 vector (186/242 days, terminal through 2026-10-14)
+
+MAGIC_EXCHANGE_LIVE_OPERATION=sse-trading-calendar \
+cargo run -p magic-exchange-rs --example live_probe --release --locked --offline
+# 2 live + 3 serial：records=242, complete=true, source_at=2025-12-22, batch_id=sse-trading-days-2026-v1
+```
+
+构造、核对明细与反向探针见
+[`2026-10-15-sse-trading-calendar-revision.md`](../evidence/2026-10-15-sse-trading-calendar-revision.md)。
+日历只判定“该日交易所是否开市”，不含个股停牌；SSE 与 SZSE 实务同历属于假设，
+SZSE 适用性未在此建立。该 op 是新增 RPC，会改变 `contract_sha256`，对端需在重建
+bundle 时协同冻结。
 
 ## 传输与部署
 

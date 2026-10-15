@@ -184,6 +184,7 @@ impl Jin10Client {
         CalendarCapabilities {
             economic_releases: true,
             futures_delivery: false,
+            trading_calendar: false,
         }
     }
 

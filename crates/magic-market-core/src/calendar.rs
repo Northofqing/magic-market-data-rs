@@ -449,10 +449,100 @@ pub trait FuturesDeliveryCalendar {
     ) -> Result<DataBatch<FuturesDeliveryEvent>, Self::Error>;
 }
 
+/// Venue whose exchange trading calendar is requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TradingVenue {
+    Sse,
+    Szse,
+}
+
+/// Request for one venue's checked-in trading-calendar year.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TradingDayRequest {
+    year: PositiveU32,
+    venue: TradingVenue,
+}
+
+impl TradingDayRequest {
+    pub fn new(year: PositiveU32, venue: TradingVenue) -> Result<Self, crate::CoreError> {
+        if !(2000..=9999).contains(&year.get()) {
+            return Err(crate::CoreError::InvalidRequest(
+                "trading calendar year must be in 2000..=9999".into(),
+            ));
+        }
+        Ok(Self { year, venue })
+    }
+
+    pub fn year(&self) -> PositiveU32 {
+        self.year
+    }
+
+    pub fn venue(&self) -> TradingVenue {
+        self.venue
+    }
+}
+
+impl<'de> Deserialize<'de> for TradingDayRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            year: PositiveU32,
+            venue: TradingVenue,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.year, wire.venue).map_err(de::Error::custom)
+    }
+}
+
+/// One exchange trading day backed by a reviewed, checked-in calendar
+/// revision.
+///
+/// This family is forward-looking: the reviewed revision states, at
+/// generation time, which future dates are trading days under the published
+/// closure arrangement. `evidence.source_at` therefore carries the
+/// announcement's own publication moment (not a per-record observation).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TradingDayEntry {
+    pub date: IsoDate,
+    pub venue: TradingVenue,
+    pub evidence: SourceEvidence,
+}
+
+impl SourcedRecord for TradingDayEntry {
+    fn provider_id(&self) -> crate::ProviderId {
+        self.evidence.provider()
+    }
+
+    fn evidence_batch_id(&self) -> &str {
+        self.evidence.batch_id()
+    }
+
+    fn evidence_source_at(&self) -> Option<&str> {
+        self.evidence.source_at()
+    }
+
+    fn evidence_observed_at(&self) -> Option<&str> {
+        Some(self.evidence.observed_at())
+    }
+}
+
+pub trait TradingCalendar {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn trading_calendar(
+        &self,
+        request: &TradingDayRequest,
+    ) -> Result<DataBatch<TradingDayEntry>, Self::Error>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct CalendarCapabilities {
     pub economic_releases: bool,
     pub futures_delivery: bool,
+    pub trading_calendar: bool,
 }
 
 #[cfg(test)]

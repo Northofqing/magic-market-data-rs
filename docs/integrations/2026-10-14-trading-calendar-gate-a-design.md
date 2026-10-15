@@ -140,6 +140,9 @@
 
 ## 7. 待批准人拍板（按编号回答）
 
+拍板结果（2026-10-15，开工指令）：**D1a / D2a / D3a / D4a**；D5 按 §10 验证结果处理——`CalendarCapabilities` 是 Core crate 层结构（`GetCapabilities` 走 proto `Capability` 消息，不经该结构），未出现在冻结 schema 中，故直接新增 `trading_calendar` 字段，proto 变更仅为新 RPC 本身；§13 的本地终端通道按建议仅用于修订复核与漂移检测，不作运行时源。以下原文保留。
+
+
 - **D1 — 来源路线**：(a) 签入版本化修订（抄 BR-051，无 I/O、无新依赖、无 provider 准入，
   代价 = 新增 op）；或 (b) 接 Hithink `/api/a-share/calendar/trading-days`（新增 HTTP 依赖
   → 触碰 AGENTS.md 的 http-transports 门槛 + Gate A 传输设计 + 准入台账）。
@@ -233,3 +236,63 @@
 **结论**：交易日历的**价值优先级高于** TDX 板块族（§3.3 是已发生的真实损失），
 但**协调成本也更高**。若下游近期不会改 BR-092，则 D3 应选 (b)，先落合同不落 op，
 把协调成本推迟到真有消费方时。
+
+
+## 13. 补充实测（2026-10-15）：本地终端 TQ-Local 提供交易日历
+
+当日对运行中的 TdxW.exe（TQ-Local，`http://127.0.0.1:17709/`）实测 `get_trading_dates`
+（厂商文档：tqcenter/tqserver 函数，HTTP 模式可用；market 暂固定 SH、仅 A 股、依赖客户端
+已下载上证指数 999999 盘后数据）：
+
+- 请求：`{"id":N,"method":"get_trading_dates","params":{"market":"SH","start_time":"20260101","end_time":"20261231"}}`
+- 2026 年至今：**186 个交易日**（20260105 → 20261014），有序、去重、全为工作日；
+  休市区间与 2026 年法定安排自洽（春节 02-14→02-23、清明 04-04→04-06、劳动 05-01→05-05、
+  端午 06-19→06-21、中秋 09-25→09-27、国庆 10-01→10-07，含元旦 01-02→01-04）。
+- 2025 全年：243 个交易日（20250102 → 20251231）——历史回溯可用。
+- `count=N` 返回截至 end_time 的最近 N 个交易日（实测 count=3 → 20261012/13/14）。
+- 当日日期在客户端完成当日盘后下载前不出现在列表中（实测 20261015 尚未入列）；
+  列表质量取决于客户端 999999 数据维护状态。
+
+对 D1 的影响（供拍板参考）：
+
+1. 该列表可直接用于**构造与复核签入修订**（D1a）：把各休市段与国务院公告逐段对照，
+   把本探针调用留作可复现审计证据——运行时的零 I/O 性质与“公告 + 复核”权威口径不变。
+2. 若改作**运行时实时源**，则是新的准入问题：vendor 派生口径、依赖桌面客户端存活、
+   SH-only、盘后下载节奏；须走 local-terminal 族式证据与叶监视器形态，且改变 D3/D5 口径。
+3. 建议维持 D1a（签入修订为运行时事实源），把本通道用作修订复核与漂移检测的辅助证据。
+
+## 14. 实施记录（2026-10-15）
+
+已实施（单次提交）：
+
+1. **Core 合同**（`crates/magic-market-core/src/calendar.rs`）：`TradingVenue`、
+   `TradingDayRequest`（年份 2000..=9999 校验 + 手写 Deserialize）、`TradingDayEntry`、
+   `TradingCalendar` trait；`CalendarCapabilities` 增加 `trading_calendar: bool`
+   （Cffex/Jin10 构造器同步补 `false`）。`TradingDayEntry` 覆写
+   `evidence_source_at`/`evidence_observed_at`（本族 source_at 有值）。
+2. **签入修订**（`crates/magic-exchange-rs/src/trading_calendar.rs`，新模块）：
+   `FIXED_TRADING_DAYS_2026: [&str; 242]` + `FIXED_TRADING_CALENDAR_REVISION =
+   "sse-trading-days-2026-v1"` + `SSE_2026_TRADING_CALENDAR_ADMITTED = true`；
+   公告 URL/发布时刻常量；正式 trait 零 transport；非 2026 年份与 Szse 在 I/O 前
+   typed `Unsupported`。
+3. **op 与投影**：proto 增 `OPERATION_TRADING_CALENDAR = 66` + `rpc TradingCalendar`；
+   `READ_OPERATIONS`、service `define_operations!`、server 宏与 `grpc_operation` 四处
+   同步（顺序与 READ_OPERATIONS 尾部对齐）；composition 登记 `admitted(…, "Sse", …)`，
+   schema `magic.market.trading_calendar.request` / `magic.market.trading_day` v1，
+   记录投影附 venue/calendar_revision/announcement_url/holiday_calendar_url/date_basis。
+4. **数据构造与复核**（§13 通道按建议用于复核）：以 SSE 公告休市段为闭集从工作日剔除，
+   242 条（2026-01-05 → 2026-12-31，摘要 sha256 `d45fea80…`）；本地终端逐位交叉验证
+   186/186 前缀全等（2026-10-14 边界）；复核工具
+   `tools/probes/trading-calendar-crosscheck.py`。
+5. **证据与文档**：`docs/evidence/2026-10-15-sse-trading-calendar-revision.md`（构造/
+   复核/探针明细）；新合同文档 `grpc-trading-calendar.md`；`exchange-official.md` 表与
+   验收节；`grpc-external-api.md` 计数 65→66、63→64、操作列表、schema 表与叙述；
+   README；**BR-070**；`admissions.tsv` 行（2 live + 3 serial，`completed`）。
+6. **测试**：exchange-rs 新增 5 项确定性测试（构造结构、年份/场所拒绝、证据语义、
+   请求 wire）；composition 新增调用方模型公开回归 2 项 + 试样清单 + admitted 计数 64；
+   contracts `READ_OPERATIONS.len()` 66；server 映射测试自动覆盖。
+
+偏差记录：无（D5 按 §10 验证结论落地；均按推荐路线）。
+
+协调提醒（部署时）：proto 新增 RPC → `contract_sha256` 变更；对端需重新生成 client
+bundle 并协同冻结四字段后，本 op 才可通过正式 gRPC 路径消费。本批次尚未部署。

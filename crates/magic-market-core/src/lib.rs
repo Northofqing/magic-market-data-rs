@@ -37,6 +37,7 @@ pub use calendar::{
     EconomicReleaseObservationsRequest, EconomicReleaseScheduleEntry,
     EconomicReleaseScheduleProvider, EconomicReleaseScheduleRequest, FuturesDeliveryCalendar,
     FuturesDeliveryEvent, FuturesDeliveryMethod, FuturesDeliveryRequest, FuturesProduct,
+    TradingCalendar, TradingDayEntry, TradingDayRequest, TradingVenue,
 };
 pub use capital::{
     BlockTrade, BlockTrades, BoardFlow, BoardFlows, CapitalCapabilities, DividendPlan,

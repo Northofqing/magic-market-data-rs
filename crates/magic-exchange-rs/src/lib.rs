@@ -7,6 +7,7 @@ mod hkex;
 mod sse;
 mod szse;
 mod szse_quote;
+mod trading_calendar;
 mod transport;
 
 pub use cffex::{
@@ -21,6 +22,11 @@ pub use dragon_tiger::{
 pub use hkex::{HkexClient, HkexConfig};
 pub use sse::{SseClient, SseConfig};
 pub use szse::{SzseClient, SzseConfig};
+pub use trading_calendar::{
+    SseTradingCalendar, FIXED_TRADING_CALENDAR_REVISION, SSE_2026_TRADING_CALENDAR_ADMITTED,
+    SSE_TRADING_CALENDAR_2026_NOTICE_SOURCE_AT, SSE_TRADING_CALENDAR_2026_NOTICE_URL,
+    TRADING_CALENDAR_2026_HOLIDAY_NOTICE_URL,
+};
 pub use transport::{
     ExchangeTransport, HttpMethod, HttpRequest, HttpResponse, TlsBackend, MAX_RESPONSE_BYTES,
 };

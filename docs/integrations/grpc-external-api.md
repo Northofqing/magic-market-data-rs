@@ -5,11 +5,11 @@
 | 项目 | 状态 |
 | --- | --- |
 | Protobuf v1 合同 | 已建立，可生成客户端 |
-| 65 个只读数据族 RPC | 已进入 v1 Proto；新增 `OfficialPublications` 与 `OfficialPublication` 原生官方发布证据合同 |
+| 66 个只读数据族 RPC | 已进入 v1 Proto；新增 `TradingCalendar` SSE 签入修订交易日历合同 |
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 65 个操作精确登记；63 个操作至少有一个正式 handler；`EconomicCalendar` 与 `Auctions` 仅保留显式诊断路径（前者因金十免费日历/API 已退役，后者因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入）；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
+| Unary Provider composition | 66 个操作精确登记；64 个操作至少有一个正式 handler；`EconomicCalendar` 与 `Auctions` 仅保留显式诊断路径（前者因金十免费日历/API 已退役，后者因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入）；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
 | TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额、昨收、OHLC 与三类带 Core 证据的 trigger/rearm 事件为生产数据；状态消息仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
@@ -307,6 +307,7 @@ IntradayShape             T0Evidence
 OutcomeDailyBars          UpperLimitPoolReview
 CurrentAuctionObservations EconomicReleaseObservations
 EconomicReleaseSchedule
+TradingCalendar
 ```
 
 所有方法都是只读 unary RPC。没有账户、资产、持仓、委托、撤单或成交写接口。
@@ -486,14 +487,14 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 
 ## 10. 当前实现状态
 
-- Protobuf/descriptor、65 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
+- Protobuf/descriptor、66 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
   blocking 调用隔离均已实现；
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
   异动 trigger/rearm 进入生产事件流；
-- unary registry 对 65 个操作逐项精确登记；除 `EconomicCalendar` 和 `Auctions` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，竞价操作因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入，两者均仅保留显式诊断路径；
+- unary registry 对 66 个操作逐项精确登记；除 `EconomicCalendar` 和 `Auctions` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，竞价操作因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入，两者均仅保留显式诊断路径；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council、iWencai 与官方 `HithinkFinance` 扶摇 API 外，也可精确选择
   TDX 公共协议、Sina、SSE、SZSE、
@@ -521,6 +522,10 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 - `EconomicReleaseSchedule` 是 append-only 的第 63 个操作，只绑定 FRED 官方
   `releases/dates`。它保留 release ID、名称和日期，日期不会被改写为午夜时刻，记录和
   批次 `source_at` 均为空；
+- `TradingCalendar` 是 append-only 的第 66 个操作，按年返回 SSE 签入修订的 2026
+  交易日向量（242 条）。口径为上证公告〔2025〕45号（2025-12-22）与国务院节假日安排，
+  经本地终端逐位交叉验证；`source_at` 携带公告发布时刻（本族特有的前瞻性语义），
+  SSE-only、仅 2026、运行时零网络零公式；[修订合同](grpc-trading-calendar.md)；
 - `MoneyFlows`、`FundFlowSeries` 已绑定东财公开资金流正式合同，`TechnicalBars` 已绑定
   Baidu 未复权源技术日线正式合同；`PostCloseFlows` 已绑定东财当前交易日 15:35 后的
   本地观察快照；`FuturesDelivery` 已绑定 CFFEX 官方固定交割日历，Baidu
@@ -953,6 +958,7 @@ FRED `release_date` 只证明日期，不证明具体发布时间；`release_las
 | `FundFlowSeries` | `magic.market.fund_flow_series.request` (`FundFlowRequest`) | `magic.market.fund_flow_point` |
 | `MoneyFlows` | `magic.market.money_flows.request` (`{"instruments":[...]}`，精确 1 个) | `magic.market.money_flow` |
 | `FuturesDelivery` | `magic.market.futures_delivery.request` v2 (`FuturesDeliveryRequest`) | `magic.market.futures_delivery_event` v2; [planned-calendar contract](grpc-futures-delivery-v2.md) |
+| `TradingCalendar` | `magic.market.trading_calendar.request` (`{"year":2026,"venue":"Sse"}`) | `magic.market.trading_day`; [revision contract](grpc-trading-calendar.md) |
 | `PostCloseFlows` | `magic.market.post_close_flows.request` (`PostCloseFlowRequest`) | `magic.market.post_close_flow` |
 | `MarketRankings` | `magic.market.market_rankings.request` (`{"kind":...,"limit":...}`) | `magic.market.market_ranking_diagnostic_entry` |
 | `Auctions` / `EastmoneyMiaoxiang` | `magic.market.auctions.request` (`{"instrument":...,"trading_date":"YYYY-MM-DD"}`) | `magic.market.opening_auction_diagnostic` |

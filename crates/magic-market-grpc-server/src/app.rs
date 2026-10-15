@@ -678,6 +678,7 @@ implement_query_service! {
         economic_release_schedule => EconomicReleaseSchedule,
         official_publications => OfficialPublications,
         official_publication => OfficialPublication,
+        trading_calendar => TradingCalendar,
 }
 
 pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
@@ -747,6 +748,7 @@ pub(crate) fn grpc_operation(operation: Operation) -> v1::Operation {
         Operation::EconomicReleaseSchedule => v1::Operation::EconomicReleaseSchedule,
         Operation::OfficialPublications => v1::Operation::OfficialPublications,
         Operation::OfficialPublication => v1::Operation::OfficialPublication,
+        Operation::TradingCalendar => v1::Operation::TradingCalendar,
     }
 }
 
