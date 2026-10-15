@@ -10,16 +10,16 @@ A particularly relevant upstream report describes stale upper `RBX` bits after a
 
 The worktree inspected is `C:/Users/13687/.codex/worktrees/grpc-coverage-20261002/magic-market-data-rs`, at HEAD `7174f09f0b34d082bc584180ba4260d53f379d6c`. The original command retained by the capture is `C:/Program Files/Git/bin/bash.exe -x tools/docs/check_links.sh`.
 
-The earlier [capture result](../../../target/docs-checker-late-exception-20261007.1/RESULT.json) records eight baseline and eight late-debug observations. Baseline has one failed command; late-debug has two. The four AV events are first-chance and second-chance pairs for those **two** processes, not four independent failures. Debugger timing differs from baseline; these small fixed counts do not establish a population crash rate or prove that attachment caused the failure.
+The earlier capture result（`target/docs-checker-late-exception-20261007.1/RESULT.json`） records eight baseline and eight late-debug observations. Baseline has one failed command; late-debug has two. The four AV events are first-chance and second-chance pairs for those **two** processes, not four independent failures. Debugger timing differs from baseline; these small fixed counts do not establish a population crash rate or prove that attachment caused the failure.
 
 | Capture | Owned main PID / TID | Fault RVA / write address | Captured RSP / RBP |
 | --- | --- | --- | --- |
-| [late-debug 5](../../../target/docs-checker-late-exception-20261007.1/late-debug-5/OBSERVATION.json) | 58688 / 58968 | `0x16e719` / `0xfffffffdffffaab4` | `0xfffffffdffffaa90` / `0x7ffffaec0` |
-| [late-debug 6](../../../target/docs-checker-late-exception-20261007.1/late-debug-6/OBSERVATION.json) | 59304 / 35820 | `0x16e719` / `0x6ffffb6b4` | `0x6ffffb690` / `0x7ffffba90` |
+| late-debug 5（`target/docs-checker-late-exception-20261007.1/late-debug-5/OBSERVATION.json`） | 58688 / 58968 | `0x16e719` / `0xfffffffdffffaab4` | `0xfffffffdffffaa90` / `0x7ffffaec0` |
+| late-debug 6（`target/docs-checker-late-exception-20261007.1/late-debug-6/OBSERVATION.json`） | 59304 / 35820 | `0x16e719` / `0x6ffffb6b4` | `0x6ffffb690` / `0x7ffffba90` |
 
 Both pairs have code `0xc0000005`, access mode 1 (write), module `C:/Program Files/Git/usr/bin/msys-2.0.dll`, and final process exit code 3221225477. The records explicitly label their stack candidates as filtered code addresses rather than unwound call frames; their empty arrays are not a valid call stack.
 
-Fresh read-only file metadata and hashes are retained in the new [source receipt](../../../target/msys-native-fault-research-20261007.1/SOURCE-RECEIPT.json), captured at `2026-10-07T01:58:16.6018666Z`.
+Fresh read-only file metadata and hashes are retained in the new source receipt（`target/msys-native-fault-research-20261007.1/SOURCE-RECEIPT.json`）, captured at `2026-10-07T01:58:16.6018666Z`.
 
 | File | Identity independently read here | SHA-256 |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ The earlier minimal-pattern and synchronous/async producer observations supplied
 
 ### Separately captured native mechanism
 
-The coordinating agent subsequently retained a [12-run register capture](../../../target/docs-checker-register-capture-20261007.1/RESULT.json) with four failed processes and eight paired first/second-chance AV events. SHA-256 of that result is `dc40a311dbdf085cb803bc0afa01a7c3a564f69e4d09ea6f1a494104784bf29f`. The four failures have the following first-chance values; each matching second-chance record retains the same values.
+The coordinating agent subsequently retained a 12-run register capture（`target/docs-checker-register-capture-20261007.1/RESULT.json`） with four failed processes and eight paired first/second-chance AV events. SHA-256 of that result is `dc40a311dbdf085cb803bc0afa01a7c3a564f69e4d09ea6f1a494104784bf29f`. The four failures have the following first-chance values; each matching second-chance record retains the same values.
 
 | Ordinal | RCX | RBX used for subtraction | Captured RSP |
 | --- | --- | --- | --- |
@@ -43,17 +43,17 @@ The coordinating agent subsequently retained a [12-run register capture](../../.
 
 All eight records satisfy the local prologue relation `RSP = aligned prologue stack - 13 * 8 - RBX`; the fault write address is `RSP + 0x24`. The low allocation portion is `0x388`, while the high 32 bits are 1 or 10. That establishes an oversized full-width subtraction at failure, not why those bits existed.
 
-The separately retained [PE instruction correspondence](../../../target/docs-checker-register-capture-20261007.1/PE-INSTRUCTION-CORRESPONDENCE.json), SHA-256 `59cb63c7aefead568d8295dd29e7a1722aa30d8f63c51597a3c5bd58d83b659d`, binds 15 asserted opcode segments to the same DLL hash. Its corrected sequence places CPUID at RVA `0x16e705`, copying RBX to RCX at `0x16e707`, subtraction at `0x16e716`, and the faulting `89 5c 24 24` write at `0x16e719`. The coordinating agent reported that an initial one-byte RVA displacement failed an assertion before correcting the addresses; that initial failure remains separate evidence, not a passing check. The correspondence identifies the XSAVE branch, before execution reaches XSAVE itself.
+The separately retained PE instruction correspondence（`target/docs-checker-register-capture-20261007.1/PE-INSTRUCTION-CORRESPONDENCE.json`）, SHA-256 `59cb63c7aefead568d8295dd29e7a1722aa30d8f63c51597a3c5bd58d83b659d`, binds 15 asserted opcode segments to the same DLL hash. Its corrected sequence places CPUID at RVA `0x16e705`, copying RBX to RCX at `0x16e707`, subtraction at `0x16e716`, and the faulting `89 5c 24 24` write at `0x16e719`. The coordinating agent reported that an initial one-byte RVA displacement failed an assertion before correcting the addresses; that initial failure remains separate evidence, not a passing check. The correspondence identifies the XSAVE branch, before execution reaches XSAVE itself.
 
 ## Pinned official source
 
 ### Subsequent standalone CPUID discriminator
 
 After the bounded source-research assignment completed, the coordinating agent
-compiled a [standalone Rust/assembly probe](../../../target/docs-checker-register-capture-20261007.1/cpuid.rs)
-with the existing installed compiler and captured its [original stdout](../../../target/docs-checker-register-capture-20261007.1/cpuid.stdout.log),
-[stderr](../../../target/docs-checker-register-capture-20261007.1/cpuid.stderr.log)
-and [receipt](../../../target/docs-checker-register-capture-20261007.1/CPUID-OBSERVATION.json).
+compiled a standalone Rust/assembly probe（`target/docs-checker-register-capture-20261007.1/cpuid.rs`）
+with the existing installed compiler and captured its original stdout（`target/docs-checker-register-capture-20261007.1/cpuid.stdout.log`）,
+stderr（`target/docs-checker-register-capture-20261007.1/cpuid.stderr.log`）
+and receipt（`target/docs-checker-register-capture-20261007.1/CPUID-OBSERVATION.json`）.
 The compiler invocation and executable/source hashes are in that receipt;
 compilation output `9eb9da` and probe output `2e7242` both have native exit 0.
 

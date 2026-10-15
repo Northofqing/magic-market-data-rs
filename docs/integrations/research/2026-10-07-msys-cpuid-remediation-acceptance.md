@@ -8,11 +8,11 @@ identical unguarded distribution. This note specifies that experiment; no SDK,
 package, executable, DLL candidate or virtual-machine setting was changed or
 executed by this research.
 
-The [48-row standalone capture](../../../target/docs-checker-register-capture-20261007.1/CPUID-OBSERVATION.json)
+The 48-row standalone capture（`target/docs-checker-register-capture-20261007.1/CPUID-OBSERVATION.json`）
 preserves every nonzero seed's upper RBX bits at leaves 0, 1 and 13. The separate
-[12-command native capture](../../../target/docs-checker-register-capture-20261007.1/RESULT.json)
+12-command native capture（`target/docs-checker-register-capture-20261007.1/RESULT.json`）
 contains four failed processes, whose allocator uses RBX high32 equal to 1 or 10.
-The [PE correspondence](../../../target/docs-checker-register-capture-20261007.1/PE-INSTRUCTION-CORRESPONDENCE.json)
+The PE correspondence（`target/docs-checker-register-capture-20261007.1/PE-INSTRUCTION-CORRESPONDENCE.json`）
 binds CPUID, full-width copy/subtraction and the faulting stack write to installed
 DLL SHA-256 `2ea49553e4c03055dcf1c4a2bef54668081a07663fba283f4b34cf70f2157191`.
 These are the observed mechanism and discriminator, not attribution to Parallels
@@ -24,7 +24,7 @@ At the fresh API capture `2026-10-07T02:31:44.8262928Z`,
 unmerged. Its [one-line change](https://github.com/msys2/msys2-runtime/pull/378/files)
 adds `movl %ebx,%ebx` immediately after CPUID and before copying RBX to RCX.
 The proposal is experimental; its author's TwinCAT observations concern another
-host. Raw API bodies are in the [new receipt packet](../../../target/msys-remediation-acceptance-20261007.1/SOURCE-RECEIPT.json).
+host. Raw API bodies are in the new receipt packet（`target/msys-remediation-acceptance-20261007.1/SOURCE-RECEIPT.json`）.
 
 ## Official prerequisites and reproducible identities
 
@@ -46,12 +46,12 @@ prospective build inputs, **not acquired or verified release binaries**.
 
 | Input | Exact captured identity | Receipt |
 | --- | --- | --- |
-| SDK snapshot | `446cf6ac6a95198d1ee2de64948bd3e2dbcc230f` | [SDK reference](../../../target/msys-remediation-acceptance-20261007.1/sdk-main-ref.json) |
-| MSYS2 package recipes | `39014c49183d3635c93151c390604318d2655da1` | [commit API](../../../target/msys-remediation-acceptance-20261007.1/packages-main-commit.json) |
-| Runtime recipe | `msys2-runtime 3.6.10-4`, x86_64 | [PKGBUILD](../../../target/msys-remediation-acceptance-20261007.1/runtime-pkgbuild.txt) |
-| Recipe's embedded runtime commit label | `5a1665c8a0fb24930e55f1621441dfd98a798c15` | [commit-label file](../../../target/msys-remediation-acceptance-20261007.1/runtime-source-commit.txt) |
-| Portable packaging helpers | `13d5fbd51585a0f6f21129ec3e9d0f8235aff4b8` | [commit API](../../../target/msys-remediation-acceptance-20261007.1/build-extra-main-commit.json) |
-| Proposed guard | PR head `34e9927ef854052e4fef9bc147c93462ba9d735d`, base `3ea87a506e64e841dc0b8ee50ed61999c8fed26c` | [PR files API](../../../target/msys-remediation-acceptance-20261007.1/pr-378-files.json) |
+| SDK snapshot | `446cf6ac6a95198d1ee2de64948bd3e2dbcc230f` | SDK reference（`target/msys-remediation-acceptance-20261007.1/sdk-main-ref.json`） |
+| MSYS2 package recipes | `39014c49183d3635c93151c390604318d2655da1` | commit API（`target/msys-remediation-acceptance-20261007.1/packages-main-commit.json`） |
+| Runtime recipe | `msys2-runtime 3.6.10-4`, x86_64 | PKGBUILD（`target/msys-remediation-acceptance-20261007.1/runtime-pkgbuild.txt`） |
+| Recipe's embedded runtime commit label | `5a1665c8a0fb24930e55f1621441dfd98a798c15` | commit-label file（`target/msys-remediation-acceptance-20261007.1/runtime-source-commit.txt`） |
+| Portable packaging helpers | `13d5fbd51585a0f6f21129ec3e9d0f8235aff4b8` | commit API（`target/msys-remediation-acceptance-20261007.1/build-extra-main-commit.json`） |
+| Proposed guard | PR head `34e9927ef854052e4fef9bc147c93462ba9d735d`, base `3ea87a506e64e841dc0b8ee50ed61999c8fed26c` | PR files API（`target/msys-remediation-acceptance-20261007.1/pr-378-files.json`） |
 
 The captured runtime recipe fetches the Cygwin `cygwin-3.6.10` tag, applies its
 listed MSYS patches, and embeds the separate commit-label file. That label alone
@@ -60,7 +60,7 @@ all patch/checksum inputs, hash the prepared tree and generated assembly, and
 compare them with the reviewed source. The
 [pinned Git for Windows gendef](https://github.com/git-for-windows/msys2-runtime/blob/5a1665c8a0fb24930e55f1621441dfd98a798c15/winsup/cygwin/scripts/gendef#L232-L240)
 still copies full RBX and already rounds the allocation to 64 bytes; its
-[captured text](../../../target/msys-remediation-acceptance-20261007.1/candidate-base-gendef.txt)
+captured text（`target/msys-remediation-acceptance-20261007.1/candidate-base-gendef.txt`）
 contains no proposed guard. The recipe's build dependencies are cocom, Git, Perl,
 MSYS GCC, the MinGW cross CRT/GCC/zlib, zlib/libzstd/gettext/libiconv development
 packages, autotools, xmlto and docbook-xsl.
@@ -191,7 +191,7 @@ a design/evidence proposal, not release approval.
 ## Receipt and verification scope
 
 Only this note and the new
-[receipt directory](../../../target/msys-remediation-acceptance-20261007.1/SOURCE-RECEIPT.json)
+receipt directory（`target/msys-remediation-acceptance-20261007.1/SOURCE-RECEIPT.json`）
 were written. Official source responses are retained as UTF-8/LF text with one
 final newline; their URLs, capture times and HTTP status are recorded. The SDK
 full-commit API retrieval returned a warning prefix and failed JSON parsing;
