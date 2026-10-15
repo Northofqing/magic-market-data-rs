@@ -136,6 +136,8 @@ proto RPC + `Operation` 变体 + bundle 重建 + 对端四字段冻结）。
 
 ## 7. 待批准人拍板（按编号回答）
 
+拍板结果（2026-10-15）：**仅治理方向**——D1a（改规则文本匹配生产）+ D4b（保留生产身份 `tdx:industry:` / `tdx:concept:`，改 BR-026 表述）；D2、D3 暂缓（暴露价值取决于消费方，未启动）；§6.4 台账补行随 admission-index 批次（其 schema 定案后）落地。以下原文保留。
+
 - **D1 — BR-026 对齐方向**：(a) 改规则文本，使其匹配两文件生产实现；或 (b) 改实现，
   把三个 handler 切到 `BlockService` 使其匹配三文件规则。影响对比见 §6.3。
 - **D2 — `block_zs` 暴露形态**：(a) 扩展现有 `BoardDirectory`/`BoardConstituents`
@@ -217,3 +219,17 @@ D2/D3 决定是否暴露 `block_zs.dat`。收益是"从零到能取当前快照"
 
 把 `block_zs.dat` 当作指数数据源。TDX 并非指数成分权威源。正确解法是中证指数
 公司/交易所官方成分文件（带权重、生效日期、调样公告），属独立数据源准入。
+
+## 12. 拍板与实施记录（2026-10-15）
+
+文件性质：设计当时（2026-10-14）基于静态代码路径核实；本记录为拍板后的实施说明。
+
+已实施（docs-only，本批次）：
+
+1. **BR-026 全文重写**（`docs/business_rules.md`）为两文件生产实现（`block_fg.dat` + `block_gn.dat`），并按逐项核实修正了旧文本与生产不符的四处：(a) 三文件原子批 → 两文件读取；(b) `tdx:<filename>:` 身份 → 生产的 `tdx:industry:` / `tdx:concept:`（对应 D4b）；(c) 「精确重复折叠为首次出现」→ 重复即报错（`board_provider.rs:156-162` + `tests/board_provider.rs:158-166`）；(d) 「北交所不支持」→ 已验证的北京四/八/920 前缀支持、非 920 九前缀拒绝（`tests/board_provider.rs:120-155`）。另记录：空交集为显式错误而非空批（`tests/board_provider.rs:192-205`）、批 ID 为 `tdx-block-files:<family>:<observed-time>`（无文件哈希）。`block_zs.dat` 以「非准入面、指数/地域不冒充」表述保留在规则中。
+
+未实施（记录）：
+
+2. **D2/D3（block_zs 暴露）**：暂缓；前置问题「消费方是谁」未答。若启动，按 §7 推荐走 D2a（扩展现有 op、零合同）+ D3a（Unknown）。
+3. **台账补行（§6.4）**：随 admission-index 批次落地（该批次定台账 schema）。
+4. **`BlockService` 三文件实现**：保持现状（仅服务 ConceptHits；其 `board_memberships` 无生产出口），不迁移、不复活 router 链（§8 已否决理由不变）。

@@ -302,29 +302,36 @@ exact page marker, never from title or body text. The retired `feed.mix`
 pageid=155 path and the global pageid=153 feed are not fallbacks.
 
 ## BR-026 TDX board-membership atomic admission
-One Magic TDX board-membership request accepts a non-empty ordered set of validated
-Shanghai/Shenzhen equity instruments. Exact duplicate requests collapse to their
-first occurrence; the same six-digit code paired with conflicting exchange or asset
-identity fails before transport. Beijing and non-equity instruments are explicitly
-unsupported because the TDX block files do not prove those identities.
 
-The Provider reads complete, version-stable `block_fg.dat`, `block_gn.dat`, and
-`block_zs.dat` snapshots as one atomic evidence batch. A missing, partial, empty, or
-version-changing source file fails the whole request. Output is the stable
-request-order intersection with those complete files, ordered within each instrument
-as Industry, Concept, then Unknown index membership and exact canonical board code.
-Equivalent source duplicates collapse; conflicting identities fail. A complete
-three-file snapshot proving no membership returns a complete empty batch with the
-same provenance.
+One Magic TDX board-membership request accepts a non-empty set of equity instruments
+(bounded by the reverse-request limit of 10,000) whose exchange identity is verified
+by the code shape (Shanghai six-prefix codes, Shenzhen zero/three-prefix codes,
+Beijing four/eight/920-prefix codes). Exact duplicate instruments fail; a six-digit
+code paired with a conflicting exchange or asset identity fails before transport.
+Unverified exchange shapes (for example non-920 nine-prefix codes) and non-equity
+instruments are explicitly unsupported.
 
-Board identity is the exact source filename plus exact source block name
-(`tdx:<filename>:<blockname>`); display name is the exact block name. `block_fg.dat`
-maps to Industry, `block_gn.dat` maps to Concept, and `block_zs.dat` maps to Unknown
-because Core has no Index category. Names are never fuzzily classified as Region,
-Industry, or Concept. All records carry `ProviderId::Tdx`, the same observed time and
-batch ID derived from the three source file hashes. TDX supplies no provider time for
-these files, so both batch and record `source_at` remain absent; local observation
-time must not masquerade as source time.
+The Provider reads the complete `block_fg.dat` (industry) and `block_gn.dat`
+(concept) source snapshots per request; a failed, empty, or structurally invalid
+source read fails the whole request, and a reverse lookup that matches no board
+fails rather than returning an empty batch. Duplicate source pairs fail the whole
+request. Output is the intersection of the requested instruments with those sources,
+ordered by source enumeration within each category as Industry then Concept.
+`block_zs.dat` is not part of the admitted surface: it mixes index and region
+semantics that Core cannot represent without mislabeling, so index and region boards
+stay unsupported and `tdx:index:` identities are rejected until that family is
+separately admitted.
+
+Board identity is `tdx:industry:<blockname>` for `block_fg.dat` boards and
+`tdx:concept:<blockname>` for `block_gn.dat` boards; display name is the exact block
+name. `BoardConstituents` accepts only these two identity prefixes; Region, Unknown,
+and index identities are rejected. `BoardDirectory` serves the Industry and Concept
+families with per-board member counts; Region and Unknown categories are rejected.
+Names are never fuzzily classified as Region, Industry, or Concept. All records carry
+`ProviderId::Tdx`, the same local observed time and a batch ID of
+`tdx-block-files:<family>:<observed-time>` derived from that observation. TDX supplies
+no provider time for these sources, so both batch and record `source_at` remain
+absent; local observation time must not masquerade as source time.
 
 ## BR-027 CNInfo whole-market announcement discovery
 One CNInfo whole-market announcement request has an inclusive start/end date
