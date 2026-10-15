@@ -1,7 +1,12 @@
 param(
     [string]$Destination = "target/runtime/client-bundle",
     [string]$BundleVersion = "2026-10-01.3",
+    # The repository tree the bundle documents came from.
     [string]$SourceCommit = "",
+    # The revision compiled into the deployed server binary; it may legitimately
+    # differ from SourceCommit (docs-only commits and tooling fixes do not
+    # rebuild the server), so it is a separate input, never derived.
+    [string]$DeploymentSourceRevision = "",
     [string]$ServiceVersion = "",
     [string]$ContractSha256 = "",
     [string]$BinarySha256 = ""
@@ -44,6 +49,9 @@ $hasDeploymentIdentity = $identityValueCount -eq $identityValues.Count
 if ($hasDeploymentIdentity) {
     if ($SourceCommit.Length -ne 40) {
         throw "deployment identity requires a full 40-character SourceCommit"
+    }
+    if ($DeploymentSourceRevision -notmatch '^[0-9a-f]{40}$') {
+        throw "DeploymentSourceRevision must be the full 40-character lowercase revision compiled into the deployed server binary"
     }
     if ($ServiceVersion -notmatch '^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$') {
         throw "ServiceVersion is invalid"
@@ -132,7 +140,7 @@ if ($hasDeploymentIdentity) {
     $deploymentIdentity = @"
 {
     "service_version": "$ServiceVersion",
-    "source_revision": "$SourceCommit",
+    "source_revision": "$DeploymentSourceRevision",
     "contract_sha256": "$ContractSha256",
     "binary_sha256": "$BinarySha256",
     "contract_sha256_scope": "SHA-256 of the raw compiled FileDescriptorSet bytes returned by magic_market_grpc_contracts::v1::FILE_DESCRIPTOR_SET",
