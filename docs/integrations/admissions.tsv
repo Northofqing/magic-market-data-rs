@@ -60,3 +60,10 @@ magic-official-news-rs	Gacc	GACC_PUBLICATIONS_ADMITTED	false	docs/integrations/o
 magic-official-news-rs	Nea	NEA_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-	-	2026-10-07	completed
 magic-official-news-rs	Csrc	CSRC_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-	-	2026-10-07	completed
 magic-eastmoney-rs	Eastmoney	GLOBAL_NEWS_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-10-15	3	3	-	-	2026-10-15	completed
+magic-cls-rs	Cailianpress	GLOBAL_NEWS_ADMITTED	true	docs/integrations/cls-web.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
+magic-cninfo-rs	Cninfo	ANNOUNCEMENTS_ADMITTED	true	docs/integrations/cninfo-web.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
+magic-cninfo-rs	Cninfo	MARKET_ANNOUNCEMENTS_ADMITTED	true	docs/integrations/cninfo-web.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
+magic-cninfo-rs	Cninfo	INVESTOR_QUESTIONS_ADMITTED	true	docs/integrations/cninfo-web.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
+magic-gov-rs	StateCouncil	POLICY_DOCUMENTS_ADMITTED	true	docs/integrations/gov-policy.md	admitted	2026-10-15	3	3	-	-	2026-10-15	completed
+magic-sina-rs	Sina	INSTRUMENT_NEWS_ADMITTED	true	docs/integrations/sina-web.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
+magic-thepaper-rs	ThePaper	GLOBAL_NEWS_ADMITTED	true	docs/integrations/thepaper-web.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed

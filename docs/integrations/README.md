@@ -22,6 +22,8 @@ is recorded under
 [`../evidence/2026-10-07-upstream-live-probes-230223/summary.json`](../evidence/2026-10-07-upstream-live-probes-230223/summary.json).
 Admitted providers that predate the `_ADMITTED` constant convention are indexed
 in [`provider-coverage-index.md`](provider-coverage-index.md).
+Five of them registered their news/disclosure families on 2026-10-15; the index
+records which families remain outside the constant convention.
 
 Run the drift check without network access:
 
@@ -50,6 +52,10 @@ silently diverge.
 - [`tdx-local-terminal-compatibility.tsv`](tdx-local-terminal-compatibility.tsv)
   is the version/schema evidence inventory; executable identity is provenance
   and the bounded loopback health probe decides runtime compatibility.
+- News data is bounded by design ([BR-066](../business_rules.md)): a news query
+  inspects at most 20 records per admitted Provider, no result claims complete
+  history or full-market coverage, and per-source field differences are declared
+  in each registration's `exact_scope` string.
 - [`grpc-external-api.md`](grpc-external-api.md) is the authenticated external
   transport contract; [`grpc-derived-products.md`](grpc-derived-products.md)
   fixes the five append-only composed-product payload schemas.

@@ -12,6 +12,9 @@ mod minute;
 mod news;
 mod options;
 
+/// Repository admission for the Sina instrument-news family.
+pub const INSTRUMENT_NEWS_ADMITTED: bool = true;
+
 use encoding_rs::GB18030;
 use magic_market_core::{
     AssetClass, Board, BookLevel, Capabilities, DataBatch, DataStatus, Exchange, InstrumentId,

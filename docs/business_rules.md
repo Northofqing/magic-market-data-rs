@@ -1336,3 +1336,22 @@ a failed original never erases its successful listing or becomes an empty
 success. Observations are not deduplicated into a fabricated atomic snapshot.
 Collection file errors fail explicitly; no provider SDK owns persistence or
 installs a background scheduler.
+
+## BR-069 Cailianpress source-structured news fields
+
+The `Cailianpress` news registration (with the append-only legacy selector
+`Cls`) may expose item ID, title, the source's own brief, the source body text
+(which may echo the brief), source-declared securities from `stock_list`,
+source-declared subjects and tags, publisher, publication time, canonical HTTPS
+link, language and per-record `SourceEvidence`. This is source-structured
+metadata: security identity comes from the source's explicit fields, never from
+text inference, and every listed identity must pass the normalized
+`sh`/`sz`/`bj`-prefix or exact-uppercase `.BJ` rules before it enters a record.
+Malformed, unsupported or depositary-receipt ranges are typed `Protocol` errors
+that fail the whole batch; they are never silently dropped. The registration
+reads only the public roll endpoint, fetches no article pages, keeps no storage,
+cache or search index, and `instrument_news` remains typed `Unsupported`. Both
+selectors carry `ProviderId::Cailianpress` evidence and share the crate's serial
+request gate (one-second minimum spacing, concurrency one, at most 50 records
+per request). Admission evidence: two bounded live probes plus a serial load
+probe; the public-web endpoint grants no SLA or redistribution license.

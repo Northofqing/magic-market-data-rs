@@ -26,3 +26,10 @@ cargo run -p magic-gov-rs --example live_probe --release --locked --offline
 
 探针要求非空严格批次并打印全部来源证据。公共搜索端点没有本项目可证明的 SLA 或
 再分发许可；部署方仍负责使用条款、缓存、熔断和监控。
+
+## 准入记录（2026-10-15）
+
+2026-10-15 准入探针：`live_probe` 三次串行（`MAGIC_GOV_POLICY_QUERY=金融`、
+`MAGIC_GOV_POLICY_LIMIT=5`，均 `passed`）。台账行见 `admissions.tsv`：
+`POLICY_DOCUMENTS_ADMITTED`（provider `StateCouncil`）。
+

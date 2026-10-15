@@ -716,7 +716,7 @@ fn register_extended_providers(
         admitted(
             Operation::GlobalNews,
             "WallstreetCn",
-            "bounded official RSS metadata",
+            "bounded official RSS metadata; fields=title+url+published_at+publisher+topic; summary/content/instruments absent",
         ),
         move |command| {
             execute_global_news(
@@ -824,7 +824,7 @@ fn register_global_news_parity(
         cls.clone(),
         "Cls",
         ProviderId::Cailianpress,
-        "bounded public CLS financial-news metadata (legacy selector)",
+        "bounded public CLS financial-news metadata (legacy selector); fields=title+summary(brief)+content(may echo brief)+instruments(source stock_list)+topics+url",
         maximum_payload_bytes,
     )?;
     register_global_news_provider(
@@ -832,7 +832,7 @@ fn register_global_news_parity(
         cls,
         "Cailianpress",
         ProviderId::Cailianpress,
-        "bounded public Cailianpress financial-news metadata",
+        "bounded public Cailianpress financial-news metadata; fields=title+summary(brief)+content(may echo brief)+instruments(source stock_list)+topics+url",
         maximum_payload_bytes,
     )?;
     register_global_news_provider(
@@ -840,7 +840,7 @@ fn register_global_news_parity(
         ThePaperClient::with_timeout(provider_timeout)?,
         "ThePaper",
         ProviderId::ThePaper,
-        "bounded native The Paper finance-channel article metadata",
+        "bounded native The Paper finance-channel article metadata; fields=title+url+published_at+publisher; summary/content/instruments absent",
         maximum_payload_bytes,
     )?;
     register_global_news_provider(
@@ -848,7 +848,7 @@ fn register_global_news_parity(
         XinhuaClient::with_timeout(provider_timeout)?,
         "XinhuaFinance",
         ProviderId::XinhuaFinance,
-        "bounded first-party Xinhua Finance front-page metadata",
+        "bounded first-party Xinhua Finance front-page metadata; fields=title+url+published_at+publisher; summary/content/instruments absent",
         maximum_payload_bytes,
     )?;
     register_global_news_provider(
@@ -856,7 +856,7 @@ fn register_global_news_parity(
         YicaiClient::with_timeout(provider_timeout)?,
         "Yicai",
         ProviderId::Yicai,
-        "bounded first-party Yicai first-page metadata",
+        "bounded first-party Yicai first-page metadata; fields=title+url+published_at+publisher; summary/content/instruments absent",
         maximum_payload_bytes,
     )?;
     let stcn = StcnClient::with_timeout(provider_timeout)?;
@@ -866,7 +866,7 @@ fn register_global_news_parity(
             stcn,
             "SecuritiesTimes",
             ProviderId::SecuritiesTimes,
-            "bounded first-party Securities Times front-page metadata",
+            "bounded first-party Securities Times front-page metadata; fields=title+url+published_at+publisher; summary/content/instruments absent",
             maximum_payload_bytes,
         )?;
     } else {
@@ -885,7 +885,7 @@ fn register_global_news_parity(
         YonhapClient::for_channel_with_timeout(YonhapChannel::Economy, provider_timeout)?,
         "Yonhap",
         ProviderId::Yonhap,
-        "bounded official Yonhap Economy RSS metadata only",
+        "bounded official Yonhap Economy RSS metadata only; fields=title+url+published_at+publisher; summary/content/instruments absent",
         maximum_payload_bytes,
     )?;
     Ok(())
@@ -2107,7 +2107,7 @@ fn register_additional_providers(
         admitted(
             Operation::GlobalNews,
             "Jin10",
-            "bounded public flash-news metadata",
+            "bounded public flash-news metadata; fields=title+content(source body, required)+url+published_at+publisher; summary/instruments absent",
         ),
         move |command| {
             execute_global_news(
@@ -2874,7 +2874,7 @@ fn register_eastmoney(
         admitted(
             Operation::GlobalNews,
             "Eastmoney",
-            "bounded latest Eastmoney finance-news metadata",
+            "bounded latest Eastmoney finance-news metadata; fields=title+url+published_at+publisher; summary/content/instruments absent",
         ),
         move |command| {
             execute_global_news(

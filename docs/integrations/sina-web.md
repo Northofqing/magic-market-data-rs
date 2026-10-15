@@ -369,3 +369,11 @@ vip.stock.finance.sina.com.cn:443
 
 Provider 不写持久缓存，不需要用户名、密码、Cookie 或本地客户端。部署与日志不得
 增加这些敏感数据。
+
+## 新闻族准入记录（2026-10-15）
+
+2026-10-15 新闻族准入探针：`instrument_news_probe` 两次串行（覆盖 `600396.SH`
+与 `000001.SZ`，每次运行含两次串行调用，均 `instrument_news_live_probe_status=passed`）。
+注：同日 `live_probe` 的期权族仍受上游月数据 `null` 影响（与新闻族无关，2026-10-07
+批次同名失败）。台账行见 `admissions.tsv`：`INSTRUMENT_NEWS_ADMITTED`（provider `Sina`）。
+

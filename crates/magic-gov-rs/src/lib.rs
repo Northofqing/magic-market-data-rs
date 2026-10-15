@@ -20,6 +20,9 @@ const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const POLICY_CATEGORIES: [&str; 2] = ["gongwen", "bumenfile"];
 
+/// Repository admission for the State Council policy search family.
+pub const POLICY_DOCUMENTS_ADMITTED: bool = true;
+
 #[derive(Debug, Error)]
 pub enum GovError {
     #[error("invalid request: {0}")]

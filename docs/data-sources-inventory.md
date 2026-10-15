@@ -1,5 +1,7 @@
 # 网络数据源全清单
 
+> ⚠ **系统归属声明（2026-10-15）：** 本清单描述的是**下游应用**（`src/data_gateway/**`、`src/news/aggregator`、BR-092/BR-166/BR-174/BR-218 等编号体系）的数据获取面，**不是本仓库（magic-market-data-rs）的地图**。本仓库没有 `src/` 树、没有新闻轮询与 simhash 去重、不做选股；本仓的数据能力以 `docs/integrations/admissions.tsv`（BR-009 准入注册表）与 `docs/integrations/README.md` 为唯一依据。
+
 > 项目内所有**需要网络请求**的数据获取路径与投递端点总览。
 > 更新时间: 2026-08-12 (14:30 CST)。数据获取统一入口在 `src/data_gateway/**`
 > (CLAUDE.md 架构规则), 上游供应商 HTTP/TCP 端点封装于 magic crates

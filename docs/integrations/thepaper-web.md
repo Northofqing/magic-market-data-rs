@@ -62,3 +62,11 @@ MAGIC_THEPAPER_LOAD_REQUESTS=2 \
 
 The load probe defaults to two requests, accepts at most three, uses concurrency one, and
 reports failures and latency percentiles.
+
+## Admission record (2026-10-15)
+
+Admission probes: `live_probe` twice (both `passed`) plus `load_probe` with
+`MAGIC_THEPAPER_LOAD_REQUESTS=3` (successes 3/3, records 30, concurrency 1,
+minimum interval 1000ms). Ledger row: `GLOBAL_NEWS_ADMITTED` (provider
+`ThePaper`) in `admissions.tsv`.
+

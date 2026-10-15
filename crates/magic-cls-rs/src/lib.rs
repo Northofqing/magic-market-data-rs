@@ -22,6 +22,9 @@ const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PAGE_SIZE: u32 = 50;
 const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 
+/// BR-069: source-structured CLS/Cailianpress global-news fields.
+pub const GLOBAL_NEWS_ADMITTED: bool = true;
+
 /// CLS adapter failures. Authentication and protocol failures are never
 /// converted into empty successful batches.
 #[derive(Debug, Error)]

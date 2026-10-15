@@ -9,6 +9,13 @@ pub use market_announcements::{
 };
 pub use transport::{CninfoTransport, HttpMethod, HttpRequest, HttpResponse};
 
+/// Repository admission for the three CnInfo content families (instrument
+/// announcements, native market announcements, investor questions). Evidence:
+/// docs/integrations/cninfo-web.md; 2026-10-15 bounded probes.
+pub const ANNOUNCEMENTS_ADMITTED: bool = true;
+pub const MARKET_ANNOUNCEMENTS_ADMITTED: bool = true;
+pub const INVESTOR_QUESTIONS_ADMITTED: bool = true;
+
 use magic_market_core::{
     unix_seconds_to_china_rfc3339, Announcement, Announcements, AssetClass, ContentCapabilities,
     DataBatch, Exchange, HttpsUrl, InstrumentDateRangeRequest, InstrumentId, InvestorQuestion,

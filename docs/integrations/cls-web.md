@@ -76,3 +76,11 @@ p50/p95/p99/max。确定性 fixtures 已覆盖签名、错误码、Content-Type�
 
 公开网页端点没有本项目可证明的 SLA 或再分发许可，只适合作为盘后/研究补充源。
 调用方负责持久化、调度、缓存和版权合规；本 crate 不运行后台线程或推送服务。
+
+## 准入记录（2026-10-15）
+
+2026-10-15 准入探针：`live_probe` 两次串行（均 `admitted`）+ `load_probe`
+（`MAGIC_CLS_LOAD_REQUESTS=3`，并发 1、最小间隔 1000ms，`admitted`）。本记录取代
+2026-07-23 历史探针的准入门地位。台账行见 `admissions.tsv`
+（`GLOBAL_NEWS_ADMITTED`，provider `Cailianpress`）。
+

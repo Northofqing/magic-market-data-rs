@@ -11,6 +11,15 @@ integration time. The newest bounded probe batch (2026-10-07,
 `docs/evidence/2026-10-07-upstream-live-probes-230223/`) is recorded per crate
 below; it is a single run, not a continuous health monitor.
 
+**Update 2026-10-15:** the news/disclosure families of five of these crates are
+now registered with `_ADMITTED` constants and admitted `admissions.tsv` rows:
+`magic-cls-rs` `GLOBAL_NEWS_ADMITTED`; `magic-cninfo-rs` `ANNOUNCEMENTS_ADMITTED`
+/ `MARKET_ANNOUNCEMENTS_ADMITTED` / `INVESTOR_QUESTIONS_ADMITTED`;
+`magic-gov-rs` `POLICY_DOCUMENTS_ADMITTED`; `magic-sina-rs`
+`INSTRUMENT_NEWS_ADMITTED`; `magic-thepaper-rs` `GLOBAL_NEWS_ADMITTED`. Their
+remaining operations stay outside the constant convention until downstream
+consumers are confirmed (news-coverage decision D2c/D4a).
+
 | crate | production wiring (`grpc_production.rs`, snapshot 2026-10-14) | 2026-10-07 bounded probe |
 | --- | --- | --- |
 | `magic-sina-rs` | 623, 977, 1190 | failed |

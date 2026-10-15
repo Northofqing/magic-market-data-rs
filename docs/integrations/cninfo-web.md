@@ -86,3 +86,11 @@ ID；只有全部已声明 family 都通过才输出总状态 `admitted`，任�
 公告和互动问答是内容数据，不应进入 5 秒行情新鲜度门。调用方负责版权、使用条款、
 缓存、持久化和重试策略；本 crate 不下载 PDF 文件、不执行后台轮询，也不把网页
 可访问性解释为再分发授权。
+
+## 准入记录（2026-10-15）
+
+2026-10-15 准入探针：`live_probe` 两次串行（均 `admitted`）+ `load_probe`
+（`MAGIC_CNINFO_LOAD_REQUESTS=3`、并发 1、pacing 1000ms，`admitted`）。台账行见
+`admissions.tsv`：`ANNOUNCEMENTS_ADMITTED` / `MARKET_ANNOUNCEMENTS_ADMITTED` /
+`INVESTOR_QUESTIONS_ADMITTED`（provider `Cninfo`）。
+

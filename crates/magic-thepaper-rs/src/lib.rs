@@ -23,6 +23,9 @@ const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PAGE_SIZE: u32 = 20;
 const MINIMUM_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 
+/// Repository admission for The Paper native finance-channel news.
+pub const GLOBAL_NEWS_ADMITTED: bool = true;
+
 /// The Paper adapter failures. Upstream contract changes remain explicit.
 #[derive(Debug, Error)]
 pub enum ThePaperError {
