@@ -257,6 +257,8 @@ dragon_tiger.market:    core contract error: invalid request: dragon-tiger net a
 
 ## 7. 待批准人拍板（按编号回答）
 
+拍板结果（2026-10-15）：D1a / D2c（先 (b) 后 (a)，(a) 待消费方确认）/ D3a / D4a / D5a / D6b。以下原文保留。
+
 - **D1 — 台账的声明范围**：(a) 保持"仅 `_ADMITTED` 常量"，另立一个 provider 级索引覆盖
   7 个 crate；(b) 把 `admissions.tsv` 扩到"每个生产注册的 Provider×operation"，常量降为
   可选列。**(b) 更彻底但改动台账 schema**，会影响 `check_admissions.py` 与
@@ -337,3 +339,38 @@ D2 选 (a)：为 7 个 crate 补常量与机制 A 的门。
 - 不改 TLS 策略、不加证书异常（§4）。
 - 不改 proto / `contract_sha256` / 运行时注册逻辑（除非 D2 选 (a)）。
 - 不修 §5 的 dragon-tiger 实网失败——那是独立缺陷，不是准入治理问题，应单独立项。
+
+## 12. 拍板与实施记录（2026-10-15）
+
+已实施（本批次）：
+
+1. **D1a + D2b**：新建 [`provider-coverage-index.md`](provider-coverage-index.md)
+   ——7 个无常量 crate 的 provider 级索引（生产接线引用 + 2026-10-07 探针结果 +
+   「先例豁免、非未准入」声明）；`unadmitted-provider-routes.md` 增对应小节；
+   `admissions.tsv` 保持「仅 `_ADMITTED` 常量」口径不变。
+2. **D3a**：`admissions.tsv` 增 `blocker_class` 列（9 个 blocked 行全部标注；
+   固定词汇 9 个 token，多类用 `;` 连接，机器校验）。
+3. **D4a**：增 `last_probe_utc` / `last_probe_status` 两列，按 2026-10-07
+   summary.json 回填（crate 级聚合；official-news 家族按逐族探针行级映射；
+   eastmoney GLOBAL_NEWS 行按 2026-10-15 本次准入批次填 completed）。列语义
+   已在 `docs/integrations/README.md` 声明：`status`/`last_live_date` 记准入事件，
+   新列记最近探针观测。
+4. **D5a**：EmQuant 行改为 `admitted=false` + 授权过期 blocker（`entitlement`）。
+   **注意**：checker 的布尔漂移检查绑定常量实体，行修正必须同时翻转
+   `EMQUANT_DAILY_BARS_ADMITTED=false`——这使本行修正附带**运行时可见变更**
+   （EmQuant HistoricalBars 从 admitted 注册降为 blocked/diagnostic 注册），
+   超出 §6.1「零运行时」的原始归类，在此显式更正记录；该变更与授权过期事实
+   一致（fail-closed）。相关同步：`grpc_production_tests.rs` 的 EmQuant 能力断言、
+   未准入路由枚举（13→14 条）、composition 两处 blocker 文案改为「withdrawn」表述、
+   `grpc_emquant_quote_scope_query_tests.rs` 的 CSD 执行用例改为「无 opt-in 公开拒绝
+   （fail-closed）+ 诊断 opt-in 执行（complete=false、diagnostic_blocker=撤回文案）」。
+5. **D6b**：GACC 行 blocker 单元格重写为两个独立阻塞阶段（transport_tls /
+   template_unverified），并写入「TLS 校验不得绕过或削弱」红线。
+
+未实施（记录）：
+
+- **D2(a)**（补常量 + 机制 A 的门）：待下游消费方确认后单独立项（能力收缩风险，
+  见 §9）。
+- §2.4 的 6 个 admitted-but-failed 行：本次只新增探针列表达观测，不改变其准入
+  状态（单次批次不能推断持续故障，§10）。
+- §5 dragon-tiger 实网失败：独立缺陷，单独立项（§11.3）。

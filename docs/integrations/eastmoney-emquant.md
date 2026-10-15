@@ -1,5 +1,15 @@
 # 东方财富 EMQuant 只读接入
 
+## 当前状态（2026-10-15）
+
+账号 EMQuant API 授权已于 2026-10-07 探针批次被证实过期（五个族全部
+`EQERR_ACCESS_EXPIRE`，见 `docs/evidence/2026-10-07-upstream-live-probes-230223/`）。
+仓库准入已按此撤回：`EMQUANT_DAILY_BARS_ADMITTED=false`
+（`crates/magic-emquant-rs/src/lib.rs`），composition 把 HistoricalBars/EmQuant
+注册为 blocked 诊断，`admissions.tsv` 行同步为 `admitted=false`（blocker_class
+`entitlement`）。恢复路径 = 续费授权 + 新的有界实网探针批次后重新准入。
+本文件下文描述接入本身，不受撤回影响。
+
 ## 已探测到的本地 SDK
 
 历史 macOS 开发机存在官方 EMQuant C++ SDK：

@@ -23,7 +23,24 @@ FIELDS = [
     "live_probe_count",
     "serial_load_count",
     "blocker",
+    "blocker_class",
+    "last_probe_utc",
+    "last_probe_status",
 ]
+BLOCKER_CLASSES = frozenset(
+    {
+        "entitlement",
+        "anti_bot",
+        "source_discontinued",
+        "source_attribution",
+        "source_fields",
+        "semantics_unproven",
+        "contract_drift",
+        "transport_tls",
+        "template_unverified",
+    }
+)
+PROBE_STATUSES = frozenset({"completed", "failed", "mixed", "blocked", "diagnostic"})
 CONSTANT = re.compile(
     r"(?m)^\s*pub\s+const\s+([A-Z][A-Z0-9_]*_ADMITTED)"
     r"\s*:\s*bool\s*=\s*(true|false)\s*;"
@@ -240,11 +257,38 @@ def validate_row(
             errors.append(f"{label}: admitted capability requires at least three serial loads")
         if row["blocker"] not in {"", "-"}:
             errors.append(f"{label}: admitted capability must not declare a blocker")
+        if row["blocker_class"] != "-":
+            errors.append(f"{label}: admitted capability must not declare a blocker_class")
     else:
         if row["status"] != "blocked":
             errors.append(f"{label}: unadmitted capability status must be blocked")
         if row["blocker"] in {"", "-"}:
             errors.append(f"{label}: unadmitted capability requires an explicit blocker")
+        classes = row["blocker_class"].split(";")
+        if row["blocker_class"] in {"", "-"} or any(
+            item not in BLOCKER_CLASSES for item in classes
+        ):
+            errors.append(
+                f"{label}: blocked capability blocker_class tokens must come from the "
+                "fixed vocabulary"
+            )
+        elif len(set(classes)) != len(classes):
+            errors.append(f"{label}: blocker_class tokens must not repeat")
+
+    probe_utc = row["last_probe_utc"]
+    probe_status = row["last_probe_status"]
+    if probe_utc in {"", "-"}:
+        if probe_status not in {"", "-"}:
+            errors.append(f"{label}: last_probe_status requires last_probe_utc")
+    else:
+        try:
+            parsed_probe = date.fromisoformat(probe_utc)
+            if parsed_probe.isoformat() != probe_utc:
+                raise ValueError
+        except ValueError:
+            errors.append(f"{label}: last_probe_utc must be canonical YYYY-MM-DD or '-'")
+        if probe_status not in PROBE_STATUSES:
+            errors.append(f"{label}: last_probe_status must be one of the fixed vocabulary")
     return errors
 
 

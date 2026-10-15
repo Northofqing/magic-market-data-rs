@@ -55,3 +55,13 @@ the requested-date design at
 `docs/superpowers/specs/2026-09-22-miaoxiang-auction-requested-date-design.md`. This
 document is copied into the client bundle, so it links only to other bundled
 documents and names the rest by repository path.
+
+## Admitted providers outside the constant registry
+
+Seven crates register production-admitted routes without an `_ADMITTED`
+constant and therefore have no `admissions.tsv` row: `magic-sina-rs`,
+`magic-tencent-rs`, `magic-ths-rs`, `magic-cninfo-rs`, `magic-cls-rs`,
+`magic-thepaper-rs`, `magic-gov-rs`. They are not unadmitted and do not
+belong to the matrix above; see
+[`provider-coverage-index.md`](provider-coverage-index.md).
+

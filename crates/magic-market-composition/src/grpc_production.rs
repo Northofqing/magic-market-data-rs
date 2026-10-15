@@ -1705,7 +1705,7 @@ fn register_emquant(
                     Operation::HistoricalBars,
                     "EmQuant",
                     EMQUANT_DAILY_BARS_SCOPE,
-                    "EMQuant daily bars have not passed repository admission",
+                    "EMQuant daily-bar repository admission is withdrawn (API entitlement expired 2026-10-07); re-admission requires a renewed entitlement and fresh probes.",
                 )
             };
             registry.register_unavailable(bars)?;
@@ -1776,7 +1776,7 @@ fn register_emquant_client(
                 Operation::HistoricalBars,
                 "EmQuant",
                 "runtime-entitled EMQuant daily-bar diagnostic",
-                "EMQuant daily bars have not passed repository admission",
+                "EMQuant daily-bar repository admission is withdrawn (API entitlement expired 2026-10-07); re-admission requires a renewed entitlement and fresh probes.",
             ),
             move |command| {
                 execute_typed(

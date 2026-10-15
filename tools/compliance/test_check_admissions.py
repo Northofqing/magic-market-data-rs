@@ -41,18 +41,20 @@ class AdmissionCheckerTests(unittest.TestCase):
         )
 
     def row(self, **overrides: str) -> dict[str, str]:
-        row = {
-            "crate": "provider",
-            "provider": "Provider",
-            "constant": "DATA_ADMITTED",
-            "admitted": "true",
-            "evidence": "docs/integrations/provider.md",
-            "status": "admitted",
-            "last_live_date": "2026-07-29",
-            "live_probe_count": "2",
-            "serial_load_count": "3",
-            "blocker": "-",
-        }
+        row = dict.fromkeys(CHECKER.FIELDS, "-")
+        row.update(
+            {
+                "crate": "provider",
+                "provider": "Provider",
+                "constant": "DATA_ADMITTED",
+                "admitted": "true",
+                "evidence": "docs/integrations/provider.md",
+                "status": "admitted",
+                "last_live_date": "2026-07-29",
+                "live_probe_count": "2",
+                "serial_load_count": "3",
+            }
+        )
         row.update(overrides)
         return row
 
@@ -84,6 +86,7 @@ class AdmissionCheckerTests(unittest.TestCase):
             live_probe_count="0",
             serial_load_count="0",
             blocker="official endpoint returns no structured unit",
+            blocker_class="source_fields",
         )
         with (self.root / "crates/provider/src/lib.rs").open(
             "a", encoding="utf-8"
@@ -185,6 +188,44 @@ class AdmissionCheckerTests(unittest.TestCase):
             )
         )
         self.assertIn("explicit blocker", "\n".join(self.errors()))
+
+
+    def test_blocker_class_and_probe_columns_are_validated(self) -> None:
+        self.source()
+        self.write_rows(self.row(blocker_class="entitlement"))
+        self.assertIn("blocker_class", "\n".join(self.errors()))
+
+        self.write_rows(self.row(last_probe_status="completed"))
+        self.assertIn("last_probe_status requires last_probe_utc", "\n".join(self.errors()))
+
+        self.write_rows(self.row(last_probe_utc="2026-10-07", last_probe_status="melted"))
+        self.assertIn("last_probe_status", "\n".join(self.errors()))
+
+        self.write_rows(self.row(last_probe_utc="10/07/2026", last_probe_status="failed"))
+        self.assertIn("last_probe_utc", "\n".join(self.errors()))
+
+        self.source(value="false")
+        blocked = dict(
+            admitted="false",
+            status="blocked",
+            last_live_date="",
+            live_probe_count="0",
+            serial_load_count="0",
+            blocker="x",
+        )
+        self.write_rows(self.row(blocker_class="unknown_token", **blocked))
+        self.assertIn("blocker_class tokens", "\n".join(self.errors()))
+        self.write_rows(self.row(blocker_class="entitlement;entitlement", **blocked))
+        self.assertIn("must not repeat", "\n".join(self.errors()))
+        self.write_rows(
+            self.row(
+                blocker_class="entitlement;template_unverified",
+                last_probe_utc="2026-10-07",
+                last_probe_status="blocked",
+                **blocked,
+            )
+        )
+        self.assertEqual(self.errors(), [])
 
 
 if __name__ == "__main__":

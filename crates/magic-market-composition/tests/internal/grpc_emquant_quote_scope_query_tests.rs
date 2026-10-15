@@ -648,20 +648,44 @@ mod windows_raw_bridge_public_contract {
             16_384,
         )
         .expect("legal public bounded daily request");
+        // 2026-10-15: the repository admission was withdrawn (expired
+        // entitlement), so the public route must now refuse without the
+        // unadmitted opt-in: fail-closed first, diagnostic execution second.
+        let refused = registry
+            .execute(
+                QueryCommand::new(
+                    "emquant-offline-csd-public-refusal",
+                    Operation::HistoricalBars,
+                    Some("EmQuant".to_owned()),
+                    payload.clone(),
+                )
+                .expect("public query command without diagnostic opt-in"),
+            )
+            .expect_err("withdrawn admission must refuse public execution");
+        match refused {
+            magic_market_service::ServiceError::Unsupported { reason, .. } => {
+                assert!(
+                    reason.contains("withdrawn"),
+                    "refusal must carry the withdrawal blocker: {reason}"
+                );
+            }
+            other => panic!("expected fail-closed Unsupported refusal, got {other:?}"),
+        }
         let command = QueryCommand::new(
             "emquant-offline-csd-bounded-suffix",
             Operation::HistoricalBars,
             Some("EmQuant".to_owned()),
             payload,
         )
-        .expect("public query command without diagnostic opt-in");
+        .expect("public query command without diagnostic opt-in")
+        .with_unadmitted_access(true);
         let before = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
         let result = registry
             .execute(command)
-            .expect("admitted CSD raw response through public Execute");
+            .expect("diagnostic CSD raw response through public Execute");
         let after = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -683,9 +707,14 @@ mod windows_raw_bridge_public_contract {
         assert_eq!(result.provider, "EmQuant");
         assert_eq!(result.batch_id, batch);
         assert_eq!(result.source_at.as_deref(), Some("2026-07-22"));
-        assert!(result.complete);
-        assert!(result.repository_admitted);
-        assert_eq!(result.diagnostic_blocker, None);
+        // Unadmitted diagnostic execution keeps the evidence but must not
+        // claim completeness or admission.
+        assert!(!result.complete);
+        assert!(!result.repository_admitted);
+        assert!(result
+            .diagnostic_blocker
+            .as_deref()
+            .is_some_and(|blocker| blocker.contains("withdrawn")));
         assert_eq!(result.records.len(), 2);
         for record in &result.records {
             assert_eq!(record.schema(), "magic.market.bar");

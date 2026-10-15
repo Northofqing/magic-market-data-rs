@@ -1271,12 +1271,13 @@ fn production_registry_exposes_every_new_provider_parity_registration() {
             capability.operation == Operation::HistoricalBars && capability.provider == "EmQuant"
         })
         .expect("missing EmQuant daily-bar registration");
-    assert!(emquant_bars.repository_admitted);
-    assert_eq!(
-        emquant_bars.runtime_available,
-        EmQuantClient::discover().is_ok()
-    );
-    assert!(!emquant_bars.diagnostic_available);
+    // Repository admission was withdrawn on 2026-10-15: the account's EMQuant
+    // API entitlement expired (2026-10-07 evidence, EQERR_ACCESS_EXPIRE across
+    // all five families), so the route registers as blocked regardless of
+    // bridge discoverability.
+    assert!(!emquant_bars.repository_admitted);
+    assert!(!emquant_bars.runtime_available);
+    assert!(emquant_bars.blocker.is_some());
 
     for operation in [
         Operation::HistoricalBars,
@@ -1320,6 +1321,9 @@ fn production_registry_exposes_every_new_provider_parity_registration() {
         (Operation::EconomicSeries, "Imf", "WorldBank"),
         (Operation::FundFlowSeries, "EastmoneyMiaoxiang", "Eastmoney"),
         (Operation::HistoricalBars, "Baidu", "Tencent"),
+        // EmQuant daily bars joined on 2026-10-15 when its repository
+        // admission was withdrawn (expired entitlement, 2026-10-07 batch).
+        (Operation::HistoricalBars, "EmQuant", "HithinkFinance"),
         (Operation::MoneyFlows, "EastmoneyMiaoxiang", "Eastmoney"),
         (Operation::MoneyFlows, "EmQuant", "Eastmoney"),
         (Operation::OrderBooks, "EmQuant", "Tencent"),

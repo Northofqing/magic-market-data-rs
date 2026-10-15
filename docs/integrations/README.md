@@ -11,6 +11,18 @@ Source, registry, and evidence files must be Git-tracked regular files inside
 the repository; symlinked or untracked evidence is rejected. `-` is the
 canonical placeholder for an intentionally empty optional field.
 
+`status` and `last_live_date` record the admission EVENT, not current health.
+`blocker_class` classifies each blocked row against a fixed vocabulary
+(`entitlement`, `anti_bot`, `source_discontinued`, `source_attribution`,
+`source_fields`, `semantics_unproven`, `contract_drift`, `transport_tls`,
+`template_unverified`; multiple classes join with `;`). `last_probe_utc` /
+`last_probe_status` carry the newest bounded live-probe batch outcome per row
+(`completed`, `failed`, `mixed`, `blocked`, `diagnostic`); the 2026-10-07 batch
+is recorded under
+[`../evidence/2026-10-07-upstream-live-probes-230223/summary.json`](../evidence/2026-10-07-upstream-live-probes-230223/summary.json).
+Admitted providers that predate the `_ADMITTED` constant convention are indexed
+in [`provider-coverage-index.md`](provider-coverage-index.md).
+
 Run the drift check without network access:
 
 ```bash

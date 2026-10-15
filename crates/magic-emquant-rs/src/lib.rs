@@ -22,7 +22,10 @@ const MAX_BRIDGE_STDOUT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_BRIDGE_STDERR_BYTES: usize = 64 * 1024;
 
 /// Production admission is limited to explicit-range completed daily CSD bars.
-pub const EMQUANT_DAILY_BARS_ADMITTED: bool = true;
+/// Withdrawn 2026-10-15: the account's EMQuant API entitlement expired
+/// (2026-10-07 batch, EQERR_ACCESS_EXPIRE across all five families). The
+/// composition registers the route as blocked until re-admission.
+pub const EMQUANT_DAILY_BARS_ADMITTED: bool = false;
 /// Maximum caller-visible rows in the admitted daily-bar contract.
 pub const MAX_EMQUANT_DAILY_BARS: u16 = 800;
 
