@@ -1271,7 +1271,7 @@ fn normalize_limit_up(
     validate_clock_text("limit_up_time", &item.limit_up_time)?;
     validate_safe_text("continue_day_text", &item.continue_day_text)?;
     let _max_seal_money = nonnegative_money(item.max_seal_money, "max_seal_money")?;
-    let _source_flags = (item.is_st, item.is_new);
+    let _is_new = item.is_new;
     Ok(LimitPoolEntry {
         kind: LimitPoolKind::Upper,
         instrument,
@@ -1290,6 +1290,7 @@ fn normalize_limit_up(
         seal_state: None,
         reseal_count: None,
         reason: Some(NonEmptyText::new(item.limit_up_reason)?),
+        is_st: Some(item.is_st),
         evidence: record_evidence(request.trading_date(), observed_at, batch_id)?,
     })
 }
@@ -1322,6 +1323,7 @@ fn normalize_limit_down(
         seal_state: None,
         reseal_count: None,
         reason: None,
+        is_st: None,
         evidence: record_evidence(request.trading_date(), observed_at, batch_id)?,
     })
 }
@@ -1353,6 +1355,7 @@ fn normalize_limit_break(
         seal_state: None,
         reseal_count: None,
         reason: None,
+        is_st: None,
         evidence: record_evidence(request.trading_date(), observed_at, batch_id)?,
     })
 }

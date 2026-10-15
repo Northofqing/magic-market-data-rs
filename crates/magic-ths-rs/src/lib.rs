@@ -603,6 +603,7 @@ impl LimitPools for ThsClient {
                 // The source exposes only a boolean is_again_limit flag, not a count.
                 reseal_count: None,
                 reason,
+                is_st: None,
                 evidence,
             });
         }

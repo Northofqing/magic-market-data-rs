@@ -67,6 +67,8 @@ Provider×operation 路径、已发现的官方接口及显式替代范围见
 present 时同样先校验完整批次、再过滤晚于截止时刻的记录；cutoff-empty 返回 `complete=true`、
 空 records、保留真实 `batch_id`/`observed_at`；记录与证据 schema 不变。
 
+`SecurityProfiles` 记录 schema v2 起以 `UnverifiedShareCount`（`source_value` + `unit: ProviderNative`）携带财务包股本；**单位未验证，不得用于市值、换手率或股本比例计算**。`LimitPools` 记录 schema v2 起携带源端 `is_st` 真值（无源值时 null，绝不从名称推导）。
+
 Rust 组合层提供有界[资讯候选检索](crates/magic-market-composition/src/content_discovery.rs)：
 可在已准入的最新新闻窗口中用实体别名组筛选科技报道，或在巨潮公告的单日/单证券日期
 窗口中筛选 14 类公告候选，包括年报、半年报、业绩预告、增减持、回购股份减持、

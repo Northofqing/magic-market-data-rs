@@ -187,9 +187,9 @@ fn registered_upper_limit_pool_rejects_negative_sealed_amount_without_publishing
 
     let payload = &result.records[0];
     assert_eq!(payload.schema(), "magic.market.limit_pool_entry");
-    assert_eq!(payload.schema_version(), 1);
+    assert_eq!(payload.schema_version(), 2);
     let row: serde_json::Value = serde_json::from_slice(payload.data()).unwrap();
-    assert_eq!(row.as_object().unwrap().len(), 18);
+    assert_eq!(row.as_object().unwrap().len(), 19);
     assert_eq!(row["instrument"].as_object().unwrap().len(), 3);
     assert_eq!(row["change"].as_object().unwrap().len(), 2);
     assert_eq!(row["evidence"].as_object().unwrap().len(), 4);
@@ -213,6 +213,7 @@ fn registered_upper_limit_pool_rejects_negative_sealed_amount_without_publishing
         "seal_state": "换手板",
         "reseal_count": null,
         "reason": "废塑料化学循环+固废处理+稀土永磁",
+        "is_st": null,
         "evidence": {
             "provider": "Tonghuashun",
             "source_at": "2026-07-22",

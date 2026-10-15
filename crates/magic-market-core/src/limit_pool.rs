@@ -31,6 +31,9 @@ pub struct LimitPoolEntry {
     pub seal_state: Option<NonEmptyText>,
     pub reseal_count: Option<u32>,
     pub reason: Option<NonEmptyText>,
+    /// Source-provided ST flag for this pool entry (`None` when the source did
+    /// not provide it). Never derived from the security name.
+    pub is_st: Option<bool>,
     pub evidence: SourceEvidence,
 }
 

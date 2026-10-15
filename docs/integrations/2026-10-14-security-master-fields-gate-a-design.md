@@ -169,6 +169,8 @@ let _source_flags = (item.is_st, item.is_new);
 
 ## 7. 待批准人拍板（按编号回答）
 
+拍板结果（2026-10-15）：D1a / D2b（维持现状；事实问题仍未答）/ D3c（维持现状，延后）/ D4a / D5维持推导+issues 声明 / D6 按 per-family 版本先例。以下原文保留。
+
 - **D1 — 股本字段的合同形态**（本设计的核心）。三选一：
   - (a) **改合同类型**：让 `total_shares`/`floating_shares` 携带 `UnverifiedSourceUnit`
     （仿 `lifecycle.rs:58-62` 的 `ProviderNativeRatio` 形态），从而可以接线而不违反单位纪律；
@@ -270,3 +272,30 @@ let _source_flags = (item.is_st, item.is_new);
 
 - 不做"顺带接出宇宙列表"。见 §9.3。
 - 不把任何推导值提升为源端事实。§6 的 `issues` 声明机制是正确形态，应保留而非替换。
+
+## 12. 拍板与实施记录（2026-10-15）
+
+已实施：
+
+1. **D1a（股本字段）**：Core 新增 `UnverifiedShareCount { source_value: FiniteNumber, unit: UnverifiedSourceUnit }`；
+   `SecurityProfile.total_shares`/`floating_shares` 由 `Option<Quantity>` 改为
+   `Option<UnverifiedShareCount>`。TDX 接线经新 facade
+   `TdxHqClient::security_metadata_and_finance`（adapter 内与 metadata 同一次取数，
+   finance 记录随批次返回）——**未新增任何网络 I/O**，与 §11.2 的判断一致；非正/非有限值
+   视为不可用（None），不做断言。op 描述已写明禁止用于市值/换手率/股本比例。
+2. **D4a（Hithink 限价池 is_st 真值）**：`LimitPoolEntry` 新增 `is_st: Option<bool>`
+   （源端真值，绝不从名称推导）；Hithink 涨停池条目填充源值，其余 provider/类型为 None。
+3. **D6（版本策略）**：新增 per-family 常量 `SECURITY_PROFILES_SCHEMA_VERSION = 2`、
+   `LIMIT_POOLS_SCHEMA_VERSION = 2`（先例：FINANCIAL_STATEMENTS/NEWS），经新
+   `provider_query_result_versioned` / `execute_typed_versioned` 接入两族 handler；
+   两族记录 `schema_version` 1→2（新增可选字段的记录侧扩展）。SecurityMetadata 本批
+   未改字段，维持全局 `SCHEMA_VERSION`。
+
+未实施（记录）：
+
+- D2（Hithink `list_date` 放行）：维持现状；原设计的问题（当时为何扣下）仍未回答，
+  不代人判断。
+- D3（industry 结构化）：维持现状（留在 `facts`）。
+- §9.3 的宇宙 op / 退市源：独立项目，先于任何宇宙 op。
+- **协调提醒**：两族记录 schema 版本变化是对外可见的（新增字段）；重建 client bundle
+  时需在对端说明消费端应容忍新增字段。

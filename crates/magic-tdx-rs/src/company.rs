@@ -3,9 +3,9 @@
 use std::collections::HashSet;
 
 use magic_market_core::{
-    AssetClass, CompanyCapabilities, DataBatch, Exchange, InstrumentId, IsoDate, NonEmptyText,
-    ProfileFact, Provenance, ProviderId, SecurityMetadataProvider, SecurityProfile,
-    SecurityProfiles, SourceEvidence,
+    AssetClass, CompanyCapabilities, DataBatch, Exchange, FiniteNumber, InstrumentId, IsoDate,
+    NonEmptyText, ProfileFact, Provenance, ProviderId, SecurityProfile, SecurityProfiles,
+    SourceEvidence, UnverifiedShareCount, UnverifiedSourceUnit,
 };
 
 use crate::{
@@ -75,7 +75,7 @@ impl TdxSecurityProfileProvider {
     fn fetch(&self, instruments: &[InstrumentId]) -> Result<DataBatch<SecurityProfile>, TdxError> {
         validate_request(instruments)?;
         self.metadata.connect_to_any(Some(self.timeout_seconds))?;
-        let metadata = self.metadata.security_metadata(instruments)?;
+        let (metadata, finance) = self.metadata.security_metadata_and_finance(instruments)?;
         if metadata.records().len() != instruments.len() {
             return Err(TdxError::InvalidData(format!(
                 "TDX security-profile metadata cardinality mismatch: requested {}, returned {}",
@@ -99,6 +99,14 @@ impl TdxSecurityProfileProvider {
                 ))
             })?;
             let market = market(instrument)?;
+            let finance_record = finance
+                .get(&(market, instrument.code().to_owned()))
+                .ok_or_else(|| {
+                    TdxError::InvalidData(format!(
+                        "TDX omitted requested finance metadata for {}",
+                        instrument.code()
+                    ))
+                })?;
             let categories = self.profiles.categories(market, instrument.code())?;
             let matches = categories
                 .iter()
@@ -118,6 +126,8 @@ impl TdxSecurityProfileProvider {
                 instrument: instrument.clone(),
                 name: name.to_owned(),
                 listed_on: record.listed_on().map(str::to_owned),
+                total_shares: share_count(finance_record.zongguben)?,
+                floating_shares: share_count(finance_record.liutongguben)?,
                 content,
             });
         }
@@ -146,7 +156,28 @@ struct ProfileInput {
     instrument: InstrumentId,
     name: String,
     listed_on: Option<String>,
+    total_shares: Option<UnverifiedShareCount>,
+    floating_shares: Option<UnverifiedShareCount>,
     content: F10Content,
+}
+
+/// Wrap a provider-native TDX finance share value. TDX publishes no verified
+/// unit for these values (`protocol::parsers` explicitly returns the raw
+/// value), so they travel as `UnverifiedSourceUnit` and never as `Quantity`.
+/// Non-positive values are treated as unavailable rather than asserted.
+fn share_count(value: f64) -> Result<Option<UnverifiedShareCount>, TdxError> {
+    if !value.is_finite() {
+        return Err(TdxError::InvalidData(
+            "TDX finance share count is not finite".into(),
+        ));
+    }
+    if value <= 0.0 {
+        return Ok(None);
+    }
+    Ok(Some(UnverifiedShareCount {
+        source_value: FiniteNumber::new(value)?,
+        unit: UnverifiedSourceUnit::ProviderNative,
+    }))
 }
 
 fn normalize_profiles(
@@ -177,8 +208,8 @@ fn normalize_profiles(
             name: NonEmptyText::new(input.name)?,
             industry: None,
             listed_on: input.listed_on.map(IsoDate::new).transpose()?,
-            total_shares: None,
-            floating_shares: None,
+            total_shares: input.total_shares,
+            floating_shares: input.floating_shares,
             facts,
             evidence: evidence.clone(),
         });
@@ -295,6 +326,8 @@ mod tests {
                 instrument: sh(),
                 name: "华电辽能".into(),
                 listed_on: Some("1998-07-01".into()),
+                total_shares: share_count(1_234_567_890.0).unwrap(),
+                floating_shares: None,
                 content: F10Content::new(
                     COMPANY_PROFILE.into(),
                     " 公司名称  华电辽宁能源发展股份有限公司\n所属行业 电力 \n".into(),
@@ -309,7 +342,10 @@ mod tests {
         assert_eq!(profile.name.as_str(), "华电辽能");
         assert_eq!(profile.listed_on.as_ref().unwrap().as_str(), "1998-07-01");
         assert!(profile.industry.is_none());
-        assert!(profile.total_shares.is_none());
+        let total = profile.total_shares.as_ref().unwrap();
+        assert_eq!(total.source_value.get(), 1_234_567_890.0);
+        assert_eq!(total.unit, UnverifiedSourceUnit::ProviderNative);
+        assert!(profile.floating_shares.is_none());
         assert_eq!(profile.facts.len(), 2);
         assert_eq!(
             profile.facts[0].value.as_str(),
@@ -329,6 +365,8 @@ mod tests {
                 instrument: sh(),
                 name: "华电辽能".into(),
                 listed_on: None,
+                total_shares: None,
+                floating_shares: None,
                 content: wrong,
             }],
             "1770000000.000000001".into(),

@@ -211,6 +211,7 @@ fn map_entry(
         seal_state: None,
         reseal_count: None,
         reason: None,
+        is_st: None,
         evidence: context.evidence_at(Some(source_date.as_str()))?,
     })
 }

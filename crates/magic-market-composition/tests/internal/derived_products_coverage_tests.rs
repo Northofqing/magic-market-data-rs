@@ -671,7 +671,7 @@ mod upper_limit_review_summary_public_contract {
           "price":10.0,"change":{"value":10.0,"unit":"Percent"},
           "volume":0.0,"turnover":null,"sealed_amount":null,
           "first_seal_at":null,"last_seal_at":null,"break_count":0,"streak":2,
-          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,
+          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,"is_st":null,
           "evidence":{"provider":"Eastmoney","source_at":"2026-08-14","observed_at":"2026-08-14T15:05:01+08:00","batch_id":"review-upper"}
         },
         {
@@ -681,7 +681,7 @@ mod upper_limit_review_summary_public_contract {
           "price":11.0,"change":{"value":10.0,"unit":"Percent"},
           "volume":null,"turnover":null,"sealed_amount":null,
           "first_seal_at":null,"last_seal_at":null,"break_count":null,"streak":3,
-          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,
+          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,"is_st":null,
           "evidence":{"provider":"Eastmoney","source_at":"2026-08-14","observed_at":"2026-08-14T15:05:01+08:00","batch_id":"review-upper"}
         }
       ],
@@ -693,7 +693,7 @@ mod upper_limit_review_summary_public_contract {
           "price":12.0,"change":{"value":5.0,"unit":"Percent"},
           "volume":null,"turnover":null,"sealed_amount":null,
           "first_seal_at":null,"last_seal_at":null,"break_count":1,"streak":null,
-          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,
+          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,"is_st":null,
           "evidence":{"provider":"Eastmoney","source_at":"2026-08-14","observed_at":"2026-08-14T15:05:02+08:00","batch_id":"review-broken"}
         }
       ],
@@ -706,7 +706,7 @@ mod upper_limit_review_summary_public_contract {
           "price":13.0,"change":{"value":-2.0,"unit":"Percent"},
           "volume":null,"turnover":null,"sealed_amount":null,
           "first_seal_at":null,"last_seal_at":null,"break_count":null,"streak":7,
-          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,
+          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,"is_st":null,
           "evidence":{"provider":"Eastmoney","source_at":"2026-08-14","observed_at":"2026-08-14T15:05:04+08:00","batch_id":"review-previous-upper"}
         }
       ],
@@ -819,7 +819,7 @@ mod upper_limit_review_date_public_contract {
           "price":10.0,"change":{"value":10.0,"unit":"Percent"},
           "volume":0.0,"turnover":null,"sealed_amount":null,
           "first_seal_at":null,"last_seal_at":null,"break_count":0,"streak":2,
-          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,
+          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,"is_st":null,
           "evidence":{"provider":"Eastmoney","source_at":"2026-08-14","observed_at":"2026-08-14T15:05:01+08:00","batch_id":"review-upper"}
         },
         {
@@ -829,7 +829,7 @@ mod upper_limit_review_date_public_contract {
           "price":11.0,"change":{"value":10.0,"unit":"Percent"},
           "volume":null,"turnover":null,"sealed_amount":null,
           "first_seal_at":null,"last_seal_at":null,"break_count":null,"streak":3,
-          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,
+          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,"is_st":null,
           "evidence":{"provider":"Eastmoney","source_at":"2026-08-14","observed_at":"2026-08-14T15:05:01+08:00","batch_id":"review-upper"}
         }
       ],
@@ -841,7 +841,7 @@ mod upper_limit_review_date_public_contract {
           "price":12.0,"change":{"value":5.0,"unit":"Percent"},
           "volume":null,"turnover":null,"sealed_amount":null,
           "first_seal_at":null,"last_seal_at":null,"break_count":1,"streak":null,
-          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,
+          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,"is_st":null,
           "evidence":{"provider":"Eastmoney","source_at":"2026-08-14","observed_at":"2026-08-14T15:05:02+08:00","batch_id":"review-broken"}
         }
       ],
@@ -854,7 +854,7 @@ mod upper_limit_review_date_public_contract {
           "price":13.0,"change":{"value":-2.0,"unit":"Percent"},
           "volume":null,"turnover":null,"sealed_amount":null,
           "first_seal_at":null,"last_seal_at":null,"break_count":null,"streak":7,
-          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,
+          "industry":null,"board_name":null,"seal_state":null,"reseal_count":null,"reason":null,"is_st":null,
           "evidence":{"provider":"Eastmoney","source_at":"2026-08-14","observed_at":"2026-08-14T15:05:04+08:00","batch_id":"review-previous-upper"}
         }
       ],

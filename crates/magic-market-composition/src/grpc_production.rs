@@ -97,11 +97,13 @@ pub const SCHEMA_VERSION: u32 = 1;
 pub const NEWS_SCHEMA_VERSION: u32 = 2;
 pub const T0_EVIDENCE_SCHEMA_VERSION: u32 = 2;
 pub const FINANCIAL_STATEMENTS_SCHEMA_VERSION: u32 = 2;
+pub const SECURITY_PROFILES_SCHEMA_VERSION: u32 = 2;
+pub const LIMIT_POOLS_SCHEMA_VERSION: u32 = 2;
 const EMQUANT_DAILY_BARS_SCOPE: &str = "Shanghai/Shenzhen equities; explicit inclusive start/end; unadjusted completed daily CSD OHLCV/amount; at most 800 returned rows";
 const HITHINK_HISTORICAL_BARS_SCOPE: &str = "six-digit A-share equities and standard exchange indices with explicit inclusive range of at most ten years, plus Shanghai/Shenzhen ETFs at most five years; official Fuyao unadjusted completed Day bars; most recent caller limit after complete bounded response validation";
 const HITHINK_MARKET_STATISTICS_SCOPE: &str = "1..=100 unique Shanghai/Shenzhen/Beijing equities; official Fuyao PE TTM, PE MRQ and PB MRQ with source nulls preserved";
 const HITHINK_REALTIME_QUOTES_SCOPE: &str = "1..=60 unique Shanghai/Shenzhen/Beijing equities; official Fuyao current quote snapshot with numeric prices/volume/turnover; record source_at and name remain null and status remains Unavailable because the endpoint has no per-record source timestamp";
-const HITHINK_LIMIT_POOLS_SCOPE: &str = "official Fuyao Upper, Lower or Broken pool for one explicit Shanghai trading date; all declared pages validated before applying caller limit; PreviousUpper unsupported";
+const HITHINK_LIMIT_POOLS_SCOPE: &str = "official Fuyao Upper, Lower or Broken pool for one explicit Shanghai trading date; all declared pages validated before applying caller limit; PreviousUpper unsupported; upper-pool records include the source-provided is_st flag";
 const HITHINK_POPULARITY_SCOPE: &str = "official Fuyao current 24-hour hot-stock ranking; at most 100 rows with exact identity, rank, heat and response source time";
 const HITHINK_FINANCIAL_STATEMENTS_SCOPE: &str = "1..=8 unique A-share equities; most recent 20 quarterly consolidated income, balance or cash-flow statements; source nulls, provider fiscal-period labels and per-report publication evidence preserved; fiscal-period labels are published in schema v2";
 const HITHINK_CORPORATE_ACTIONS_SCOPE: &str = "one A-share equity; optional exact inclusive date range; official Fuyao implemented cash-dividend and bonus-share ex-date events; endpoint source-time absence preserved";
@@ -1571,10 +1573,11 @@ fn register_hithink_client(
             HITHINK_LIMIT_POOLS_SCOPE,
         ),
         move |command| {
-            execute_typed(
+            execute_typed_versioned(
                 command,
                 LIMIT_POOLS_REQUEST_SCHEMA,
                 LIMIT_POOLS_RECORD_SCHEMA,
+                LIMIT_POOLS_SCHEMA_VERSION,
                 "HithinkFinance",
                 maximum_payload_bytes,
                 |request: &LimitPoolRequest| pools.limit_pool(request),
@@ -2185,10 +2188,11 @@ fn register_ths_limit_pools_client(
             "upper-limit pool only for an exact trading date",
         ),
         move |command| {
-            execute_typed(
+            execute_typed_versioned(
                 command,
                 LIMIT_POOLS_REQUEST_SCHEMA,
                 LIMIT_POOLS_RECORD_SCHEMA,
+                LIMIT_POOLS_SCHEMA_VERSION,
                 "Tonghuashun",
                 maximum_payload_bytes,
                 |request: &LimitPoolRequest| limit_pools.limit_pool(request),
@@ -2569,7 +2573,7 @@ fn register_tdx_public(
         admitted(
             Operation::SecurityProfiles,
             "Tdx",
-            "1..=8 unique Shanghai/Shenzhen equities; exact TDX name, optional finance-backed listing date and complete company-overview F10 source-line facts",
+            "1..=8 unique Shanghai/Shenzhen equities; exact TDX name, optional finance-backed listing date and complete company-overview F10 source-line facts; share counts carry provider-native unverified units and must not be used for market capitalisation, turnover or share-ratio computation",
         ),
         move |command| {
             let request: InstrumentsRequest =
@@ -2577,10 +2581,11 @@ fn register_tdx_public(
             let batch = profiles
                 .security_profiles(&request.instruments)
                 .map_err(|error| provider_error(Operation::SecurityProfiles, error))?;
-            provider_query_result(
+            provider_query_result_versioned(
                 batch,
                 "Tdx",
                 SECURITY_PROFILES_RECORD_SCHEMA,
+                SECURITY_PROFILES_SCHEMA_VERSION,
                 maximum_payload_bytes,
             )
         },
@@ -4473,10 +4478,41 @@ where
     TRecord: Serialize,
     TError: Error + 'static,
 {
+    execute_typed_versioned(
+        command,
+        request_schema,
+        record_schema,
+        SCHEMA_VERSION,
+        provider,
+        maximum_payload_bytes,
+        call,
+    )
+}
+
+fn execute_typed_versioned<TRequest, TRecord, TError>(
+    command: QueryCommand,
+    request_schema: &str,
+    record_schema: &str,
+    record_schema_version: u32,
+    provider: &str,
+    maximum_payload_bytes: usize,
+    call: impl FnOnce(&TRequest) -> Result<DataBatch<TRecord>, TError>,
+) -> Result<QueryResult, ServiceError>
+where
+    TRequest: DeserializeOwned,
+    TRecord: Serialize,
+    TError: Error + 'static,
+{
     let operation = command.operation();
     let request: TRequest = decode_request(&command, request_schema)?;
     let batch = call(&request).map_err(|error| provider_error(operation, error))?;
-    provider_query_result(batch, provider, record_schema, maximum_payload_bytes)
+    provider_query_result_versioned(
+        batch,
+        provider,
+        record_schema,
+        record_schema_version,
+        maximum_payload_bytes,
+    )
 }
 
 fn execute_economic_release_observations(
@@ -5397,6 +5433,22 @@ fn provider_query_result<T: Serialize>(
     record_schema: &str,
     maximum_payload_bytes: usize,
 ) -> Result<QueryResult, ServiceError> {
+    provider_query_result_versioned(
+        batch,
+        provider,
+        record_schema,
+        SCHEMA_VERSION,
+        maximum_payload_bytes,
+    )
+}
+
+fn provider_query_result_versioned<T: Serialize>(
+    batch: DataBatch<T>,
+    provider: &str,
+    record_schema: &str,
+    record_schema_version: u32,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
     let provenance = batch.provenance();
     let batch_id = provenance.batch_id().ok_or_else(|| {
         ServiceError::FailedPrecondition(format!("{provider} batch has no batch_id"))
@@ -5408,7 +5460,12 @@ fn provider_query_result<T: Serialize>(
             let data = serde_json::to_vec(quote).map_err(|error| {
                 ServiceError::Internal(format!("quote serialization failed: {error}"))
             })?;
-            CanonicalPayload::new(record_schema, SCHEMA_VERSION, data, maximum_payload_bytes)
+            CanonicalPayload::new(
+                record_schema,
+                record_schema_version,
+                data,
+                maximum_payload_bytes,
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(QueryResult {

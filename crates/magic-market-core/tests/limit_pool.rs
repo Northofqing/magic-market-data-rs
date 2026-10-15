@@ -60,6 +60,7 @@ fn limit_entry_round_trips_with_optional_reason() {
         seal_state: None,
         reseal_count: None,
         reason: Some(NonEmptyText::new("电力").unwrap()),
+        is_st: Some(true),
         evidence: SourceEvidence::new(ProviderId::Eastmoney, "observed", "pool").unwrap(),
     };
     assert_eq!(entry.provider_id(), ProviderId::Eastmoney);

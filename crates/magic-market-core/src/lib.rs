@@ -48,7 +48,7 @@ pub use capital::{
 };
 pub use company::{
     CompanyCapabilities, FinancialLine, FinancialStatement, FinancialStatements, ProfileFact,
-    SecurityProfile, SecurityProfiles, StatementKind,
+    SecurityProfile, SecurityProfiles, StatementKind, UnverifiedShareCount,
 };
 pub use conformance::{verify_auction_conformance, AuctionConformancePolicy};
 pub use content::{

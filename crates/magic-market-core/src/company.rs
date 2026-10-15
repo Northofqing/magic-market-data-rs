@@ -1,6 +1,6 @@
 use crate::{
-    DataBatch, FiniteNumber, InstrumentId, IsoDate, NonEmptyText, Quantity, SourceEvidence,
-    SourcedRecord,
+    DataBatch, FiniteNumber, InstrumentId, IsoDate, NonEmptyText, SourceEvidence, SourcedRecord,
+    UnverifiedSourceUnit,
 };
 use serde::{Deserialize, Serialize};
 
@@ -11,14 +11,26 @@ pub struct ProfileFact {
     pub value: NonEmptyText,
 }
 
+/// A provider-native share count whose physical unit has not been
+/// independently verified (`UnverifiedSourceUnit` discipline).
+///
+/// Consumers must not interpret `source_value` as shares without external
+/// verification: it must not be used for market capitalisation, turnover or
+/// share-ratio computation, and it is not comparable across providers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UnverifiedShareCount {
+    pub source_value: FiniteNumber,
+    pub unit: UnverifiedSourceUnit,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SecurityProfile {
     pub instrument: InstrumentId,
     pub name: NonEmptyText,
     pub industry: Option<NonEmptyText>,
     pub listed_on: Option<IsoDate>,
-    pub total_shares: Option<Quantity>,
-    pub floating_shares: Option<Quantity>,
+    pub total_shares: Option<UnverifiedShareCount>,
+    pub floating_shares: Option<UnverifiedShareCount>,
     pub facts: Vec<ProfileFact>,
     pub evidence: SourceEvidence,
 }

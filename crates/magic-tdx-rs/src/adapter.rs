@@ -1735,6 +1735,61 @@ fn normalize_security_metadata(
     normalize_security_metadata_inner(source, instruments, records, None)
 }
 
+/// Metadata batch plus the finance records fetched for the same request.
+pub type SecurityMetadataAndFinance = (
+    DataBatch<SecurityMetadata>,
+    HashMap<(u8, String), FinanceInfo>,
+);
+
+impl TdxHqClient {
+    /// Metadata plus the finance records fetched for the same request.
+    ///
+    /// The security-profile path needs the finance share counts; re-fetching
+    /// them inside the profile provider would double the finance I/O of every
+    /// profile request, so the already-fetched finance records come back with
+    /// the batch instead.
+    pub fn security_metadata_and_finance(
+        &self,
+        instruments: &[InstrumentId],
+    ) -> Result<SecurityMetadataAndFinance, TdxError> {
+        security_metadata_and_finance_with(self, "tdx", instruments)
+    }
+}
+
+fn security_metadata_and_finance_with(
+    query: &impl BlockingTdxQuery,
+    source: &str,
+    instruments: &[InstrumentId],
+) -> Result<SecurityMetadataAndFinance, TdxError> {
+    validate_security_metadata_request(instruments)?;
+    let records = fetch_security_records(
+        instruments,
+        |market| query.security_count(market),
+        |market, start| query.security_list(market, start),
+    )?;
+    let finance = instruments
+        .iter()
+        .map(|instrument| query.finance_info(market(instrument)?, instrument.code()))
+        .collect::<Result<Vec<_>, _>>()?;
+    if finance.len() != instruments.len() {
+        return Err(TdxError::InvalidData(
+            "TDX finance response cardinality does not match metadata request".into(),
+        ));
+    }
+    let mut by_key = HashMap::with_capacity(finance.len());
+    for record in &finance {
+        let key = (record.market, record.code.clone());
+        if by_key.insert(key, record.clone()).is_some() {
+            return Err(TdxError::InvalidData(
+                "TDX returned duplicate finance metadata".into(),
+            ));
+        }
+    }
+    let batch =
+        normalize_security_metadata_inner(source, instruments, records, Some(by_key.clone()))?;
+    Ok((batch, by_key))
+}
+
 fn normalize_security_metadata_with_finance(
     source: &str,
     instruments: &[InstrumentId],

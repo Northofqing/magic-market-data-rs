@@ -99,6 +99,7 @@ fn limit_entry(
         seal_state: None,
         reseal_count: None,
         reason: None,
+        is_st: None,
         evidence: SourceEvidence::new(provider, observed_at, batch_id)
             .unwrap()
             .with_source_at(date)

@@ -1,7 +1,7 @@
 use magic_market_core::{
     AssetClass, Exchange, FinancialLine, FinancialStatement, FiniteNumber, InstrumentId, IsoDate,
-    NonEmptyText, ProviderId, Quantity, SecurityProfile, SourceEvidence, SourcedRecord,
-    StatementKind,
+    NonEmptyText, ProviderId, SecurityProfile, SourceEvidence, SourcedRecord, StatementKind,
+    UnverifiedShareCount, UnverifiedSourceUnit,
 };
 
 fn instrument() -> InstrumentId {
@@ -55,13 +55,18 @@ fn company_profile_is_typed_without_guessing_facts() {
         name: NonEmptyText::new("华电辽能").unwrap(),
         industry: None,
         listed_on: None,
-        total_shares: Some(Quantity::new(1_000.0).unwrap()),
+        total_shares: Some(UnverifiedShareCount {
+            source_value: FiniteNumber::new(1_000.0).unwrap(),
+            unit: UnverifiedSourceUnit::ProviderNative,
+        }),
         floating_shares: None,
         facts: vec![],
         evidence: evidence(),
     };
     assert!(profile.industry.is_none());
-    assert_eq!(profile.total_shares.unwrap().get(), 1_000.0);
+    let shares = profile.total_shares.as_ref().unwrap();
+    assert_eq!(shares.source_value.get(), 1_000.0);
+    assert_eq!(shares.unit, UnverifiedSourceUnit::ProviderNative);
     assert_eq!(profile.provider_id(), ProviderId::Sina);
     assert_eq!(profile.evidence_batch_id(), "batch");
 }
