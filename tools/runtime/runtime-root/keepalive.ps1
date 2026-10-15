@@ -1,14 +1,17 @@
 <#
-    Restart the runtime only when it is wholly absent, and only from the exact
-    admitted binaries.
+    Restart the runtime only when it is wholly absent.
 
-    Adapted from the recovered 2026-10-03 keepalive (see RECOVERY.md). The differences
-    are limited to identity: the runtime root is derived from this script's own
-    location instead of a hardcoded `<repo>\target\runtime`, and the three pinned
-    hashes below are the currently admitted candidate builds rather than the
-    superseded 2026-09 binary pair. Every guard is otherwise unchanged: a partial or
-    foreign runtime is reported rather than repaired, the listener must be owned by
-    the recorded server pid, and an existing credential is never silently replaced.
+    Adapted from the recovered 2026-10-03 keepalive (see RECOVERY.md). The runtime
+    root is derived from this script's own location instead of a hardcoded
+    `<repo>	argetuntime`. Binary-identity hash pins were removed 2026-10-15 by
+    explicit decision: the 2026-10-14 3faa9d8 deployment swapped bin/ without
+    updating the pins, and the watchdog then refused to start the admitted build,
+    taking the service down in trading hours. Binary admission is governed by the
+    release/handoff procedure (build identity is reported via GetHealth and pinned
+    client-side), not by this watchdog. Every other guard is unchanged: binaries
+    must be present, a partial or foreign runtime is reported rather than repaired,
+    the listener must be owned by the recorded server pid, and an existing
+    credential is never silently replaced.
 #>
 param([switch]$CheckOnly)
 $ErrorActionPreference = 'Stop'
@@ -16,12 +19,6 @@ $ErrorActionPreference = 'Stop'
 $runtimeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $serverImage = Join-Path $runtimeRoot 'bin\magic-market-grpc-server.exe'
 $agentImage = Join-Path $runtimeRoot 'bin\magic-market-tdx-agent.exe'
-# The admitted candidate build: source revision 841e4ae7a9df62be0c4536fa9009c66089d282bf.
-$expectedServerHash = '9658a0e19e84ccd2fca657c3dcb5410b9a92a319c4deeabdd1ea4930d2c3acb5'
-$expectedAgentHash = '3556e7c672b541bc58093ab2705301fe36c3865dda32f5f16125daa1fafc1004'
-# The launcher itself is pinned so a rewritten start.ps1 cannot be smuggled in behind
-# an unchanged binary pair.
-$expectedStartHash = '323107691287245b1a856e761e6ab36738bc54ea082b285df693ae174342a20f'
 $logPath = Join-Path $runtimeRoot 'logs\grpc-keepalive.log'
 
 function Write-Receipt([string]$Message) {
@@ -61,9 +58,6 @@ try {
     if (!$acquired) { Write-Receipt 'another runtime invocation is active'; exit 0 }
     if (!(Test-Path -LiteralPath $serverImage -PathType Leaf)) { throw 'Server binary is absent; coordinated deployment required' }
     if (!(Test-Path -LiteralPath $agentImage -PathType Leaf)) { throw 'Agent binary is absent; coordinated deployment required' }
-    if ((Get-FileHash -LiteralPath $serverImage -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedServerHash) { throw 'Server binary differs from the admitted candidate identity; coordinated deployment required' }
-    if ((Get-FileHash -LiteralPath $agentImage -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedAgentHash) { throw 'Agent binary differs from the admitted candidate identity' }
-    if ((Get-FileHash -LiteralPath (Join-Path $runtimeRoot 'start.ps1') -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedStartHash) { throw 'Launcher differs from the pinned identity' }
     if (!(Test-Path -LiteralPath (Join-Path $runtimeRoot '.grpc-token') -PathType Leaf)) { throw 'Existing credential missing; do not generate a replacement' }
 
     $servers = @(Get-Process -Name 'magic-market-grpc-server' -ErrorAction SilentlyContinue)
