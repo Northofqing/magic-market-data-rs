@@ -1,0 +1,9 @@
+attempt=1 operation=directory records=269 latency_ms=9335
+attempt=2 operation=directory records=269 latency_ms=8552
+attempt=3 operation=directory records=269 latency_ms=8969
+provider=tdx-block-files
+concurrency=1
+attempts=3
+successes=3
+elapsed_ms=26858
+board_load_probe_status=passed

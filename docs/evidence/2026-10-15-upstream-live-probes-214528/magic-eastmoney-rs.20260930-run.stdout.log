@@ -1,0 +1,3009 @@
+provider=eastmoney-web
+research_capabilities=ResearchCapabilities {
+    reports: true,
+    consensus: false,
+    target_price_consensus: true,
+    semantic_search: false,
+    pdf_download: true,
+    document_body: true,
+}
+capital_capabilities=CapitalCapabilities {
+    fund_flow_series: true,
+    board_flow: true,
+    margin: true,
+    block_trades: true,
+    holder_count: true,
+    lockups: true,
+    dividends: true,
+    post_close_flow: true,
+    northbound_daily_statistics: false,
+}
+signal_capabilities=SignalCapabilities {
+    board_memberships: false,
+    strong_stock_reasons: false,
+    dragon_tiger: true,
+    market_rankings: false,
+    popularity: true,
+    concept_hits: false,
+}
+limit_pool_capabilities=LimitPoolCapabilities {
+    upper: true,
+    broken: true,
+    lower: true,
+    previous_upper: true,
+    reasons: false,
+}
+content_capabilities=ContentCapabilities {
+    instrument_news: false,
+    global_news: true,
+    announcements: false,
+    market_announcements: false,
+    investor_questions: false,
+}
+market_discovery_capabilities=MarketDiscoveryCapabilities {
+    dragon_tiger_discovery: true,
+    board_directory: false,
+    board_memberships: false,
+    board_constituents: false,
+}
+
+=== dragon_tiger.discovery ===
+error=core contract error: invalid request: dragon-tiger net amount must equal buy amount minus sell amount
+family=research.instrument status=admitted
+
+=== research.instrument ===
+records=1
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-10-07 00:00:00.000",
+    ),
+    fetched_at: "unix-ms:1792073295136",
+    batch_id: Some(
+        "eastmoney-web:research-reports:unix-ms:1792073295136",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=ResearchReport {
+    report_id: NonEmptyText(
+        "AP202610061830166304",
+    ),
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "688017",
+            asset_class: Equity,
+        },
+    ),
+    title: NonEmptyText(
+        "绿的谐波深度研究报告：谐波减速器国内市占率超60%、全球第二",
+    ),
+    organization: NonEmptyText(
+        "北京智研科信咨询",
+    ),
+    organization_id: Some(
+        NonEmptyText(
+            "81861368",
+        ),
+    ),
+    author: None,
+    rating: None,
+    industry_code: Some(
+        NonEmptyText(
+            "1237",
+        ),
+    ),
+    industry_name: Some(
+        NonEmptyText(
+            "自动化设备",
+        ),
+    ),
+    published_at: NonEmptyText(
+        "2026-10-07 00:00:00.000",
+    ),
+    canonical_url: HttpsUrl(
+        "https://pdf.dfcfw.com/pdf/H3_AP202610061830166304_1.pdf",
+    ),
+    pdf_url: Some(
+        HttpsUrl(
+            "https://pdf.dfcfw.com/pdf/H3_AP202610061830166304_1.pdf",
+        ),
+    ),
+    estimates: [],
+    source_indv_aim_price_t: None,
+    source_indv_aim_price_l: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-07 00:00:00.000",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073295136",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:research-reports:unix-ms:1792073295136",
+        ),
+    },
+}
+family=research.industry status=admitted
+
+=== research.industry ===
+records=1
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-10-15 00:00:00.000",
+    ),
+    fetched_at: "unix-ms:1792073295231",
+    batch_id: Some(
+        "eastmoney-web:research-reports:unix-ms:1792073295231",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=ResearchReport {
+    report_id: NonEmptyText(
+        "AP202610151830535201",
+    ),
+    scope: Industry(
+        NonEmptyText(
+            "1287",
+        ),
+    ),
+    title: NonEmptyText(
+        "有色金属行业点评报告：美国9月CPI超预期，贵金属短期承压",
+    ),
+    organization: NonEmptyText(
+        "华龙证券",
+    ),
+    organization_id: Some(
+        NonEmptyText(
+            "80000156",
+        ),
+    ),
+    author: Some(
+        NonEmptyText(
+            "景丹阳",
+        ),
+    ),
+    rating: Some(
+        NonEmptyText(
+            "增持",
+        ),
+    ),
+    industry_code: Some(
+        NonEmptyText(
+            "1287",
+        ),
+    ),
+    industry_name: Some(
+        NonEmptyText(
+            "工业金属",
+        ),
+    ),
+    published_at: NonEmptyText(
+        "2026-10-15 00:00:00.000",
+    ),
+    canonical_url: HttpsUrl(
+        "https://pdf.dfcfw.com/pdf/H3_AP202610151830535201_1.pdf",
+    ),
+    pdf_url: Some(
+        HttpsUrl(
+            "https://pdf.dfcfw.com/pdf/H3_AP202610151830535201_1.pdf",
+        ),
+    ),
+    estimates: [],
+    source_indv_aim_price_t: None,
+    source_indv_aim_price_l: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15 00:00:00.000",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073295231",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:research-reports:unix-ms:1792073295231",
+        ),
+    },
+}
+
+=== fund_flow.Minute1 ===
+admitted=false
+status=diagnostic_complete_unadmitted
+
+=== fund_flow.Minute1 ===
+records=5
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-10-15T15:00:00+08:00",
+    ),
+    fetched_at: "unix-ms:1792073296332",
+    batch_id: Some(
+        "eastmoney-web:fund-flow:unix-ms:1792073296332",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Minute1,
+    period_at: NonEmptyText(
+        "2026-10-15 14:56",
+    ),
+    main_net: Some(
+        Money(
+            -12545536.0,
+        ),
+    ),
+    main_ratio: None,
+    super_large_net: Some(
+        Money(
+            1021555.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -13567091.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -43431357.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            55973585.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15T14:56:00+08:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073296332",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073296332",
+        ),
+    },
+}
+record[1]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Minute1,
+    period_at: NonEmptyText(
+        "2026-10-15 14:57",
+    ),
+    main_net: Some(
+        Money(
+            -10972641.0,
+        ),
+    ),
+    main_ratio: None,
+    super_large_net: Some(
+        Money(
+            1948312.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -12920953.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -43984395.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            54957037.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15T14:57:00+08:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073296332",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073296332",
+        ),
+    },
+}
+record[2]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Minute1,
+    period_at: NonEmptyText(
+        "2026-10-15 14:58",
+    ),
+    main_net: Some(
+        Money(
+            -10972641.0,
+        ),
+    ),
+    main_ratio: None,
+    super_large_net: Some(
+        Money(
+            1948312.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -12920953.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -43984395.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            54957037.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15T14:58:00+08:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073296332",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073296332",
+        ),
+    },
+}
+record[3]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Minute1,
+    period_at: NonEmptyText(
+        "2026-10-15 14:59",
+    ),
+    main_net: Some(
+        Money(
+            -10972641.0,
+        ),
+    ),
+    main_ratio: None,
+    super_large_net: Some(
+        Money(
+            1948312.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -12920953.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -43984395.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            54957037.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15T14:59:00+08:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073296332",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073296332",
+        ),
+    },
+}
+record[4]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Minute1,
+    period_at: NonEmptyText(
+        "2026-10-15 15:00",
+    ),
+    main_net: Some(
+        Money(
+            -10972641.0,
+        ),
+    ),
+    main_ratio: None,
+    super_large_net: Some(
+        Money(
+            1948312.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -12920953.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -43984395.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            54957037.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15T15:00:00+08:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073296332",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073296332",
+        ),
+    },
+}
+
+=== fund_flow.Day1 ===
+admitted=false
+status=diagnostic_complete_unadmitted
+
+=== fund_flow.Day1 ===
+records=5
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-10-15",
+    ),
+    fetched_at: "unix-ms:1792073297380",
+    batch_id: Some(
+        "eastmoney-web:fund-flow:unix-ms:1792073297380",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Day1,
+    period_at: NonEmptyText(
+        "2026-10-09",
+    ),
+    main_net: Some(
+        Money(
+            13819019.0,
+        ),
+    ),
+    main_ratio: Some(
+        Ratio {
+            value: 1.44,
+            unit: Percent,
+        },
+    ),
+    super_large_net: Some(
+        Money(
+            -7019988.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            20839007.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -49080656.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            35261648.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-09",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073297380",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073297380",
+        ),
+    },
+}
+record[1]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Day1,
+    period_at: NonEmptyText(
+        "2026-10-12",
+    ),
+    main_net: Some(
+        Money(
+            -65938631.0,
+        ),
+    ),
+    main_ratio: Some(
+        Ratio {
+            value: -10.74,
+            unit: Percent,
+        },
+    ),
+    super_large_net: Some(
+        Money(
+            -22330894.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -43607737.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -43885307.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            109823932.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-12",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073297380",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073297380",
+        ),
+    },
+}
+record[2]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Day1,
+    period_at: NonEmptyText(
+        "2026-10-13",
+    ),
+    main_net: Some(
+        Money(
+            -2639630.0,
+        ),
+    ),
+    main_ratio: Some(
+        Ratio {
+            value: -0.42,
+            unit: Percent,
+        },
+    ),
+    super_large_net: Some(
+        Money(
+            20719385.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -23359015.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -35376772.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            38016397.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-13",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073297380",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073297380",
+        ),
+    },
+}
+record[3]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Day1,
+    period_at: NonEmptyText(
+        "2026-10-14",
+    ),
+    main_net: Some(
+        Money(
+            -66470556.0,
+        ),
+    ),
+    main_ratio: Some(
+        Ratio {
+            value: -12.55,
+            unit: Percent,
+        },
+    ),
+    super_large_net: Some(
+        Money(
+            -37480660.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -28989896.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            741553.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            65729003.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-14",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073297380",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073297380",
+        ),
+    },
+}
+record[4]=FundFlowPoint {
+    scope: Instrument(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600396",
+            asset_class: Equity,
+        },
+    ),
+    interval: Day1,
+    period_at: NonEmptyText(
+        "2026-10-15",
+    ),
+    main_net: Some(
+        Money(
+            -10972641.0,
+        ),
+    ),
+    main_ratio: Some(
+        Ratio {
+            value: -1.99,
+            unit: Percent,
+        },
+    ),
+    super_large_net: Some(
+        Money(
+            1948312.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -12920953.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -43984396.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            54957037.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073297380",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:fund-flow:unix-ms:1792073297380",
+        ),
+    },
+}
+family=board_flow.Industry status=admitted
+
+=== board_flow.Industry ===
+records=3
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "1792049970",
+    ),
+    fetched_at: "unix-ms:1792073298181",
+    batch_id: Some(
+        "eastmoney-web:board-flow:unix-ms:1792073298181",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK1326",
+    ),
+    board_name: NonEmptyText(
+        "半导体设备",
+    ),
+    category: Industry,
+    interval: Day1,
+    rank: PositiveU32(
+        1,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: -0.64,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            1443979008.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            627464192.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            816514816.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -1060866048.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            -383113040.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shenzhen,
+            code: "002371",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "北方华创",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073298181",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073298181",
+        ),
+    },
+}
+record[1]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK1575",
+    ),
+    board_name: NonEmptyText(
+        "白酒Ⅲ",
+    ),
+    category: Industry,
+    interval: Day1,
+    rank: PositiveU32(
+        2,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 1.03,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            775621936.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            249971056.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            525650880.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -677452288.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            -98169600.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600519",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "贵州茅台",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073298181",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073298181",
+        ),
+    },
+}
+record[2]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK1277",
+    ),
+    board_name: NonEmptyText(
+        "白酒Ⅱ",
+    ),
+    category: Industry,
+    interval: Day1,
+    rank: PositiveU32(
+        3,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 1.03,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            775621936.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            249971056.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            525650880.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -677452288.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            -98169600.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600519",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "贵州茅台",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073298181",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073298181",
+        ),
+    },
+}
+family=board_flow.Concept status=admitted
+
+=== board_flow.Concept ===
+records=3
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "1792049970",
+    ),
+    fetched_at: "unix-ms:1792073299230",
+    batch_id: Some(
+        "eastmoney-web:board-flow:unix-ms:1792073299230",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK0899",
+    ),
+    board_name: NonEmptyText(
+        "CRO",
+    ),
+    category: Concept,
+    interval: Day1,
+    rank: PositiveU32(
+        1,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: -1.34,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            1084854256.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            308457200.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            776397056.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            1078041856.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            -2160697088.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shenzhen,
+            code: "301569",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "N联亚",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073299230",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073299230",
+        ),
+    },
+}
+record[1]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK0811",
+    ),
+    board_name: NonEmptyText(
+        "超级品牌",
+    ),
+    category: Concept,
+    interval: Day1,
+    rank: PositiveU32(
+        2,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: -0.63,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            810174416.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            -34361648.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            844536064.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -494814464.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            -315360256.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600519",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "贵州茅台",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073299230",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073299230",
+        ),
+    },
+}
+record[2]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK0477",
+    ),
+    board_name: NonEmptyText(
+        "酿酒概念",
+    ),
+    category: Concept,
+    interval: Day1,
+    rank: PositiveU32(
+        3,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: -0.47,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            573934720.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            124916352.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            449018368.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -689148160.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            115213568.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600519",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "贵州茅台",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073299230",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073299230",
+        ),
+    },
+}
+family=board_flow.Region status=admitted
+
+=== board_flow.Region ===
+records=3
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "1792049970",
+    ),
+    fetched_at: "unix-ms:1792073300281",
+    batch_id: Some(
+        "eastmoney-web:board-flow:unix-ms:1792073300281",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK0173",
+    ),
+    board_name: NonEmptyText(
+        "贵州板块",
+    ),
+    category: Region,
+    interval: Day1,
+    rank: PositiveU32(
+        1,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: -2.99,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            420298112.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            37850784.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            382447328.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -518886416.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            97373824.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "600519",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "贵州茅台",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073300281",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073300281",
+        ),
+    },
+}
+record[1]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK0175",
+    ),
+    board_name: NonEmptyText(
+        "内蒙古",
+    ),
+    category: Region,
+    interval: Day1,
+    rank: PositiveU32(
+        2,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: -1.75,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            231719712.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            1970144.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            229749568.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            63042816.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            -303351040.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shanghai,
+            code: "603230",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "内蒙新华",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073300281",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073300281",
+        ),
+    },
+}
+record[2]=BoardFlow {
+    board_code: NonEmptyText(
+        "BK0174",
+    ),
+    board_name: NonEmptyText(
+        "西藏板块",
+    ),
+    category: Region,
+    interval: Day1,
+    rank: PositiveU32(
+        3,
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: -2.46,
+            unit: Percent,
+        },
+    ),
+    main_net: Some(
+        Money(
+            103827552.0,
+        ),
+    ),
+    super_large_net: Some(
+        Money(
+            241112784.0,
+        ),
+    ),
+    large_net: Some(
+        Money(
+            -137285232.0,
+        ),
+    ),
+    medium_net: Some(
+        Money(
+            -129668080.0,
+        ),
+    ),
+    small_net: Some(
+        Money(
+            25840512.0,
+        ),
+    ),
+    leader_instrument: Some(
+        InstrumentId {
+            exchange: Shenzhen,
+            code: "002945",
+            asset_class: Equity,
+        },
+    ),
+    leader_name: Some(
+        NonEmptyText(
+            "华林证券",
+        ),
+    ),
+    leader_return_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "1792049970",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073300281",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:board-flow:unix-ms:1792073300281",
+        ),
+    },
+}
+family=dragon_tiger.entries status=admitted
+
+=== dragon_tiger.entries ===
+records=1
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-04-20 00:00:00",
+    ),
+    fetched_at: "unix-ms:1792073301334",
+    batch_id: Some(
+        "eastmoney-web:dragon-tiger-entries:unix-ms:1792073301334",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=DragonTigerEntry {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    reason: Some(
+        NonEmptyText(
+            "日涨幅偏离值达到7%的前5只证券",
+        ),
+    ),
+    buy_amount: Some(
+        Money(
+            4827934560.37,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            4325030326.83,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            502904233.54,
+        ),
+    ),
+    turnover_rate: Some(
+        Ratio {
+            value: 5.4053,
+            unit: Percent,
+        },
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20 00:00:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073301334",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-entries:unix-ms:1792073301334",
+        ),
+    },
+}
+family=dragon_tiger.seats status=admitted
+
+=== dragon_tiger.seats ===
+records=10
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-04-20",
+    ),
+    fetched_at: "unix-ms:1792073304331",
+    batch_id: Some(
+        "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        1,
+    ),
+    seat_name: NonEmptyText(
+        "深股通专用",
+    ),
+    amount: Money(
+        1770706399.1,
+    ),
+    buy_amount: Some(
+        Money(
+            1770706399.1,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            1698105883.31,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            72600515.79,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[1]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        2,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        1124527290.96,
+    ),
+    buy_amount: Some(
+        Money(
+            1124527290.96,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            252290178.83,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            872237112.13,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[2]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        3,
+    ),
+    seat_name: NonEmptyText(
+        "国泰海通证券股份有限公司上海分公司",
+    ),
+    amount: Money(
+        788290091.14,
+    ),
+    buy_amount: Some(
+        Money(
+            788290091.14,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            19719.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            788270372.14,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[3]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        4,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        568023531.27,
+    ),
+    buy_amount: Some(
+        Money(
+            568023531.27,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            296575279.67,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            271448251.6,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[4]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        5,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        353944894.21,
+    ),
+    buy_amount: Some(
+        Money(
+            353944894.21,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            169315730.82,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            184629163.39,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[5]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        1,
+    ),
+    seat_name: NonEmptyText(
+        "深股通专用",
+    ),
+    amount: Money(
+        1698105883.31,
+    ),
+    buy_amount: Some(
+        Money(
+            1770706399.1,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            1698105883.31,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            72600515.79,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[6]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        2,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        1626069107.08,
+    ),
+    buy_amount: Some(
+        Money(
+            0.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            1626069107.08,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -1626069107.08,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[7]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        3,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        296575279.67,
+    ),
+    buy_amount: Some(
+        Money(
+            568023531.27,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            296575279.67,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            271448251.6,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[8]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        4,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        282654428.12,
+    ),
+    buy_amount: Some(
+        Money(
+            222442353.69,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            282654428.12,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -60212074.43,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+record[9]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "002475:2026-04-20:100308676",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-04-20",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        5,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        252290178.83,
+    ),
+    buy_amount: Some(
+        Money(
+            1124527290.96,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            252290178.83,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            872237112.13,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-04-20",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073304331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dragon-tiger-seats:unix-ms:1792073304331",
+        ),
+    },
+}
+
+=== dragon_tiger.market ===
+family=dragon_tiger.market status=failed
+error=core contract error: invalid request: dragon-tiger net amount must equal buy amount minus sell amount
+family=capital.margin status=admitted
+
+=== capital.margin ===
+records=1
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-10-14 00:00:00",
+    ),
+    fetched_at: "unix-ms:1792073306681",
+    batch_id: Some(
+        "eastmoney-web:margin:unix-ms:1792073306681",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=MarginBalance {
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600519",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-10-14",
+    ),
+    financing_balance: Some(
+        Money(
+            16889178036.0,
+        ),
+    ),
+    financing_buy: Some(
+        Money(
+            147903522.0,
+        ),
+    ),
+    financing_repayment: Some(
+        Money(
+            232916444.0,
+        ),
+    ),
+    securities_lending_balance: Some(
+        Money(
+            268064128.0,
+        ),
+    ),
+    securities_lending_sell: Some(
+        Quantity(
+            5300.0,
+        ),
+    ),
+    securities_lending_repayment: Some(
+        Quantity(
+            1700.0,
+        ),
+    ),
+    total_balance: Some(
+        Money(
+            17157242164.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-14 00:00:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073306681",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:margin:unix-ms:1792073306681",
+        ),
+    },
+}
+family=capital.block_trades status=admitted
+
+=== capital.block_trades ===
+records=1
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-10-15 00:00:00",
+    ),
+    fetched_at: "unix-ms:1792073307680",
+    batch_id: Some(
+        "eastmoney-web:block-trades:unix-ms:1792073307680",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=BlockTrade {
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600519",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-10-15",
+    ),
+    traded_at: None,
+    price: Price(
+        1312.97,
+    ),
+    close_price: Some(
+        Price(
+            1312.97,
+        ),
+    ),
+    premium_ratio: Some(
+        Ratio {
+            value: 0.0,
+            unit: Decimal,
+        },
+    ),
+    volume: Quantity(
+        3100.0,
+    ),
+    amount: Some(
+        Money(
+            4070200.0,
+        ),
+    ),
+    buyer: Some(
+        NonEmptyText(
+            "广发证券股份有限公司西安南广济街证券营业部",
+        ),
+    ),
+    seller: Some(
+        NonEmptyText(
+            "中信证券股份有限公司总部(非营业场所)",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15 00:00:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073307680",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:block-trades:unix-ms:1792073307680",
+        ),
+    },
+}
+family=capital.holder_counts status=admitted
+
+=== capital.holder_counts ===
+records=1
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-06-30 00:00:00",
+    ),
+    fetched_at: "unix-ms:1792073308281",
+    batch_id: Some(
+        "eastmoney-web:holder-counts:unix-ms:1792073308281",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=HolderCount {
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600519",
+        asset_class: Equity,
+    },
+    report_date: IsoDate(
+        "2026-06-30",
+    ),
+    holders: Quantity(
+        296404.0,
+    ),
+    holder_change: Some(
+        FiniteNumber(
+            53245.0,
+        ),
+    ),
+    change_ratio: Some(
+        Ratio {
+            value: 21.897194839591,
+            unit: Percent,
+        },
+    ),
+    average_shares_per_holder: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-06-30 00:00:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073308281",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:holder-counts:unix-ms:1792073308281",
+        ),
+    },
+}
+family=capital.dividends status=admitted
+
+=== capital.dividends ===
+records=1
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2025-12-31 00:00:00",
+    ),
+    fetched_at: "unix-ms:1792073309333",
+    batch_id: Some(
+        "eastmoney-web:dividends:unix-ms:1792073309333",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=DividendPlan {
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600519",
+        asset_class: Equity,
+    },
+    report_date: IsoDate(
+        "2025-12-31",
+    ),
+    ex_dividend_date: Some(
+        IsoDate(
+            "2026-06-26",
+        ),
+    ),
+    state: NonEmptyText(
+        "实施分配",
+    ),
+    cash_per_ten: Some(
+        FiniteNumber(
+            280.2423,
+        ),
+    ),
+    bonus_per_ten: None,
+    transfer_per_ten: None,
+    allotment_per_ten: None,
+    reduction_ratio: None,
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2025-12-31 00:00:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073309333",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:dividends:unix-ms:1792073309333",
+        ),
+    },
+}
+family=capital.lockups status=admitted
+
+=== capital.lockups ===
+records=1
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2017-10-24 00:00:00",
+    ),
+    fetched_at: "unix-ms:1792073310331",
+    batch_id: Some(
+        "eastmoney-web:lockups:unix-ms:1792073310331",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=LockupEvent {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002475",
+        asset_class: Equity,
+    },
+    listing_date: IsoDate(
+        "2017-10-24",
+    ),
+    share_type: NonEmptyText(
+        "定向增发机构配售股份",
+    ),
+    shares: Quantity(
+        3161917087.0,
+    ),
+    able_shares: Some(
+        Quantity(
+            351145038.0,
+        ),
+    ),
+    free_float_ratio: Some(
+        Ratio {
+            value: 0.111054473706,
+            unit: Decimal,
+        },
+    ),
+    market_value: Some(
+        Money(
+            8195725186.919999,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2017-10-24 00:00:00",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073310331",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:lockups:unix-ms:1792073310331",
+        ),
+    },
+}
+
+=== limit_pool.Upper ===
+family=limit_pool.Upper status=failed
+error=Eastmoney protocol error: limit-pool source qdate 2026-10-15 does not match requested date 2026-09-30
+
+=== limit_pool.Broken ===
+family=limit_pool.Broken status=failed
+error=Eastmoney protocol error: limit-pool source qdate 2026-10-15 does not match requested date 2026-09-30
+
+=== limit_pool.Lower ===
+family=limit_pool.Lower status=failed
+error=Eastmoney protocol error: limit-pool source qdate 2026-10-15 does not match requested date 2026-09-30
+
+=== limit_pool.PreviousUpper ===
+family=limit_pool.PreviousUpper status=failed
+error=Eastmoney protocol error: limit-pool source qdate 2026-10-15 does not match requested date 2026-09-30
+family=popularity status=admitted
+
+=== popularity ===
+records=5
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: None,
+    fetched_at: "unix-ms:1792073316230",
+    batch_id: Some(
+        "eastmoney-web:popularity:unix-ms:1792073316230",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=PopularityRank {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "301569",
+        asset_class: Equity,
+    },
+    rank: PositiveU32(
+        1,
+    ),
+    price: Some(
+        Price(
+            35.12,
+        ),
+    ),
+    name: Some(
+        NonEmptyText(
+            "N联亚",
+        ),
+    ),
+    rank_change: Some(
+        FiniteNumber(
+            0.0,
+        ),
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 401.71,
+            unit: Percent,
+        },
+    ),
+    heat: None,
+    concepts: [],
+    tag: None,
+    quote_evidence: Some(
+        SourceEvidence {
+            provider: Eastmoney,
+            source_at: None,
+            observed_at: NonEmptyText(
+                "unix-ms:1792073316230",
+            ),
+            batch_id: NonEmptyText(
+                "eastmoney-web:popularity-quotes:unix-ms:1792073316230",
+            ),
+        },
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: None,
+        observed_at: NonEmptyText(
+            "unix-ms:1792073316230",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:popularity:unix-ms:1792073316230",
+        ),
+    },
+}
+record[1]=PopularityRank {
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600812",
+        asset_class: Equity,
+    },
+    rank: PositiveU32(
+        2,
+    ),
+    price: Some(
+        Price(
+            6.57,
+        ),
+    ),
+    name: Some(
+        NonEmptyText(
+            "华北制药",
+        ),
+    ),
+    rank_change: Some(
+        FiniteNumber(
+            0.0,
+        ),
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 10.05,
+            unit: Percent,
+        },
+    ),
+    heat: None,
+    concepts: [],
+    tag: None,
+    quote_evidence: Some(
+        SourceEvidence {
+            provider: Eastmoney,
+            source_at: None,
+            observed_at: NonEmptyText(
+                "unix-ms:1792073316230",
+            ),
+            batch_id: NonEmptyText(
+                "eastmoney-web:popularity-quotes:unix-ms:1792073316230",
+            ),
+        },
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: None,
+        observed_at: NonEmptyText(
+            "unix-ms:1792073316230",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:popularity:unix-ms:1792073316230",
+        ),
+    },
+}
+record[2]=PopularityRank {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002945",
+        asset_class: Equity,
+    },
+    rank: PositiveU32(
+        3,
+    ),
+    price: Some(
+        Price(
+            15.39,
+        ),
+    ),
+    name: Some(
+        NonEmptyText(
+            "华林证券",
+        ),
+    ),
+    rank_change: Some(
+        FiniteNumber(
+            0.0,
+        ),
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 10.01,
+            unit: Percent,
+        },
+    ),
+    heat: None,
+    concepts: [],
+    tag: None,
+    quote_evidence: Some(
+        SourceEvidence {
+            provider: Eastmoney,
+            source_at: None,
+            observed_at: NonEmptyText(
+                "unix-ms:1792073316230",
+            ),
+            batch_id: NonEmptyText(
+                "eastmoney-web:popularity-quotes:unix-ms:1792073316230",
+            ),
+        },
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: None,
+        observed_at: NonEmptyText(
+            "unix-ms:1792073316230",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:popularity:unix-ms:1792073316230",
+        ),
+    },
+}
+record[3]=PopularityRank {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "002343",
+        asset_class: Equity,
+    },
+    rank: PositiveU32(
+        4,
+    ),
+    price: Some(
+        Price(
+            8.91,
+        ),
+    ),
+    name: Some(
+        NonEmptyText(
+            "慈文传媒",
+        ),
+    ),
+    rank_change: Some(
+        FiniteNumber(
+            0.0,
+        ),
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 10.0,
+            unit: Percent,
+        },
+    ),
+    heat: None,
+    concepts: [],
+    tag: None,
+    quote_evidence: Some(
+        SourceEvidence {
+            provider: Eastmoney,
+            source_at: None,
+            observed_at: NonEmptyText(
+                "unix-ms:1792073316230",
+            ),
+            batch_id: NonEmptyText(
+                "eastmoney-web:popularity-quotes:unix-ms:1792073316230",
+            ),
+        },
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: None,
+        observed_at: NonEmptyText(
+            "unix-ms:1792073316230",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:popularity:unix-ms:1792073316230",
+        ),
+    },
+}
+record[4]=PopularityRank {
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "605058",
+        asset_class: Equity,
+    },
+    rank: PositiveU32(
+        5,
+    ),
+    price: Some(
+        Price(
+            70.49,
+        ),
+    ),
+    name: Some(
+        NonEmptyText(
+            "澳弘电子",
+        ),
+    ),
+    rank_change: Some(
+        FiniteNumber(
+            0.0,
+        ),
+    ),
+    return_ratio: Some(
+        Ratio {
+            value: 10.0,
+            unit: Percent,
+        },
+    ),
+    heat: None,
+    concepts: [],
+    tag: None,
+    quote_evidence: Some(
+        SourceEvidence {
+            provider: Eastmoney,
+            source_at: None,
+            observed_at: NonEmptyText(
+                "unix-ms:1792073316230",
+            ),
+            batch_id: NonEmptyText(
+                "eastmoney-web:popularity-quotes:unix-ms:1792073316230",
+            ),
+        },
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: None,
+        observed_at: NonEmptyText(
+            "unix-ms:1792073316230",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:popularity:unix-ms:1792073316230",
+        ),
+    },
+}
+family=content.global_news status=admitted
+
+=== content.global_news ===
+records=5
+provenance=Provenance {
+    source: "eastmoney-web",
+    source_at: Some(
+        "2026-10-15 22:06",
+    ),
+    fetched_at: "unix-ms:1792073317435",
+    batch_id: Some(
+        "eastmoney-web:global-news:unix-ms:1792073317435",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=NewsItem {
+    item_id: NonEmptyText(
+        "202610153897216970",
+    ),
+    title: NonEmptyText(
+        "捷蓝航空全新头等舱产品BlueFirst现已开售",
+    ),
+    summary: None,
+    content: None,
+    publisher: NonEmptyText(
+        "东方财富网",
+    ),
+    canonical_url: HttpsUrl(
+        "https://finance.eastmoney.com/a/202610153897216970.html",
+    ),
+    published_at: NonEmptyText(
+        "2026-10-15T22:06:00+08:00",
+    ),
+    instruments: [],
+    topics: [
+        NonEmptyText(
+            "财经",
+        ),
+    ],
+    language: NonEmptyText(
+        "zh-CN",
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15 22:06",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073317435",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:global-news:unix-ms:1792073317435",
+        ),
+    },
+}
+record[1]=NewsItem {
+    item_id: NonEmptyText(
+        "202610153897216657",
+    ),
+    title: NonEmptyText(
+        "美股药品制造商板块逆市走强 阿斯利康、施贵宝、礼来涨超4%",
+    ),
+    summary: None,
+    content: None,
+    publisher: NonEmptyText(
+        "东方财富网",
+    ),
+    canonical_url: HttpsUrl(
+        "https://finance.eastmoney.com/a/202610153897216657.html",
+    ),
+    published_at: NonEmptyText(
+        "2026-10-15T22:06:00+08:00",
+    ),
+    instruments: [],
+    topics: [
+        NonEmptyText(
+            "财经",
+        ),
+    ],
+    language: NonEmptyText(
+        "zh-CN",
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15 22:06",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073317435",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:global-news:unix-ms:1792073317435",
+        ),
+    },
+}
+record[2]=NewsItem {
+    item_id: NonEmptyText(
+        "202610153897216358",
+    ),
+    title: NonEmptyText(
+        "联合国官员：霍尔木兹海峡航运受阻冲击全球农业",
+    ),
+    summary: None,
+    content: None,
+    publisher: NonEmptyText(
+        "东方财富网",
+    ),
+    canonical_url: HttpsUrl(
+        "https://finance.eastmoney.com/a/202610153897216358.html",
+    ),
+    published_at: NonEmptyText(
+        "2026-10-15T22:06:00+08:00",
+    ),
+    instruments: [],
+    topics: [
+        NonEmptyText(
+            "财经",
+        ),
+    ],
+    language: NonEmptyText(
+        "zh-CN",
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15 22:06",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073317435",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:global-news:unix-ms:1792073317435",
+        ),
+    },
+}
+record[3]=NewsItem {
+    item_id: NonEmptyText(
+        "202610153897215025",
+    ),
+    title: NonEmptyText(
+        "日本启动调查在东京附近设立核废料填埋场",
+    ),
+    summary: None,
+    content: None,
+    publisher: NonEmptyText(
+        "东方财富网",
+    ),
+    canonical_url: HttpsUrl(
+        "https://finance.eastmoney.com/a/202610153897215025.html",
+    ),
+    published_at: NonEmptyText(
+        "2026-10-15T22:05:00+08:00",
+    ),
+    instruments: [],
+    topics: [
+        NonEmptyText(
+            "财经",
+        ),
+    ],
+    language: NonEmptyText(
+        "zh-CN",
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15 22:05",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073317435",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:global-news:unix-ms:1792073317435",
+        ),
+    },
+}
+record[4]=NewsItem {
+    item_id: NonEmptyText(
+        "202610153897214677",
+    ),
+    title: NonEmptyText(
+        "强降雨致伊斯坦布尔3人死亡",
+    ),
+    summary: None,
+    content: None,
+    publisher: NonEmptyText(
+        "东方财富网",
+    ),
+    canonical_url: HttpsUrl(
+        "https://finance.eastmoney.com/a/202610153897214677.html",
+    ),
+    published_at: NonEmptyText(
+        "2026-10-15T22:05:00+08:00",
+    ),
+    instruments: [],
+    topics: [
+        NonEmptyText(
+            "财经",
+        ),
+    ],
+    language: NonEmptyText(
+        "zh-CN",
+    ),
+    evidence: SourceEvidence {
+        provider: Eastmoney,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-15 22:05",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix-ms:1792073317435",
+        ),
+        batch_id: NonEmptyText(
+            "eastmoney-web:global-news:unix-ms:1792073317435",
+        ),
+    },
+}
+
+=== content.instrument_news ===
+admitted=false
+status=failed
+error=unsupported capability: Eastmoney keyword-news search does not return a structured source instrument identity
+
+=== probe_summary ===
+failures=6
+dragon_tiger.discovery: core contract error: invalid request: dragon-tiger net amount must equal buy amount minus sell amount
+dragon_tiger.market: core contract error: invalid request: dragon-tiger net amount must equal buy amount minus sell amount
+limit_pool.Upper: Eastmoney protocol error: limit-pool source qdate 2026-10-15 does not match requested date 2026-09-30
+limit_pool.Broken: Eastmoney protocol error: limit-pool source qdate 2026-10-15 does not match requested date 2026-09-30
+limit_pool.Lower: Eastmoney protocol error: limit-pool source qdate 2026-10-15 does not match requested date 2026-09-30
+limit_pool.PreviousUpper: Eastmoney protocol error: limit-pool source qdate 2026-10-15 does not match requested date 2026-09-30

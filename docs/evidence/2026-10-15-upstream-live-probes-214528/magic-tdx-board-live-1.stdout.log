@@ -1,0 +1,37 @@
+provider=tdx-block-files
+server=117.34.114.14
+market_discovery_capabilities=MarketDiscoveryCapabilities {
+    dragon_tiger_discovery: false,
+    board_directory: true,
+    board_memberships: true,
+    board_constituents: true,
+}
+directory_records=269
+directory_provenance=Provenance {
+    source: "tdx-block-files",
+    source_at: None,
+    fetched_at: "unix-ms:1792073070504",
+    batch_id: Some(
+        "tdx-block-files:directory:unix-ms:1792073070504",
+    ),
+}
+constituent_records=400
+constituent_provenance=Provenance {
+    source: "tdx-block-files",
+    source_at: None,
+    fetched_at: "unix-ms:1792073079436",
+    batch_id: Some(
+        "tdx-block-files:constituents:unix-ms:1792073079436",
+    ),
+}
+reverse_instrument=Shenzhen.000016
+reverse_records=24
+reverse_provenance=Provenance {
+    source: "tdx-block-files",
+    source_at: None,
+    fetched_at: "unix-ms:1792073094368",
+    batch_id: Some(
+        "tdx-block-files:memberships:unix-ms:1792073094368",
+    ),
+}
+board_live_probe_status=passed

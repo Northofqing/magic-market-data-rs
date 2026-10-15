@@ -36,3 +36,26 @@ gates would shrink currently advertised capability until fresh probes pass
 (`2026-10-14-admission-index-coverage-gate-a-design.md`, decision D2c: (b)
 first, (a) only after consumer confirmation). This index grants no data rights
 and executes no probes.
+
+## Literal-admitted routes without constants or ledger rows (update 2026-10-15)
+
+Three routes are registered in the production composition with an `admitted(...)`
+literal but have no `_ADMITTED` constant and therefore no `admissions.tsv` row.
+They are **not unadmitted** and do not belong to
+[`unadmitted-provider-routes.md`](unadmitted-provider-routes.md); they are
+recorded here because the ledger (2026-10-15 decision D1a/D2b of
+`2026-10-14-admission-index-coverage-gate-a-design.md`) keys rows by
+`(crate, constant)` only, and minting constants would require fresh admission
+evidence (>=2 bounded live probes and >=3 serial loads) that does not exist yet.
+
+| route | crate | production wiring (`grpc_production.rs`, snapshot 2026-10-15) | evidence status |
+| --- | --- | --- | --- |
+| `GlobalIndices` | `magic-sina-rs` | 642 - `admitted(..., "Sina", "verified global index identities")` | bounded probe evidence recorded in `docs/integrations/sina-web.md` (6 verified global indices); no BR-009 probe counts |
+| `ForeignExchange` | `magic-sina-rs` | 660 - `admitted(..., "Sina", "verified currency-pair identities")` | same document (8 verified currency pairs); no BR-009 probe counts |
+| `NorthboundDaily` | `magic-exchange-rs` | 2186 - `admitted(..., "Hkex", "official Shanghai- or Shenzhen-connect northbound daily statistics for an exact date")` | `docs/integrations/exchange-official.md` 2026-07-22 live evidence; no BR-009 probe counts |
+
+Source: overseas market Gate A design section 6
+(`2026-10-14-overseas-market-data-gate-a-design.md`, repository-local), which
+registers these routes as input to the admission-index decision. Minting their
+constants and rows stays deferred to a separate decision; this table is the
+explicit listing both documents asked for and grants no data rights.

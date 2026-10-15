@@ -1,0 +1,9 @@
+attempt=1 operation=constituents records=400 latency_ms=9155
+attempt=2 operation=constituents records=400 latency_ms=9021
+attempt=3 operation=constituents records=400 latency_ms=9348
+provider=tdx-block-files
+concurrency=1
+attempts=3
+successes=3
+elapsed_ms=27526
+board_load_probe_status=passed

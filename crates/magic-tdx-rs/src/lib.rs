@@ -21,6 +21,12 @@ pub mod source;
 mod sync;
 pub use block::TdxBlockClient;
 pub use board_provider::{TdxBoardProvider, TdxBoardSource};
+/// BR-009/BR-014 admission for the TDX board family. Evidence:
+/// docs/integrations/tdx-boards.md; 2026-10-15 bounded probes (two live runs
+/// and three serial loads with concurrency one per route).
+pub const BOARD_DIRECTORY_ADMITTED: bool = true;
+pub const BOARD_CONSTITUENTS_ADMITTED: bool = true;
+pub const BOARD_MEMBERSHIPS_ADMITTED: bool = true;
 pub use company::{
     TdxSecurityProfileProvider, MAX_SECURITY_PROFILE_INSTRUMENTS, SECURITY_PROFILES_ADMITTED,
 };

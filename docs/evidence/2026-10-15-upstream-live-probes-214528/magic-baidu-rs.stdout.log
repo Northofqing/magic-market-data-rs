@@ -1,0 +1,5 @@
+provider=baidu-pae capabilities=Capabilities { quotes: false, bars: false, minute: false, trades: false, fundamentals: false, corporate_actions: false, blocks: false, money_flow: false, order_book: false, auction: false, security_metadata: false }
+source=baidu-pae source_at=Some("2026-10-15") fetched_at=1792073772.350967300 batch_id=Some("baidu-pae:1792073772.350967300:technical-bars") complete=true records=1
+exchange=Shanghai code=600396 asset_class=Equity interval=Day bar_start=2026-10-15 bar_end=2026-10-15 open=11.2 high=11.3 low=10.96 close=11.03 volume_lots=495885 amount=Some(551626059.0) adjustment=Unadjusted bar_source_at=Some("2026-10-15") provider=Baidu batch_id=baidu-pae:1792073772.350967300:technical-bars ma5=Some(11.61) ma10=Some(12.06) ma20=Some(12.97) evidence_provider=Baidu evidence_source_at=Some("2026-10-15") evidence_observed_at=1792073772.350967300 evidence_batch_id=baidu-pae:1792073772.350967300:technical-bars
+admitted=true
+live_probe_status=admitted

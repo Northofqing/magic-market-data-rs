@@ -1,40 +1,40 @@
 crate	provider	constant	admitted	evidence	status	last_live_date	live_probe_count	serial_load_count	blocker	blocker_class	last_probe_utc	last_probe_status
-magic-cfets-rs	Cfets	SHIBOR_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-	-	2026-10-07	completed
-magic-cfets-rs	Cfets	LPR_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-	-	2026-10-07	completed
-magic-cfets-rs	Cfets	DR007_ADMITTED	false	docs/integrations/cfets-official.md	blocked	2026-08-13	0	0	Written CFETS CMDS or information-product authorization, endpoint/schema and entitlement evidence are required; the public display feed is not an authorized machine contract	entitlement	2026-10-07	completed
-magic-cfets-rs	Cfets	OFFICIAL_FX_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-	-	2026-10-07	completed
-magic-fred-rs	Fred	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/fred-api.md	admitted	2026-08-13	2	3	-	-	2026-10-07	completed
-magic-fred-rs	Fred	ECONOMIC_RELEASE_SCHEDULE_ADMITTED	true	docs/integrations/fred-api.md	admitted	2026-09-13	2	3	-	-	2026-10-07	completed
-magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-09-12	0	0	DataMapper rejects the fixed auditable library user agent at Akamai; curl user-agent success is not a documented machine-client contract, and replacement SDMX Swagger requires beta portal login	anti_bot	2026-10-07	failed
-magic-iwencai-rs	Iwencai	SEMANTIC_SEARCH_ADMITTED	true	docs/integrations/iwencai-api.md	admitted	2026-08-14	2	3	-	-	2026-10-07	completed
-magic-jin10-rs	Jin10	ECONOMIC_CALENDAR_ADMITTED	false	docs/integrations/jin10-web.md	blocked	2026-08-24	0	0	Jin10 ended its free calendar and API embedding service on 2025-12-01; the latest public flash window cannot prove a complete economic calendar	source_discontinued	2026-10-07	completed
-magic-jin10-rs	Jin10	ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED	true	docs/integrations/jin10-web.md	admitted	2026-09-12	2	3	-	-	2026-10-07	completed
-magic-nbs-rs	Nbs	NATIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-	-	2026-10-07	completed
-magic-nbs-rs	Nbs	REGIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-	-	2026-10-07	completed
-magic-pbc-rs	Pbc	MONEY_SUPPLY_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-07-29	2	3	-	-	2026-10-07	completed
-magic-pbc-rs	Pbc	SOCIAL_FINANCING_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-	-	2026-10-07	completed
-magic-pbc-rs	Pbc	REGIONAL_SERIES_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-	-	2026-10-07	completed
-magic-sec-rs	SecEdgar	FILING_METADATA_ADMITTED	true	docs/integrations/sec-edgar.md	admitted	2026-08-13	2	3	-	-	2026-10-07	completed
-magic-tdx-rs	Tdx	SECURITY_PROFILES_ADMITTED	true	docs/integrations/tdx-public-security-profile.md	admitted	2026-08-14	2	3	-	-	2026-10-07	mixed
-magic-stcn-rs	SecuritiesTimes	GLOBAL_NEWS_ADMITTED	false	docs/integrations/securities-times.md	blocked	2026-08-24	0	0	The live source contains blank or unsafe source attribution; the provider must be re-audited before production admission	source_attribution	2026-10-07	diagnostic
-magic-wallstreetcn-rs	WallstreetCn	GLOBAL_NEWS_ADMITTED	true	docs/integrations/wallstreetcn-rss.md	admitted	2026-07-29	2	3	-	-	2026-10-07	completed
-magic-worldbank-rs	WorldBank	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/worldbank-indicators.md	admitted	2026-08-13	2	3	-	-	2026-10-07	completed
-magic-xinhua-rs	XinhuaFinance	GLOBAL_NEWS_ADMITTED	true	docs/integrations/xinhua-finance.md	admitted	2026-07-29	2	3	-	-	2026-10-07	completed
-magic-yicai-rs	Yicai	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yicai-news.md	admitted	2026-07-29	2	3	-	-	2026-10-07	completed
-magic-yonhap-rs	Yonhap	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yonhap-rss.md	admitted	2026-08-16	2	3	-	-	2026-10-07	failed
-magic-baidu-rs	Baidu	TECHNICAL_BARS_ADMITTED	true	docs/integrations/baidu-web.md	admitted	2026-08-17	2	3	-	-	2026-10-07	failed
-magic-emquant-rs	EmQuant	EMQUANT_DAILY_BARS_ADMITTED	false	docs/integrations/eastmoney-emquant.md	blocked	2026-08-21	2	4	The 2026-08-21 repository admission is withdrawn: the account's EMQuant API entitlement expired (2026-10-07 batch: EQERR_ACCESS_EXPIRE across all five families, docs/evidence/2026-10-07-upstream-live-probes-230223/). Re-admission requires a renewed entitlement and fresh bounded probes.	entitlement	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	HISTORICAL_BARS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	MARKET_STATISTICS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	LIMIT_POOLS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	POPULARITY_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	FINANCIAL_STATEMENTS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	CORPORATE_ACTIONS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	SECURITY_METADATA_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	AUCTIONS_ADMITTED	false	docs/integrations/hithink-fuyao.md	blocked	2026-08-22	2	0	Fuyao current auction snapshot omits trading date, provider source time and directional unmatched bid/ask quantities; separate benchmark/calendar dates are not bound to snapshot records	source_fields	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	CURRENT_AUCTION_OBSERVATIONS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-09-09	2	3	-	-	2026-10-07	failed
-magic-hithink-rs	HithinkFinance	REALTIME_QUOTES_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-09-15	2	3	-	-	2026-10-07	failed
-magic-exchange-rs	Cffex	CFFEX_2026_FUTURES_DELIVERY_ADMITTED	true	docs/integrations/exchange-official.md	admitted	2026-08-18	2	3	-	-	2026-10-07	completed
+magic-cfets-rs	Cfets	SHIBOR_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-	-	2026-10-15	completed
+magic-cfets-rs	Cfets	LPR_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-	-	2026-10-15	completed
+magic-cfets-rs	Cfets	DR007_ADMITTED	false	docs/integrations/cfets-official.md	blocked	2026-08-13	0	0	Written CFETS CMDS or information-product authorization, endpoint/schema and entitlement evidence are required; the public display feed is not an authorized machine contract	entitlement	2026-10-15	completed
+magic-cfets-rs	Cfets	OFFICIAL_FX_ADMITTED	true	docs/integrations/cfets-official.md	admitted	2026-07-29	2	3	-	-	2026-10-15	completed
+magic-fred-rs	Fred	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/fred-api.md	admitted	2026-08-13	2	3	-	-	2026-10-15	completed
+magic-fred-rs	Fred	ECONOMIC_RELEASE_SCHEDULE_ADMITTED	true	docs/integrations/fred-api.md	admitted	2026-09-13	2	3	-	-	2026-10-15	completed
+magic-imf-rs	Imf	ECONOMIC_SERIES_ADMITTED	false	docs/integrations/imf-datamapper.md	blocked	2026-09-12	0	0	DataMapper rejects the fixed auditable library user agent at Akamai; curl user-agent success is not a documented machine-client contract, and replacement SDMX Swagger requires beta portal login	anti_bot	2026-10-15	failed
+magic-iwencai-rs	Iwencai	SEMANTIC_SEARCH_ADMITTED	true	docs/integrations/iwencai-api.md	admitted	2026-08-14	2	3	-	-	2026-10-15	completed
+magic-jin10-rs	Jin10	ECONOMIC_CALENDAR_ADMITTED	false	docs/integrations/jin10-web.md	blocked	2026-08-24	0	0	Jin10 ended its free calendar and API embedding service on 2025-12-01; the latest public flash window cannot prove a complete economic calendar	source_discontinued	2026-10-15	completed
+magic-jin10-rs	Jin10	ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED	true	docs/integrations/jin10-web.md	admitted	2026-09-12	2	3	-	-	2026-10-15	completed
+magic-nbs-rs	Nbs	NATIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-	-	2026-10-15	completed
+magic-nbs-rs	Nbs	REGIONAL_SERIES_ADMITTED	true	docs/integrations/nbs-official.md	admitted	2026-08-13	2	3	-	-	2026-10-15	completed
+magic-pbc-rs	Pbc	MONEY_SUPPLY_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-07-29	2	3	-	-	2026-10-15	completed
+magic-pbc-rs	Pbc	SOCIAL_FINANCING_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-	-	2026-10-15	completed
+magic-pbc-rs	Pbc	REGIONAL_SERIES_ADMITTED	true	docs/integrations/pbc-official.md	admitted	2026-08-13	2	3	-	-	2026-10-15	completed
+magic-sec-rs	SecEdgar	FILING_METADATA_ADMITTED	true	docs/integrations/sec-edgar.md	admitted	2026-08-13	2	3	-	-	2026-10-15	completed
+magic-tdx-rs	Tdx	SECURITY_PROFILES_ADMITTED	true	docs/integrations/tdx-public-security-profile.md	admitted	2026-08-14	2	3	-	-	2026-10-15	failed
+magic-stcn-rs	SecuritiesTimes	GLOBAL_NEWS_ADMITTED	false	docs/integrations/securities-times.md	blocked	2026-08-24	0	0	The live source contains blank or unsafe source attribution; the provider must be re-audited before production admission	source_attribution	2026-10-15	diagnostic
+magic-wallstreetcn-rs	WallstreetCn	GLOBAL_NEWS_ADMITTED	true	docs/integrations/wallstreetcn-rss.md	admitted	2026-07-29	2	3	-	-	2026-10-15	completed
+magic-worldbank-rs	WorldBank	ECONOMIC_SERIES_ADMITTED	true	docs/integrations/worldbank-indicators.md	admitted	2026-08-13	2	3	-	-	2026-10-15	completed
+magic-xinhua-rs	XinhuaFinance	GLOBAL_NEWS_ADMITTED	true	docs/integrations/xinhua-finance.md	admitted	2026-07-29	2	3	-	-	2026-10-15	completed
+magic-yicai-rs	Yicai	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yicai-news.md	admitted	2026-07-29	2	3	-	-	2026-10-15	completed
+magic-yonhap-rs	Yonhap	GLOBAL_NEWS_ADMITTED	true	docs/integrations/yonhap-rss.md	admitted	2026-08-16	2	3	-	-	2026-10-15	completed
+magic-baidu-rs	Baidu	TECHNICAL_BARS_ADMITTED	true	docs/integrations/baidu-web.md	admitted	2026-08-17	2	3	-	-	2026-10-15	failed
+magic-emquant-rs	EmQuant	EMQUANT_DAILY_BARS_ADMITTED	false	docs/integrations/eastmoney-emquant.md	blocked	2026-08-21	2	4	The 2026-08-21 repository admission is withdrawn: the account's EMQuant API entitlement expired (2026-10-07 batch: EQERR_ACCESS_EXPIRE across all five families, docs/evidence/2026-10-07-upstream-live-probes-230223/). Re-admission requires a renewed entitlement and fresh bounded probes.	entitlement	2026-10-15	failed
+magic-hithink-rs	HithinkFinance	HISTORICAL_BARS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	MARKET_STATISTICS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	LIMIT_POOLS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	POPULARITY_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	FINANCIAL_STATEMENTS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	CORPORATE_ACTIONS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	SECURITY_METADATA_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-08-22	2	3	-	-	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	AUCTIONS_ADMITTED	false	docs/integrations/hithink-fuyao.md	blocked	2026-08-22	2	0	Fuyao current auction snapshot omits trading date, provider source time and directional unmatched bid/ask quantities; separate benchmark/calendar dates are not bound to snapshot records	source_fields	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	CURRENT_AUCTION_OBSERVATIONS_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-09-09	2	3	-	-	2026-10-15	completed
+magic-hithink-rs	HithinkFinance	REALTIME_QUOTES_ADMITTED	true	docs/integrations/hithink-fuyao.md	admitted	2026-09-15	2	3	-	-	2026-10-15	completed
+magic-exchange-rs	Cffex	CFFEX_2026_FUTURES_DELIVERY_ADMITTED	true	docs/integrations/exchange-official.md	admitted	2026-08-18	2	3	-	-	2026-10-15	completed
 magic-exchange-rs	Sse	SSE_2026_TRADING_CALENDAR_ADMITTED	true	docs/integrations/exchange-official.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_PRICE_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	15	3	-	-	-	-
 magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_CUMULATIVE_AMOUNT_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-15	4	3	-	-	-	-
@@ -45,12 +45,12 @@ magic-tdx-local-rs	LocalTerminal	LOCAL_TERMINAL_OHLC_ADMITTED	true	docs/integrat
 magic-market-monitor	LocalAnalysis	LOCAL_PRICE_CHANGE_ANOMALY_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-17	2	3	-	-	-	-
 magic-market-monitor	LocalAnalysis	LOCAL_AMOUNT_CHANGE_ANOMALY_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-17	2	3	-	-	-	-
 magic-market-monitor	LocalAnalysis	LOCAL_VOLUME_CHANGE_ANOMALY_ADMITTED	true	docs/integrations/tdx-local-terminal.md	admitted	2026-08-17	2	3	-	-	-	-
-magic-eastmoney-rs	Eastmoney	MX_DAILY_FUND_FLOW_ADMITTED	false	docs/integrations/eastmoney-miaoxiang.md	blocked	2026-08-15	3	0	Authenticated natural-language query cardinality and serial load stability are not a production data contract	contract_drift	2026-10-07	failed
-magic-eastmoney-rs	Eastmoney	MX_OPENING_AUCTION_ADMITTED	false	docs/integrations/eastmoney-miaoxiang.md	blocked	2026-09-21	2	0	Admitted one-table shape is returned only for a past trading date; the current trading date returns a three-table split, and some dates spell the amount as a decimal the all-digits parser rejects	contract_drift	2026-10-07	failed
-magic-eastmoney-rs	Eastmoney	MX_MARKET_BREADTH_ADMITTED	true	docs/integrations/eastmoney-miaoxiang.md	admitted	2026-08-18	2	3	-	-	2026-10-07	failed
-magic-eastmoney-rs	Eastmoney	BOUNDED_MARKET_RANKINGS_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-18	2	3	-	-	2026-10-07	failed
-magic-eastmoney-rs	Eastmoney	PUBLIC_FUND_FLOW_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-17	2	3	-	-	2026-10-07	failed
-magic-eastmoney-rs	Eastmoney	PUBLIC_POST_CLOSE_FLOW_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-17	2	3	-	-	2026-10-07	failed
+magic-eastmoney-rs	Eastmoney	MX_DAILY_FUND_FLOW_ADMITTED	false	docs/integrations/eastmoney-miaoxiang.md	blocked	2026-08-15	3	0	Authenticated natural-language query cardinality and serial load stability are not a production data contract	contract_drift	2026-10-15	completed
+magic-eastmoney-rs	Eastmoney	MX_OPENING_AUCTION_ADMITTED	false	docs/integrations/eastmoney-miaoxiang.md	blocked	2026-09-21	2	0	Admitted one-table shape is returned only for a past trading date; the current trading date returns a three-table split, and some dates spell the amount as a decimal the all-digits parser rejects	contract_drift	2026-10-15	completed
+magic-eastmoney-rs	Eastmoney	MX_MARKET_BREADTH_ADMITTED	true	docs/integrations/eastmoney-miaoxiang.md	admitted	2026-08-18	2	3	-	-	2026-10-15	completed
+magic-eastmoney-rs	Eastmoney	BOUNDED_MARKET_RANKINGS_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-18	2	3	-	-	2026-10-15	completed
+magic-eastmoney-rs	Eastmoney	PUBLIC_FUND_FLOW_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-17	2	3	-	-	2026-10-15	completed
+magic-eastmoney-rs	Eastmoney	PUBLIC_POST_CLOSE_FLOW_ADMITTED	true	docs/integrations/eastmoney-web.md	admitted	2026-08-17	2	3	-	-	2026-10-15	completed
 magic-official-news-rs	Nbs	NBS_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-	-	2026-10-07	completed
 magic-official-news-rs	Pbc	PBC_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-	-	2026-10-07	completed
 magic-official-news-rs	Ndrc	NDRC_PUBLICATIONS_ADMITTED	true	docs/integrations/official-domestic-publications.md	admitted	2026-10-01	2	3	-	-	2026-10-07	completed
@@ -68,3 +68,6 @@ magic-cninfo-rs	Cninfo	INVESTOR_QUESTIONS_ADMITTED	true	docs/integrations/cninfo
 magic-gov-rs	StateCouncil	POLICY_DOCUMENTS_ADMITTED	true	docs/integrations/gov-policy.md	admitted	2026-10-15	3	3	-	-	2026-10-15	completed
 magic-sina-rs	Sina	INSTRUMENT_NEWS_ADMITTED	true	docs/integrations/sina-web.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
 magic-thepaper-rs	ThePaper	GLOBAL_NEWS_ADMITTED	true	docs/integrations/thepaper-web.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
+magic-tdx-rs	Tdx	BOARD_DIRECTORY_ADMITTED	true	docs/integrations/tdx-boards.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
+magic-tdx-rs	Tdx	BOARD_CONSTITUENTS_ADMITTED	true	docs/integrations/tdx-boards.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed
+magic-tdx-rs	Tdx	BOARD_MEMBERSHIPS_ADMITTED	true	docs/integrations/tdx-boards.md	admitted	2026-10-15	2	3	-	-	2026-10-15	completed

@@ -1,0 +1,2 @@
+freshness_policy=not_run session=unspecified
+router_live_probe_status=skipped_non_continuous_session hint=set MAGIC_ROUTER_SESSION=continuous only during continuous trading

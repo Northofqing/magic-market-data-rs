@@ -1,0 +1,1 @@
+Error: InvalidRequest("EMQuant bridge is not built; run tools\\emquant\\build_snapshot_bridge_windows.cmd C:\\path\\to\\EMQuantAPI_CPP (searched: C:\\DevelopFile\\magic-market-data-rs\\target/emquant\\emquant-snapshot.exe, C:\\DevelopFile\\magic-market-data-rs\\crates\\magic-emquant-rs\\../..\\target/emquant\\emquant-snapshot.exe)")

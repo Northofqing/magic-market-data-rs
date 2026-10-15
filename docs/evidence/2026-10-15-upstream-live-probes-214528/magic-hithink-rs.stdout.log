@@ -1,0 +1,15 @@
+historical records=4 source_at=Some("unix-ms:1787241600000") complete=true
+historical asset=index records=4 source_at=Some("unix-ms:1787241600000") complete=true
+historical asset=etf records=4 source_at=Some("unix-ms:1787241600000") complete=true
+financial kind=Income records=20 source_at=Some("unix-ms:1786723200000") complete=true
+financial kind=Balance records=20 source_at=Some("unix-ms:1786723200000") complete=true
+financial kind=CashFlow records=20 source_at=Some("unix-ms:1786723200000") complete=true
+corporate_actions records=3 source_at=None complete=true
+metadata records=3 source_at=Some("unix-ms:1792053180978") complete=true
+auction_diagnostic records=1 source_at=None complete=true status=Some(Unavailable)
+valuations records=1 source_at=Some("unix-ms:1792072452000") complete=true
+quotes records=1 batch_source_at=Some("unix-ms:1792072451000") record_source_at=None status=Some(Unavailable) complete=true
+limit_pool kind=Upper records=10 source_at=Some("unix-ms:1792072453293") complete=true
+limit_pool kind=Lower records=10 source_at=Some("unix-ms:1792072453896") complete=true
+limit_pool kind=Broken records=10 source_at=Some("unix-ms:1792072454271") complete=true
+popularity records=10 source_at=Some("unix-ms:1792072427369") complete=true

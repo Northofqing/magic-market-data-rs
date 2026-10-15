@@ -1,0 +1,2286 @@
+provider=sse-official
+capabilities=ProviderCapabilities {
+    provider: Sse,
+    market: Capabilities {
+        quotes: false,
+        bars: false,
+        minute: false,
+        trades: false,
+        fundamentals: false,
+        corporate_actions: false,
+        blocks: false,
+        money_flow: false,
+        order_book: false,
+        auction: false,
+        security_metadata: false,
+    },
+    content: ContentCapabilities {
+        instrument_news: false,
+        global_news: false,
+        announcements: true,
+        market_announcements: false,
+        investor_questions: false,
+    },
+    capital: CapitalCapabilities {
+        fund_flow_series: false,
+        board_flow: false,
+        margin: false,
+        block_trades: false,
+        holder_count: false,
+        lockups: false,
+        dividends: false,
+        post_close_flow: false,
+        northbound_daily_statistics: false,
+    },
+    signals: SignalCapabilities {
+        board_memberships: false,
+        strong_stock_reasons: false,
+        dragon_tiger: true,
+        market_rankings: false,
+        popularity: false,
+        concept_hits: false,
+    },
+}
+
+=== sse_announcements ===
+records=3
+provenance=Provenance {
+    source: "sse-official",
+    source_at: Some(
+        "2026-09-17",
+    ),
+    fetched_at: "1792072359.265950900",
+    batch_id: Some(
+        "sse:1792072359.265950900:announcements:600396",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=Announcement {
+    announcement_id: NonEmptyText(
+        "600396_20260917_7QXI",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    category: Some(
+        NonEmptyText(
+            "其它",
+        ),
+    ),
+    title: NonEmptyText(
+        "关于向控股子公司增资建设储能项目的公告",
+    ),
+    published_at: NonEmptyText(
+        "2026-09-17",
+    ),
+    canonical_url: HttpsUrl(
+        "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/2026-09-17/600396_20260917_7QXI.pdf",
+    ),
+    pdf_url: Some(
+        HttpsUrl(
+            "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/2026-09-17/600396_20260917_7QXI.pdf",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-09-17",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072359.265950900",
+        ),
+        batch_id: NonEmptyText(
+            "sse:1792072359.265950900:announcements:600396",
+        ),
+    },
+}
+record[1]=Announcement {
+    announcement_id: NonEmptyText(
+        "600396_20260911_7L7S",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    category: Some(
+        NonEmptyText(
+            "其它",
+        ),
+    ),
+    title: NonEmptyText(
+        "2026年第二次临时股东会决议公告",
+    ),
+    published_at: NonEmptyText(
+        "2026-09-11",
+    ),
+    canonical_url: HttpsUrl(
+        "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/2026-09-11/600396_20260911_7L7S.pdf",
+    ),
+    pdf_url: Some(
+        HttpsUrl(
+            "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/2026-09-11/600396_20260911_7L7S.pdf",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-09-11",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072359.265950900",
+        ),
+        batch_id: NonEmptyText(
+            "sse:1792072359.265950900:announcements:600396",
+        ),
+    },
+}
+record[2]=Announcement {
+    announcement_id: NonEmptyText(
+        "600396_20260911_SSJT",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    category: Some(
+        NonEmptyText(
+            "其它",
+        ),
+    ),
+    title: NonEmptyText(
+        "2026年第二次临时股东会法律意见书",
+    ),
+    published_at: NonEmptyText(
+        "2026-09-11",
+    ),
+    canonical_url: HttpsUrl(
+        "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/2026-09-11/600396_20260911_SSJT.pdf",
+    ),
+    pdf_url: Some(
+        HttpsUrl(
+            "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/2026-09-11/600396_20260911_SSJT.pdf",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-09-11",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072359.265950900",
+        ),
+        batch_id: NonEmptyText(
+            "sse:1792072359.265950900:announcements:600396",
+        ),
+    },
+}
+
+=== sse_dragon_tiger_entries ===
+records=3
+provenance=Provenance {
+    source: "sse-official",
+    source_at: Some(
+        "2026-07-22",
+    ),
+    fetched_at: "1792072360.172153400",
+    batch_id: Some(
+        "Sse:2026-07-22:600396:dragon-tiger-entries:1792072359.269249700",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=DragonTigerEntry {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    reason: Some(
+        NonEmptyText(
+            "有价格涨跌幅限制的日收盘价格涨幅偏离值达到7%的前五只证券",
+        ),
+    ),
+    buy_amount: None,
+    sell_amount: None,
+    net_amount: None,
+    turnover_rate: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072360.170266200",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-entries:1792072359.269249700",
+        ),
+    },
+}
+record[1]=DragonTigerEntry {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:2",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    reason: Some(
+        NonEmptyText(
+            "有价格涨跌幅限制的日价格振幅达到15%的前五只证券",
+        ),
+    ),
+    buy_amount: None,
+    sell_amount: None,
+    net_amount: None,
+    turnover_rate: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072360.170266200",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-entries:1792072359.269249700",
+        ),
+    },
+}
+record[2]=DragonTigerEntry {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:3",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    reason: Some(
+        NonEmptyText(
+            "非S证券连续三个交易日内收盘价格涨幅偏离值累计达到20%的证券",
+        ),
+    ),
+    buy_amount: None,
+    sell_amount: None,
+    net_amount: None,
+    turnover_rate: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072360.170266200",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-entries:1792072359.269249700",
+        ),
+    },
+}
+
+=== sse_dragon_tiger_seats ===
+records=10
+provenance=Provenance {
+    source: "sse-official",
+    source_at: Some(
+        "2026-07-22",
+    ),
+    fetched_at: "1792072361.113545500",
+    batch_id: Some(
+        "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        1,
+    ),
+    seat_name: NonEmptyText(
+        "沪股通专用",
+    ),
+    amount: Money(
+        204844204.54,
+    ),
+    buy_amount: Some(
+        Money(
+            204844204.54,
+        ),
+    ),
+    sell_amount: None,
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[1]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        2,
+    ),
+    seat_name: NonEmptyText(
+        "开源证券股份有限公司西安太华路证券营业部",
+    ),
+    amount: Money(
+        105063836.0,
+    ),
+    buy_amount: Some(
+        Money(
+            105063836.0,
+        ),
+    ),
+    sell_amount: None,
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[2]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        3,
+    ),
+    seat_name: NonEmptyText(
+        "国泰海通证券股份有限公司总部",
+    ),
+    amount: Money(
+        90889949.0,
+    ),
+    buy_amount: Some(
+        Money(
+            90889949.0,
+        ),
+    ),
+    sell_amount: None,
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[3]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        4,
+    ),
+    seat_name: NonEmptyText(
+        "国新证券股份有限公司北京分公司",
+    ),
+    amount: Money(
+        87790025.0,
+    ),
+    buy_amount: Some(
+        Money(
+            87790025.0,
+        ),
+    ),
+    sell_amount: None,
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[4]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        5,
+    ),
+    seat_name: NonEmptyText(
+        "国泰海通证券股份有限公司湛江万豪世家证券营业部",
+    ),
+    amount: Money(
+        77178105.0,
+    ),
+    buy_amount: Some(
+        Money(
+            77178105.0,
+        ),
+    ),
+    sell_amount: None,
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[5]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        1,
+    ),
+    seat_name: NonEmptyText(
+        "沪股通专用",
+    ),
+    amount: Money(
+        81243566.0,
+    ),
+    buy_amount: None,
+    sell_amount: Some(
+        Money(
+            81243566.0,
+        ),
+    ),
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[6]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        2,
+    ),
+    seat_name: NonEmptyText(
+        "国信证券股份有限公司浙江互联网分公司",
+    ),
+    amount: Money(
+        76512065.0,
+    ),
+    buy_amount: None,
+    sell_amount: Some(
+        Money(
+            76512065.0,
+        ),
+    ),
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[7]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        3,
+    ),
+    seat_name: NonEmptyText(
+        "中信证券股份有限公司上海分公司",
+    ),
+    amount: Money(
+        48672096.62,
+    ),
+    buy_amount: None,
+    sell_amount: Some(
+        Money(
+            48672096.62,
+        ),
+    ),
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[8]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        4,
+    ),
+    seat_name: NonEmptyText(
+        "东方财富证券股份有限公司山南香曲东路证券营业部",
+    ),
+    amount: Money(
+        42104028.0,
+    ),
+    buy_amount: None,
+    sell_amount: Some(
+        Money(
+            42104028.0,
+        ),
+    ),
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+record[9]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "sse:2026-07-22:600396:1",
+    ),
+    instrument: InstrumentId {
+        exchange: Shanghai,
+        code: "600396",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        5,
+    ),
+    seat_name: NonEmptyText(
+        "东方财富证券股份有限公司拉萨东城区江苏大道证券营业部",
+    ),
+    amount: Money(
+        33992533.0,
+    ),
+    buy_amount: None,
+    sell_amount: Some(
+        Money(
+            33992533.0,
+        ),
+    ),
+    net_amount: None,
+    evidence: SourceEvidence {
+        provider: Sse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072361.112239300",
+        ),
+        batch_id: NonEmptyText(
+            "Sse:2026-07-22:600396:dragon-tiger-seats:1792072360.173580600",
+        ),
+    },
+}
+
+provider=szse-official
+capabilities=ProviderCapabilities {
+    provider: Szse,
+    market: Capabilities {
+        quotes: true,
+        bars: false,
+        minute: false,
+        trades: false,
+        fundamentals: false,
+        corporate_actions: false,
+        blocks: false,
+        money_flow: false,
+        order_book: true,
+        auction: false,
+        security_metadata: false,
+    },
+    content: ContentCapabilities {
+        instrument_news: false,
+        global_news: false,
+        announcements: true,
+        market_announcements: false,
+        investor_questions: false,
+    },
+    capital: CapitalCapabilities {
+        fund_flow_series: false,
+        board_flow: false,
+        margin: false,
+        block_trades: false,
+        holder_count: false,
+        lockups: false,
+        dividends: false,
+        post_close_flow: false,
+        northbound_daily_statistics: false,
+    },
+    signals: SignalCapabilities {
+        board_memberships: false,
+        strong_stock_reasons: false,
+        dragon_tiger: true,
+        market_rankings: false,
+        popularity: false,
+        concept_hits: false,
+    },
+}
+
+=== szse_announcements ===
+records=3
+provenance=Provenance {
+    source: "szse-official",
+    source_at: Some(
+        "2026-10-10",
+    ),
+    fetched_at: "1792072362.567814800",
+    batch_id: Some(
+        "szse:1792072362.567814800:announcements:000858",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=Announcement {
+    announcement_id: NonEmptyText(
+        "1225599675",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000858",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    category: None,
+    title: NonEmptyText(
+        "五 粮 液：关于回购公司股份进展的公告",
+    ),
+    published_at: NonEmptyText(
+        "2026-10-10",
+    ),
+    canonical_url: HttpsUrl(
+        "https://www.szse.cn/disclosure/listed/bulletinDetail/index.html?1225599675",
+    ),
+    pdf_url: Some(
+        HttpsUrl(
+            "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-10-10/a8c89048-5462-45cf-ac68-6c90dcb7a106.PDF",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-10-10",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072362.567814800",
+        ),
+        batch_id: NonEmptyText(
+            "szse:1792072362.567814800:announcements:000858",
+        ),
+    },
+}
+record[1]=Announcement {
+    announcement_id: NonEmptyText(
+        "1225560310",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000858",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    category: None,
+    title: NonEmptyText(
+        "五 粮 液：2026年半年度报告（英文版）",
+    ),
+    published_at: NonEmptyText(
+        "2026-09-12",
+    ),
+    canonical_url: HttpsUrl(
+        "https://www.szse.cn/disclosure/listed/bulletinDetail/index.html?1225560310",
+    ),
+    pdf_url: Some(
+        HttpsUrl(
+            "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-09-12/cde00fb0-f557-4db9-84b3-f29812fb91f1.PDF",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-09-12",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072362.567814800",
+        ),
+        batch_id: NonEmptyText(
+            "szse:1792072362.567814800:announcements:000858",
+        ),
+    },
+}
+record[2]=Announcement {
+    announcement_id: NonEmptyText(
+        "1225544224",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000858",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    category: None,
+    title: NonEmptyText(
+        "五 粮 液：关于回购公司股份进展的公告",
+    ),
+    published_at: NonEmptyText(
+        "2026-09-03",
+    ),
+    canonical_url: HttpsUrl(
+        "https://www.szse.cn/disclosure/listed/bulletinDetail/index.html?1225544224",
+    ),
+    pdf_url: Some(
+        HttpsUrl(
+            "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-09-03/99d8ea70-86f7-4b10-874c-7103da21b1e7.PDF",
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-09-03",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072362.567814800",
+        ),
+        batch_id: NonEmptyText(
+            "szse:1792072362.567814800:announcements:000858",
+        ),
+    },
+}
+
+=== szse_official_quotes ===
+records=1
+provenance=Provenance {
+    source: "szse-official",
+    source_at: Some(
+        "2026-10-15T15:30:00+08:00",
+    ),
+    fetched_at: "1792072362.817848000",
+    batch_id: Some(
+        "szse-official:1792072362.573533400:quote",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=Quote {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000858",
+        asset_class: Equity,
+    },
+    name: Some(
+        "五 粮 液",
+    ),
+    price: Price(
+        71.3,
+    ),
+    previous_close: Some(
+        Price(
+            70.82,
+        ),
+    ),
+    open: Some(
+        Price(
+            70.66,
+        ),
+    ),
+    high: Some(
+        Price(
+            71.9,
+        ),
+    ),
+    low: Some(
+        Price(
+            70.4,
+        ),
+    ),
+    change_percent: Some(
+        Ratio {
+            value: 0.68,
+            unit: Percent,
+        },
+    ),
+    volume: Quantity(
+        290548.0,
+    ),
+    amount: Some(
+        Money(
+            2067972846.19,
+        ),
+    ),
+    status: Available,
+    source_at: Some(
+        "2026-10-15T15:30:00+08:00",
+    ),
+    observed_at: "1792072362.816553200",
+    provider: Szse,
+    batch_id: "szse-official:1792072362.573533400:quote",
+}
+
+=== szse_official_order_books ===
+records=1
+provenance=Provenance {
+    source: "szse-official",
+    source_at: Some(
+        "2026-10-15T15:30:00+08:00",
+    ),
+    fetched_at: "1792072363.673339300",
+    batch_id: Some(
+        "szse-official:1792072362.819007100:order-book",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=OrderBook {
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000858",
+        asset_class: Equity,
+    },
+    bids: [
+        BookLevel {
+            price: Some(
+                Price(
+                    71.3,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    68.0,
+                ),
+            ),
+        },
+        BookLevel {
+            price: Some(
+                Price(
+                    71.29,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    3.0,
+                ),
+            ),
+        },
+        BookLevel {
+            price: Some(
+                Price(
+                    71.28,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    24.0,
+                ),
+            ),
+        },
+        BookLevel {
+            price: Some(
+                Price(
+                    71.27,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    10.0,
+                ),
+            ),
+        },
+        BookLevel {
+            price: Some(
+                Price(
+                    71.26,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    5.0,
+                ),
+            ),
+        },
+    ],
+    asks: [
+        BookLevel {
+            price: Some(
+                Price(
+                    71.31,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    58.0,
+                ),
+            ),
+        },
+        BookLevel {
+            price: Some(
+                Price(
+                    71.32,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    9.0,
+                ),
+            ),
+        },
+        BookLevel {
+            price: Some(
+                Price(
+                    71.33,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    52.0,
+                ),
+            ),
+        },
+        BookLevel {
+            price: Some(
+                Price(
+                    71.34,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    475.0,
+                ),
+            ),
+        },
+        BookLevel {
+            price: Some(
+                Price(
+                    71.35,
+                ),
+            ),
+            quantity: Some(
+                Quantity(
+                    1032.0,
+                ),
+            ),
+        },
+    ],
+    total_bid_quantity: Some(
+        Quantity(
+            110.0,
+        ),
+    ),
+    total_ask_quantity: Some(
+        Quantity(
+            1626.0,
+        ),
+    ),
+    status: Available,
+    source_at: Some(
+        "2026-10-15T15:30:00+08:00",
+    ),
+    observed_at: "1792072363.672117400",
+    provider: Szse,
+    batch_id: "szse-official:1792072362.819007100:order-book",
+}
+
+=== szse_dragon_tiger_entries ===
+records=2
+provenance=Provenance {
+    source: "szse-official",
+    source_at: Some(
+        "2026-07-23",
+    ),
+    fetched_at: "1792072364.663614000",
+    batch_id: Some(
+        "Szse:2026-07-23:000603:dragon-tiger-entries:1792072363.692947700",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=DragonTigerEntry {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    reason: Some(
+        NonEmptyText(
+            "日价格涨幅偏离值达到9.07%",
+        ),
+    ),
+    buy_amount: None,
+    sell_amount: None,
+    net_amount: None,
+    turnover_rate: None,
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072364.663209500",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-entries:1792072363.692947700",
+        ),
+    },
+}
+record[1]=DragonTigerEntry {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:1001",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    instrument_name: None,
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    reason: Some(
+        NonEmptyText(
+            "异常期间价格涨幅偏离值累计达到21.19%",
+        ),
+    ),
+    buy_amount: None,
+    sell_amount: None,
+    net_amount: None,
+    turnover_rate: None,
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072364.663209500",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-entries:1792072363.692947700",
+        ),
+    },
+}
+
+=== szse_dragon_tiger_seats ===
+records=10
+provenance=Provenance {
+    source: "szse-official",
+    source_at: Some(
+        "2026-07-23",
+    ),
+    fetched_at: "1792072366.715376400",
+    batch_id: Some(
+        "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        1,
+    ),
+    seat_name: NonEmptyText(
+        "深股通专用",
+    ),
+    amount: Money(
+        136235364.0,
+    ),
+    buy_amount: Some(
+        Money(
+            136235364.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            185329440.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -49094076.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[1]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        2,
+    ),
+    seat_name: NonEmptyText(
+        "国泰海通证券股份有限公司北京知春路证券营业部",
+    ),
+    amount: Money(
+        112304399.0,
+    ),
+    buy_amount: Some(
+        Money(
+            112304399.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            1403337.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            110901062.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[2]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        3,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        37589828.0,
+    ),
+    buy_amount: Some(
+        Money(
+            37589828.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            0.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            37589828.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[3]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        4,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        27014122.0,
+    ),
+    buy_amount: Some(
+        Money(
+            27014122.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            27977745.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -963623.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[4]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Buy,
+    rank: PositiveU32(
+        5,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        26201294.0,
+    ),
+    buy_amount: Some(
+        Money(
+            26201294.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            33471072.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -7269778.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[5]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        1,
+    ),
+    seat_name: NonEmptyText(
+        "深股通专用",
+    ),
+    amount: Money(
+        185329440.0,
+    ),
+    buy_amount: Some(
+        Money(
+            136235364.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            185329440.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -49094076.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[6]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        2,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        51712871.0,
+    ),
+    buy_amount: Some(
+        Money(
+            25722905.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            51712871.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -25989966.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[7]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        3,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        33471072.0,
+    ),
+    buy_amount: Some(
+        Money(
+            26201294.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            33471072.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -7269778.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[8]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        4,
+    ),
+    seat_name: NonEmptyText(
+        "招商证券股份有限公司宁波丽江东路证券营业部",
+    ),
+    amount: Money(
+        32281355.0,
+    ),
+    buy_amount: Some(
+        Money(
+            48330.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            32281355.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -32233025.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+record[9]=DragonTigerSeat {
+    entry_id: NonEmptyText(
+        "szse:2026-07-23:000603:0901",
+    ),
+    instrument: InstrumentId {
+        exchange: Shenzhen,
+        code: "000603",
+        asset_class: Equity,
+    },
+    trading_date: IsoDate(
+        "2026-07-23",
+    ),
+    side: Sell,
+    rank: PositiveU32(
+        5,
+    ),
+    seat_name: NonEmptyText(
+        "机构专用",
+    ),
+    amount: Money(
+        27977745.0,
+    ),
+    buy_amount: Some(
+        Money(
+            27014122.0,
+        ),
+    ),
+    sell_amount: Some(
+        Money(
+            27977745.0,
+        ),
+    ),
+    net_amount: Some(
+        Money(
+            -963623.0,
+        ),
+    ),
+    evidence: SourceEvidence {
+        provider: Szse,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-23",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "1792072366.714785700",
+        ),
+        batch_id: NonEmptyText(
+            "Szse:2026-07-23:000603:dragon-tiger-seats:1792072364.664527200",
+        ),
+    },
+}
+
+provider=hkex-official
+capabilities=ProviderCapabilities {
+    provider: Hkex,
+    market: Capabilities {
+        quotes: false,
+        bars: false,
+        minute: false,
+        trades: false,
+        fundamentals: false,
+        corporate_actions: false,
+        blocks: false,
+        money_flow: false,
+        order_book: false,
+        auction: false,
+        security_metadata: false,
+    },
+    content: ContentCapabilities {
+        instrument_news: false,
+        global_news: false,
+        announcements: false,
+        market_announcements: false,
+        investor_questions: false,
+    },
+    capital: CapitalCapabilities {
+        fund_flow_series: false,
+        board_flow: false,
+        margin: false,
+        block_trades: false,
+        holder_count: false,
+        lockups: false,
+        dividends: false,
+        post_close_flow: false,
+        northbound_daily_statistics: true,
+    },
+    signals: SignalCapabilities {
+        board_memberships: false,
+        strong_stock_reasons: false,
+        dragon_tiger: false,
+        market_rankings: false,
+        popularity: false,
+        concept_hits: false,
+    },
+}
+
+=== hkex_sse_northbound_daily ===
+records=1
+provenance=Provenance {
+    source: "hkex-official",
+    source_at: Some(
+        "2026-07-22",
+    ),
+    fetched_at: "unix:1792072367514",
+    batch_id: Some(
+        "hkex-northbound-2026-07-22-sse",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=NorthboundDailyStat {
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    channel: Shanghai,
+    total_turnover: Money(
+        174764630000.0,
+    ),
+    total_trade_count: Quantity(
+        7939144.0,
+    ),
+    quota_balance: Unavailable,
+    etf_turnover: Money(
+        4839470000.0,
+    ),
+    top_turnover: [
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                1,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "603986",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "GIGADEVICE SEMICONDUCTOR INC",
+            ),
+            total_turnover: Money(
+                4784518144.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                2,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "600519",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "KWEICHOW MOUTAI",
+            ),
+            total_turnover: Money(
+                2594799614.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                3,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "688008",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "MONTAGE TECHNOLOGY",
+            ),
+            total_turnover: Money(
+                2290239280.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                4,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "688256",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "CAMBRICON TECHNOLOGIES CORPORATION",
+            ),
+            total_turnover: Money(
+                2242709126.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                5,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "600183",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "SHENGYI TECHNOLOGY",
+            ),
+            total_turnover: Money(
+                2032730567.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                6,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "600487",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "HENGTONG OPTIC-ELECTRIC",
+            ),
+            total_turnover: Money(
+                2007999634.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                7,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "603259",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "WUXI APPTEC",
+            ),
+            total_turnover: Money(
+                1974557082.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                8,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "600176",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "CHINA JUSHI",
+            ),
+            total_turnover: Money(
+                1963473611.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                9,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "600522",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "JIANGSU ZHONGTIAN TECHNOLOGY",
+            ),
+            total_turnover: Money(
+                1937262865.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                10,
+            ),
+            instrument: InstrumentId {
+                exchange: Shanghai,
+                code: "688012",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "ADVANCED MICRO-FABRICATION EQUIPMENT",
+            ),
+            total_turnover: Money(
+                1925181348.0,
+            ),
+        },
+    ],
+    evidence: SourceEvidence {
+        provider: Hkex,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix:1792072367514",
+        ),
+        batch_id: NonEmptyText(
+            "hkex-northbound-2026-07-22-sse",
+        ),
+    },
+}
+
+=== hkex_szse_northbound_daily ===
+records=1
+provenance=Provenance {
+    source: "hkex-official",
+    source_at: Some(
+        "2026-07-22",
+    ),
+    fetched_at: "unix:1792072368014",
+    batch_id: Some(
+        "hkex-northbound-2026-07-22-szse",
+    ),
+}
+quality=QualityReport {
+    complete: true,
+    issues: [],
+}
+record[0]=NorthboundDailyStat {
+    trading_date: IsoDate(
+        "2026-07-22",
+    ),
+    channel: Shenzhen,
+    total_turnover: Money(
+        200283710000.0,
+    ),
+    total_trade_count: Quantity(
+        9188740.0,
+    ),
+    quota_balance: Unavailable,
+    etf_turnover: Money(
+        2696070000.0,
+    ),
+    top_turnover: [
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                1,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "300308",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "ZHONGJI INNOLIGHT",
+            ),
+            total_turnover: Money(
+                4878825523.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                2,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "002371",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "NAURA TECHNOLOGY GROUP",
+            ),
+            total_turnover: Money(
+                4742018935.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                3,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "000938",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "UNISPLENDOUR CORP",
+            ),
+            total_turnover: Money(
+                2987950632.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                4,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "000977",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "IEIT SYSTEMS",
+            ),
+            total_turnover: Money(
+                2867287250.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                5,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "300408",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "CHAOZHOU THREE-CIRCLE GROUP",
+            ),
+            total_turnover: Money(
+                2741869984.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                6,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "002384",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "SUZHOU DONGSHAN PRECISION MANUFACTURING",
+            ),
+            total_turnover: Money(
+                2461993715.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                7,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "300750",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "CONTEMPORARY AMPEREX TECHNOLOGY",
+            ),
+            total_turnover: Money(
+                2184005425.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                8,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "300502",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "EOPTOLINK TECHNOLOGY",
+            ),
+            total_turnover: Money(
+                1939910246.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                9,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "002281",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "ACCELINK TECHNOLOGIES",
+            ),
+            total_turnover: Money(
+                1879164309.0,
+            ),
+        },
+        NorthboundTopTurnover {
+            rank: PositiveU32(
+                10,
+            ),
+            instrument: InstrumentId {
+                exchange: Shenzhen,
+                code: "002156",
+                asset_class: Equity,
+            },
+            name: NonEmptyText(
+                "TONGFU MICROELECTRONICS",
+            ),
+            total_turnover: Money(
+                1878077820.0,
+            ),
+        },
+    ],
+    evidence: SourceEvidence {
+        provider: Hkex,
+        source_at: Some(
+            NonEmptyText(
+                "2026-07-22",
+            ),
+        ),
+        observed_at: NonEmptyText(
+            "unix:1792072368014",
+        ),
+        batch_id: NonEmptyText(
+            "hkex-northbound-2026-07-22-szse",
+        ),
+    },
+}
+
+live_probe_status=passed

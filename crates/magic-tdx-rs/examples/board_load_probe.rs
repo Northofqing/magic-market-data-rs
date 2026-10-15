@@ -1,6 +1,7 @@
 use magic_market_core::{
-    BoardCategory, BoardConstituentProvider, BoardConstituentRequest, BoardDirectoryProvider,
-    BoardDirectoryRequest, NonEmptyText, PositiveU32,
+    AssetClass, BoardCategory, BoardConstituentProvider, BoardConstituentRequest,
+    BoardDirectoryProvider, BoardDirectoryRequest, BoardMembershipProvider, Exchange, InstrumentId,
+    NonEmptyText, PositiveU32,
 };
 use magic_tdx_rs::TdxBoardProvider;
 use std::error::Error;
@@ -23,8 +24,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let operation =
         std::env::var("MAGIC_TDX_BOARD_LOAD_OPERATION").unwrap_or_else(|_| "directory".into());
-    if !matches!(operation.as_str(), "directory" | "constituents") {
-        return Err("MAGIC_TDX_BOARD_LOAD_OPERATION must be directory or constituents".into());
+    if !matches!(
+        operation.as_str(),
+        "directory" | "constituents" | "memberships"
+    ) {
+        return Err(
+            "MAGIC_TDX_BOARD_LOAD_OPERATION must be directory, constituents or memberships".into(),
+        );
     }
     let provider = TdxBoardProvider::with_default(&server);
     let board_code = format!("tdx:{}:{board_name}", category_label(category));
@@ -56,6 +62,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 )?)?
                 .records()
                 .len(),
+            "memberships" => provider
+                .board_memberships(&membership_instruments())?
+                .records()
+                .len(),
             _ => unreachable!("validated operation"),
         };
         if records == 0 {
@@ -78,6 +88,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("elapsed_ms={}", started.elapsed().as_millis());
     println!("board_load_probe_status=passed");
     Ok(())
+}
+
+fn membership_instruments() -> Vec<InstrumentId> {
+    vec![
+        InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)
+            .expect("fixed probe instrument must be valid"),
+        InstrumentId::new(Exchange::Shenzhen, "000001", AssetClass::Equity)
+            .expect("fixed probe instrument must be valid"),
+    ]
 }
 
 fn required_env(name: &str) -> Result<String, Box<dyn Error>> {

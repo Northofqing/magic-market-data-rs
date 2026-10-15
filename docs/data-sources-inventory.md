@@ -64,11 +64,16 @@
 
 ## 六、指数/全球市场类
 
+> **海外覆盖边界（2026-10-15，挂海外市场数据 Gate A 设计 §7.1）：**
+> 本仓的"海外"仅包括 Sina 提供的 **6 个已验证全球指数点位**与 **8 个已验证汇率对**
+> （`crates/magic-sina-rs/src/global.rs`；证据见 `docs/integrations/sina-web.md` 与
+> 2026-10-07 探针批次），**不含任何海外个股**。下文"美股三大指数"不得读作"支持美股"。
+
 | 数据类别 | 具体内容 | 数据源/端点 | 提供方 | 关键代码位置 | 频率/触发 | 用途 |
 |---|---|---|---|---|---|---|
 | A 股盘中指数 | 上证/深证/创业板/科创 50 等 6 大指数 | Tencent (HTTP, 唯一满足契约的提供方) | magic-tencent-rs | `src/data_gateway/index.rs:21` (RealtimeIndexQuotes, 5s 新鲜度门) | MarketAnalyzer 按需 | 大盘监控 |
-| 美股三大指数 | 道琼斯/纳指/标普 500 | Sina (global_indices) | magic-sina-rs (sina-web) | `src/data_gateway/global_market.rs:13-14` (R-08-global-indices) | R-08 盘后 | 美股对照 |
-| 美元/人民币汇率 | rate/change | Sina (foreign_exchange) | magic-sina-rs (sina-web) | `src/data_gateway/global_market.rs:14` (R-08-global-fx) | R-08 盘后 | 汇率监控 |
+| 美股三大指数 | 道琼斯/纳指/标普 500 | Sina (global_indices) | magic-sina-rs (sina-web) | 提供方实现：`crates/magic-sina-rs/src/global.rs`（`GlobalIndexProvider`）；`src/data_gateway/global_market.rs` 为**下游应用**路径，本仓无 `src/` 树 | R-08 盘后 | 美股对照 |
+| 美元/人民币汇率 | rate/change | Sina (foreign_exchange) | magic-sina-rs (sina-web) | 提供方实现：`crates/magic-sina-rs/src/global.rs`（`ForeignExchangeProvider`）；`src/data_gateway/global_market.rs` 为**下游应用**路径，本仓无 `src/` 树 | R-08 盘后 | 汇率监控 |
 
 ## 七、期货类
 

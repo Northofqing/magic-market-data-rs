@@ -1,0 +1,1 @@
+live_probe_status=failed failures=financial_files: expected at least one record, received 0 | latest_financial_records: no financial file met the minimum diagnostic size | finance_indicators: gpcw20260331.zip missing from the provider manifest

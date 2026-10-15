@@ -1,0 +1,9 @@
+attempt=1 operation=memberships records=18 latency_ms=15093
+attempt=2 operation=memberships records=18 latency_ms=15086
+attempt=3 operation=memberships records=18 latency_ms=15359
+provider=tdx-block-files
+concurrency=1
+attempts=3
+successes=3
+elapsed_ms=45539
+board_load_probe_status=passed
