@@ -119,6 +119,13 @@ impl TdxBlockClient {
         Self::new(ip, DEFAULT_PORT, 5.0)
     }
 
+    /// 按序故障转移的多服务器板块客户端（语义见 `TdxDirectClient::with_servers`）。
+    pub fn with_servers(servers: &[(String, u16)], timeout: f64) -> Result<Self> {
+        Ok(Self {
+            client: Mutex::new(TdxDirectClient::with_servers(servers, timeout)?),
+        })
+    }
+
     /// 更新服务器地址
     pub fn set_server(&self, ip: &str, port: u16) {
         crate::sync::lock_recover(&self.client, "block client").set_server(ip, port);

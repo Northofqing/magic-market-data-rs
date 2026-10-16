@@ -60,6 +60,16 @@ This admission does not cover Beijing, arbitrary F10 sections, inferred
 fundamentals, realtime freshness or a redistribution right beyond the
 deployment operator's use of the public protocol.
 
+## Server wiring update — 2026-10-15
+
+生产接线不再钉死 `180.153.18.170:7709`。`SecurityProfiles`（连同 TDX 板块族与
+`ConceptHits`）改为按 `PRIMARY_SERVERS`（7 台已验证服务器）顺序故障转移：只有
+连接级故障（建连/超时/握手/断开/重试耗尽）切换下一台，协议错误与数据错误原样
+返回，证据身份始终为 `Tdx`。触发当晚实测：该固定主机出现连接超时与空 F10 节
+（"公司概况" found 0），而同刻 `117.34.114.14` / `117.34.114.15` 返回
+`name=华电辽能 listed_on=2001-03-28 facts=135`（2026-08-14 准入证据为 132，
+源侧有增项）。上文 2026-08-14 准入证据不受影响，本更新只改变端点选择。
+
 Transport failures discard the borrowed TCP connection and clear connected
 state before retry. Each bounded retry rotates away from the failed endpoint;
 it does not put the failed socket back into the pool or reconnect all attempts

@@ -84,6 +84,19 @@ impl TdxError {
             _ => self.to_string(),
         }
     }
+
+    /// 连接级故障（建连/超时/握手/断开/重试耗尽）可以安全换下一台候选服务器；
+    /// 协议错误与数据错误必须原样返回，绝不因换机而被掩盖。
+    pub(crate) fn is_connection_class(&self) -> bool {
+        matches!(
+            self,
+            TdxError::Connection(_)
+                | TdxError::ConnectionTimeout
+                | TdxError::SetupFailed(_)
+                | TdxError::Disconnected
+                | TdxError::RetryExhausted(_)
+        )
+    }
 }
 
 pub type Result<T> = std::result::Result<T, TdxError>;

@@ -116,6 +116,70 @@ impl TcpConnection {
     }
 }
 
+/// Validates an ordered TDX server list for the failover constructors.
+pub(crate) fn validate_server_list(servers: &[(String, u16)], timeout_secs: f64) -> Result<()> {
+    if servers.is_empty() {
+        return Err(TdxError::InvalidData(
+            "TDX server list must not be empty".into(),
+        ));
+    }
+    for (ip, port) in servers {
+        if ip.trim().is_empty() {
+            return Err(TdxError::InvalidData(
+                "TDX server address must not be empty".into(),
+            ));
+        }
+        if *port == 0 {
+            return Err(TdxError::InvalidData(
+                "TDX server port must be positive".into(),
+            ));
+        }
+    }
+    if !timeout_secs.is_finite() || timeout_secs <= 0.0 {
+        return Err(TdxError::InvalidData(
+            "TDX server timeout must be finite and positive".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Runs `attempt` against each candidate server in order and returns the first
+/// success. Only connection-class failures move to the next candidate;
+/// protocol and data errors are returned unchanged. When every candidate
+/// fails, the returned error lists each attempt so the caller sees the whole
+/// failure set, not just the primary server's error.
+pub(crate) fn with_failover<T>(
+    servers: &[(String, u16)],
+    mut attempt: impl FnMut(&str, u16) -> Result<T>,
+) -> Result<T> {
+    let mut tried: Vec<(String, u16)> = Vec::with_capacity(servers.len());
+    let mut failures: Vec<String> = Vec::new();
+    for (ip, port) in servers {
+        let candidate = (ip.clone(), *port);
+        if tried.contains(&candidate) {
+            continue;
+        }
+        tried.push(candidate);
+        match attempt(ip, *port) {
+            Ok(value) => return Ok(value),
+            Err(error) if error.is_connection_class() => {
+                failures.push(format!("{ip}:{port} ({error})"));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if failures.is_empty() {
+        return Err(TdxError::InvalidData(
+            "TDX server list must not be empty".into(),
+        ));
+    }
+    Err(TdxError::Connection(format!(
+        "all {} TDX server candidates failed: {}",
+        failures.len(),
+        failures.join("; ")
+    )))
+}
+
 #[cfg(feature = "test-support")]
 impl TcpConnection {
     pub(super) fn connect_isolated(
@@ -237,7 +301,7 @@ impl TcpConnection {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConnectionStream, TcpConnection};
+    use super::{validate_server_list, with_failover, ConnectionStream, TcpConnection};
     use std::io::{self, Read, Write};
     use std::net::{Shutdown, SocketAddr};
     use std::sync::{Arc, Mutex};
@@ -316,6 +380,97 @@ mod tests {
 
         assert!(error.to_string().contains("Failed to connect"));
         assert!(error.to_string().contains("deterministic refusal"));
+    }
+
+    #[test]
+    fn failover_returns_first_success_without_touching_later_candidates() {
+        let servers = vec![
+            ("10.0.0.1".to_owned(), 1_u16),
+            ("10.0.0.2".to_owned(), 2_u16),
+        ];
+        let mut calls = 0_u32;
+        let value = with_failover(&servers, |_ip, _port| {
+            calls += 1;
+            Ok::<u32, crate::error::TdxError>(42)
+        })
+        .unwrap();
+        assert_eq!(value, 42);
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn failover_moves_on_only_for_connection_class_errors() {
+        let servers = vec![
+            ("10.0.0.1".to_owned(), 1_u16),
+            ("10.0.0.2".to_owned(), 2_u16),
+            ("10.0.0.3".to_owned(), 3_u16),
+        ];
+        let mut calls = Vec::new();
+        let value = with_failover(&servers, |_ip, port| {
+            calls.push(port);
+            if port == 1 {
+                Err(crate::error::TdxError::Connection("refused".into()))
+            } else {
+                Ok::<u32, crate::error::TdxError>(7)
+            }
+        })
+        .unwrap();
+        assert_eq!(value, 7);
+        assert_eq!(calls, vec![1, 2]);
+
+        let mut calls2 = Vec::new();
+        let error = with_failover(&servers, |_ip, port| {
+            calls2.push(port);
+            if port == 1 {
+                Err::<(), crate::error::TdxError>(crate::error::TdxError::ConnectionTimeout)
+            } else {
+                Err::<(), crate::error::TdxError>(crate::error::TdxError::InvalidData(
+                    "must stop here".into(),
+                ))
+            }
+        })
+        .unwrap_err();
+        assert!(matches!(error, crate::error::TdxError::InvalidData(_)));
+        assert_eq!(calls2.len(), 2);
+    }
+
+    #[test]
+    fn failover_lists_every_attempt_when_all_candidates_fail() {
+        let servers = vec![
+            ("10.0.0.1".to_owned(), 1_u16),
+            ("10.0.0.2".to_owned(), 2_u16),
+        ];
+        let error = with_failover(&servers, |_ip, _port| {
+            Err::<(), crate::error::TdxError>(crate::error::TdxError::Disconnected)
+        })
+        .unwrap_err();
+        let text = error.to_string();
+        assert!(text.contains("all 2 TDX server candidates failed"));
+        assert!(text.contains("10.0.0.1:1"));
+        assert!(text.contains("10.0.0.2:2"));
+    }
+
+    #[test]
+    fn failover_skips_duplicate_candidates() {
+        let servers = vec![
+            ("10.0.0.1".to_owned(), 1_u16),
+            ("10.0.0.1".to_owned(), 1_u16),
+        ];
+        let mut calls = 0_u32;
+        let _ = with_failover(&servers, |_ip, _port| {
+            calls += 1;
+            Err::<(), crate::error::TdxError>(crate::error::TdxError::ConnectionTimeout)
+        });
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn server_list_validation_rejects_empty_empty_address_zero_port_and_bad_timeout() {
+        assert!(validate_server_list(&[], 5.0).is_err());
+        assert!(validate_server_list(&[("127.0.0.1".to_owned(), 0)], 5.0).is_err());
+        assert!(validate_server_list(&[(" ".to_owned(), 1)], 5.0).is_err());
+        assert!(validate_server_list(&[("127.0.0.1".to_owned(), 1)], 0.0).is_err());
+        assert!(validate_server_list(&[("127.0.0.1".to_owned(), 1)], 5.0).is_ok());
     }
 
     #[test]

@@ -10,6 +10,8 @@ const PORT: u16 = 7709;
 const TIMEOUT_SECONDS: f64 = 10.0;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let server = std::env::args().nth(1).unwrap_or_else(|| SERVER.to_owned());
+    println!("profile_server={server}");
     let requests = std::env::var("MAGIC_TDX_SECURITY_PROFILE_REQUESTS")
         .unwrap_or_else(|_| "1".into())
         .parse::<u8>()?;
@@ -17,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("MAGIC_TDX_SECURITY_PROFILE_REQUESTS must be in 1..=3".into());
     }
     let instrument = InstrumentId::new(Exchange::Shanghai, "600396", AssetClass::Equity)?;
-    let provider = TdxSecurityProfileProvider::new(SERVER, PORT, TIMEOUT_SECONDS)?;
+    let provider = TdxSecurityProfileProvider::new(&server, PORT, TIMEOUT_SECONDS)?;
     let mut successes = 0_u8;
     let started = Instant::now();
     for attempt in 1..=requests {

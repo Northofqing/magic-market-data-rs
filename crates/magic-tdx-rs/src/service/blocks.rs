@@ -324,6 +324,14 @@ impl BlockService {
             client: TdxBlockClient::with_default(ip),
         }
     }
+
+    /// Creates a block service that fails over across the ordered server list
+    /// (see `TdxBlockClient::with_servers`).
+    pub fn with_servers(servers: &[(String, u16)], timeout: f64) -> Result<Self, TdxError> {
+        Ok(Self {
+            client: TdxBlockClient::with_servers(servers, timeout)?,
+        })
+    }
     /// Returns block K-lines with enforced category limits.
     pub fn bars(
         &self,

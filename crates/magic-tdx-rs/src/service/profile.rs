@@ -36,6 +36,27 @@ impl ProfileService {
         }
     }
 
+    /// Creates a profile service whose underlying client walks the ordered
+    /// server list (validated; the first reachable candidate wins per request).
+    pub fn with_servers(servers: &[(String, u16)], timeout: f64) -> Result<Self, TdxError> {
+        crate::net::connection::validate_server_list(servers, timeout)?;
+        let owned: Vec<(String, String, u16)> = servers
+            .iter()
+            .map(|(ip, port)| (String::from("profile"), ip.clone(), *port))
+            .collect();
+        let borrowed: Vec<(&str, &str, u16)> = owned
+            .iter()
+            .map(|(name, ip, port)| (name.as_str(), ip.as_str(), *port))
+            .collect();
+        let client = TdxHqClient::new();
+        client.set_servers(&borrowed);
+        client.set_connect_timeout(timeout);
+        Ok(Self {
+            client: Mutex::new(client),
+            timeout,
+        })
+    }
+
     fn connected_client(&self) -> Result<std::sync::MutexGuard<'_, TdxHqClient>, TdxError> {
         let client = self
             .client

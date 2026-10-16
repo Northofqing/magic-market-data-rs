@@ -30,27 +30,29 @@ pub struct TdxSecurityProfileProvider {
 
 impl TdxSecurityProfileProvider {
     pub fn new(ip: &str, port: u16, timeout_seconds: f64) -> Result<Self, TdxError> {
-        if ip.trim().is_empty() {
-            return Err(TdxError::InvalidData(
-                "TDX security-profile server must not be empty".into(),
-            ));
-        }
-        if port == 0 {
-            return Err(TdxError::InvalidData(
-                "TDX security-profile port must be positive".into(),
-            ));
-        }
-        if !timeout_seconds.is_finite() || timeout_seconds <= 0.0 {
-            return Err(TdxError::InvalidData(
-                "TDX security-profile timeout must be finite and positive".into(),
-            ));
-        }
+        Self::with_servers(&[(ip.to_owned(), port)], timeout_seconds)
+    }
+
+    /// Creates the provider with an ordered server list: every request falls
+    /// over to the next candidate when the current one cannot be reached
+    /// (connection-class failures only; protocol and data errors are returned
+    /// unchanged).
+    pub fn with_servers(servers: &[(String, u16)], timeout_seconds: f64) -> Result<Self, TdxError> {
+        crate::net::connection::validate_server_list(servers, timeout_seconds)?;
         let metadata = TdxHqClient::new();
-        metadata.set_servers(&[("security-profile", ip, port)]);
+        let owned: Vec<(String, String, u16)> = servers
+            .iter()
+            .map(|(ip, port)| (String::from("security-profile"), ip.clone(), *port))
+            .collect();
+        let borrowed: Vec<(&str, &str, u16)> = owned
+            .iter()
+            .map(|(name, ip, port)| (name.as_str(), ip.as_str(), *port))
+            .collect();
+        metadata.set_servers(&borrowed);
         metadata.set_connect_timeout(timeout_seconds);
         Ok(Self {
             metadata,
-            profiles: ProfileService::new(ip, port, timeout_seconds),
+            profiles: ProfileService::with_servers(servers, timeout_seconds)?,
             timeout_seconds,
         })
     }

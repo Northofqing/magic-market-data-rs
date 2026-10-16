@@ -22,6 +22,8 @@ pub struct TdxDirectClient {
     ip: String,
     port: u16,
     timeout: f64,
+    /// 故障转移候选（不含首选）：连接级故障时按序尝试
+    fallback_servers: Vec<(String, u16)>,
     /// 复权上下文数据量档位 (默认 Mid ≈ 20 年), 以 u8 存储
     fq_context_tier: AtomicU8,
 }
@@ -32,8 +34,24 @@ impl TdxDirectClient {
             ip: ip.to_string(),
             port,
             timeout,
+            fallback_servers: Vec::new(),
             fq_context_tier: AtomicU8::new(utils::FqContextTier::default() as u8),
         }
+    }
+
+    /// 按序故障转移的多服务器客户端：`servers[0]` 为首选，其余按序为候选。
+    /// 只有连接级故障（建连/超时/握手/断开/重试耗尽）会切换到下一台；
+    /// 协议与数据错误原样返回。空列表、空地址、零端口、非正超时都会显式报错。
+    pub fn with_servers(servers: &[(String, u16)], timeout: f64) -> Result<Self> {
+        crate::net::connection::validate_server_list(servers, timeout)?;
+        let (primary_ip, primary_port) = servers[0].clone();
+        Ok(Self {
+            ip: primary_ip,
+            port: primary_port,
+            timeout,
+            fallback_servers: servers[1..].to_vec(),
+            fq_context_tier: AtomicU8::new(utils::FqContextTier::default() as u8),
+        })
     }
 
     /// 更新服务器地址
@@ -77,14 +95,20 @@ impl TdxDirectClient {
     }
 
     fn send_and_recv(&self, packet: &[u8]) -> Result<Vec<u8>> {
-        let mut conn = TcpConnection::connect(&self.ip, self.port, self.timeout).map_err(|e| {
-            loge!(
-                "direct",
-                "connect to {}:{} failed: {}",
-                self.ip,
-                self.port,
-                e
-            );
+        if self.fallback_servers.is_empty() {
+            return self.send_and_recv_via(&self.ip, self.port, packet);
+        }
+        let mut candidates = Vec::with_capacity(self.fallback_servers.len() + 1);
+        candidates.push((self.ip.clone(), self.port));
+        candidates.extend(self.fallback_servers.iter().cloned());
+        crate::net::connection::with_failover(&candidates, |ip, port| {
+            self.send_and_recv_via(ip, port, packet)
+        })
+    }
+
+    fn send_and_recv_via(&self, ip: &str, port: u16, packet: &[u8]) -> Result<Vec<u8>> {
+        let mut conn = TcpConnection::connect(ip, port, self.timeout).map_err(|e| {
+            loge!("direct", "connect to {}:{} failed: {}", ip, port, e);
             e
         })?;
         utils::perform_handshake(&mut conn)?;

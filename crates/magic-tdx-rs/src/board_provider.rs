@@ -60,6 +60,13 @@ impl TdxBoardProvider {
         })
     }
 
+    /// 按序故障转移的多服务器版本（语义见 `TdxBlockClient::with_servers`）。
+    pub fn with_servers(servers: &[(String, u16)], timeout: f64) -> Result<Self, TdxError> {
+        Ok(Self::with_source(NetworkBoardSource {
+            client: TdxBlockClient::with_servers(servers, timeout)?,
+        }))
+    }
+
     pub fn with_source(source: impl TdxBoardSource + 'static) -> Self {
         Self {
             source: Arc::new(source),

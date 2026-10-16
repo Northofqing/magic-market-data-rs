@@ -2519,6 +2519,15 @@ fn register_exchange_parity(
     Ok(())
 }
 
+/// TDX 文件类族（板块、概念命中、证券资料）与 hq 路径共用已验证的多服务器池，
+/// 不再钉死单台主机（2026-10-15：180.153.18.170 晚间抖动与 F10 空节故障后修正）。
+fn tdx_file_servers() -> Vec<(String, u16)> {
+    magic_tdx_rs::protocol::constants::PRIMARY_SERVERS
+        .iter()
+        .map(|(_, ip, port)| ((*ip).to_owned(), *port))
+        .collect()
+}
+
 fn register_tdx_public(
     registry: &mut OperationRegistry,
     provider_timeout: Duration,
@@ -2564,10 +2573,13 @@ fn register_tdx_public(
             )
         },
     )?;
-    let boards = TdxBoardProvider::new("180.153.18.170", 7709, timeout_seconds);
+    let boards = TdxBoardProvider::with_servers(&tdx_file_servers(), timeout_seconds)?;
     register_tdx_boards_client(registry, boards, maximum_payload_bytes)?;
 
-    let block_service = Arc::new(BlockService::new("180.153.18.170", 7709, timeout_seconds));
+    let block_service = Arc::new(BlockService::with_servers(
+        &tdx_file_servers(),
+        timeout_seconds,
+    )?);
     registry.register_handler(
         admitted(
             Operation::ConceptHits,
@@ -2589,9 +2601,8 @@ fn register_tdx_public(
         },
     )?;
 
-    let profiles = Arc::new(TdxSecurityProfileProvider::new(
-        "180.153.18.170",
-        7709,
+    let profiles = Arc::new(TdxSecurityProfileProvider::with_servers(
+        &tdx_file_servers(),
         timeout_seconds,
     )?);
     registry.register_handler(
