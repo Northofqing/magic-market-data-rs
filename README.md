@@ -132,6 +132,18 @@ contract_sha256 变更）/ `19ccc893…`；TradingCalendar 实测 242 条、Real
 `provider-coverage-index.md`）至 Mac 侧 client-bundle，对端需替换 `external_v1_current`
 并按新四字段重新钉定后才恢复准入。
 
+### 2026-10-16 部署记录与客户端
+
+2026-10-16 上午完成修复部署：`8523c1e`（TDX 文件类路径故障转移——板块族 / `ConceptHits` /
+`SecurityProfiles` 不再钉死单台主机 `180.153.18.170`，改为在内置已验证服务器池
+`PRIMARY_SERVERS` 内按序故障转移，仅连接级故障切换；wire 合同零变化）。服务已切换并验证：
+GetHealth 四字段为 0.2.0 / `8523c1edb4ae4710f727b27b79026240e9cf47a6` / `dba66a27…`（不变）/
+`c156c241…`；数据探针 BoardDirectory 153 条、SecurityProfiles 含"公司概况"节、RealtimeQuotes 与
+ConceptHits 正常；monitor-server / tdx-agent / native-bridge 三个二进制哈希未变。同批交付新
+client bundle `2026-10-16.1`（66 RPC，公开内容与 `2026-10-15.1` 相同，仅身份元数据更新）
+至 Mac 侧 client-bundle；对端替换 `external_v1_current` 并按新四字段重新钉定后才恢复准入。
+回滚配方：`stop.ps1` → `bin` 与 `bin.backup-19ccc893` 互换 → `start.ps1`。
+
 bundle 由 [`tools/docs/build_client_bundle.ps1`](tools/docs/build_client_bundle.ps1)生成，
 默认版本为 `2026-10-01.3`，使用 LF 格式的 `manifest.sha256` 校验公开合同文件。
 精确来源提交以 `bundle-metadata.json` 的 `source_commit` 为准；包含部署身份时，还需与
