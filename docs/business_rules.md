@@ -1383,3 +1383,23 @@ other families to fabricate source times. The calendar answers only "is the
 exchange open on this date": it carries no per-security suspension state, no
 intraday unscheduled-closure adjustments, and no cross-venue differences;
 SSE venue only, Shenzhen applicability is not established.
+
+## BR-071 Qualified trading facts provider-observed boundary
+
+The `QualifiedTradingFacts` operation returns provider-observed facts only
+(`quality=provider_observed`); it never emits `authoritative`. Lifecycle fields
+(`listed_on`, `listing_state`) come from TDX security metadata and are limited to
+`listed` / `not_yet_listed` / `unknown`; `delisted` is never emitted because no
+delisting source exists, and `listed` must not be consumed as proof that a
+security is trading. The price band (`limit_up`/`limit_down`) is served only from
+the Tencent market-statistics source values for the observation snapshot day
+(the Shanghai calendar date of that batch's `source_at`); historical dates stay
+`null`, `price_band_source` is non-null only when a band value was actually
+supplied, and no band may be derived from a previous close or a code rule. There
+is no suspension source: an explicit `suspension` subset request is a typed
+`Unsupported` (gRPC `UNIMPLEMENTED`, `reason_code=capability_unadmitted`), never
+an empty array and never `false`. Requests are bounded to 50 unique A-share
+equity instruments, 250 unique dates restricted to the checked-in SSE 2026
+trading-day revision, and at most 500 instrument-date rows; any provider batch
+failure or omitted instrument fails the whole call closed, and `complete=true`
+only states that every requested row was produced under these bounds.

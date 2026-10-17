@@ -1095,7 +1095,7 @@ fn production_registry_is_exhaustive_and_only_enables_evidence_backed_operations
         .filter(|capability| capability.repository_admitted)
         .map(|capability| capability.operation)
         .collect::<BTreeSet<_>>();
-    assert_eq!(admitted.len(), 64);
+    assert_eq!(admitted.len(), 65);
     let blocked = magic_market_service::ALL_OPERATIONS
         .iter()
         .copied()

@@ -101,6 +101,7 @@ define_operations! {
     OfficialPublications => "official_publications",
     OfficialPublication => "official_publication",
     TradingCalendar => "trading_calendar",
+    QualifiedTradingFacts => "qualified_trading_facts",
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

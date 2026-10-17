@@ -5,11 +5,11 @@
 | 项目 | 状态 |
 | --- | --- |
 | Protobuf v1 合同 | 已建立，可生成客户端 |
-| 66 个只读数据族 RPC | 已进入 v1 Proto；新增 `TradingCalendar` SSE 签入修订交易日历合同 |
+| 67 个只读数据族 RPC | 已进入 v1 Proto；新增 `TradingCalendar` SSE 签入修订交易日历与 `QualifiedTradingFacts` provider-sourced 观察值合同 |
 | 能力与健康接口 | 已进入 v1 Proto |
 | TDX 动态监控列表、异动订阅、重放、Agent 流 | 已进入 v1 Proto |
 | gRPC Server | 已实现并在当前 Windows 工作站运行受限联调实例 |
-| Unary Provider composition | 66 个操作精确登记；64 个操作至少有一个正式 handler；`EconomicCalendar` 与 `Auctions` 仅保留显式诊断路径（前者因金十免费日历/API 已退役，后者因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入）；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
+| Unary Provider composition | 67 个操作精确登记；65 个操作至少有一个正式 handler；`EconomicCalendar` 与 `Auctions` 仅保留显式诊断路径（前者因金十免费日历/API 已退役，后者因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入）；Provider 备选与诊断状态由 `GetCapabilities` 精确返回 |
 | TDX 数据/异动正式准入 | 价格、累计成交量、累计成交额、昨收、OHLC 与三类带 Core 证据的 trigger/rearm 事件为生产数据；状态消息仍为 `UNADMITTED` |
 
 另一个项目现在可以根据 Proto 生成客户端并连接当前受限联调实例。实例地址、证书和
@@ -307,7 +307,7 @@ IntradayShape             T0Evidence
 OutcomeDailyBars          UpperLimitPoolReview
 CurrentAuctionObservations EconomicReleaseObservations
 EconomicReleaseSchedule
-TradingCalendar
+TradingCalendar            QualifiedTradingFacts
 ```
 
 所有方法都是只读 unary RPC。没有账户、资产、持仓、委托、撤单或成交写接口。
@@ -487,14 +487,14 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
 
 ## 10. 当前实现状态
 
-- Protobuf/descriptor、66 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
+- Protobuf/descriptor、67 个 unary RPC、health/capabilities、Bearer auth、远程 mTLS、
   blocking 调用隔离均已实现；
 - 事件服务已实现严格 generation/sequence、同 generation 有界 replay、过滤和慢消费者
   显式终止；
 - TDX Agent 双向流、空闲心跳、服务端存活截止时间、动态全量 watchlist replacement 和
   Windows 固定 sibling monitor 重启/转发已实现；五类本地终端字段和三类带证据的
   异动 trigger/rearm 进入生产事件流；
-- unary registry 对 66 个操作逐项精确登记；除 `EconomicCalendar` 和 `Auctions` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，竞价操作因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入，两者均仅保留显式诊断路径；
+- unary registry 对 67 个操作逐项精确登记；除 `EconomicCalendar` 和 `Auctions` 外，每个操作至少有一个证据支持的正式 handler；该日历操作因金十免费日历/API 于 2025-12-01 退役而 fail-closed，竞价操作因妙想自然语言应答表数在单次会话内不稳定而于 2026-09-21 撤回准入，两者均仅保留显式诊断路径；
   除既有 Tencent、Eastmoney、CNInfo、CFETS、FRED、SEC EDGAR、WallstreetCN、Jin10、
   HKEX、THS、State Council、iWencai 与官方 `HithinkFinance` 扶摇 API 外，也可精确选择
   TDX 公共协议、Sina、SSE、SZSE、
@@ -526,6 +526,12 @@ Windows Agent 只启动同目录 `magic-market-monitor-server.exe`，并从同�
   交易日向量（242 条）。口径为上证公告〔2025〕45号（2025-12-22）与国务院节假日安排，
   经本地终端逐位交叉验证；`source_at` 携带公告发布时刻（本族特有的前瞻性语义），
   SSE-only、仅 2026、运行时零网络零公式；[修订合同](grpc-trading-calendar.md)；
+- `QualifiedTradingFacts` 是 append-only 的第 67 个操作，provider-sourced 观察值：
+  `lifecycle`（TDX 元数据 `listed_on` / `listing_state`）与观测快照日 `price_band`
+  （腾讯 `MarketStatistics` 源值）。请求上限 50 只、250 日期、500 行，日期必须落在
+  SSE 2026 签入修订日历内；`suspension` 无来源，显式请求为 typed `Unsupported`；
+  `delisted` 与 `authoritative` 永不产出；任一批次失败即整单失败。
+  请求/记录 schema 见[合同文档](grpc-qualified-trading-facts.md)；
 - `MoneyFlows`、`FundFlowSeries` 已绑定东财公开资金流正式合同，`TechnicalBars` 已绑定
   Baidu 未复权源技术日线正式合同；`PostCloseFlows` 已绑定东财当前交易日 15:35 后的
   本地观察快照；`FuturesDelivery` 已绑定 CFFEX 官方固定交割日历，Baidu
@@ -1275,3 +1281,15 @@ instant。`complete=true` 仅证明本次有界响应通过完整验证，不代
 它串行遍历八源，每轮完成后默认等待 300 秒，把独立成功 envelope 和失败追加为
 NDJSON，不创建 OS 任务或变更运行中的服务。部署后的 capability/build identity 必须
 与交付连接包重新核对。
+
+## 16. 交易日资格事实（QualifiedTradingFacts，op 67，2026-10-17）
+
+`QualifiedTradingFacts` 是 append-only 的第 67 个操作，provider-sourced 观察值合同：
+`lifecycle` 来自 TDX 安全元数据（`listed_on`、派生 `listing_state`），观测快照日
+`price_band` 来自腾讯 `MarketStatistics` 的源值；`suspension` 无准入来源，显式请求为
+typed `Unsupported`（`UNIMPLEMENTED` / `reason_code=capability_unadmitted`）。
+请求 schema `magic.market.qualified_trading_facts.request` v1；记录 schema
+`magic.market.qualified_trading_fact` v1。完整字段、排序、失败语义与边界见
+[`grpc-qualified-trading-facts.md`](grpc-qualified-trading-facts.md)。本操作在 proto 中
+已登记；部署后由 `GetCapabilities` 返回 `Composition` provider scope，客户端 bundle
+需随 `contract_sha256` 变更重新生成并重钉。

@@ -1,4 +1,4 @@
-use std::{env, error::Error, sync::Arc, time::Duration};
+use std::{collections::HashSet, env, error::Error, sync::Arc, time::Duration};
 
 use crate::derived_products::{
     IndexQuotesRequest, IntradayShapeRecord, IntradayShapeRequest, OutcomeDailyBarsRecord,
@@ -39,32 +39,32 @@ use magic_jin10_rs::{
     Jin10Client, Jin10Error, ECONOMIC_CALENDAR_ADMITTED, ECONOMIC_RELEASE_OBSERVATIONS_ADMITTED,
 };
 use magic_market_core::{
-    verify_admitted_newest_first_batch, verify_verified_empty, Announcements, Bar, BarInterval,
-    BarsRequest, BlockTrades, BoardCategory, BoardConstituentProvider, BoardConstituentRequest,
-    BoardDirectoryProvider, BoardDirectoryRequest, BoardFlows, BoardMembershipProvider,
-    CompanyFilingRequest, CompanyFilingsProvider, ConceptHits, ConsensusData, ContractMonth,
-    CorporateActionRequest, CorporateActions, DataBatch, DataStatus, DividendPlans,
-    DragonTigerData, DragonTigerDiscovery, DragonTigerDiscoveryRequest, EconomicCalendarProvider,
-    EconomicCalendarRequest, EconomicReleaseObservationsProvider,
-    EconomicReleaseObservationsRequest, EconomicReleaseScheduleProvider,
-    EconomicReleaseScheduleRequest, EconomicSeriesProvider, EconomicSeriesRequest,
-    EvidenceTimestamp, FinancialLine, FinancialStatement, FinancialStatements, FlowInterval,
-    FlowScope, ForeignExchangeProvider, FundFlowPoint, FundFlowRequest, FundFlowSeries,
-    FuturesDeliveryCalendar, FuturesDeliveryRequest, FxRequest, GlobalIndexProvider,
-    GlobalIndexRequest, HistoricalBars, HolderCounts, InstrumentDateRangeRequest, InstrumentId,
-    InstrumentSignalRequest, InvestorQuestions, IsoDate, LimitPoolRequest, LimitPools,
-    LockupEvents, MarginData, MarketAnnouncementRequest, MarketDragonTigerData,
-    MarketDragonTigerRequest, MarketRankingKind, MarketStatisticsProvider, MinuteData,
-    MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows, NewsItem, NewsProvider, NonEmptyText,
-    NorthboundDailyRequest, NorthboundDailyStatistics, OfficialFxFixingProvider,
-    OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks, PolicyDocuments, PolicyRequest,
-    PopularityData, PositiveU32, PostCloseFlowRequest, PostCloseFlows, ProbeAdmissionPolicy,
-    Provenance, ProviderId, ProviderTopNRankingRequest, ProviderTopNRankings, Quote,
-    RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest, ResearchDocumentRequest,
-    ResearchDocuments, ResearchReports, ResearchRequest, SecurityMetadataProvider,
-    SecurityProfiles, SemanticSearch, SemanticSearchRequest, SourceEvidence, StatementKind,
-    StrongStockReasons, TargetPriceData, TargetPriceRequest, TechnicalBarsProvider, Trades,
-    TradesRequest, TradingCalendar, TradingDayRequest,
+    unix_seconds_to_china_rfc3339, verify_admitted_newest_first_batch, verify_verified_empty,
+    Announcements, AssetClass, Bar, BarInterval, BarsRequest, BlockTrades, BoardCategory,
+    BoardConstituentProvider, BoardConstituentRequest, BoardDirectoryProvider,
+    BoardDirectoryRequest, BoardFlows, BoardMembershipProvider, CompanyFilingRequest,
+    CompanyFilingsProvider, ConceptHits, ConsensusData, ContractMonth, CorporateActionRequest,
+    CorporateActions, DataBatch, DataStatus, DividendPlans, DragonTigerData, DragonTigerDiscovery,
+    DragonTigerDiscoveryRequest, EconomicCalendarProvider, EconomicCalendarRequest,
+    EconomicReleaseObservationsProvider, EconomicReleaseObservationsRequest,
+    EconomicReleaseScheduleProvider, EconomicReleaseScheduleRequest, EconomicSeriesProvider,
+    EconomicSeriesRequest, EvidenceTimestamp, FinancialLine, FinancialStatement,
+    FinancialStatements, FlowInterval, FlowScope, ForeignExchangeProvider, FundFlowPoint,
+    FundFlowRequest, FundFlowSeries, FuturesDeliveryCalendar, FuturesDeliveryRequest, FxRequest,
+    GlobalIndexProvider, GlobalIndexRequest, HistoricalBars, HolderCounts,
+    InstrumentDateRangeRequest, InstrumentId, InstrumentSignalRequest, InvestorQuestions, IsoDate,
+    LimitPoolRequest, LimitPools, LockupEvents, MarginData, MarketAnnouncementRequest,
+    MarketDragonTigerData, MarketDragonTigerRequest, MarketRankingKind, MarketStatistics,
+    MarketStatisticsProvider, MinuteData, MinuteDataRequest, MinutePoint, MoneyFlow, MoneyFlows,
+    NewsItem, NewsProvider, NonEmptyText, NorthboundDailyRequest, NorthboundDailyStatistics,
+    OfficialFxFixingProvider, OfficialFxFixingRequest, OptionData, OrderBook, OrderBooks,
+    PolicyDocuments, PolicyRequest, PopularityData, PositiveU32, PostCloseFlowRequest,
+    PostCloseFlows, ProbeAdmissionPolicy, Provenance, ProviderId, ProviderTopNRankingRequest,
+    ProviderTopNRankings, Quote, RealtimeQuotes, ReferenceRateProvider, ReferenceRateRequest,
+    ResearchDocumentRequest, ResearchDocuments, ResearchReports, ResearchRequest, SecurityMetadata,
+    SecurityMetadataProvider, SecurityProfiles, SemanticSearch, SemanticSearchRequest,
+    SourceEvidence, StatementKind, StrongStockReasons, TargetPriceData, TargetPriceRequest,
+    TechnicalBarsProvider, Trades, TradesRequest, TradingCalendar, TradingDayRequest, TradingVenue,
 };
 use magic_market_router::{
     quote_source, AcceptancePolicy, AttemptStatus, FailureKind, QuoteRouter, RouterError,
@@ -235,6 +235,12 @@ const FUTURES_DELIVERY_HOLIDAY_CALENDAR_URL: &str =
 pub const TRADING_CALENDAR_REQUEST_SCHEMA: &str = "magic.market.trading_calendar.request";
 pub const TRADING_CALENDAR_RECORD_SCHEMA: &str = "magic.market.trading_day";
 const TRADING_CALENDAR_SCHEMA_VERSION: u32 = 1;
+pub const QUALIFIED_TRADING_FACTS_REQUEST_SCHEMA: &str =
+    "magic.market.qualified_trading_facts.request";
+pub const QUALIFIED_TRADING_FACT_RECORD_SCHEMA: &str = "magic.market.qualified_trading_fact";
+const QUALIFIED_TRADING_FACTS_MAX_INSTRUMENTS: usize = 50;
+const QUALIFIED_TRADING_FACTS_MAX_DATES: usize = 250;
+const QUALIFIED_TRADING_FACTS_MAX_ROWS: usize = 500;
 pub const INDEX_QUOTES_REQUEST_SCHEMA: &str = "magic.market.index_quotes.request";
 pub const INDEX_QUOTES_RECORD_SCHEMA: &str = REALTIME_QUOTES_RECORD_SCHEMA;
 pub const INTRADAY_SHAPE_REQUEST_SCHEMA: &str = "magic.market.intraday_shape.request";
@@ -346,6 +352,22 @@ struct RealtimeQuotesRequest {
 #[serde(deny_unknown_fields)]
 struct InstrumentsRequest {
     instruments: Vec<InstrumentId>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QualifiedTradingFactsRequest {
+    instruments: Vec<InstrumentId>,
+    dates: Vec<IsoDate>,
+    include: Option<Vec<QualifiedTradingFactSubset>>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum QualifiedTradingFactSubset {
+    Lifecycle,
+    PriceBand,
+    Suspension,
 }
 
 #[derive(Deserialize)]
@@ -622,12 +644,45 @@ fn registry_with_tencent(
             )
         },
     )?;
+    register_qualified_trading_facts(
+        &mut registry,
+        client.clone(),
+        provider_timeout,
+        maximum_payload_bytes,
+    )?;
     registry.register_handler(
         capability(Operation::MarketStatistics, TENCENT_STATISTICS_SCOPE),
         move |command| execute_tencent_statistics(&client, command, maximum_payload_bytes),
     )?;
     register_extended_providers(&mut registry, provider_timeout, maximum_payload_bytes)?;
     Ok(registry)
+}
+
+fn register_qualified_trading_facts(
+    registry: &mut OperationRegistry,
+    tencent: TencentClient,
+    provider_timeout: Duration,
+    maximum_payload_bytes: usize,
+) -> Result<(), ProductionRegistryError> {
+    let timeout_seconds = provider_timeout.as_secs_f64();
+    let tdx = Arc::new(TdxSmartClient::new());
+    registry.register_handler(
+        admitted(
+            Operation::QualifiedTradingFacts,
+            "Composition",
+            "provider-sourced observed facts: TDX security metadata lifecycle fields plus observation-day Tencent market-statistics price band; no suspension source; no historical price band",
+        ),
+        move |command| {
+            execute_qualified_trading_facts(
+                &tdx,
+                &tencent,
+                command,
+                timeout_seconds,
+                maximum_payload_bytes,
+            )
+        },
+    )?;
+    Ok(())
 }
 
 fn register_extended_providers(
@@ -4470,6 +4525,408 @@ fn execute_tencent_statistics(
     )
 }
 
+fn execute_qualified_trading_facts(
+    tdx: &TdxSmartClient,
+    tencent: &TencentClient,
+    command: QueryCommand,
+    timeout_seconds: f64,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let request: QualifiedTradingFactsRequest =
+        decode_request(&command, QUALIFIED_TRADING_FACTS_REQUEST_SCHEMA)?;
+    let plan = qualified_trading_facts_plan(&request)?;
+    let metadata = if plan.lifecycle {
+        tdx.connect_to_any(Some(timeout_seconds))
+            .map_err(|error| provider_error(Operation::QualifiedTradingFacts, error))?;
+        Some(
+            tdx.security_metadata(&plan.instruments)
+                .map_err(|error| provider_error(Operation::QualifiedTradingFacts, error))?,
+        )
+    } else {
+        None
+    };
+    let statistics = if plan.price_band {
+        Some(
+            tencent
+                .market_statistics(&plan.instruments)
+                .map_err(|error| map_tencent_error(Operation::QualifiedTradingFacts, error))?,
+        )
+    } else {
+        None
+    };
+    qualified_trading_facts_query_result(metadata, statistics, &plan, maximum_payload_bytes)
+}
+
+#[derive(Debug)]
+struct QualifiedTradingFactsPlan {
+    instruments: Vec<InstrumentId>,
+    dates: Vec<IsoDate>,
+    lifecycle: bool,
+    price_band: bool,
+}
+
+fn qualified_trading_facts_plan(
+    request: &QualifiedTradingFactsRequest,
+) -> Result<QualifiedTradingFactsPlan, ServiceError> {
+    if request.instruments.is_empty() {
+        return Err(ServiceError::InvalidRequest(
+            "qualified trading facts requires at least one instrument".into(),
+        ));
+    }
+    if request.instruments.len() > QUALIFIED_TRADING_FACTS_MAX_INSTRUMENTS {
+        return Err(ServiceError::InvalidRequest(format!(
+            "qualified trading facts accepts at most {QUALIFIED_TRADING_FACTS_MAX_INSTRUMENTS} instruments"
+        )));
+    }
+    let mut instruments = HashSet::new();
+    for instrument in &request.instruments {
+        if !instruments.insert(instrument.clone()) {
+            return Err(ServiceError::InvalidRequest(format!(
+                "qualified trading facts rejects duplicate instrument {}",
+                instrument.code()
+            )));
+        }
+        if instrument.asset_class() != AssetClass::Equity {
+            return Err(ServiceError::InvalidRequest(format!(
+                "qualified trading facts accepts only A-share equity instruments; {} is not an equity",
+                instrument.code()
+            )));
+        }
+    }
+    if request.dates.is_empty() {
+        return Err(ServiceError::InvalidRequest(
+            "qualified trading facts requires at least one date".into(),
+        ));
+    }
+    if request.dates.len() > QUALIFIED_TRADING_FACTS_MAX_DATES {
+        return Err(ServiceError::InvalidRequest(format!(
+            "qualified trading facts accepts at most {QUALIFIED_TRADING_FACTS_MAX_DATES} dates"
+        )));
+    }
+    if request.instruments.len() * request.dates.len() > QUALIFIED_TRADING_FACTS_MAX_ROWS {
+        return Err(ServiceError::InvalidRequest(format!(
+            "qualified trading facts accepts at most {QUALIFIED_TRADING_FACTS_MAX_ROWS} instrument-date rows"
+        )));
+    }
+    let mut dates = HashSet::new();
+    for date in &request.dates {
+        if !dates.insert(date.as_str()) {
+            return Err(ServiceError::InvalidRequest(format!(
+                "qualified trading facts rejects duplicate date {date}"
+            )));
+        }
+    }
+    let calendar = sse_2026_trading_days()?;
+    for date in &request.dates {
+        if !calendar.contains(date.as_str()) {
+            return Err(ServiceError::InvalidRequest(format!(
+                "qualified trading facts accepts only checked-in SSE 2026 trading days; {date} is not one"
+            )));
+        }
+    }
+    let (mut lifecycle, mut price_band) = (false, false);
+    match &request.include {
+        None => {
+            lifecycle = true;
+            price_band = true;
+        }
+        Some(include) if include.is_empty() => {
+            return Err(ServiceError::InvalidRequest(
+                "qualified trading facts include must name at least one subset".into(),
+            ));
+        }
+        Some(include) => {
+            for subset in include {
+                match subset {
+                    QualifiedTradingFactSubset::Lifecycle => lifecycle = true,
+                    QualifiedTradingFactSubset::PriceBand => price_band = true,
+                    QualifiedTradingFactSubset::Suspension => {
+                        return Err(ServiceError::Unsupported {
+                            operation: Operation::QualifiedTradingFacts,
+                            reason:
+                                "no admitted suspension source exists for qualified trading facts"
+                                    .into(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    let mut sorted_dates = request.dates.clone();
+    sorted_dates.sort();
+    Ok(QualifiedTradingFactsPlan {
+        instruments: request.instruments.clone(),
+        dates: sorted_dates,
+        lifecycle,
+        price_band,
+    })
+}
+
+fn sse_2026_trading_days() -> Result<HashSet<String>, ServiceError> {
+    let request = TradingDayRequest::new(
+        PositiveU32::new(2026).map_err(|error| ServiceError::Internal(error.to_string()))?,
+        TradingVenue::Sse,
+    )
+    .map_err(|error| ServiceError::Internal(error.to_string()))?;
+    let batch = SseTradingCalendar::new()
+        .trading_calendar(&request)
+        .map_err(|error| ServiceError::Internal(error.to_string()))?;
+    Ok(batch
+        .records()
+        .iter()
+        .map(|entry| entry.date.as_str().to_owned())
+        .collect())
+}
+
+fn qualified_trading_facts_query_result(
+    metadata: Option<DataBatch<SecurityMetadata>>,
+    statistics: Option<DataBatch<MarketStatistics>>,
+    plan: &QualifiedTradingFactsPlan,
+    maximum_payload_bytes: usize,
+) -> Result<QueryResult, ServiceError> {
+    let metadata = metadata.as_ref();
+    let statistics = statistics.as_ref();
+    let snapshot_date = match statistics {
+        Some(batch) => Some(
+            batch
+                .provenance()
+                .source_at()
+                .and_then(|value| value.get(..10))
+                .ok_or_else(|| {
+                    ServiceError::FailedPrecondition(
+                        "tencent market statistics batch has no source date".into(),
+                    )
+                })?
+                .to_owned(),
+        ),
+        None => None,
+    };
+    let mut records = Vec::with_capacity(plan.instruments.len() * plan.dates.len());
+    for instrument in &plan.instruments {
+        let metadata_record = match metadata {
+            Some(batch) => Some(qualified_trading_fact_metadata_record(batch, instrument)?),
+            None => None,
+        };
+        let statistics_record = match statistics {
+            Some(batch) => Some(qualified_trading_fact_statistics_record(batch, instrument)?),
+            None => None,
+        };
+        for date in &plan.dates {
+            let row = qualified_trading_fact_row(
+                instrument,
+                date,
+                plan,
+                metadata_record,
+                statistics_record,
+                snapshot_date.as_deref(),
+            )?;
+            let data = serde_json::to_vec(&row).map_err(|error| {
+                ServiceError::Internal(format!(
+                    "qualified trading fact serialization failed: {error}"
+                ))
+            })?;
+            records.push(CanonicalPayload::new(
+                QUALIFIED_TRADING_FACT_RECORD_SCHEMA,
+                SCHEMA_VERSION,
+                data,
+                maximum_payload_bytes,
+            )?);
+        }
+    }
+    let (batch_id, observed_at, source_at) = match (metadata, statistics) {
+        (Some(batch), _) if plan.lifecycle => {
+            let provenance = batch.provenance();
+            let batch_id = provenance.batch_id().ok_or_else(|| {
+                ServiceError::FailedPrecondition(
+                    "TDX security metadata batch has no batch_id".into(),
+                )
+            })?;
+            (
+                format!("{batch_id}:qualified-trading-facts"),
+                qualified_trading_fact_observed_at(provenance.fetched_at())?,
+                None,
+            )
+        }
+        (_, Some(batch)) if plan.price_band => {
+            let provenance = batch.provenance();
+            let batch_id = provenance.batch_id().ok_or_else(|| {
+                ServiceError::FailedPrecondition(
+                    "Tencent market statistics batch has no batch_id".into(),
+                )
+            })?;
+            (
+                format!("{batch_id}:qualified-trading-facts"),
+                qualified_trading_fact_observed_at(provenance.fetched_at())?,
+                provenance.source_at().map(|value| value.to_owned()),
+            )
+        }
+        _ => {
+            return Err(ServiceError::FailedPrecondition(
+                "qualified trading facts has no source batch".into(),
+            ));
+        }
+    };
+    Ok(QueryResult {
+        provider: "Composition".to_owned(),
+        batch_id,
+        complete: true,
+        observed_at,
+        source_at,
+        records,
+        repository_admitted: true,
+        diagnostic_blocker: None,
+    })
+}
+
+fn qualified_trading_fact_metadata_record<'a>(
+    batch: &'a DataBatch<SecurityMetadata>,
+    instrument: &InstrumentId,
+) -> Result<&'a SecurityMetadata, ServiceError> {
+    batch
+        .records()
+        .iter()
+        .find(|record| record.instrument() == instrument)
+        .ok_or_else(|| {
+            ServiceError::FailedPrecondition(format!(
+                "TDX security metadata omitted requested instrument {}",
+                instrument.code()
+            ))
+        })
+}
+
+fn qualified_trading_fact_statistics_record<'a>(
+    batch: &'a DataBatch<MarketStatistics>,
+    instrument: &InstrumentId,
+) -> Result<&'a MarketStatistics, ServiceError> {
+    batch
+        .records()
+        .iter()
+        .find(|record| record.instrument() == instrument)
+        .ok_or_else(|| {
+            ServiceError::FailedPrecondition(format!(
+                "Tencent market statistics omitted requested instrument {}",
+                instrument.code()
+            ))
+        })
+}
+
+fn qualified_trading_fact_row(
+    instrument: &InstrumentId,
+    date: &IsoDate,
+    plan: &QualifiedTradingFactsPlan,
+    metadata: Option<&SecurityMetadata>,
+    statistics: Option<&MarketStatistics>,
+    snapshot_date: Option<&str>,
+) -> Result<serde_json::Value, ServiceError> {
+    let date_str = date.as_str();
+    let (listed_on, listing_state) = match (plan.lifecycle, metadata) {
+        (true, Some(record)) => (
+            record.listed_on().map(|value| value.to_owned()),
+            Some(qualified_trading_fact_listing_state(
+                record.listed_on(),
+                date_str,
+            )),
+        ),
+        _ => (None, None),
+    };
+    let on_snapshot = plan.price_band && snapshot_date == Some(date_str);
+    let (limit_up, limit_down) = match (on_snapshot, statistics) {
+        (true, Some(record)) => (
+            record.upper_limit().map(|value| value.get()),
+            record.lower_limit().map(|value| value.get()),
+        ),
+        _ => (None, None),
+    };
+    let price_band_source = if limit_up.is_some() || limit_down.is_some() {
+        Some("tencent-market-statistics")
+    } else {
+        None
+    };
+    let price_band_evidence = match (price_band_source, statistics) {
+        (Some(_), Some(record)) => Some(
+            serde_json::to_value(record.evidence())
+                .map_err(|error| ServiceError::Internal(error.to_string()))?,
+        ),
+        _ => None,
+    };
+    let (source, observed_at, source_at, evidence) = match (plan.lifecycle, metadata, statistics) {
+        (true, Some(record), _) => (
+            "tdx-security-metadata",
+            qualified_trading_fact_observed_at(record.observed_at())?,
+            None,
+            Some(serde_json::json!({
+                "provider": record.provider(),
+                "source_at": record.source_at(),
+                "observed_at": record.observed_at(),
+                "batch_id": record.batch_id(),
+            })),
+        ),
+        (false, _, Some(record)) => (
+            "tencent-market-statistics",
+            qualified_trading_fact_observed_at(record.evidence().observed_at())?,
+            record.evidence().source_at().map(|value| value.to_owned()),
+            Some(
+                serde_json::to_value(record.evidence())
+                    .map_err(|error| ServiceError::Internal(error.to_string()))?,
+            ),
+        ),
+        _ => {
+            return Err(ServiceError::FailedPrecondition(
+                "qualified trading fact has no source batch".into(),
+            ));
+        }
+    };
+    Ok(serde_json::json!({
+        "instrument": instrument,
+        "date": date_str,
+        "quality": "provider_observed",
+        "source": source,
+        "observed_at": observed_at,
+        "source_at": source_at,
+        "listed_on": listed_on,
+        "listing_state": listing_state,
+        "limit_up": limit_up,
+        "limit_down": limit_down,
+        "price_band_source": price_band_source,
+        "evidence": evidence,
+        "price_band_evidence": price_band_evidence,
+    }))
+}
+
+fn qualified_trading_fact_listing_state(listed_on: Option<&str>, date: &str) -> &'static str {
+    match listed_on {
+        Some(listed_on) if listed_on <= date => "listed",
+        Some(_) => "not_yet_listed",
+        None => "unknown",
+    }
+}
+
+fn qualified_trading_fact_observed_at(raw: &str) -> Result<String, ServiceError> {
+    let (seconds, fraction) = match raw.split_once('.') {
+        Some((seconds, fraction)) => (seconds, Some(fraction)),
+        None => (raw, None),
+    };
+    let seconds = seconds.parse::<i64>().map_err(|_| {
+        ServiceError::FailedPrecondition(format!(
+            "qualified trading fact observed_at is not epoch seconds: {raw}"
+        ))
+    })?;
+    let base = unix_seconds_to_china_rfc3339(seconds)
+        .map_err(|error| ServiceError::FailedPrecondition(error.to_string()))?;
+    let Some(fraction) = fraction else {
+        return Ok(base);
+    };
+    let millis: String = fraction.chars().take(3).collect();
+    if millis.is_empty() || !millis.chars().all(|c| c.is_ascii_digit()) {
+        return Ok(base);
+    }
+    let millis = format!("{millis:0<3}");
+    Ok(match base.strip_suffix("+08:00") {
+        Some(prefix) => format!("{prefix}.{millis}+08:00"),
+        None => base,
+    })
+}
+
 fn execute_financial_statements<P>(
     command: QueryCommand,
     provider: &P,
@@ -6030,3 +6487,7 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "../tests/internal/tdx_query_release_tests.rs"]
 mod tdx_query_release_tests;
+
+#[cfg(test)]
+#[path = "../tests/internal/qualified_trading_facts_tests.rs"]
+mod qualified_trading_facts_tests;

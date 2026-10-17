@@ -130,8 +130,8 @@ if (-not $serviceMatch.Success) {
     throw "market.proto has no MarketDataService block"
 }
 $rpcCount = [regex]::Matches($serviceMatch.Groups['body'].Value, '\brpc\s+').Count
-if ($rpcCount -ne 66) {
-    throw "client bundle must contain exactly 66 MarketDataService RPCs, got $rpcCount"
+if ($rpcCount -ne 67) {
+    throw "client bundle must contain exactly 67 MarketDataService RPCs, got $rpcCount"
 }
 
 $generatedAt = [DateTimeOffset]::UtcNow.ToString("O")

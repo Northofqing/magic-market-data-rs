@@ -1759,6 +1759,11 @@ mod registered_option_request_regressions {
                 1,
             ),
             (
+                Operation::QualifiedTradingFacts,
+                "magic.market.qualified_trading_facts.request",
+                1,
+            ),
+            (
                 Operation::IndexQuotes,
                 "magic.market.index_quotes.request",
                 1,
