@@ -92,5 +92,4 @@
 
 ## 6. 与 Mac P0-1 规格的关系
 
-对应 `grpc_handoffs/2026-10-17-p01-provider-sourced-trading-facts-spec.md` 的 B 路线（provider-sourced 观察值）：`lifecycle` 与观测日 `price_band` 可交付；`suspension` 明确不交付。设计依据与决策记录见
-[`2026-10-17-qualified-trading-facts-gate-a-design.md`](2026-10-17-qualified-trading-facts-gate-a-design.md)，业务规则见 `BR-071`。
+对应 `grpc_handoffs/2026-10-17-p01-provider-sourced-trading-facts-spec.md` 的 B 路线（provider-sourced 观察值）：`lifecycle` 与观测日 `price_band` 可交付；`suspension` 明确不交付。设计依据与决策记录见仓库 `docs/integrations/2026-10-17-qualified-trading-facts-gate-a-design.md`（内部文档，不随 bundle 交付），业务规则见 `BR-071`。

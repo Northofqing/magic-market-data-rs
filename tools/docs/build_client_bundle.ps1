@@ -69,6 +69,7 @@ $publicFiles = @(
     @("grpc-external-api.md", "docs/integrations/grpc-external-api.md"),
     @("grpc-futures-delivery-v2.md", "docs/integrations/grpc-futures-delivery-v2.md"),
     @("grpc-trading-calendar.md", "docs/integrations/grpc-trading-calendar.md"),
+    @("grpc-qualified-trading-facts.md", "docs/integrations/grpc-qualified-trading-facts.md"),
     @("futures-delivery-2026-09.fixture.json", "docs/integrations/futures-delivery-2026-09.fixture.json"),
     @("grpc-derived-products.md", "docs/integrations/grpc-derived-products.md"),
     @("grpc-market-announcements-coverage-v2.md", "docs/integrations/grpc-market-announcements-coverage-v2.md"),
@@ -168,6 +169,7 @@ $metadata = @"
   "security_profiles_schema_version": 2,
   "limit_pools_schema_version": 2,
   "trading_calendar_schema_version": 1,
+  "qualified_trading_facts_schema_version": 1,
   "deployment_build_identity": $deploymentIdentity,
   "generated_at_utc": "$generatedAt"
 }
@@ -198,7 +200,9 @@ in grpc-futures-delivery-v2.md and futures-delivery-2026-09.fixture.json.
 OfficialPublications and OfficialPublication expose native evidence envelopes in version 1;
 publication date labels never supply QueryResponse.source_at.
 TradingCalendar returns the checked-in SSE 2026 trading-day revision (schema version 1,
-242 days, source_at = notice publication date); SecurityProfiles and LimitPools records
+242 days, source_at = notice publication date). QualifiedTradingFacts returns
+provider-observed lifecycle fields plus observation-day price band (schema version 1);
+suspension has no source and an explicit request is typed Unsupported. SecurityProfiles and LimitPools records
 are schema version 2 (unverified source share counts; source-provided is_st).
 GetHealth and GetListenerStatus expose append-only aggregate runtime observability fields.
 When deployment_build_identity is non-null, compare every field with GetHealth.build_identity
@@ -233,6 +237,7 @@ $manifestFiles = @(
     "unadmitted-provider-routes.md",
     "provider-coverage-index.md",
     "grpc-trading-calendar.md",
+    "grpc-qualified-trading-facts.md",
     "bundle-metadata.json",
     "README.md"
 )
